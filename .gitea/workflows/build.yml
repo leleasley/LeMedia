@@ -28,6 +28,13 @@ jobs:
           tags: lemedia/web:latest,lemedia/web:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            DATABASE_URL=postgresql://ci:ci@localhost:5432/ci
+            SESSION_SECRET=ci-build-secret-key-placeholder
+            SERVICES_SECRET_KEY=ci-services-secret-placeholder
+            VAPID_PUBLIC_KEY=ci-vapid-public-placeholder
+            VAPID_PRIVATE_KEY=ci-vapid-private-placeholder
+            VAPID_EMAIL=ci@example.com
 
       - name: Build success notification
         run: |
