@@ -37,10 +37,77 @@ docker compose exec lemedia-web sh
 
 ## Development Workflow
 
-1. Make changes to the code
-2. Rebuild the web service: `docker compose up -d --build lemedia-web`
-3. Check logs for any errors: `docker compose logs -f lemedia-web`
-4. Test your changes in the browser
+### Making Changes with Claude Code
+
+1. **Make changes** - Work with Claude Code to modify/add code
+2. **Test locally** - Rebuild and test: `docker compose up -d --build lemedia-web`
+3. **Check logs** - Verify no errors: `docker compose logs -f lemedia-web`
+4. **Test in browser** - Ensure changes work as expected
+
+### Pushing Changes to Git
+
+Once you're happy with your changes, push them to Gitea:
+
+1. **Check what changed**:
+   ```bash
+   git status
+   ```
+
+2. **Stage your changes**:
+   ```bash
+   git add .                    # Add all changes
+   # or
+   git add path/to/file.ts      # Add specific files
+   ```
+
+3. **Commit with a descriptive message**:
+   ```bash
+   git commit -m "$(cat <<'EOF'
+   Brief description of what you changed
+
+   - Bullet point details
+   - More details
+   - Any relevant context
+
+   Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
+   EOF
+   )"
+   ```
+
+4. **Push to Gitea**:
+   ```bash
+   git push
+   ```
+
+### What Happens After Push
+
+When you push to Gitea:
+
+1. **Gitea Actions triggers** - CI/CD pipeline starts automatically
+2. **Docker image builds** - Fresh build with your changes
+3. **Build logs available** - Check at `http://10.77.77.250:3000` → Actions tab
+4. **Build result** - ✅ Success or ❌ Failure with error logs
+
+You can watch the build progress in real-time in the Gitea web UI under the "Actions" tab.
+
+### Quick Git Commands
+
+```bash
+# View commit history
+git log --oneline -10
+
+# View changes before committing
+git diff
+
+# Undo uncommitted changes
+git restore path/to/file.ts
+
+# View remote info
+git remote -v
+
+# Pull latest changes (if working across machines)
+git pull origin main
+```
 
 ## Recent Changes
 
