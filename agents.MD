@@ -83,12 +83,14 @@ Once you're happy with your changes, push them to Gitea:
 
 When you push to Gitea:
 
-1. **Gitea Actions triggers** - CI/CD pipeline starts automatically
-2. **Docker image builds** - Fresh build with your changes
-3. **Build logs available** - Check at `http://10.77.77.250:3000` → Actions tab
-4. **Build result** - ✅ Success or ❌ Failure with error logs
+1. **Code is backed up** - Your changes are safely stored in Gitea
+2. **Version history updated** - Full commit history available in Gitea web UI
+3. **Ready to deploy** - You're already on the server, so changes are live after rebuild
 
-You can watch the build progress in real-time in the Gitea web UI under the "Actions" tab.
+Note: Since you work directly on the server, you don't need CI/CD. Just rebuild manually when needed:
+```bash
+docker compose up -d --build lemedia-web
+```
 
 ### Quick Git Commands
 
