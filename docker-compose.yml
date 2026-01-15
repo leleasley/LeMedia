@@ -1,0 +1,56 @@
+services:
+  lemedia-db:
+    image: postgres:16-alpine
+    container_name: lemedia-db
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-lemedia}
+      - POSTGRES_USER=${POSTGRES_USER:-lemedia}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - /opt/LeMedia/db/data:/var/lib/postgresql/data
+      - /opt/LeMedia/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: false
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql
+
+  lemedia-web:
+    build:
+      context: /opt/LeMedia/apps/web
+      dockerfile: Dockerfile
+      args:
+        - DATABASE_URL=${DATABASE_URL}
+        - SESSION_SECRET=${SESSION_SECRET}
+        - SERVICES_SECRET_KEY=${SERVICES_SECRET_KEY}
+        - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY}
+        - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY}
+        - VAPID_EMAIL=${VAPID_EMAIL}
+    container_name: lemedia-web
+    env_file:
+      - /opt/LeMedia/.env
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+    ports:
+      - "3010:3010"
+    depends_on:
+      - lemedia-db
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3010/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 512M

@@ -1,0 +1,76 @@
+{
+    "name": "LeMedia",
+    "short_name": "LeMedia",
+    "description": "LeMedia Request List (TMDB + Sonarr + Radarr)",
+    "start_url": "/",
+    "scope": "/",
+    "display": "standalone",
+    "orientation": "portrait-primary",
+    "background_color": "#0f0f0f",
+    "theme_color": "#000000",
+    "prefer_related_applications": false,
+    "icons": [
+        {
+            "src": "/icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "/icon-512-maskable.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ],
+    "categories": [
+        "entertainment"
+    ],
+    "shortcuts": [
+        {
+            "name": "Movies",
+            "short_name": "Movies",
+            "description": "View and request movies",
+            "url": "/movies",
+            "icons": [
+                {
+                    "src": "/icon-192.png",
+                    "sizes": "192x192",
+                    "type": "image/png"
+                }
+            ]
+        },
+        {
+            "name": "TV Shows",
+            "short_name": "TV Shows",
+            "description": "View and request TV shows",
+            "url": "/tv",
+            "icons": [
+                {
+                    "src": "/icon-192.png",
+                    "sizes": "192x192",
+                    "type": "image/png"
+                }
+            ]
+        },
+        {
+            "name": "Requests",
+            "short_name": "Requests",
+            "description": "View your requests",
+            "url": "/requests",
+            "icons": [
+                {
+                    "src": "/icon-192.png",
+                    "sizes": "192x192",
+                    "type": "image/png"
+                }
+            ]
+        }
+    ]
+}

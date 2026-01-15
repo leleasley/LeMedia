@@ -1,0 +1,58 @@
+import { redirect } from "next/navigation";
+import { ProfileSettingsPageClient } from "@/components/Profile/ProfileSettingsPageClient";
+import { getUser } from "@/auth";
+import { getUserWithHash, listNotificationEndpoints, listUserNotificationEndpointIds } from "@/db";
+
+const tabs = ["general", "password", "linked", "notifications", "permissions"] as const;
+type ProfileTab = typeof tabs[number];
+
+export const metadata = {
+  title: "Profile Settings - LeMedia",
+};
+
+export default async function ProfileSettingsTabPage({
+  params
+}: {
+  params: { tab: string } | Promise<{ tab: string }>;
+}) {
+  const resolvedParams = await Promise.resolve(params);
+  const user = await getUser().catch(() => null);
+  if (!user) {
+    redirect("/login");
+  }
+
+  const requestedTab = resolvedParams.tab as ProfileTab;
+  if (!tabs.includes(requestedTab)) {
+    redirect("/settings/profile/general");
+  }
+
+  const [dbUser, endpoints] = await Promise.all([
+    getUserWithHash(user.username),
+    listNotificationEndpoints()
+  ]);
+
+  const selectedIds = dbUser ? await listUserNotificationEndpointIds(dbUser.id) : [];
+  const enabledEndpoints = (endpoints as any[]).filter(e => e?.enabled !== false);
+  const assignedEndpoints = enabledEndpoints.filter(endpoint => selectedIds.includes(endpoint.id));
+  const mfaEnabled = !!dbUser?.mfa_secret;
+  const groups = dbUser?.groups ?? [];
+  const isAdmin = groups.includes("admin") || user.isAdmin;
+  return (
+    <ProfileSettingsPageClient
+      user={{
+        username: user.username,
+        email: dbUser?.email,
+        avatarUrl: dbUser?.avatar_url,
+        jellyfinUserId: dbUser?.jellyfin_user_id,
+        createdAt: dbUser?.created_at,
+        userId: dbUser?.id,
+        groups: dbUser?.groups ?? [],
+        weeklyDigestOptIn: dbUser?.weekly_digest_opt_in ?? false
+      }}
+      isAdmin={isAdmin}
+      mfaEnabled={mfaEnabled}
+      assignedEndpoints={assignedEndpoints}
+      activeTab={requestedTab}
+    />
+  );
+}
