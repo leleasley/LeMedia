@@ -312,3 +312,53 @@ export async function deleteQueueItem(queueId: number) {
     method: "DELETE"
   });
 }
+
+/**
+ * Get Sonarr calendar for a date range
+ * @param start - Start date (ISO format: YYYY-MM-DD)
+ * @param end - End date (ISO format: YYYY-MM-DD)
+ * @param includeUnmonitored - Include unmonitored episodes
+ * @returns Array of episodes with air dates in the range
+ */
+export async function getSonarrCalendar(start: string, end: string, includeUnmonitored = false) {
+  const params = new URLSearchParams({
+    start,
+    end,
+    unmonitored: String(includeUnmonitored),
+    includeSeries: "true"
+  });
+  return sonarrFetch(`/api/v3/calendar?${params.toString()}`);
+}
+
+/**
+ * Get Sonarr calendar for service by ID
+ * @param baseUrl - Sonarr instance base URL
+ * @param apiKey - Sonarr API key
+ * @param start - Start date (ISO format: YYYY-MM-DD)
+ * @param end - End date (ISO format: YYYY-MM-DD)
+ * @param includeUnmonitored - Include unmonitored episodes
+ */
+export async function getSonarrCalendarForService(
+  baseUrl: string,
+  apiKey: string,
+  start: string,
+  end: string,
+  includeUnmonitored = false
+) {
+  const fetcher = createSonarrFetcher(baseUrl, apiKey);
+  const params = new URLSearchParams({
+    start,
+    end,
+    unmonitored: String(includeUnmonitored)
+  });
+  return fetcher(`/api/v3/calendar?${params.toString()}`);
+}
+
+/**
+ * Get upcoming monitored episodes from Sonarr
+ * Convenience wrapper around getSonarrCalendar that only returns monitored content
+ */
+export async function getSonarrUpcoming(start: string, end: string) {
+  const calendar = await getSonarrCalendar(start, end, false);
+  return Array.isArray(calendar) ? calendar : [];
+}

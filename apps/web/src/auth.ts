@@ -5,6 +5,7 @@ import { getUserWithHash, isSessionActive, touchUserSession } from "@/db";
 import { withCache } from "@/lib/local-cache";
 
 export type AppUser = {
+  id: number;
   username: string;
   groups: string[];
   isAdmin: boolean;
@@ -30,7 +31,7 @@ export async function getUser(): Promise<AppUser> {
       throw new Error("DEV_USER is disabled in production. Unset DEV_USER or set ALLOW_DEV_BYPASS=1 to override.");
     }
     const groups = splitGroups(devGroups);
-    return { username: devUser, groups, isAdmin: groups.map(g => g.toLowerCase()).includes(adminGroup) };
+    return { id: 0, username: devUser, groups, isAdmin: groups.map(g => g.toLowerCase()).includes(adminGroup) };
   }
 
   const cookieStore = await cookies();
@@ -58,6 +59,7 @@ export async function getUser(): Promise<AppUser> {
       const u = await getUserWithHash(username);
       if (!u) return null;
       return {
+          id: u.id,
           username: u.username,
           groups: u.groups,
           isAdmin: u.groups.map(g => g.toLowerCase()).includes(adminGroup),
@@ -82,7 +84,7 @@ export async function getUser(): Promise<AppUser> {
     console.log("[AUTH] groups:", groups);
   }
 
-  return { username, groups, isAdmin };
+  return { id: dbUser.id, username, groups, isAdmin };
 }
 
 export async function requireUser(): Promise<AppUser | NextResponse> {

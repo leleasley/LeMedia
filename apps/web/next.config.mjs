@@ -59,7 +59,6 @@ const nextConfig = {
     serverActions: {
       bodySizeLimit: "1mb",
     },
-    instrumentationHook: true, // Enable instrumentation for migrations
   },
   headers: async () => {
     const csp = [

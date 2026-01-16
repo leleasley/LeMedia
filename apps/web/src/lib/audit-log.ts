@@ -19,7 +19,8 @@ export type AuditAction =
   | "notification_endpoint.updated"
   | "notification_endpoint.deleted"
   | "media_share.created"
-  | "media_share.deleted";
+  | "media_share.deleted"
+  | "calendar.feed_rotated";
 
 export interface AuditLogEntry {
   action: AuditAction;

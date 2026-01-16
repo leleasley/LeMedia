@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/auth";
 import { discoverMovies, discoverTv, getMovie, getTv, findTvByTvdbId, getTvSeasonEpisodes } from "@/lib/tmdb";
-import { getPool, getCalendarFeedUserByToken } from "@/db";
+import { getPool } from "@/db";
 import { getSonarrCalendar } from "@/lib/sonarr";
 import { getRadarrCalendar } from "@/lib/radarr";
-import { findAvailableMovieByName, findAvailableMovieByTmdb, findAvailableSeriesByIds, isEpisodeAvailable } from "@/lib/jellyfin";
+import { isAvailableByExternalIds, getJellyfinItemId, isEpisodeAvailable, findAvailableMovieByName } from "@/lib/jellyfin";
 import { deduplicateFetch } from "@/lib/request-cache";
 
 export interface CalendarEvent {
@@ -223,8 +223,8 @@ async function getSonarrCalendarEvents(start: string, end: string): Promise<Cale
         else if (tvdbId) tvdbIds.add(tvdbId);
         const seasonNumber = episode.seasonNumber ?? 0;
         const episodeNumber = episode.episodeNumber ?? 0;
-        // Extract episode TVDB ID - Sonarr uses 'tvdbId' field for episode IDs in calendar
-        const tvdbEpisodeId = episode.tvdbId || undefined;
+        // Don't fall back to Sonarr's internal episode.id - it's not a valid TVDB ID
+        const tvdbEpisodeId = episode.tvdbEpisodeId || undefined;
         const seriesType = series.seriesType || series.series_type || series.type;
         const baseSeriesTitle =
           series.title ||
@@ -546,19 +546,6 @@ async function enrichWithJellyfinAvailability(events: CalendarEvent[]): Promise<
             const lookupKey = isDaily
               ? `jellyfin-episode:${event.tmdbId ?? event.tvdbId ?? event.id}:${event.date}`
               : `jellyfin-episode:${event.tmdbId ?? event.tvdbId ?? event.id}:${seasonNumber}:${episodeNumber}`;
-            
-            console.log(`[Calendar] Checking episode availability:`, {
-              title: baseTitle,
-              tmdbId: event.tmdbId,
-              tvdbId: event.tvdbId,
-              seasonNumber,
-              episodeNumber,
-              tvdbEpisodeId,
-              seriesType,
-              isDaily,
-              airDate: event.date
-            });
-            
             const availability = await deduplicateFetch(
               lookupKey,
               () =>
@@ -576,12 +563,6 @@ async function enrichWithJellyfinAvailability(events: CalendarEvent[]): Promise<
               { ttl: CACHE_TTL_JELLYFIN }
             );
 
-            console.log(`[Calendar] Episode availability result:`, {
-              title: baseTitle,
-              available: availability?.available,
-              itemId: availability?.itemId
-            });
-
             if (availability?.available) {
               if (!event.metadata) event.metadata = {};
               event.metadata.isAvailable = true;
@@ -596,49 +577,70 @@ async function enrichWithJellyfinAvailability(events: CalendarEvent[]): Promise<
             }
           }
 
+          const lookupKey = `jellyfin-avail:${event.mediaType}:${event.tmdbId ?? event.tvdbId ?? event.id}`;
+
+          const available = await deduplicateFetch(
+            lookupKey,
+            () => isAvailableByExternalIds(event.mediaType!, event.tmdbId, event.tvdbId),
+            { ttl: CACHE_TTL_JELLYFIN }
+          );
+
           if (!event.metadata) event.metadata = {};
-          if (event.mediaType === "movie") {
-            if (event.tmdbId) {
-              const movieAvail = await deduplicateFetch(
-                `jellyfin-movie-tmdb:${event.tmdbId}`,
-                () => findAvailableMovieByTmdb(event.title, event.tmdbId!),
-                { ttl: CACHE_TTL_JELLYFIN }
-              );
-              if (movieAvail?.available) {
-                event.metadata.isAvailable = true;
-                if (movieAvail.itemId) event.metadata.jellyfinItemId = movieAvail.itemId;
-              } else {
-                event.metadata.isAvailable = false;
-              }
-            } else {
-              const movieAvail = await deduplicateFetch(
-                `jellyfin-movie-name:${event.title}`,
-                () => findAvailableMovieByName(event.title),
-                { ttl: CACHE_TTL_JELLYFIN }
-              );
-              if (movieAvail?.available) {
-                event.metadata.isAvailable = true;
-                if (movieAvail.itemId) event.metadata.jellyfinItemId = movieAvail.itemId;
-              } else {
-                event.metadata.isAvailable = false;
+
+          // For TV shows without episode numbers, we can't reliably determine availability
+          // just by finding the series container - skip the name fallback
+          if (event.mediaType === "tv") {
+            // For TV shows, isAvailableByExternalIds already checks for actual episodes with files
+            event.metadata.isAvailable = available === true;
+            if (available === true) {
+              try {
+                const itemId = await deduplicateFetch(
+                  `jellyfin-item:${event.mediaType}:${event.tmdbId ?? event.tvdbId ?? event.id}`,
+                  () => getJellyfinItemId(event.mediaType!, event.tmdbId, event.title, event.tvdbId),
+                  { ttl: CACHE_TTL_JELLYFIN }
+                );
+                if (itemId) {
+                  event.metadata.jellyfinItemId = itemId;
+                }
+              } catch (itemError) {
+                // Non-fatal: just won't have direct link
               }
             }
             return;
           }
 
-          if (event.mediaType === "tv") {
-            const seriesAvail = await deduplicateFetch(
-              `jellyfin-series:${event.tmdbId ?? event.tvdbId ?? event.title}`,
-              () => findAvailableSeriesByIds(event.title, event.tmdbId, event.tvdbId),
+          // For movies: use the result from isAvailableByExternalIds, which verifies actual files
+          if (available === true) {
+            event.metadata.isAvailable = true;
+            // Optionally fetch item ID for direct link
+            try {
+              const itemId = await deduplicateFetch(
+                `jellyfin-item:${event.mediaType}:${event.tmdbId ?? event.tvdbId ?? event.id}`,
+                () => getJellyfinItemId(event.mediaType!, event.tmdbId, event.title, event.tvdbId),
+                { ttl: CACHE_TTL_JELLYFIN }
+              );
+              if (itemId) {
+                event.metadata.jellyfinItemId = itemId;
+              }
+            } catch (itemError) {
+              // Non-fatal: just won't have direct link
+            }
+          } else if (available === false) {
+            // Fallback for movies: search by name and verify physical file exists
+            const movieAvail = await deduplicateFetch(
+              `jellyfin-movie-name:${event.tmdbId ?? event.title}`,
+              () => findAvailableMovieByName(event.title),
               { ttl: CACHE_TTL_JELLYFIN }
             );
-            if (seriesAvail?.available) {
+            if (movieAvail?.available) {
               event.metadata.isAvailable = true;
-              if (seriesAvail.itemId) event.metadata.jellyfinItemId = seriesAvail.itemId;
+              if (movieAvail.itemId) event.metadata.jellyfinItemId = movieAvail.itemId;
             } else {
               event.metadata.isAvailable = false;
             }
-            return;
+          } else {
+            // available === null means Jellyfin is unreachable - don't mark as available
+            event.metadata.isAvailable = false;
           }
         } catch (error) {
           // Non-fatal: Jellyfin down or item not found
@@ -656,13 +658,8 @@ async function enrichWithJellyfinAvailability(events: CalendarEvent[]): Promise<
  */
 export async function GET(req: NextRequest) {
   try {
+    const user = await getUser();
     const searchParams = req.nextUrl.searchParams;
-    const token = searchParams.get("token");
-    const user = token ? await getCalendarFeedUserByToken(token) : await getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
 
     // Date range parameters
     const now = new Date();

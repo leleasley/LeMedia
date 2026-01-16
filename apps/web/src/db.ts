@@ -3997,3 +3997,205 @@ export async function deleteMediaShareByAdmin(id: number): Promise<boolean> {
   );
   return (res.rowCount ?? 0) > 0;
 }
+
+// ===== Calendar Preferences =====
+
+export interface CalendarPreferences {
+  userId: number;
+  defaultView: 'month' | 'week' | 'list' | 'agenda';
+  filters: {
+    movies: boolean;
+    tv: boolean;
+    requests: boolean;
+    sonarr: boolean;
+    radarr: boolean;
+  };
+  genreFilters: number[];
+  monitoredOnly: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function getCalendarPreferences(userId: number): Promise<CalendarPreferences | null> {
+  const pool = getPool();
+  const result = await pool.query(
+    `SELECT
+      user_id as "userId",
+      default_view as "defaultView",
+      filters,
+      genre_filters as "genreFilters",
+      monitored_only as "monitoredOnly",
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+    FROM calendar_preferences
+    WHERE user_id = $1`,
+    [userId]
+  );
+  return result.rows[0] || null;
+}
+
+export async function setCalendarPreferences(
+  userId: number,
+  prefs: {
+    defaultView?: 'month' | 'week' | 'list' | 'agenda';
+    filters?: any;
+    genreFilters?: number[];
+    monitoredOnly?: boolean;
+  }
+): Promise<void> {
+  const pool = getPool();
+  await pool.query(
+    `INSERT INTO calendar_preferences
+      (user_id, default_view, filters, genre_filters, monitored_only, updated_at)
+    VALUES ($1, $2, $3, $4, $5, NOW())
+    ON CONFLICT (user_id) DO UPDATE SET
+      default_view = COALESCE($2, calendar_preferences.default_view),
+      filters = COALESCE($3, calendar_preferences.filters),
+      genre_filters = COALESCE($4, calendar_preferences.genre_filters),
+      monitored_only = COALESCE($5, calendar_preferences.monitored_only),
+      updated_at = NOW()`,
+    [
+      userId,
+      prefs.defaultView || null,
+      prefs.filters ? JSON.stringify(prefs.filters) : null,
+      prefs.genreFilters || null,
+      prefs.monitoredOnly !== undefined ? prefs.monitoredOnly : null
+    ]
+  );
+}
+
+// ===== Calendar Feed Tokens =====
+
+export async function getCalendarFeedToken(userId: number): Promise<string> {
+  const pool = getPool();
+  const existing = await pool.query<{ token: string }>(
+    `SELECT token
+     FROM calendar_feed_token
+     WHERE user_id = $1`,
+    [userId]
+  );
+  if (existing.rows[0]?.token) return existing.rows[0].token;
+
+  const inserted = await pool.query<{ token: string }>(
+    `INSERT INTO calendar_feed_token (user_id)
+     VALUES ($1)
+     RETURNING token`,
+    [userId]
+  );
+  return inserted.rows[0].token;
+}
+
+export async function rotateCalendarFeedToken(userId: number): Promise<string> {
+  const pool = getPool();
+  const result = await pool.query<{ token: string }>(
+    `INSERT INTO calendar_feed_token (user_id, token, rotated_at)
+     VALUES ($1, uuid_generate_v4(), NOW())
+     ON CONFLICT (user_id)
+     DO UPDATE SET token = uuid_generate_v4(), rotated_at = NOW()
+     RETURNING token`,
+    [userId]
+  );
+  return result.rows[0].token;
+}
+
+export async function getCalendarFeedUserByToken(token: string): Promise<{ id: number; username: string } | null> {
+  const pool = getPool();
+  const result = await pool.query<{ id: number; username: string }>(
+    `SELECT u.id, u.username
+     FROM calendar_feed_token cft
+     JOIN app_user u ON u.id = cft.user_id
+     WHERE cft.token = $1`,
+    [token]
+  );
+  return result.rows[0] || null;
+}
+
+// ===== Calendar Event Subscriptions =====
+
+export interface CalendarEventSubscription {
+  id: string;
+  userId: number;
+  eventType: 'movie_release' | 'tv_premiere' | 'tv_episode' | 'season_premiere';
+  tmdbId: number;
+  seasonNumber?: number | null;
+  episodeNumber?: number | null;
+  notifyOnAvailable: boolean;
+  createdAt: string;
+}
+
+export async function listCalendarSubscriptions(userId: number): Promise<CalendarEventSubscription[]> {
+  const pool = getPool();
+  const result = await pool.query(
+    `SELECT
+      id,
+      user_id as "userId",
+      event_type as "eventType",
+      tmdb_id as "tmdbId",
+      season_number as "seasonNumber",
+      episode_number as "episodeNumber",
+      notify_on_available as "notifyOnAvailable",
+      created_at as "createdAt"
+    FROM calendar_event_subscription
+    WHERE user_id = $1
+    ORDER BY created_at DESC`,
+    [userId]
+  );
+  return result.rows;
+}
+
+export async function addCalendarSubscription(data: {
+  userId: number;
+  eventType: 'movie_release' | 'tv_premiere' | 'tv_episode' | 'season_premiere';
+  tmdbId: number;
+  seasonNumber?: number;
+  episodeNumber?: number;
+}): Promise<void> {
+  const pool = getPool();
+  await pool.query(
+    `INSERT INTO calendar_event_subscription
+      (user_id, event_type, tmdb_id, season_number, episode_number)
+    VALUES ($1, $2, $3, $4, $5)
+    ON CONFLICT (user_id, event_type, tmdb_id, season_number, episode_number)
+    DO UPDATE SET notify_on_available = true`,
+    [data.userId, data.eventType, data.tmdbId, data.seasonNumber || null, data.episodeNumber || null]
+  );
+}
+
+export async function removeCalendarSubscription(subscriptionId: string, userId: number): Promise<boolean> {
+  const pool = getPool();
+  const result = await pool.query(
+    `DELETE FROM calendar_event_subscription
+    WHERE id = $1 AND user_id = $2`,
+    [subscriptionId, userId]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+export async function listActiveCalendarSubscriptions(): Promise<CalendarEventSubscription[]> {
+  const pool = getPool();
+  const result = await pool.query(
+    `SELECT
+      id,
+      user_id as "userId",
+      event_type as "eventType",
+      tmdb_id as "tmdbId",
+      season_number as "seasonNumber",
+      episode_number as "episodeNumber",
+      notify_on_available as "notifyOnAvailable",
+      created_at as "createdAt"
+    FROM calendar_event_subscription
+    WHERE notify_on_available = true
+    ORDER BY created_at ASC`
+  );
+  return result.rows;
+}
+
+export async function disableCalendarSubscriptionNotifications(subscriptionId: string): Promise<void> {
+  const pool = getPool();
+  await pool.query(
+    `UPDATE calendar_event_subscription
+    SET notify_on_available = false
+    WHERE id = $1`,
+    [subscriptionId]
+  );
+}

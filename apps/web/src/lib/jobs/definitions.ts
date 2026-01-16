@@ -2,6 +2,7 @@ import { syncPendingRequests, syncWatchlists } from "@/lib/request-sync";
 import { logger } from "@/lib/logger";
 import { sendWeeklyDigest } from "@/notifications/weekly-digest";
 import { purgeExpiredSessions } from "@/db";
+import { checkCalendarSubscriptions } from "@/lib/calendar-notifications";
 
 export type JobHandler = () => Promise<void>;
 
@@ -26,5 +27,10 @@ export const jobHandlers: Record<string, JobHandler> = {
     if (removed > 0) {
       logger.info(`[Job] session-cleanup removed ${removed} expired sessions`);
     }
+  },
+  "calendar-notifications": async () => {
+    logger.info("[Job] Starting calendar-notifications");
+    const result = await checkCalendarSubscriptions();
+    logger.info(`[Job] calendar-notifications completed: ${result.checked} checked, ${result.notified} notified, ${result.errors} errors`);
   },
 };

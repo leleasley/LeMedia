@@ -14,6 +14,7 @@ import {
   Squares2X2Icon,
   MagnifyingGlassIcon,
   NoSymbolIcon,
+  ArrowPathIcon,
   ArrowRightOnRectangleIcon
 } from "@heroicons/react/24/solid";
 import { CreateLocalUserModal } from "@/components/Settings/Users/CreateLocalUserModal";
@@ -175,6 +176,33 @@ export function AdminUsersPageClient() {
     } catch (error) {
       console.error("Error logging out sessions:", error);
       toast.error("Failed to revoke sessions");
+    }
+  };
+
+  const handleRotateFeed = async (user: User) => {
+    try {
+      const res = await csrfFetch(`/api/v1/admin/users/${user.id}/calendar-feed`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" }
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error || "Failed to rotate feed link");
+      }
+      const data = await res.json().catch(() => ({}));
+      if (data?.webcalUrl) {
+        try {
+          await navigator.clipboard.writeText(data.webcalUrl);
+          toast.success("Calendar feed rotated and copied");
+          return;
+        } catch {
+          // Ignore clipboard errors
+        }
+      }
+      toast.success("Calendar feed rotated");
+    } catch (error) {
+      console.error("Error rotating feed:", error);
+      toast.error("Failed to rotate feed link");
     }
   };
 
@@ -442,6 +470,13 @@ export function AdminUsersPageClient() {
                 <ArrowRightOnRectangleIcon className="h-4 w-4" />
                 Logout devices
               </button>
+              <button
+                onClick={() => handleRotateFeed(user)}
+                className="flex items-center justify-center gap-2 rounded-lg bg-amber-500/10 text-amber-200 hover:bg-amber-500/20 px-3 py-2 text-sm font-medium transition"
+              >
+                <ArrowPathIcon className="h-4 w-4" />
+                Rotate feed
+              </button>
             </div>
           </div>
         );
@@ -567,6 +602,13 @@ export function AdminUsersPageClient() {
                       title="Logout all devices"
                     >
                       <ArrowRightOnRectangleIcon className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => handleRotateFeed(user)}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-700 bg-gray-800 text-amber-300 transition hover:border-amber-500/50 hover:bg-amber-500/10 hover:text-amber-100"
+                      title="Rotate calendar feed"
+                    >
+                      <ArrowPathIcon className="h-4 w-4" />
                     </button>
                     <PrefetchLink
                       href={`/admin/users/${user.id}/settings`}

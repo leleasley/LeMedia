@@ -108,7 +108,7 @@ export function LoginPageClient({ csrfToken, from, oidcEnabled }: LoginPageClien
         </div>
 
         <div className="mt-6 text-center">
-          <Link className="text-xs text-gray-400 hover:text-white transition-colors" href="/unauthorized">
+          <Link className="text-xs text-gray-400 hover:text-white transition-colors" href="/support">
             Forgot your password?
           </Link>
         </div>

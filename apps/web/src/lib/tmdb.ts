@@ -86,6 +86,10 @@ export async function getTv(id: number) {
   return tmdbGet(`/tv/${id}`, { append_to_response: "images,external_ids" }, TWO_HOURS_MS);
 }
 
+export async function findTvByTvdbId(tvdbId: number) {
+  return tmdbGet(`/find/${tvdbId}`, { external_source: "tvdb_id" }, TWELVE_HOURS_MS);
+}
+
 export async function getPerson(id: number) {
   return tmdbGet(`/person/${id}`, { append_to_response: "images" }, SIX_HOURS_MS);
 }
@@ -341,4 +345,34 @@ export async function getNetwork(id: number) {
 // Get TV shows by network
 export async function getTvByNetwork(networkId: number, page = 1) {
   return tmdbGet("/discover/tv", { with_networks: networkId, page, sort_by: "popularity.desc" }, 2 * 60 * 1000);
+}
+
+// Get TV season details
+export async function getTvSeason(tvId: number, seasonNumber: number) {
+  return tmdbGet(`/tv/${tvId}/season/${seasonNumber}`, {}, TWO_HOURS_MS);
+}
+
+// Get episodes for a TV season
+export async function getTvSeasonEpisodes(tvId: number, seasonNumber: number) {
+  const season = await getTvSeason(tvId, seasonNumber);
+  return season?.episodes || [];
+}
+
+// Get upcoming episodes for a TV show within a date range
+export async function getUpcomingEpisodesForShow(tvId: number, startDate: string, endDate: string) {
+  const show = await getTvWithCreditsAndVideos(tvId);
+  type SeasonSummary = { season_number: number };
+  const seasons = (show?.seasons || []) as Array<Partial<SeasonSummary>>;
+
+  const episodePromises = seasons
+    .filter((s): s is SeasonSummary => typeof s.season_number === "number" && s.season_number > 0) // Exclude specials (season 0)
+    .map(s => getTvSeasonEpisodes(tvId, s.season_number));
+
+  const allSeasons = await Promise.all(episodePromises);
+  const allEpisodes = allSeasons.flat();
+
+  return allEpisodes.filter(ep => {
+    if (!ep.air_date) return false;
+    return ep.air_date >= startDate && ep.air_date <= endDate;
+  });
 }

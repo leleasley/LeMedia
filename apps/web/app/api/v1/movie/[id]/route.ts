@@ -5,7 +5,7 @@ import { getUserWithHash } from "@/db";
 import { hasAssignedNotificationEndpoints } from "@/lib/notifications";
 import { listRadarrQualityProfiles, getMovieByTmdbId } from "@/lib/radarr";
 import { getActiveMediaService } from "@/lib/media-services";
-import { getJellyfinItemId } from "@/lib/jellyfin";
+import { getJellyfinItemIdByTmdb, isAvailableByExternalIds } from "@/lib/jellyfin";
 import { getJellyfinPlayUrl } from "@/lib/jellyfin-links";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
 import { withCache } from "@/lib/local-cache";
@@ -90,12 +90,20 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
 
   let jellyfinItemId: string | null = null;
   let playUrl: string | null = null;
+  let jellyfinAvailable = false;
   try {
-    jellyfinItemId = await getJellyfinItemId("movie", tmdbId, title || `TMDB ${tmdbId}`);
-    playUrl = await getJellyfinPlayUrl(jellyfinItemId);
+    jellyfinAvailable = Boolean(await isAvailableByExternalIds("movie", tmdbId));
+    if (jellyfinAvailable) {
+      // Only use TMDB external-id lookup; avoid name-based matches.
+      jellyfinItemId = await getJellyfinItemIdByTmdb("movie", tmdbId);
+      if (jellyfinItemId) {
+        playUrl = await getJellyfinPlayUrl(jellyfinItemId);
+      }
+    }
   } catch {
     jellyfinItemId = null;
     playUrl = null;
+    jellyfinAvailable = false;
   }
 
   const details = includeDetails ? await getMovieDetailAggregate(tmdbId) : null;
@@ -104,7 +112,7 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
     {
       tmdbId,
       isAdmin,
-      availableInLibrary: Boolean(jellyfinItemId) || Boolean(radarrMovieSummary?.hasFile),
+      availableInLibrary: jellyfinAvailable || Boolean(radarrMovieSummary?.hasFile),
       playUrl,
       manage: {
         itemId: isAdmin ? radarrMovieSummary?.id ?? null : null,

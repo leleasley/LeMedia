@@ -11,8 +11,9 @@ function buildMovieMap(items: any[]): Map<number, boolean> {
   for (const item of items) {
     const tmdbId = Number(item?.tmdbId ?? item?.tmdb_id ?? 0);
     if (!Number.isFinite(tmdbId) || tmdbId <= 0) continue;
-    // Mark as available once it exists in Radarr, regardless of file status.
-    map.set(tmdbId, true);
+    // Only mark as available if the movie has actually been downloaded
+    const hasFile = Boolean(item?.hasFile);
+    map.set(tmdbId, hasFile);
   }
   return map;
 }
@@ -22,8 +23,13 @@ function buildTvMap(items: any[]): Map<number, boolean> {
   for (const item of items) {
     const tmdbId = Number(item?.tmdbId ?? item?.tmdb_id ?? 0);
     if (!Number.isFinite(tmdbId) || tmdbId <= 0) continue;
-    // Mark as available once it exists in Sonarr.
-    map.set(tmdbId, true);
+    // Only mark as available if the series has downloaded episodes
+    const hasFiles = Boolean(
+      item?.statistics?.episodeFileCount ||
+      item?.statistics?.sizeOnDisk ||
+      item?.sizeOnDisk
+    );
+    map.set(tmdbId, hasFiles);
   }
   return map;
 }

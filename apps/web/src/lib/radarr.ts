@@ -225,3 +225,52 @@ export async function deleteMovie(movieId: number, options?: { deleteFiles?: boo
     method: "DELETE"
   });
 }
+
+/**
+ * Get Radarr calendar for a date range
+ * @param start - Start date (ISO format: YYYY-MM-DD)
+ * @param end - End date (ISO format: YYYY-MM-DD)
+ * @param includeUnmonitored - Include unmonitored movies
+ * @returns Array of movies with release dates in the range
+ */
+export async function getRadarrCalendar(start: string, end: string, includeUnmonitored = false) {
+  const params = new URLSearchParams({
+    start,
+    end,
+    unmonitored: String(includeUnmonitored)
+  });
+  return radarrFetch(`/api/v3/calendar?${params.toString()}`);
+}
+
+/**
+ * Get Radarr calendar for service by ID
+ * @param baseUrl - Radarr instance base URL
+ * @param apiKey - Radarr API key
+ * @param start - Start date (ISO format: YYYY-MM-DD)
+ * @param end - End date (ISO format: YYYY-MM-DD)
+ * @param includeUnmonitored - Include unmonitored movies
+ */
+export async function getRadarrCalendarForService(
+  baseUrl: string,
+  apiKey: string,
+  start: string,
+  end: string,
+  includeUnmonitored = false
+) {
+  const fetcher = createRadarrFetcher(baseUrl, apiKey);
+  const params = new URLSearchParams({
+    start,
+    end,
+    unmonitored: String(includeUnmonitored)
+  });
+  return fetcher(`/api/v3/calendar?${params.toString()}`);
+}
+
+/**
+ * Get upcoming monitored movies from Radarr
+ * Convenience wrapper around getRadarrCalendar that only returns monitored content
+ */
+export async function getRadarrUpcoming(start: string, end: string) {
+  const calendar = await getRadarrCalendar(start, end, false);
+  return Array.isArray(calendar) ? calendar : [];
+}

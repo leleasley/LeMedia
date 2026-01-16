@@ -19,6 +19,33 @@ interface Migration {
   sql: string;
 }
 
+function resolveDatabaseUrl(): string {
+  const primaryUrl = process.env.MIGRATION_DATABASE_URL || process.env.DATABASE_URL;
+
+  if (!primaryUrl) {
+    throw new Error("DATABASE_URL environment variable is not set");
+  }
+
+  const runningInContainer = fs.existsSync("/.dockerenv");
+
+  // When running migrations directly on the host, prefer a host-accessible URL
+  if (!runningInContainer) {
+    if (process.env.HOST_DATABASE_URL) {
+      return process.env.HOST_DATABASE_URL;
+    }
+
+    const parsed = new URL(primaryUrl);
+    if (parsed.hostname === "lemedia-db") {
+      parsed.hostname = process.env.HOST_DATABASE_HOST || "localhost";
+      parsed.port = process.env.HOST_DATABASE_PORT || parsed.port || "5432";
+      console.log(`  ℹ️  Using host database at ${parsed.hostname}:${parsed.port}`);
+      return parsed.toString();
+    }
+  }
+
+  return primaryUrl;
+}
+
 /**
  * Creates a connection pool for migrations
  * (Separate from main app pool to avoid Next.js dependencies)
@@ -26,11 +53,9 @@ interface Migration {
 let migrationPool: Pool | null = null;
 function getMigrationPool(): Pool {
   if (!migrationPool) {
-    if (!process.env.DATABASE_URL) {
-      throw new Error("DATABASE_URL environment variable is not set");
-    }
+    const connectionString = resolveDatabaseUrl();
     migrationPool = new Pool({
-      connectionString: process.env.DATABASE_URL,
+      connectionString,
       max: 5,
     });
   }

@@ -14,4 +14,5 @@ CREATE TABLE IF NOT EXISTS user_session (
 
 CREATE INDEX IF NOT EXISTS idx_user_session_user ON user_session(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_session_expires ON user_session(expires_at);
-CREATE INDEX IF NOT EXISTS idx_user_session_active ON user_session(jti) WHERE revoked_at IS NULL AND expires_at > NOW();
+-- Avoid non-immutable predicates; expires_at filtering happens at query time.
+CREATE INDEX IF NOT EXISTS idx_user_session_active ON user_session(jti) WHERE revoked_at IS NULL;
