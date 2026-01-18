@@ -50,13 +50,17 @@ export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, 
         const current = pathname ?? "/";
         const links: NavLink[] = [
             { href: "/calendar", label: "Calendar", icon: CalendarDays, isActive: current === "/calendar" },
-            { href: "/requests", label: "My Requests", icon: Clock, isActive: current.startsWith("/requests"), badge: pendingRequestsCount },
         ];
         if (isAdmin) {
             links.push(
+                { href: "/admin/requests", label: "All Requests", icon: Clock, isActive: current.startsWith("/admin/requests"), badge: pendingRequestsCount },
                 { href: "/admin/users", label: "Manage Users", icon: Users, isActive: current.startsWith("/admin/users") },
                 { href: "/admin/issues", label: "Issues", icon: AlertTriangle, isActive: current.startsWith("/admin/issues"), badge: issuesCount },
                 { href: "/admin/settings/general", label: "Admin Settings", icon: Settings, isActive: current.startsWith("/admin/settings") }
+            );
+        } else {
+            links.push(
+                { href: "/requests", label: "My Requests", icon: Clock, isActive: current.startsWith("/requests") }
             );
         }
         return links;

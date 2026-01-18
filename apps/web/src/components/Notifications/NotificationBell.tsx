@@ -92,13 +92,13 @@ export function NotificationBell() {
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-80 max-h-[32rem] overflow-hidden rounded-2xl border border-white/10 bg-[#101626]/95 shadow-xl backdrop-blur z-50">
-          <div className="sticky top-0 flex items-center justify-between px-4 py-3 border-b border-white/10 bg-[#101626]/95">
+        <div className="absolute right-0 mt-2 w-80 sm:w-96 max-h-[32rem] overflow-hidden rounded-lg border border-white/10 bg-slate-900 shadow-2xl z-50">
+          <div className="sticky top-0 flex items-center justify-between px-4 py-3 border-b border-white/10 bg-slate-900">
             <h3 className="text-sm font-semibold text-white">Notifications</h3>
             {unreadCount > 0 && (
               <button
                 onClick={markAllAsRead}
-                className="text-xs text-blue-400 hover:text-blue-300"
+                className="text-xs text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
               >
                 Mark all read
               </button>
@@ -107,28 +107,29 @@ export function NotificationBell() {
 
           <div className="overflow-y-auto max-h-[28rem]">
             {notifications.length === 0 ? (
-              <div className="px-4 py-8 text-center text-sm text-white/50">
-                No notifications
+              <div className="px-4 py-12 text-center">
+                <Bell className="h-12 w-12 mx-auto text-white/20 mb-3" />
+                <p className="text-sm text-white/60">No notifications yet</p>
               </div>
             ) : (
               notifications.map((notif) => {
                 const content = (
                   <div
-                    className={`px-4 py-3 border-b border-white/5 hover:bg-white/5 transition ${
-                      !notif.isRead ? "bg-blue-500/5" : ""
+                    className={`px-4 py-3 border-b border-white/5 hover:bg-white/10 transition-colors cursor-pointer ${
+                      !notif.isRead ? "bg-indigo-500/5 border-l-2 border-l-indigo-500" : ""
                     }`}
                   >
                     <div className="flex items-start gap-3">
                       <div className="flex-1 min-w-0">
                         {notif.title && (
-                          <p className="text-sm font-semibold text-white/95 leading-relaxed">
+                          <p className="text-sm font-semibold text-white mb-1">
                             {notif.title}
                           </p>
                         )}
-                        <p className="text-sm text-white/80 leading-relaxed">
+                        <p className="text-sm text-white/80">
                           {notif.message}
                         </p>
-                        <p className="text-xs text-white/50 mt-1">
+                        <p className="text-xs text-white/50 mt-1.5">
                           {formatDistanceToNow(new Date(notif.createdAt), { addSuffix: true })}
                         </p>
                       </div>
@@ -139,10 +140,11 @@ export function NotificationBell() {
                             e.stopPropagation();
                             markAsRead(notif.id);
                           }}
-                          className="flex-shrink-0 p-1 rounded hover:bg-white/10 transition"
+                          className="flex-shrink-0 p-1.5 rounded-lg hover:bg-indigo-500/20 transition-colors"
                           aria-label="Mark as read"
+                          title="Mark as read"
                         >
-                          <Check className="h-4 w-4 text-blue-400" />
+                          <Check className="h-4 w-4 text-indigo-400" />
                         </button>
                       )}
                     </div>

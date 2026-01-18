@@ -41,8 +41,7 @@ async function setFlash(type: "success" | "error", message: string) {
 }
 
 async function refreshRequestsPage() {
-  // Ensure the RSC cache and page data update so flash toasts render immediately after actions
-  revalidatePath("/admin/settings/requests");
+  revalidatePath("/admin/requests");
 }
 
 async function cleanupProviders(data: Awaited<ReturnType<typeof getRequestWithItems>>) {
@@ -102,11 +101,11 @@ export async function approveRequest(formData: FormData) {
   if (!user.isAdmin) redirect("/");
 
   const requestId = String(formData.get("requestId") ?? "");
-  if (!requestId) redirect("/admin/settings/requests");
+  if (!requestId) redirect("/admin/requests");
 
   const data = await getRequestWithItems(requestId);
-  if (!data) redirect("/admin/settings/requests");
-  if (data.request.status !== "pending") redirect("/admin/settings/requests");
+  if (!data) redirect("/admin/requests");
+  if (data.request.status !== "pending") redirect("/admin/requests");
 
   try {
     if (data.request.request_type === "movie") {
@@ -124,7 +123,7 @@ export async function approveRequest(formData: FormData) {
           await setRequestItemsStatus(requestId, "already_exists");
           await setFlash("success", "Request approved - Movie already exists in Radarr");
           await refreshRequestsPage();
-          redirect("/admin/settings/requests");
+          redirect("/admin/requests");
         }
         // Re-throw if it's a different error
         throw addError;
@@ -152,9 +151,9 @@ export async function approveRequest(formData: FormData) {
         console.error("Failed to send notification:", notifError);
       }
 
-      await setFlash("success", "Request approved and submitted");
+      await setFlash("success", "Request approved and submitted to Radarr");
       await refreshRequestsPage();
-      redirect("/admin/settings/requests");
+      redirect("/admin/requests");
     }
 
     if (data.request.request_type === "episode") {
@@ -229,9 +228,9 @@ export async function approveRequest(formData: FormData) {
         console.error("Failed to send notification:", notifError);
       }
 
-      await setFlash("success", "Request approved and submitted");
+      await setFlash("success", "Request approved and submitted to Sonarr");
       await refreshRequestsPage();
-      redirect("/admin/settings/requests");
+      redirect("/admin/requests");
     }
 
     throw new Error(`Unsupported request type: ${data.request.request_type}`);
@@ -249,8 +248,8 @@ export async function approveRequest(formData: FormData) {
         userId: ctx.user_id
       });
     }
-    await setFlash("error", "Failed to submit request. Check Sonarr/Radarr connectivity.");
-    redirect("/admin/settings/requests");
+    await setFlash("error", `Failed to submit request: ${e?.message ?? 'Unknown error'}. Check Sonarr/Radarr connectivity.`);
+    redirect("/admin/requests");
   }
 }
 
@@ -259,11 +258,11 @@ export async function denyRequest(formData: FormData) {
   if (!user.isAdmin) redirect("/");
 
   const requestId = String(formData.get("requestId") ?? "");
-  if (!requestId) redirect("/admin/settings/requests");
+  if (!requestId) redirect("/admin/requests");
 
   const data = await getRequestWithItems(requestId);
-  if (!data) redirect("/admin/settings/requests");
-  if (data.request.status !== "pending") redirect("/admin/settings/requests");
+  if (!data) redirect("/admin/requests");
+  if (data.request.status !== "pending") redirect("/admin/requests");
 
   await markRequestStatus(requestId, "denied");
   await setRequestItemsStatus(requestId, "denied");
@@ -280,7 +279,7 @@ export async function denyRequest(formData: FormData) {
   }
   await setFlash("success", "Request denied");
   await refreshRequestsPage();
-  redirect("/admin/settings/requests");
+  redirect("/admin/requests");
 }
 
 export async function syncRequests() {
@@ -297,7 +296,7 @@ export async function syncRequests() {
   if (summary.errors) message += ` [${summary.errors} errors]`;
   await setFlash("success", message);
   await refreshRequestsPage();
-  redirect("/admin/settings/requests");
+  redirect("/admin/requests");
 }
 
 export async function markRequestAvailable(formData: FormData) {
@@ -305,12 +304,12 @@ export async function markRequestAvailable(formData: FormData) {
   if (!user.isAdmin) redirect("/");
 
   const requestId = String(formData.get("requestId") ?? "");
-  if (!requestId) redirect("/admin/settings/requests");
+  if (!requestId) redirect("/admin/requests");
 
   await Promise.all([markRequestStatus(requestId, "available"), setRequestItemsStatus(requestId, "available")]);
   await setFlash("success", "Request marked as available");
   await refreshRequestsPage();
-  redirect("/admin/settings/requests");
+  redirect("/admin/requests");
 }
 
 export async function deleteRequest(formData: FormData) {
@@ -318,14 +317,14 @@ export async function deleteRequest(formData: FormData) {
   if (!user.isAdmin) redirect("/");
 
   const requestId = String(formData.get("requestId") ?? "");
-  if (!requestId) redirect("/admin/settings/requests");
+  if (!requestId) redirect("/admin/requests");
 
   const data = await getRequestWithItems(requestId);
-  if (!data) redirect("/admin/settings/requests");
+  if (!data) redirect("/admin/requests");
 
   await cleanupProviders(data).catch(() => { });
   await deleteRequestById(requestId);
   await setFlash("success", "Request deleted (provider cleanup triggered)");
   await refreshRequestsPage();
-  redirect("/admin/settings/requests");
+  redirect("/admin/requests");
 }

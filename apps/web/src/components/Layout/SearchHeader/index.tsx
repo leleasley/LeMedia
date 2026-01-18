@@ -123,16 +123,16 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
                     </span>
                 </button>
                 {menuOpen ? (
-                    <div className="absolute right-0 mt-2 w-52 sm:w-56 rounded-xl sm:rounded-2xl border border-white/10 bg-[#0f172a]/98 shadow-xl backdrop-blur z-50">
-                        <div className="px-3 sm:px-4 py-2.5 sm:py-3 border-b border-white/10">
+                    <div className="absolute right-0 mt-2 w-52 sm:w-56 rounded-lg border border-white/10 bg-slate-900 shadow-2xl z-50">
+                        <div className="px-4 py-3 border-b border-white/10">
                             <div className="text-sm font-semibold text-white truncate">{profile?.username ?? "User"}</div>
-                            <div className="text-[11px] sm:text-xs text-white/50 truncate">{profile?.email ?? "No email"}</div>
+                            <div className="text-xs text-white/60 truncate mt-0.5">{profile?.email ?? "No email"}</div>
                         </div>
-                        <div className="py-1.5 sm:py-2">
+                        <div className="py-2">
                             <Link
                                 href="/profile"
                                 prefetch={false}
-                                className="flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 text-sm text-white/80 hover:text-white hover:bg-white/5"
+                                className="flex items-center gap-3 px-4 py-2 text-sm text-white/90 hover:text-white hover:bg-white/10 transition-colors"
                                 onClick={() => setMenuOpen(false)}
                             >
                                 <User className="h-4 w-4" />
@@ -141,29 +141,29 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
                             <Link
                                 href="/watchlist"
                                 prefetch={false}
-                                className="flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 text-sm text-white/80 hover:text-white hover:bg-white/5"
+                                className="flex items-center gap-3 px-4 py-2 text-sm text-white/90 hover:text-white hover:bg-white/10 transition-colors"
                                 onClick={() => setMenuOpen(false)}
                             >
                                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
                                 </svg>
-                                My Watchlist
+                                Watchlist
                             </Link>
                             <Link
                                 href="/favorites"
                                 prefetch={false}
-                                className="flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 text-sm text-white/80 hover:text-white hover:bg-white/5"
+                                className="flex items-center gap-3 px-4 py-2 text-sm text-white/90 hover:text-white hover:bg-white/10 transition-colors"
                                 onClick={() => setMenuOpen(false)}
                             >
                                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
                                 </svg>
-                                My Favorites
+                                Favorites
                             </Link>
                             <Link
                                 href="/requests"
                                 prefetch={false}
-                                className="flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 text-sm text-white/80 hover:text-white hover:bg-white/5"
+                                className="flex items-center gap-3 px-4 py-2 text-sm text-white/90 hover:text-white hover:bg-white/10 transition-colors"
                                 onClick={() => setMenuOpen(false)}
                             >
                                 <Inbox className="h-4 w-4" />
@@ -173,27 +173,28 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
                                 <Link
                                     href="/admin/settings"
                                     prefetch={false}
-                                    className="flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 text-sm text-white/80 hover:text-white hover:bg-white/5"
+                                    className="flex items-center gap-3 px-4 py-2 text-sm text-white/90 hover:text-white hover:bg-white/10 transition-colors"
                                     onClick={() => setMenuOpen(false)}
                                 >
                                     <Settings className="h-4 w-4" />
-                                    Settings
+                                    Admin Settings
                                 </Link>
                             ) : null}
-                            <button
-                                onClick={(e) => {
-                                    e.preventDefault();
-                                    setMenuOpen(false);
-                                    // Force full page navigation for proper cookie clearing and OIDC redirect
-                                    setTimeout(() => {
-                                        window.location.assign('/logout');
-                                    }, 100);
-                                }}
-                                className="flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 text-sm text-white/80 hover:text-white hover:bg-white/5 w-full text-left cursor-pointer"
-                            >
-                                <LogOut className="h-4 w-4" />
-                                Sign Out
-                            </button>
+                            <div className="border-t border-white/10 mt-1 pt-1">
+                                <button
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        setMenuOpen(false);
+                                        setTimeout(() => {
+                                            window.location.assign('/logout');
+                                        }, 100);
+                                    }}
+                                    className="flex items-center gap-3 px-4 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors w-full text-left"
+                                >
+                                    <LogOut className="h-4 w-4" />
+                                    Sign Out
+                                </button>
+                            </div>
                         </div>
                     </div>
                 ) : null}

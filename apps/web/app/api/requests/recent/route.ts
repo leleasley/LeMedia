@@ -16,6 +16,7 @@ type RecentRequestCard = {
   status: string;
   username: string;
   avatarUrl?: string | null;
+  jellyfinUserId?: string | null;
 };
 
 export async function GET(request: NextRequest) {
@@ -25,7 +26,7 @@ export async function GET(request: NextRequest) {
   const take = Math.min(Math.max(Number(takeRaw ?? 12), 1), 30);
   const imageProxyEnabled = await getImageProxyEnabled();
 
-  const recentRequestsRaw = await listRecentRequests(take).catch(() => []);
+  const recentRequestsRaw = await listRecentRequests(take, user.username).catch(() => []);
   const tmdbResults = await Promise.allSettled(
     recentRequestsRaw.map((req) => {
       const hasAllLocal = req.poster_path && req.backdrop_path && req.release_year;
@@ -77,7 +78,8 @@ export async function GET(request: NextRequest) {
           type,
           status: req.status,
           username: req.username,
-          avatarUrl: req.avatar_url ?? null
+          avatarUrl: req.avatar_url ?? null,
+          jellyfinUserId: req.jellyfin_user_id ?? null
         };
       } catch {
         return null;

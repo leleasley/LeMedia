@@ -530,6 +530,38 @@
 
   /* Mobile-only improvements for media info pages */
   @media (max-width: 639px) {
+    /* Hide the backdrop image on mobile - looks much cleaner */
+    .media-page-bg-image {
+      display: none;
+    }
+
+    /* Adjust media page for mobile - no negative margins */
+    .media-page {
+      margin-top: 0;
+      padding-top: calc(env(safe-area-inset-top) + 3.5rem);
+      @apply -mx-0 px-3;
+    }
+
+    /* Mobile header - make it cleaner */
+    .media-header {
+      @apply pt-4 gap-3;
+    }
+
+    /* Mobile poster - keep original size */
+    .media-poster {
+      @apply w-32 shadow-2xl;
+    }
+
+    /* Mobile title section - keep original sizes */
+    .media-title {
+      @apply mt-4;
+    }
+
+    /* Mobile overview section */
+    .media-overview {
+      @apply pt-8 pb-4;
+    }
+
     .media-ratings {
       @apply space-x-3 px-2 py-3;
     }
@@ -551,7 +583,7 @@
     }
 
     .media-facts {
-      @apply text-xs;
+      @apply text-sm;
     }
 
     ul.media-crew {
@@ -559,7 +591,7 @@
     }
 
     .tagline {
-      @apply text-base mb-3;
+      @apply text-lg mb-3;
     }
   }
 

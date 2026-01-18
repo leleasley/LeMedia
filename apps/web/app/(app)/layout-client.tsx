@@ -344,22 +344,33 @@ export default function AppLayoutClient({
                             </div>
                         </div>
 
-                        {/* Requests Section */}
-                        <div>
-                            <h3 className="text-xs font-bold text-gray-500 mb-2 px-6 uppercase tracking-wider">Collection</h3>
-                            <div className="space-y-1">
-                                <PrefetchLink href="/requests" className={linkClass(pathname === "/requests")}>
-                                    <Inbox className="h-5 w-5" />
-                                    <span>My Requests</span>
-                                </PrefetchLink>
+                        {/* Requests Section - Only show for non-admins */}
+                        {!isAdmin && (
+                            <div>
+                                <h3 className="text-xs font-bold text-gray-500 mb-2 px-6 uppercase tracking-wider">Collection</h3>
+                                <div className="space-y-1">
+                                    <PrefetchLink href="/requests" className={linkClass(pathname === "/requests")}>
+                                        <Inbox className="h-5 w-5" />
+                                        <span>My Requests</span>
+                                    </PrefetchLink>
+                                </div>
                             </div>
-                        </div>
+                        )}
 
                         {/* Admin Section */}
                         {isAdmin && (
                             <div>
                                 <h3 className="text-xs font-bold text-gray-500 mb-2 px-6 uppercase tracking-wider">Admin</h3>
                                 <div className="space-y-1">
+                                    <PrefetchLink href="/admin/requests" className={linkClass(pathname === "/admin/requests")}>
+                                        <Inbox className="h-5 w-5" />
+                                        <span>All Requests</span>
+                                        {pendingCount > 0 && (
+                                            <span className="ml-auto flex items-center justify-center h-5 min-w-[1.25rem] px-1.5 rounded-full bg-indigo-500 text-[10px] font-bold text-white shadow-sm">
+                                                {pendingCount}
+                                            </span>
+                                        )}
+                                    </PrefetchLink>
                                     <PrefetchLink href="/admin/users" className={linkClass(pathname?.startsWith("/admin/users") ?? false)}>
                                         <Users className="h-5 w-5" />
                                         <span>Users</span>
@@ -378,11 +389,6 @@ export default function AppLayoutClient({
                                             <Settings className="h-5 w-5" />
                                             <span>Settings</span>
                                         </div>
-                                        {pendingCount > 0 && (
-                                            <span className="flex items-center justify-center h-5 min-w-[1.25rem] px-1.5 rounded-full bg-indigo-500 text-[10px] font-bold text-white shadow-sm">
-                                                {pendingCount}
-                                            </span>
-                                        )}
                                     </PrefetchLink>
                                 </div>
                             </div>

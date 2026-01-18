@@ -372,21 +372,32 @@ export async function addRequestItem(input: {
   );
 }
 
-export async function listRecentRequests(limit = 25) {
-  return withCache(`recent_requests:${limit}`, 60 * 1000, async () => {
+export async function listRecentRequests(limit = 25, username?: string) {
+  return withCache(`recent_requests:${limit}:${username ?? 'all'}`, 60 * 1000, async () => {
     const p = getPool();
-    const res = await p.query(
-      `
-      SELECT r.id, r.request_type, r.tmdb_id, r.title, r.status, r.created_at,
-             r.poster_path, r.backdrop_path, r.release_year,
-             u.username, u.avatar_url
-      FROM media_request r
-      JOIN app_user u ON u.id = r.requested_by
-      ORDER BY r.created_at DESC
-      LIMIT $1
-      `,
-      [limit]
-    );
+    const query = username
+      ? `
+        SELECT r.id, r.request_type, r.tmdb_id, r.title, r.status, r.created_at,
+               r.poster_path, r.backdrop_path, r.release_year,
+               u.username, u.avatar_url, u.jellyfin_user_id
+        FROM media_request r
+        JOIN app_user u ON u.id = r.requested_by
+        WHERE u.username = $2
+        ORDER BY r.created_at DESC
+        LIMIT $1
+        `
+      : `
+        SELECT r.id, r.request_type, r.tmdb_id, r.title, r.status, r.created_at,
+               r.poster_path, r.backdrop_path, r.release_year,
+               u.username, u.avatar_url, u.jellyfin_user_id
+        FROM media_request r
+        JOIN app_user u ON u.id = r.requested_by
+        ORDER BY r.created_at DESC
+        LIMIT $1
+        `;
+    const res = username
+      ? await p.query(query, [limit, username])
+      : await p.query(query, [limit]);
     return res.rows as Array<{
       id: string;
       request_type: string;
@@ -399,6 +410,7 @@ export async function listRecentRequests(limit = 25) {
       release_year: number | null;
       username: string;
       avatar_url: string | null;
+      jellyfin_user_id: string | null;
     }>;
   });
 }

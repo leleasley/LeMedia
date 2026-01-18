@@ -19,6 +19,7 @@ interface RecentRequest {
     status: string;
     username: string;
     avatarUrl?: string | null;
+    jellyfinUserId?: string | null;
 }
 
 interface RecentRequestsSliderProps {
@@ -149,7 +150,7 @@ export function RecentRequestsSlider({ items, className, isLoading = false }: Re
                     {items.map((request) => {
                         const statusInfo = getStatusClasses(request.status);
                         const href = request.type === "movie" ? `/movie/${request.tmdbId}` : `/tv/${request.tmdbId}`;
-                        const avatarSrc = getAvatarSrc({ avatarUrl: request.avatarUrl, username: request.username });
+                        const avatarSrc = getAvatarSrc({ avatarUrl: request.avatarUrl, jellyfinUserId: request.jellyfinUserId, username: request.username });
                         const avatarAlt = getAvatarAlt({ username: request.username });
 
                         return (
