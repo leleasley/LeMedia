@@ -37,6 +37,11 @@ Comprehensive notification support for keeping users informed:
 - **TMDB**: Rich metadata and artwork
 - **OMDB**: Additional metadata support
 
+### Jellyfin Availability
+LeMedia uses a local Jellyfin availability cache so TV seasons/episodes can load fast and accurately.
+
+See `docs/JELLYFIN_AVAILABILITY.md` for setup, how the cache works, and troubleshooting.
+
 ### Administration
 - Settings management for all services
 - User and permission management
