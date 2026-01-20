@@ -56,6 +56,11 @@ export function TitleCard({
   const linkUrl = href || (mediaType === "movie" ? `/movie/${id}` : `/tv/${id}`);
   const finalImage = image || posterUrl;
   const finalScore = userScore ?? rating;
+  const canRequest =
+    !mediaStatus ||
+    mediaStatus === MediaStatus.UNKNOWN ||
+    mediaStatus === MediaStatus.DELETED;
+  const descriptionLines = canRequest ? 2 : 3;
   
   // Extract year from date string if needed
   const displayYear = year ? year.slice(0, 4) : "";
@@ -223,9 +228,23 @@ export function TitleCard({
                    <h3 className="text-xs sm:text-base font-bold text-white leading-tight mb-1 sm:mb-2 line-clamp-2">
                      {title}
                    </h3>
+                   {description ? (
+                     <p
+                       className="text-[10px] sm:text-xs text-gray-300 leading-snug mb-1"
+                       style={{
+                         WebkitLineClamp: descriptionLines,
+                         display: "-webkit-box",
+                         overflow: "hidden",
+                         WebkitBoxOrient: "vertical",
+                         wordBreak: "break-word"
+                       }}
+                     >
+                       {description}
+                     </p>
+                   ) : null}
 
                    {/* Request Button */}
-                   {(!mediaStatus || mediaStatus === MediaStatus.UNKNOWN || mediaStatus === MediaStatus.DELETED) && (
+                   {canRequest && (
                       <div className="mt-1 sm:mt-2">
                         <button 
                            onClick={(e) => {

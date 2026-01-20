@@ -275,8 +275,8 @@ export function TvDetailClientNew({
     };
 
     const toggleEpisode = (seasonNumber: number, episodeNumber: number, episode?: Episode) => {
-        // Don't allow selecting episodes that are already requested
-        if (episode?.requested) return;
+        // Don't allow selecting episodes that are already requested or available
+        if (episode?.requested || episode?.available) return;
 
         setCheckedEpisodes(prev => {
             const seasonChecked = new Set(prev[seasonNumber] || []);
@@ -289,7 +289,7 @@ export function TvDetailClientNew({
     const toggleAllInSeason = (seasonNumber: number) => {
         const episodes = seasonEpisodes[seasonNumber] || [];
         const currentChecked = checkedEpisodes[seasonNumber] || new Set();
-        const selectable = episodes.filter(e => !e.requested).map(e => e.episode_number);
+        const selectable = episodes.filter(e => !e.requested && !e.available).map(e => e.episode_number);
         const allChecked = selectable.length > 0 && currentChecked.size === selectable.length;
         setCheckedEpisodes(prev => ({
             ...prev,
@@ -393,9 +393,12 @@ export function TvDetailClientNew({
         }
         if (!seasonEpisodes[seasonNumber] || seasonEpisodes[seasonNumber].length === 0) await loadSeasonEpisodes(seasonNumber);
         const episodes = seasonEpisodes[seasonNumber] || [];
-        const episodeNumbers = episodes.map(e => e.episode_number).sort((a, b) => a - b);
+        const episodeNumbers = episodes
+            .filter(e => !e.requested && !e.available)
+            .map(e => e.episode_number)
+            .sort((a, b) => a - b);
         if (episodeNumbers.length === 0) {
-            setStatus("No episodes found for this season.");
+            setStatus("No requestable episodes found for this season.");
             return;
         }
         setIsSubmitting(true);
@@ -888,7 +891,8 @@ export function TvDetailClientNew({
                                                                     const stillUrl = episode.still_path ? `https://image.tmdb.org/t/p/w300${episode.still_path}` : null;
                                                                     const airBadge = getAiringBadge(episode.air_date);
                                                                     const isRequested = episode.requested ?? false;
-                                                                    const isDisabled = isRequested;
+                                                                    const isAvailable = episode.available ?? false;
+                                                                    const isDisabled = isRequested || isAvailable;
 
                                                                     return (
                                                                         <label
@@ -905,17 +909,22 @@ export function TvDetailClientNew({
                                                                                 disabled={isDisabled}
                                                                             />
                                                                             <div className={`mt-1 h-5 w-5 rounded border flex items-center justify-center transition-colors ${
+                                                                                isAvailable ? "bg-green-500/20 border-green-400" :
                                                                                 isDisabled ? "bg-gray-700 border-gray-600" :
                                                                                 isChecked ? "bg-purple-500 border-purple-500" : "border-gray-500"
                                                                             }`}>
-                                                                                {(isChecked || isDisabled) && <CheckCircle className="h-4 w-4 text-white" />}
+                                                                                {isAvailable ? (
+                                                                                    <Check className="h-4 w-4 text-green-200" />
+                                                                                ) : (isChecked || isDisabled) ? (
+                                                                                    <CheckCircle className="h-4 w-4 text-white" />
+                                                                                ) : null}
                                                                             </div>
                                                                             <div className="flex-1 min-w-0">
                                                                                 <div className="flex flex-wrap items-center gap-2">
                                                                                     <h4 className={`text-base font-semibold leading-snug ${isChecked ? "text-purple-100" : "text-gray-100"}`}>
                                                                                         {episode.episode_number} - {episode.name || "Untitled"}
                                                                                     </h4>
-                                                                                    {episode.available && (
+                                                                                    {isAvailable && (
                                                                                         <span className="inline-flex items-center gap-1 rounded-full bg-green-500/20 border border-green-500/40 px-2.5 py-0.5 text-xs font-semibold text-green-300">
                                                                                             <CheckCircle className="h-3 w-3" />
                                                                                             Available
