@@ -2,6 +2,9 @@ import "server-only";
 import { cleanupExpiredChallenges, getWebAuthnStats } from "@/lib/webauthn-cleanup";
 
 let cleanupInterval: NodeJS.Timeout | null = null;
+const isBuildPhase =
+  process.env.NEXT_PHASE === "phase-production-build" ||
+  process.env.NEXT_PHASE === "phase-production-export";
 
 /**
  * Start periodic cleanup of expired WebAuthn challenges
@@ -39,12 +42,12 @@ export function stopWebAuthnCleanup() {
 }
 
 // Auto-start in production
-if (process.env.NODE_ENV === "production") {
+if (process.env.NODE_ENV === "production" && !isBuildPhase) {
   startWebAuthnCleanup();
 }
 
 // Log stats on startup
-if (process.env.NODE_ENV !== "test") {
+if (process.env.NODE_ENV !== "test" && !isBuildPhase) {
   getWebAuthnStats().then(stats => {
     console.log("[WebAuthn Stats]", {
       totalCredentials: stats.total_credentials,

@@ -3,8 +3,10 @@ import { getTv, tmdbImageUrl } from "@/lib/tmdb";
 import { TvDetailClientNew } from "@/components/Tv/TvDetailClientNew";
 import { pickTrailerUrl } from "@/lib/trailer-utils";
 import { MediaSlider } from "@/components/Media/MediaSlider";
-import { getTvDetailAggregate } from "@/lib/media-aggregate";
+import { getTvDetailAggregateFast } from "@/lib/media-aggregate-fast";
 import { RecentlyViewedTracker } from "@/components/Media/RecentlyViewedTracker";
+import { ExternalRatings } from "@/components/Media/ExternalRatings";
+import { headers } from "next/headers";
 
 const Params = z.object({ id: z.coerce.number().int() });
 type ParamsInput = { id: string } | Promise<{ id: string }>;
@@ -12,6 +14,27 @@ type ParamsInput = { id: string } | Promise<{ id: string }>;
 async function resolveParams(params: ParamsInput) {
   if (params && typeof (params as any).then === "function") return await (params as Promise<{ id: string }>);
   return params as { id: string };
+}
+
+async function fetchTvAggregate(tmdbId: number, tvdbId?: number | null, title?: string) {
+  const headerStore = await headers();
+  const host = headerStore.get("x-forwarded-host") ?? headerStore.get("host");
+  if (!host) return null;
+  const proto = headerStore.get("x-forwarded-proto") ?? "http";
+  const params = new URLSearchParams();
+  if (title) params.set("title", title);
+  if (tvdbId) params.set("tvdbId", String(tvdbId));
+  const url = `${proto}://${host}/api/v1/tv/${tmdbId}${params.toString() ? `?${params.toString()}` : ""}`;
+  try {
+    const res = await fetch(url, {
+      headers: { cookie: headerStore.get("cookie") ?? "" },
+      cache: "no-store"
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
 }
 
 export async function generateMetadata({ params }: { params: ParamsInput }) {
@@ -29,33 +52,109 @@ export async function generateMetadata({ params }: { params: ParamsInput }) {
 }
 
 export default async function TvPage({ params }: { params: ParamsInput }) {
-  let tv: any;
-  let streamingProviders: any[] = [];
-  let tvdbId: number | null = null;
-  let imageProxyEnabled = false;
-  let keywords: any[] = [];
-  let ratings: {
-    imdbId: string | null;
-    imdbRating: string | null;
-    metacriticScore: string | null;
-    rtCriticsScore: number | null;
-    rtCriticsRating: string | null;
-    rtAudienceScore: number | null;
-    rtAudienceRating: string | null;
-    rtUrl: string | null;
-  } | null = null;
-
   try {
     const { id } = Params.parse(await resolveParams(params));
 
-    const details = await getTvDetailAggregate(id);
-    tv = details.tv;
-    imageProxyEnabled = details.imageProxyEnabled;
-    streamingProviders = details.streamingProviders;
-    keywords = details.keywords;
-    ratings = details.ratings;
-    tvdbId = details.tvdbId;
+    // Fetch only fast data - no slow external APIs (OMDB, Rotten Tomatoes)
+    const [details, aggregate] = await Promise.all([
+      getTvDetailAggregateFast(id),
+      fetchTvAggregate(id, null, "")
+    ]);
 
+    const tv = details.tv;
+    const imageProxyEnabled = details.imageProxyEnabled;
+    const streamingProviders = details.streamingProviders;
+    const keywords = details.keywords;
+    const tvdbId = details.tvdbId;
+    const imdbId = details.imdbId;
+
+    // Extract aggregate data
+    const sonarr = aggregate?.sonarr ?? {};
+    const qualityProfiles = Array.isArray(sonarr.qualityProfiles) ? sonarr.qualityProfiles : [];
+    const defaultQualityProfileId = typeof sonarr.defaultQualityProfileId === "number" ? sonarr.defaultQualityProfileId : 0;
+    const requestsBlocked = Boolean(sonarr.requestsBlocked);
+    const sonarrError = sonarr.sonarrError ?? null;
+    const existingSeries = sonarr.existingSeries ?? null;
+    const availableInJellyfin = sonarr.availableInJellyfin ?? null;
+    const availableInLibrary = Boolean(aggregate?.availableInLibrary);
+    const playUrl = aggregate?.playUrl ?? null;
+    const isAdmin = Boolean(aggregate?.isAdmin);
+    const manageItemId = aggregate?.manage?.itemId ?? null;
+    const manageSlug = aggregate?.manage?.slug ?? null;
+    const manageBaseUrl = aggregate?.manage?.baseUrl ?? null;
+
+    const poster = tmdbImageUrl(tv.poster_path, "w600_and_h900_bestv2", imageProxyEnabled);
+    const backdrop = tmdbImageUrl(tv.backdrop_path, "w1920_and_h800_multi_faces", imageProxyEnabled);
+    const trailerUrl = pickTrailerUrl(tv);
+    const seasons = (tv.seasons ?? [])
+      .filter((s: any) => s.season_number !== 0)
+      .sort((a: any, b: any) => a.season_number - b.season_number);
+
+    return (
+      <>
+        <RecentlyViewedTracker
+          mediaType="tv"
+          tmdbId={tv.id}
+          title={tv.name}
+          posterPath={tv.poster_path}
+        />
+        <TvDetailClientNew
+          tv={tv}
+          poster={poster}
+          backdrop={backdrop}
+          trailerUrl={trailerUrl}
+          playUrl={playUrl}
+          seasons={seasons}
+          qualityProfiles={qualityProfiles}
+          defaultQualityProfileId={defaultQualityProfileId}
+          sonarrError={sonarrError}
+          requestsBlocked={requestsBlocked}
+          existingSeries={existingSeries}
+          availableInJellyfin={availableInJellyfin}
+          availableInLibrary={availableInLibrary}
+          streamingProviders={streamingProviders}
+          imdbRating={null}
+          rtCriticsScore={null}
+          rtCriticsRating={null}
+          rtAudienceScore={null}
+          rtAudienceRating={null}
+          rtUrl={null}
+          metacriticScore={null}
+          keywords={keywords}
+          isAdmin={isAdmin}
+          manageItemId={manageItemId}
+          manageSlug={manageSlug}
+          manageBaseUrl={manageBaseUrl}
+          tvdbId={tvdbId}
+          prefetchedAggregate={aggregate}
+          externalRatingsSlot={
+            <div className="mt-4">
+              <ExternalRatings tmdbId={tv.id} mediaType="tv" imdbId={imdbId} />
+            </div>
+          }
+        >
+          {/* Recommendations Section */}
+          <div className="px-4 mt-8">
+            <MediaSlider
+              title="Recommendations"
+              url={`/api/v1/tmdb/tv/${tv.id}/recommendations`}
+              sliderKey={`tv-${tv.id}-recommendations`}
+              mediaType="tv"
+            />
+          </div>
+
+          {/* Similar TV Shows Section */}
+          <div className="px-4 mt-8 mb-8">
+            <MediaSlider
+              title="Similar Series"
+              url={`/api/v1/tmdb/tv/${tv.id}/similar`}
+              sliderKey={`tv-${tv.id}-similar`}
+              mediaType="tv"
+            />
+          </div>
+        </TvDetailClientNew>
+      </>
+    );
   } catch (e: any) {
     return (
       <div className="glass-strong rounded-2xl p-4">
@@ -64,71 +163,4 @@ export default async function TvPage({ params }: { params: ParamsInput }) {
       </div>
     );
   }
-
-  const poster = tmdbImageUrl(tv.poster_path, "w600_and_h900_bestv2", imageProxyEnabled);
-  const backdrop = tmdbImageUrl(tv.backdrop_path, "w1920_and_h800_multi_faces", imageProxyEnabled);
-  const trailerUrl = pickTrailerUrl(tv);
-  const seasons = (tv.seasons ?? [])
-    .filter((s: any) => s.season_number !== 0)
-    .sort((a: any, b: any) => a.season_number - b.season_number);
-
-  return (
-    <>
-      <RecentlyViewedTracker
-        mediaType="tv"
-        tmdbId={tv.id}
-        title={tv.name}
-        posterPath={tv.poster_path}
-      />
-      <TvDetailClientNew
-        tv={tv}
-        poster={poster}
-        backdrop={backdrop}
-        trailerUrl={trailerUrl}
-        playUrl={null}
-        seasons={seasons}
-        qualityProfiles={[]}
-        defaultQualityProfileId={0}
-        sonarrError={null}
-        requestsBlocked={true}
-        existingSeries={null}
-        availableInJellyfin={null}
-        availableInLibrary={false}
-        streamingProviders={streamingProviders}
-        imdbRating={ratings?.imdbRating ?? null}
-        rtCriticsScore={ratings?.rtCriticsScore ?? null}
-        rtCriticsRating={ratings?.rtCriticsRating ?? null}
-        rtAudienceScore={ratings?.rtAudienceScore ?? null}
-        rtAudienceRating={ratings?.rtAudienceRating ?? null}
-        rtUrl={ratings?.rtUrl ?? null}
-        metacriticScore={ratings?.metacriticScore ?? null}
-        keywords={keywords}
-        isAdmin={false}
-        manageItemId={null}
-        manageSlug={null}
-        manageBaseUrl={null}
-        tvdbId={tvdbId}
-      >
-        {/* Recommendations Section */}
-        <div className="px-4 mt-8">
-          <MediaSlider
-            title="Recommendations"
-            url={`/api/v1/tmdb/tv/${tv.id}/recommendations`}
-            sliderKey={`tv-${tv.id}-recommendations`}
-            mediaType="tv"
-          />
-        </div>
-
-        {/* Similar TV Shows Section */}
-        <div className="px-4 mt-8 mb-8">
-          <MediaSlider
-            title="Similar Series"
-            url={`/api/v1/tmdb/tv/${tv.id}/similar`}
-            sliderKey={`tv-${tv.id}-similar`}
-            mediaType="tv"
-          />
-        </div>
-      </TvDetailClientNew>
-    </>
-  );
 }

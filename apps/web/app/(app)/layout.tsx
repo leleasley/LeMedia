@@ -5,6 +5,7 @@ import "@/lib/webauthn-scheduler"; // Start WebAuthn cleanup scheduler
 import { getMediaIssueCounts, getPendingRequestCount, getRequestCounts, getUserWithHash, getSetting } from "@/db";
 import { getImageProxyEnabled } from "@/lib/app-settings";
 import { getMaintenanceState } from "@/lib/maintenance";
+import { withCache } from "@/lib/local-cache";
 
 startJobScheduler();
 
@@ -18,9 +19,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     avatarUrl?: string | null;
     jellyfinUserId?: string | null;
   } | null = null;
-  const maintenanceState = await getMaintenanceState();
-  const imageProxyEnabled = await getImageProxyEnabled();
-  const sidebarFooterText = (await getSetting("sidebar_footer_text")) || "LeMedia v0.1.0";
+  const maintenanceState = await withCache("maintenance_state", 30_000, () => getMaintenanceState());
+  const imageProxyEnabled = await withCache("image_proxy_enabled", 60_000, () => getImageProxyEnabled());
+  const sidebarFooterText = await withCache("sidebar_footer_text", 60_000, async () => {
+    return (await getSetting("sidebar_footer_text")) || "LeMedia v0.1.0";
+  });
   try {
     const user = await getUser();
     isAdmin = user.isAdmin;
@@ -34,11 +37,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       };
     }
     if (isAdmin) {
-      const [requestCounts, issueCounts] = await Promise.all([
-        getRequestCounts().catch(() => null),
-        getMediaIssueCounts().catch(() => null),
+      const [{ requestCounts, issueCounts }, pendingFallback] = await Promise.all([
+        withCache("admin_counts", 20_000, async () => {
+          const [requestCounts, issueCounts] = await Promise.all([
+            getRequestCounts().catch(() => null),
+            getMediaIssueCounts().catch(() => null),
+          ]);
+          return { requestCounts, issueCounts };
+        }),
+        getPendingRequestCount().catch(() => 0),
       ]);
-      pendingCount = requestCounts?.pending ?? (await getPendingRequestCount().catch(() => 0));
+      pendingCount = requestCounts?.pending ?? pendingFallback;
       issuesCount = issueCounts?.open ?? 0;
     }
   } catch {

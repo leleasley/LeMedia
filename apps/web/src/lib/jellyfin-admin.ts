@@ -44,6 +44,83 @@ export async function getJellyfinApiKey() {
   }
 }
 
+export async function fetchJellyfinServerInfo(
+  baseUrl: string,
+  apiKey: string
+): Promise<{ id: string | null; name: string | null }> {
+  const normalized = baseUrl.replace(/\/+$/, "");
+  try {
+    const res = await fetch(`${normalized}/System/Info`, {
+      headers: { "X-Emby-Token": apiKey }
+    });
+    if (!res.ok) return { id: null, name: null };
+    const payload = await res.json().catch(() => ({}));
+    const serverId = String(payload?.Id ?? payload?.ServerId ?? "").trim();
+    const serverName = String(payload?.ServerName ?? payload?.Name ?? "").trim();
+    return {
+      id: serverId || null,
+      name: serverName || null
+    };
+  } catch {
+    return { id: null, name: null };
+  }
+}
+
+export type JellyfinLibrary = {
+  id: string;
+  name: string;
+  type: "movie" | "show";
+};
+
+const EXCLUDED_COLLECTION_TYPES = new Set([
+  "music",
+  "books",
+  "musicvideos",
+  "homevideos",
+  "boxsets",
+]);
+
+function mapJellyfinLibraries(
+  items: Array<{ Id: string; Name: string; Type?: string; CollectionType?: string }>
+): JellyfinLibrary[] {
+  return items
+    .filter((item) => item.Type === "CollectionFolder")
+    .filter((item) => !EXCLUDED_COLLECTION_TYPES.has(String(item.CollectionType ?? "").toLowerCase()))
+    .map((item) => ({
+      id: item.Id,
+      name: item.Name,
+      type: String(item.CollectionType ?? "").toLowerCase() === "movies" ? "movie" : "show",
+    }));
+}
+
+export async function listJellyfinLibraries(baseUrl: string, apiKey: string): Promise<JellyfinLibrary[]> {
+  const normalized = baseUrl.replace(/\/+$/, "");
+  try {
+    const res = await fetch(`${normalized}/Library/MediaFolders`, {
+      headers: { Accept: "application/json", "X-Emby-Token": apiKey }
+    });
+    if (res.ok) {
+      const payload = await res.json().catch(() => ({}));
+      const items = Array.isArray(payload?.Items) ? payload.Items : [];
+      return mapJellyfinLibraries(items);
+    }
+  } catch {
+    // fall through to fallback
+  }
+
+  try {
+    const res = await fetch(`${normalized}/Users/Me/Views`, {
+      headers: { Accept: "application/json", "X-Emby-Token": apiKey }
+    });
+    if (!res.ok) return [];
+    const payload = await res.json().catch(() => ({}));
+    const items = Array.isArray(payload?.Items) ? payload.Items : [];
+    return mapJellyfinLibraries(items);
+  } catch {
+    return [];
+  }
+}
+
 export async function jellyfinLogin(input: {
   baseUrl: string;
   username: string;

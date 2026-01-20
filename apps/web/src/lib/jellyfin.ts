@@ -46,28 +46,53 @@ export async function isAvailableByExternalIds(
     // Only count items with real files; ignore series containers without media.
     const includeType = kind === "tv" ? "Episode" : "Movie";
 
-    const hasItemWithFile = (items: any[]) =>
+    const hasItemWithFile = (items: any[], providerCheck?: (item: any) => boolean) =>
         items.some((item: any) => {
             const typeMatches =
                 String(item?.Type ?? "").toLowerCase() === includeType.toLowerCase();
-            return typeMatches && hasPhysicalFile(item);
+            const providerMatches = providerCheck ? providerCheck(item) : true;
+            return typeMatches && providerMatches && hasPhysicalFile(item);
         });
 
+    const tmdbProviderMatches = (item: any) => {
+        const pid = item?.ProviderIds?.Tmdb ?? item?.ProviderIds?.tmdb;
+        return Number(pid ?? 0) === Number(tmdbId ?? 0);
+    };
+
+    const tvdbProviderMatches = (item: any) => {
+        const pid = item?.ProviderIds?.Tvdb ?? item?.ProviderIds?.tvdb;
+        return Number(pid ?? 0) === Number(tvdbId ?? 0);
+    };
+
     if (typeof tmdbId === "number" && tmdbId > 0) {
-        const byTmdb = await jellyfinFetch(
-            `/Items?ExternalId=tmdb:${tmdbId}&IncludeItemTypes=${includeType}&Fields=LocationType,MediaSources,Path,IsVirtual,Type`
+        const byTmdbProvider = await jellyfinFetch(
+            `/Items?AnyProviderIdEquals=tmdb.${tmdbId}&Recursive=true&IncludeItemTypes=${includeType}&Fields=ProviderIds,LocationType,MediaSources,Path,IsVirtual,Type`
         );
-        if (Array.isArray(byTmdb?.Items) && hasItemWithFile(byTmdb.Items)) {
+        if (Array.isArray(byTmdbProvider?.Items) && hasItemWithFile(byTmdbProvider.Items, tmdbProviderMatches)) {
             found = true;
+        } else {
+            const byTmdb = await jellyfinFetch(
+                `/Items?ExternalId=tmdb:${tmdbId}&IncludeItemTypes=${includeType}&Fields=LocationType,MediaSources,Path,IsVirtual,Type`
+            );
+            if (Array.isArray(byTmdb?.Items) && hasItemWithFile(byTmdb.Items)) {
+                found = true;
+            }
         }
     }
 
     if (!found && typeof tvdbId === "number" && tvdbId > 0) {
-        const byTvdb = await jellyfinFetch(
-            `/Items?ExternalId=tvdb:${tvdbId}&IncludeItemTypes=${includeType}&Fields=LocationType,MediaSources,Path,IsVirtual,Type`
+        const byTvdbProvider = await jellyfinFetch(
+            `/Items?AnyProviderIdEquals=tvdb.${tvdbId}&Recursive=true&IncludeItemTypes=${includeType}&Fields=ProviderIds,LocationType,MediaSources,Path,IsVirtual,Type`
         );
-        if (Array.isArray(byTvdb?.Items) && hasItemWithFile(byTvdb.Items)) {
+        if (Array.isArray(byTvdbProvider?.Items) && hasItemWithFile(byTvdbProvider.Items, tvdbProviderMatches)) {
             found = true;
+        } else {
+            const byTvdb = await jellyfinFetch(
+                `/Items?ExternalId=tvdb:${tvdbId}&IncludeItemTypes=${includeType}&Fields=LocationType,MediaSources,Path,IsVirtual,Type`
+            );
+            if (Array.isArray(byTvdb?.Items) && hasItemWithFile(byTvdb.Items)) {
+                found = true;
+            }
         }
     }
 
@@ -108,16 +133,31 @@ export async function getJellyfinItemIdByTmdb(kind: "movie" | "tv", tmdbId: numb
     if (cached && cached.expiresAt > now) return cached.value;
 
     const includeType = kind === "tv" ? "Series" : "Movie";
-    const byTmdb = await jellyfinFetch(`/Items?ExternalId=tmdb:${tmdbId}&IncludeItemTypes=${includeType}`);
+    const byTmdbProvider = await jellyfinFetch(
+        `/Items?AnyProviderIdEquals=tmdb.${tmdbId}&Recursive=true&IncludeItemTypes=${includeType}&Fields=ProviderIds,Type`
+    );
     let itemId = "";
-    if (Array.isArray(byTmdb?.Items) && byTmdb.Items.length > 0) {
-        const match = byTmdb.Items.find((item: any) => String(item?.Type ?? "").toLowerCase() === includeType.toLowerCase());
-        itemId = String((match ?? byTmdb.Items[0])?.Id ?? "");
-    } else {
-        const fallback = await jellyfinFetch(`/Items?ExternalId=tmdb:${tmdbId}`);
-        if (Array.isArray(fallback?.Items) && fallback.Items.length > 0) {
-            const match = fallback.Items.find((item: any) => String(item?.Type ?? "").toLowerCase() === includeType.toLowerCase());
-            itemId = String((match ?? fallback.Items[0])?.Id ?? "");
+    if (Array.isArray(byTmdbProvider?.Items) && byTmdbProvider.Items.length > 0) {
+        const match = byTmdbProvider.Items.find((item: any) => {
+            const typeMatches = String(item?.Type ?? "").toLowerCase() === includeType.toLowerCase();
+            const providerMatches = Number(item?.ProviderIds?.Tmdb ?? item?.ProviderIds?.tmdb ?? 0) === Number(tmdbId);
+            return typeMatches && providerMatches;
+        });
+        if (match?.Id) {
+            itemId = String(match.Id);
+        }
+    }
+    if (!itemId) {
+        const byTmdb = await jellyfinFetch(`/Items?ExternalId=tmdb:${tmdbId}&IncludeItemTypes=${includeType}`);
+        if (Array.isArray(byTmdb?.Items) && byTmdb.Items.length > 0) {
+            const match = byTmdb.Items.find((item: any) => String(item?.Type ?? "").toLowerCase() === includeType.toLowerCase());
+            itemId = String((match ?? byTmdb.Items[0])?.Id ?? "");
+        } else {
+            const fallback = await jellyfinFetch(`/Items?ExternalId=tmdb:${tmdbId}`);
+            if (Array.isArray(fallback?.Items) && fallback.Items.length > 0) {
+                const match = fallback.Items.find((item: any) => String(item?.Type ?? "").toLowerCase() === includeType.toLowerCase());
+                itemId = String((match ?? fallback.Items[0])?.Id ?? "");
+            }
         }
     }
     itemIdCache.set(key, { expiresAt: now + CACHE_TTL_MS, value: itemId || null });
@@ -132,16 +172,31 @@ export async function getJellyfinItemIdByTvdb(tvdbId: number): Promise<string | 
     const cached = itemIdCache.get(key);
     if (cached && cached.expiresAt > now) return cached.value;
 
-    const byTvdb = await jellyfinFetch(`/Items?ExternalId=tvdb:${tvdbId}&IncludeItemTypes=Series`);
+    const byTvdbProvider = await jellyfinFetch(
+        `/Items?AnyProviderIdEquals=tvdb.${tvdbId}&Recursive=true&IncludeItemTypes=Series&Fields=ProviderIds,Type`
+    );
     let itemId = "";
-    if (Array.isArray(byTvdb?.Items) && byTvdb.Items.length > 0) {
-        const match = byTvdb.Items.find((item: any) => String(item?.Type ?? "").toLowerCase() === "series");
-        itemId = String((match ?? byTvdb.Items[0])?.Id ?? "");
-    } else {
-        const fallback = await jellyfinFetch(`/Items?ExternalId=tvdb:${tvdbId}`);
-        if (Array.isArray(fallback?.Items) && fallback.Items.length > 0) {
-            const match = fallback.Items.find((item: any) => String(item?.Type ?? "").toLowerCase() === "series");
-            itemId = String((match ?? fallback.Items[0])?.Id ?? "");
+    if (Array.isArray(byTvdbProvider?.Items) && byTvdbProvider.Items.length > 0) {
+        const match = byTvdbProvider.Items.find((item: any) => {
+            const typeMatches = String(item?.Type ?? "").toLowerCase() === "series";
+            const providerMatches = Number(item?.ProviderIds?.Tvdb ?? item?.ProviderIds?.tvdb ?? 0) === Number(tvdbId);
+            return typeMatches && providerMatches;
+        });
+        if (match?.Id) {
+            itemId = String(match.Id);
+        }
+    }
+    if (!itemId) {
+        const byTvdb = await jellyfinFetch(`/Items?ExternalId=tvdb:${tvdbId}&IncludeItemTypes=Series`);
+        if (Array.isArray(byTvdb?.Items) && byTvdb.Items.length > 0) {
+            const match = byTvdb.Items.find((item: any) => String(item?.Type ?? "").toLowerCase() === "series");
+            itemId = String((match ?? byTvdb.Items[0])?.Id ?? "");
+        } else {
+            const fallback = await jellyfinFetch(`/Items?ExternalId=tvdb:${tvdbId}`);
+            if (Array.isArray(fallback?.Items) && fallback.Items.length > 0) {
+                const match = fallback.Items.find((item: any) => String(item?.Type ?? "").toLowerCase() === "series");
+                itemId = String((match ?? fallback.Items[0])?.Id ?? "");
+            }
         }
     }
     itemIdCache.set(key, { expiresAt: now + CACHE_TTL_MS, value: itemId || null });

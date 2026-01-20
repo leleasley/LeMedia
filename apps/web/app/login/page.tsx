@@ -5,7 +5,7 @@ import { LoginPageClient } from "@/components/auth/LoginPageClient";
 export const metadata = {
   title: "Login - LeMedia",
 };
-import { getOidcConfig, getSetting } from "@/db";
+import { getJellyfinConfig, getOidcConfig, getSetting } from "@/db";
 import { verifySessionToken } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -28,10 +28,12 @@ export default async function LoginPage() {
   const rawSsoEnabled = await getSetting("auth.sso_enabled");
   const ssoEnabledSetting = rawSsoEnabled === null || rawSsoEnabled === "1" || rawSsoEnabled === "true";
   const oidcEnabled = Boolean(oidcConfig.enabled && oidcConfig.issuer && oidcConfig.clientId && ssoEnabledSetting);
+  const jellyfinConfig = await getJellyfinConfig();
+  const jellyfinEnabled = Boolean(jellyfinConfig.hostname?.trim());
 
   if (existingSession?.username) {
     redirect(from || "/");
   }
 
-  return <LoginPageClient csrfToken={csrfToken} from={from} oidcEnabled={oidcEnabled} />;
+  return <LoginPageClient csrfToken={csrfToken} from={from} oidcEnabled={oidcEnabled} jellyfinEnabled={jellyfinEnabled} />;
 }

@@ -3,6 +3,7 @@ import { logger } from "@/lib/logger";
 import { sendWeeklyDigest } from "@/notifications/weekly-digest";
 import { purgeExpiredSessions } from "@/db";
 import { checkCalendarSubscriptions } from "@/lib/calendar-notifications";
+import { syncJellyfinAvailability } from "@/lib/jellyfin-availability-sync";
 
 export type JobHandler = () => Promise<void>;
 
@@ -32,5 +33,10 @@ export const jobHandlers: Record<string, JobHandler> = {
     logger.info("[Job] Starting calendar-notifications");
     const result = await checkCalendarSubscriptions();
     logger.info(`[Job] calendar-notifications completed: ${result.checked} checked, ${result.notified} notified, ${result.errors} errors`);
+  },
+  "jellyfin-availability-sync": async () => {
+    logger.info("[Job] Starting jellyfin-availability-sync");
+    const result = await syncJellyfinAvailability();
+    logger.info(`[Job] jellyfin-availability-sync completed: ${result.scanned} scanned, ${result.added} added, ${result.updated} updated`);
   },
 };

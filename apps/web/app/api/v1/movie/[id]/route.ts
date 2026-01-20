@@ -5,7 +5,7 @@ import { getUserWithHash } from "@/db";
 import { hasAssignedNotificationEndpoints } from "@/lib/notifications";
 import { listRadarrQualityProfiles, getMovieByTmdbId } from "@/lib/radarr";
 import { getActiveMediaService } from "@/lib/media-services";
-import { getJellyfinItemIdByTmdb, isAvailableByExternalIds } from "@/lib/jellyfin";
+import { getJellyfinItemId, isAvailableByExternalIds } from "@/lib/jellyfin";
 import { getJellyfinPlayUrl } from "@/lib/jellyfin-links";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
 import { withCache } from "@/lib/local-cache";
@@ -94,8 +94,8 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
   try {
     jellyfinAvailable = Boolean(await isAvailableByExternalIds("movie", tmdbId));
     if (jellyfinAvailable) {
-      // Only use TMDB external-id lookup; avoid name-based matches.
-      jellyfinItemId = await getJellyfinItemIdByTmdb("movie", tmdbId);
+      // Use fallback strategies: TMDB ID first, then name search
+      jellyfinItemId = await getJellyfinItemId("movie", tmdbId, title);
       if (jellyfinItemId) {
         playUrl = await getJellyfinPlayUrl(jellyfinItemId);
       }

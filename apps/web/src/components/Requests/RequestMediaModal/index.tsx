@@ -26,7 +26,6 @@ export function RequestMediaModal({
   qualityProfiles,
   defaultQualityProfileId,
   requestsBlocked = false,
-  isAdmin = false,
   title = "",
   posterUrl,
   backdropUrl,
@@ -40,7 +39,6 @@ export function RequestMediaModal({
   qualityProfiles: QualityProfile[];
   defaultQualityProfileId: number;
   requestsBlocked?: boolean;
-  isAdmin?: boolean;
   title?: string;
   posterUrl?: string | null;
   backdropUrl?: string | null;
@@ -81,9 +79,6 @@ export function RequestMediaModal({
       }
       if (overrides.tags?.length) {
         body.tags = overrides.tags;
-      }
-      if (overrides.user?.id) {
-        body.userId = overrides.user.id;
       }
 
       const res = await csrfFetch(endpoint, {
@@ -195,7 +190,6 @@ export function RequestMediaModal({
 
             <AdvancedRequester
               mediaType={mediaType}
-              isAdmin={isAdmin}
               is4k={false}
               onChange={setOverrides}
             />

@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/auth";
 import { getJellyfinConfig, setJellyfinConfig } from "@/db";
-import { encryptSecret } from "@/lib/encryption";
+import { decryptSecret, encryptSecret } from "@/lib/encryption";
 import { z } from "zod";
 import { requireCsrf } from "@/lib/csrf";
 import { jsonResponseWithETag } from "@/lib/api-optimization";
 import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/rate-limit";
+import { fetchJellyfinServerInfo } from "@/lib/jellyfin-admin";
 
 const payloadSchema = z.object({
     hostname: z.string().trim(),
@@ -14,7 +15,9 @@ const payloadSchema = z.object({
     useSsl: z.boolean(),
     urlBase: z.string(),
     externalUrl: z.string().optional(),
-    apiKey: z.string().optional()
+    jellyfinForgotPasswordUrl: z.string().optional(),
+    apiKey: z.string().optional(),
+    serverId: z.string().optional()
 });
 
 async function ensureAdmin() {
@@ -23,16 +26,28 @@ async function ensureAdmin() {
     return null;
 }
 
+function buildBaseUrl(payload: z.infer<typeof payloadSchema>) {
+    const host = payload.hostname.trim();
+    const port = payload.port ? `:${payload.port}` : "";
+    const base = payload.urlBase.trim();
+    const path = base ? (base.startsWith("/") ? base : `/${base}`) : "";
+    return `${payload.useSsl ? "https" : "http"}://${host}${port}${path}`;
+}
+
 export async function GET(req: NextRequest) {
     const forbidden = await ensureAdmin();
     if (forbidden) return forbidden;
     const config = await getJellyfinConfig();
     return jsonResponseWithETag(req, {
+        name: config.name,
         hostname: config.hostname,
         port: config.port,
         useSsl: config.useSsl,
         urlBase: config.urlBase,
         externalUrl: config.externalUrl,
+        jellyfinForgotPasswordUrl: config.jellyfinForgotPasswordUrl,
+        libraries: config.libraries,
+        serverId: config.serverId,
         hasApiKey: Boolean(config.apiKeyEncrypted)
     });
 }
@@ -60,13 +75,32 @@ export async function PUT(req: NextRequest) {
         parsed.data.apiKey && parsed.data.apiKey.trim().length > 0
             ? encryptSecret(parsed.data.apiKey.trim())
             : current.apiKeyEncrypted;
+    const baseUrl = buildBaseUrl(parsed.data).replace(/\/+$/, "");
+    const apiKeyForLookup =
+        parsed.data.apiKey?.trim() ||
+        (current.apiKeyEncrypted ? (() => {
+            try {
+                return decryptSecret(current.apiKeyEncrypted);
+            } catch {
+                return "";
+            }
+        })() : "");
+    const detectedInfo = apiKeyForLookup
+        ? await fetchJellyfinServerInfo(baseUrl, apiKeyForLookup)
+        : { id: null, name: null };
+    const serverId = (detectedInfo.id ?? parsed.data.serverId ?? current.serverId ?? "").trim();
+    const name = (detectedInfo.name ?? current.name ?? "").trim();
 
     await setJellyfinConfig({
+        name,
         hostname: parsed.data.hostname,
         port: parsed.data.port,
         useSsl: parsed.data.useSsl,
         urlBase: parsed.data.urlBase,
         externalUrl: parsed.data.externalUrl ?? "",
+        jellyfinForgotPasswordUrl: parsed.data.jellyfinForgotPasswordUrl ?? current.jellyfinForgotPasswordUrl ?? "",
+        libraries: current.libraries ?? [],
+        serverId,
         apiKeyEncrypted
     });
 

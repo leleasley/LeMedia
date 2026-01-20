@@ -2753,29 +2753,57 @@ export async function getUserRequestLimitStatus(
 }
 
 export type JellyfinConfig = {
+  name: string;
   hostname: string;
   port: number;
   useSsl: boolean;
   urlBase: string;
   externalUrl: string;
+  jellyfinForgotPasswordUrl: string;
+  libraries: Array<{
+    id: string;
+    name: string;
+    type: "movie" | "show";
+    enabled: boolean;
+    lastScan?: number;
+  }>;
+  serverId: string;
   apiKeyEncrypted: string;
 };
 
 const JellyfinConfigSchema = z.object({
+  name: z.string().optional(),
   hostname: z.string().optional(),
   port: z.number().optional(),
   useSsl: z.boolean().optional(),
   urlBase: z.string().optional(),
   externalUrl: z.string().optional(),
+  jellyfinForgotPasswordUrl: z.string().optional(),
+  libraries: z
+    .array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        type: z.enum(["movie", "show"]),
+        enabled: z.boolean(),
+        lastScan: z.number().optional()
+      })
+    )
+    .optional(),
+  serverId: z.string().optional(),
   apiKeyEncrypted: z.string().optional(),
 });
 
 const JellyfinConfigDefaults: JellyfinConfig = {
+  name: "",
   hostname: "",
   port: 8096,
   useSsl: false,
   urlBase: "",
   externalUrl: "",
+  jellyfinForgotPasswordUrl: "",
+  libraries: [],
+  serverId: "",
   apiKeyEncrypted: "",
 };
 
@@ -2793,11 +2821,15 @@ export async function getJellyfinConfig(): Promise<JellyfinConfig> {
   return {
     ...JellyfinConfigDefaults,
     ...parsed,
+    name: parsed.name ?? JellyfinConfigDefaults.name,
     hostname: parsed.hostname ?? JellyfinConfigDefaults.hostname,
     port: typeof parsed.port === "number" ? parsed.port : JellyfinConfigDefaults.port,
     useSsl: parsed.useSsl ?? JellyfinConfigDefaults.useSsl,
     urlBase: parsed.urlBase ?? JellyfinConfigDefaults.urlBase,
     externalUrl: parsed.externalUrl ?? JellyfinConfigDefaults.externalUrl,
+    jellyfinForgotPasswordUrl: parsed.jellyfinForgotPasswordUrl ?? JellyfinConfigDefaults.jellyfinForgotPasswordUrl,
+    libraries: parsed.libraries ?? JellyfinConfigDefaults.libraries,
+    serverId: parsed.serverId ?? JellyfinConfigDefaults.serverId,
     apiKeyEncrypted: parsed.apiKeyEncrypted ?? JellyfinConfigDefaults.apiKeyEncrypted,
   };
 }
@@ -3645,6 +3677,18 @@ export async function updateJob(id: number, schedule: string, intervalSeconds: n
   );
 }
 
+export async function updateJobSchedule(id: number, schedule: string, intervalSeconds: number, nextRun: Date) {
+  const p = getPool();
+  await p.query(
+    `UPDATE jobs
+     SET schedule = $1,
+         interval_seconds = $2,
+         next_run = $3
+     WHERE id = $4`,
+    [schedule, intervalSeconds, nextRun, id]
+  );
+}
+
 export async function updateJobRun(id: number, lastRun: Date, nextRun: Date) {
   const p = getPool();
   await p.query(
@@ -4210,4 +4254,177 @@ export async function disableCalendarSubscriptionNotifications(subscriptionId: s
     WHERE id = $1`,
     [subscriptionId]
   );
+}
+
+// ===== Jellyfin Availability Cache =====
+
+export type JellyfinAvailabilityItem = {
+  id: number;
+  tmdbId: number | null;
+  tvdbId: number | null;
+  imdbId: string | null;
+  mediaType: 'movie' | 'episode' | 'season' | 'series';
+  title: string | null;
+  seasonNumber: number | null;
+  episodeNumber: number | null;
+  jellyfinItemId: string;
+  jellyfinLibraryId: string | null;
+  lastScannedAt: string;
+  createdAt: string;
+};
+
+export type JellyfinScanLog = {
+  id: number;
+  libraryId: string | null;
+  libraryName: string | null;
+  itemsScanned: number;
+  itemsAdded: number;
+  itemsRemoved: number;
+  scanStartedAt: string;
+  scanCompletedAt: string | null;
+  scanStatus: 'running' | 'completed' | 'failed';
+  errorMessage: string | null;
+};
+
+export type NewJellyfinItem = {
+  jellyfinItemId: string;
+  title: string | null;
+  mediaType: 'movie' | 'episode' | 'season' | 'series';
+  tmdbId: number | null;
+  addedAt: string;
+};
+
+export async function upsertJellyfinAvailability(params: {
+  tmdbId?: number | null;
+  tvdbId?: number | null;
+  imdbId?: string | null;
+  mediaType: 'movie' | 'episode' | 'season' | 'series';
+  title?: string | null;
+  seasonNumber?: number | null;
+  episodeNumber?: number | null;
+  jellyfinItemId: string;
+  jellyfinLibraryId?: string | null;
+}): Promise<{ isNew: boolean }> {
+  const p = getPool();
+  const res = await p.query(
+    `INSERT INTO jellyfin_availability
+      (tmdb_id, tvdb_id, imdb_id, media_type, title, season_number, episode_number, jellyfin_item_id, jellyfin_library_id, last_scanned_at, created_at)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+    ON CONFLICT (jellyfin_item_id)
+    DO UPDATE SET
+      last_scanned_at = NOW(),
+      title = COALESCE($5, jellyfin_availability.title),
+      tmdb_id = COALESCE($1, jellyfin_availability.tmdb_id),
+      tvdb_id = COALESCE($2, jellyfin_availability.tvdb_id),
+      imdb_id = COALESCE($3, jellyfin_availability.imdb_id)
+    RETURNING (xmax = 0) AS is_new`,
+    [
+      params.tmdbId ?? null,
+      params.tvdbId ?? null,
+      params.imdbId ?? null,
+      params.mediaType,
+      params.title ?? null,
+      params.seasonNumber ?? null,
+      params.episodeNumber ?? null,
+      params.jellyfinItemId,
+      params.jellyfinLibraryId ?? null
+    ]
+  );
+  return { isNew: res.rows[0]?.is_new ?? false };
+}
+
+export async function getNewJellyfinItems(sinceDate?: Date, limit = 100): Promise<NewJellyfinItem[]> {
+  const p = getPool();
+  const query = sinceDate
+    ? `SELECT jellyfin_item_id as "jellyfinItemId", title, media_type as "mediaType",
+              tmdb_id as "tmdbId", created_at as "addedAt"
+       FROM jellyfin_availability
+       WHERE created_at > $1
+       ORDER BY created_at DESC
+       LIMIT $2`
+    : `SELECT jellyfin_item_id as "jellyfinItemId", title, media_type as "mediaType",
+              tmdb_id as "tmdbId", created_at as "addedAt"
+       FROM jellyfin_availability
+       ORDER BY created_at DESC
+       LIMIT $1`;
+
+  const params = sinceDate ? [sinceDate, limit] : [limit];
+  const res = await p.query(query, params);
+  return res.rows;
+}
+
+export async function startJellyfinScan(params: {
+  libraryId?: string | null;
+  libraryName?: string | null;
+}): Promise<number> {
+  const p = getPool();
+  const res = await p.query(
+    `INSERT INTO jellyfin_scan_log
+      (library_id, library_name, items_scanned, items_added, items_removed, scan_started_at, scan_status)
+    VALUES ($1, $2, 0, 0, 0, NOW(), 'running')
+    RETURNING id`,
+    [params.libraryId ?? null, params.libraryName ?? null]
+  );
+  return res.rows[0].id;
+}
+
+export async function updateJellyfinScan(scanId: number, params: {
+  itemsScanned?: number;
+  itemsAdded?: number;
+  itemsRemoved?: number;
+  scanStatus?: 'running' | 'completed' | 'failed';
+  errorMessage?: string | null;
+}): Promise<void> {
+  const p = getPool();
+  const updates: string[] = [];
+  const values: any[] = [];
+  let paramIdx = 1;
+
+  if (params.itemsScanned !== undefined) {
+    updates.push(`items_scanned = $${paramIdx++}`);
+    values.push(params.itemsScanned);
+  }
+  if (params.itemsAdded !== undefined) {
+    updates.push(`items_added = $${paramIdx++}`);
+    values.push(params.itemsAdded);
+  }
+  if (params.itemsRemoved !== undefined) {
+    updates.push(`items_removed = $${paramIdx++}`);
+    values.push(params.itemsRemoved);
+  }
+  if (params.scanStatus) {
+    updates.push(`scan_status = $${paramIdx++}`);
+    values.push(params.scanStatus);
+    if (params.scanStatus === 'completed' || params.scanStatus === 'failed') {
+      updates.push(`scan_completed_at = NOW()`);
+    }
+  }
+  if (params.errorMessage !== undefined) {
+    updates.push(`error_message = $${paramIdx++}`);
+    values.push(params.errorMessage);
+  }
+
+  if (updates.length === 0) return;
+
+  values.push(scanId);
+  await p.query(
+    `UPDATE jellyfin_scan_log SET ${updates.join(', ')} WHERE id = $${paramIdx}`,
+    values
+  );
+}
+
+export async function getRecentJellyfinScans(limit = 10): Promise<JellyfinScanLog[]> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, library_id as "libraryId", library_name as "libraryName",
+            items_scanned as "itemsScanned", items_added as "itemsAdded",
+            items_removed as "itemsRemoved", scan_started_at as "scanStartedAt",
+            scan_completed_at as "scanCompletedAt", scan_status as "scanStatus",
+            error_message as "errorMessage"
+     FROM jellyfin_scan_log
+     ORDER BY scan_started_at DESC
+     LIMIT $1`,
+    [limit]
+  );
+  return res.rows;
 }

@@ -7,9 +7,10 @@ import { pickTrailerUrl } from "@/lib/trailer-utils";
 import { Users, Film } from "lucide-react";
 import { MediaInfoBox } from "@/components/Media/MediaInfoBox";
 import { MediaSlider } from "@/components/Media/MediaSlider";
-import { getMovieDetailAggregate } from "@/lib/media-aggregate";
+import { getMovieDetailAggregateFast } from "@/lib/media-aggregate-fast";
 import { headers } from "next/headers";
 import { RecentlyViewedTracker } from "@/components/Media/RecentlyViewedTracker";
+import { ExternalRatings } from "@/components/Media/ExternalRatings";
 
 const Params = z.object({ id: z.coerce.number().int() });
 type ParamsInput = { id: string } | Promise<{ id: string }>;
@@ -55,73 +56,44 @@ export async function generateMetadata({ params }: { params: ParamsInput }) {
 }
 
 export default async function MoviePage({ params }: { params: ParamsInput }) {
-  let movie: any;
-  let streamingProviders: any[] = [];
-  let releaseDates: any = null;
-  let digitalReleaseDate: string | undefined;
-  let imageProxyEnabled = false;
-  let keywords: any[] = [];
-  let ratings: {
-    imdbId: string | null;
-    imdbRating: string | null;
-    metacriticScore: string | null;
-    rtCriticsScore: number | null;
-    rtCriticsRating: string | null;
-    rtAudienceScore: number | null;
-    rtAudienceRating: string | null;
-    rtUrl: string | null;
-  } | null = null;
-
   try {
     const { id } = Params.parse(await resolveParams(params));
 
-    const details = await getMovieDetailAggregate(id);
-    movie = details.movie;
-    imageProxyEnabled = details.imageProxyEnabled;
-    streamingProviders = details.streamingProviders;
-    releaseDates = details.releaseDates;
-    digitalReleaseDate = details.digitalReleaseDate;
-    keywords = details.keywords;
-    ratings = details.ratings;
+    // Fetch only fast data - no slow external APIs (OMDB, Rotten Tomatoes)
+    // This makes the page show instantly
+    const [details, aggregate] = await Promise.all([
+      getMovieDetailAggregateFast(id),
+      fetchMovieAggregate(id, "")
+    ]);
 
-  } catch (e: any) {
+    const movie = details.movie;
+    const imageProxyEnabled = details.imageProxyEnabled;
+    const streamingProviders = details.streamingProviders;
+    const keywords = details.keywords;
+    const imdbId = details.imdbId;
+
+    const poster = tmdbImageUrl(movie.poster_path, "w600_and_h900_bestv2", imageProxyEnabled);
+    const backdrop = tmdbImageUrl(movie.backdrop_path, "w1920_and_h800_multi_faces", imageProxyEnabled);
+    const backdropImage = backdrop ?? poster;
+    const trailerUrl = pickTrailerUrl(movie);
+    const cast: any[] = (movie?.credits?.cast ?? []).slice(0, 20);
+    const crew: any[] = (movie?.credits?.crew ?? []).slice(0, 6);
+
+    const releaseYear = movie.release_date ? new Date(movie.release_date).getFullYear() : "";
+    const collection = movie.belongs_to_collection ?? null;
+    const collectionBackdrop = tmdbImageUrl(collection?.backdrop_path, "w1440_and_h320_multi_faces", imageProxyEnabled);
+
+    // Movie attributes for display
+    const movieAttributes = [];
+    if (movie.runtime > 0) {
+      movieAttributes.push(`${movie.runtime} minutes`);
+    }
+    if (movie.genres && movie.genres.length > 0) {
+      movieAttributes.push(...movie.genres.map((g: any) => g.name));
+    }
+
     return (
-      <div className="flex h-[50vh] items-center justify-center p-4">
-        <div className="glass-strong rounded-2xl p-8 text-center max-w-md">
-          <div className="mx-auto w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center mb-4">
-            <Film className="h-6 w-6 text-red-500" />
-          </div>
-          <h1 className="text-xl font-bold text-white mb-2">Unable to load movie</h1>
-          <p className="text-sm text-gray-400">{e?.message ?? "Unknown error from TMDB."}</p>
-        </div>
-      </div>
-    );
-  }
-
-  const poster = tmdbImageUrl(movie.poster_path, "w600_and_h900_bestv2", imageProxyEnabled);
-  const backdrop = tmdbImageUrl(movie.backdrop_path, "w1920_and_h800_multi_faces", imageProxyEnabled);
-  const backdropImage = backdrop ?? poster;
-  const trailerUrl = pickTrailerUrl(movie);
-  const cast: any[] = (movie?.credits?.cast ?? []).slice(0, 20);
-  const crew: any[] = (movie?.credits?.crew ?? []).slice(0, 6);
-
-  const releaseYear = movie.release_date ? new Date(movie.release_date).getFullYear() : "";
-  const imdbId = ratings?.imdbId ?? null;
-  const collection = movie.belongs_to_collection ?? null;
-  const collectionBackdrop = tmdbImageUrl(collection?.backdrop_path, "w1440_and_h320_multi_faces", imageProxyEnabled);
-  const aggregate = await fetchMovieAggregate(movie.id, movie.title);
-
-  // Movie attributes for display
-  const movieAttributes = [];
-  if (movie.runtime > 0) {
-    movieAttributes.push(`${movie.runtime} minutes`);
-  }
-  if (movie.genres && movie.genres.length > 0) {
-    movieAttributes.push(...movie.genres.map((g: any) => g.name));
-  }
-
-  return (
-    <div className="media-page">
+      <div className="media-page">
       <RecentlyViewedTracker
         mediaType="movie"
         tmdbId={movie.id}
@@ -216,6 +188,11 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
           <h2>Overview</h2>
           <p>{movie.overview || "No overview available."}</p>
 
+          {/* External Ratings - loads after page appears */}
+          <div className="mt-4">
+            <ExternalRatings tmdbId={movie.id} mediaType="movie" imdbId={imdbId} />
+          </div>
+
           {keywords.length > 0 && (
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center justify-center rounded-full border border-white/10 bg-white/5 p-1.5 text-gray-300">
@@ -286,24 +263,24 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
           )}
           <MediaInfoBox
             releaseDate={movie.release_date}
-            digitalReleaseDate={digitalReleaseDate}
+            digitalReleaseDate={undefined}
             runtime={movie.runtime}
             voteAverage={movie.vote_average}
             tmdbId={movie.id}
             imdbId={imdbId}
-            rtCriticsScore={ratings?.rtCriticsScore ?? null}
-            rtCriticsRating={ratings?.rtCriticsRating ?? null}
-            rtAudienceScore={ratings?.rtAudienceScore ?? null}
-            rtAudienceRating={ratings?.rtAudienceRating ?? null}
-            rtUrl={ratings?.rtUrl ?? null}
-            imdbRating={ratings?.imdbRating ?? null}
-            metacriticScore={ratings?.metacriticScore ?? null}
+            rtCriticsScore={null}
+            rtCriticsRating={null}
+            rtAudienceScore={null}
+            rtAudienceRating={null}
+            rtUrl={null}
+            imdbRating={null}
+            metacriticScore={null}
             streamingProviders={streamingProviders}
             genres={movie.genres ?? []}
             status={movie.status}
             originalLanguage={movie.original_language}
             productionCountries={movie.production_countries ?? []}
-            releaseDates={releaseDates}
+            releaseDates={null}
             type="movie"
           />
         </div>
@@ -370,6 +347,19 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
       </div>
 
       <div className="extra-bottom-space relative" />
-    </div>
-  );
+      </div>
+    );
+  } catch (e: any) {
+    return (
+      <div className="flex h-[50vh] items-center justify-center p-4">
+        <div className="glass-strong rounded-2xl p-8 text-center max-w-md">
+          <div className="mx-auto w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center mb-4">
+            <Film className="h-6 w-6 text-red-500" />
+          </div>
+          <h1 className="text-xl font-bold text-white mb-2">Unable to load movie</h1>
+          <p className="text-sm text-gray-400">{e?.message ?? "Unknown error from TMDB."}</p>
+        </div>
+      </div>
+    );
+  }
 }

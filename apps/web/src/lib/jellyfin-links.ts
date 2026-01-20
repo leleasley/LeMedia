@@ -22,8 +22,10 @@ export async function getJellyfinPlayUrl(itemId?: string | null) {
   const config = await getJellyfinConfig();
   const base = buildBaseUrl(config);
   if (!base) return null;
+  const serverId = (config.serverId ?? "").trim();
+  const serverIdParam = serverId ? `&serverId=${encodeURIComponent(serverId)}` : "";
   // Use details page like Jellyseerr does - it shows the item with a play button available
-  return `${base}/web/index.html#!/details?id=${encodeURIComponent(itemId)}&context=home`;
+  return `${base}/web/index.html#!/details?id=${encodeURIComponent(itemId)}&context=home${serverIdParam}`;
 }
 
 export async function getJellyfinDetailsUrl(itemId?: string | null) {
@@ -31,7 +33,9 @@ export async function getJellyfinDetailsUrl(itemId?: string | null) {
   const config = await getJellyfinConfig();
   const base = buildBaseUrl(config);
   if (!base) return null;
-  return `${base}/web/index.html#!/details?id=${encodeURIComponent(itemId)}`;
+  const serverId = (config.serverId ?? "").trim();
+  const serverIdParam = serverId ? `&serverId=${encodeURIComponent(serverId)}` : "";
+  return `${base}/web/index.html#!/details?id=${encodeURIComponent(itemId)}${serverIdParam}`;
 }
 
 export async function getJellyfinSearchUrl(query?: string | null) {

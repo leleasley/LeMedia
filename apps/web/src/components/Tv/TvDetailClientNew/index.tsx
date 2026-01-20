@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
-import { ChevronDown, ChevronUp, Star, Tv, Eye, Users, CheckCircle, Info } from "lucide-react";
+import { ChevronDown, ChevronUp, Star, Tv, Eye, Users, CheckCircle, Info, Check, X, Loader2 } from "lucide-react";
 import { Modal } from "@/components/Common/Modal";
 import { readJson } from "@/lib/fetch-utils";
 import { csrfFetch } from "@/lib/csrf-client";
@@ -18,6 +18,14 @@ import ButtonWithDropdown from "@/components/Common/ButtonWithDropdown";
 import { ArrowDownTrayIcon, FilmIcon } from "@heroicons/react/24/outline";
 import { useTrackView } from "@/hooks/useTrackView";
 import { ShareButton } from "@/components/Media/ShareButton";
+import { useToast } from "@/components/Providers/ToastProvider";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type Episode = {
     episode_number: number;
@@ -26,6 +34,11 @@ type Episode = {
     still_path: string | null;
     air_date: string;
     vote_average: number;
+    available?: boolean;
+    jellyfinItemId?: string | null;
+    requested?: boolean;
+    requestStatus?: string | null;
+    requestId?: string | null;
 };
 
 type Season = {
@@ -119,7 +132,9 @@ export function TvDetailClientNew({
     const [loadingSeasons, setLoadingSeasons] = useState<Set<number>>(new Set());
     const [checkedEpisodes, setCheckedEpisodes] = useState<Record<number, Set<number>>>({});
     const [selectedQualityProfileId, setSelectedQualityProfileId] = useState<number>(defaultQualityProfileId);
+    const [monitorEpisodes, setMonitorEpisodes] = useState<boolean>(true);
     const [status, setStatus] = useState<string>("");
+    const [submitState, setSubmitState] = useState<"idle" | "loading" | "success" | "error">("idle");
 
     // Track view
     useTrackView({
@@ -131,9 +146,11 @@ export function TvDetailClientNew({
     const [modal, setModal] = useState<{ title: string; message: string } | null>(null);
     const [seasonQuickOpen, setSeasonQuickOpen] = useState(false);
     const [requestModalOpen, setRequestModalOpen] = useState(false);
+    const [episodeRequestModal, setEpisodeRequestModal] = useState<{ open: boolean; seasonNumber: number } | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [requestInfoLoaded, setRequestInfoLoaded] = useState(Boolean(prefetchedAggregate));
     const router = useRouter();
+    const toast = useToast();
     const blockedMessage = "Requesting blocked until notifications are applied";
 
     const [qualityProfilesState, setQualityProfilesState] = useState<QualityProfile[]>(qualityProfiles);
@@ -204,6 +221,7 @@ export function TvDetailClientNew({
 
     const hasQualityProfiles = qualityProfilesState.length > 0;
     const isExisting = !!existingSeriesState;
+    const canRequestSeries = !isExisting && hasQualityProfiles;
     const cast = (tv.aggregate_credits?.cast ?? tv.credits?.cast ?? []).slice(0, 12);
     const creators = Array.isArray(tv.created_by) ? tv.created_by.slice(0, 6) : [];
     const crew = Array.isArray(tv.credits?.crew) ? tv.credits.crew : [];
@@ -240,7 +258,8 @@ export function TvDetailClientNew({
         next.add(seasonNumber);
         setLoadingSeasons(next);
         try {
-            const res = await fetch(`/api/v1/tmdb/tv/${tv.id}/season/${seasonNumber}`);
+            // Use the fast endpoint that doesn't check Jellyfin per-episode
+            const res = await fetch(`/api/v1/tmdb/tv/${tv.id}/season/${seasonNumber}/fast`);
             const data = await res.json();
             if (res.ok && data.episodes) {
                 setSeasonEpisodes(prev => ({ ...prev, [seasonNumber]: data.episodes }));
@@ -254,7 +273,10 @@ export function TvDetailClientNew({
         }
     };
 
-    const toggleEpisode = (seasonNumber: number, episodeNumber: number) => {
+    const toggleEpisode = (seasonNumber: number, episodeNumber: number, episode?: Episode) => {
+        // Don't allow selecting episodes that are already requested
+        if (episode?.requested) return;
+
         setCheckedEpisodes(prev => {
             const seasonChecked = new Set(prev[seasonNumber] || []);
             if (seasonChecked.has(episodeNumber)) seasonChecked.delete(episodeNumber);
@@ -266,8 +288,12 @@ export function TvDetailClientNew({
     const toggleAllInSeason = (seasonNumber: number) => {
         const episodes = seasonEpisodes[seasonNumber] || [];
         const currentChecked = checkedEpisodes[seasonNumber] || new Set();
-        const allChecked = episodes.length > 0 && currentChecked.size === episodes.length;
-        setCheckedEpisodes(prev => ({ ...prev, [seasonNumber]: allChecked ? new Set() : new Set(episodes.map(e => e.episode_number)) }));
+        const selectable = episodes.filter(e => !e.requested).map(e => e.episode_number);
+        const allChecked = selectable.length > 0 && currentChecked.size === selectable.length;
+        setCheckedEpisodes(prev => ({
+            ...prev,
+            [seasonNumber]: allChecked ? new Set() : new Set(selectable)
+        }));
     };
 
     const requestEpisodes = async (seasonNumber: number) => {
@@ -275,19 +301,26 @@ export function TvDetailClientNew({
         if (requestsBlockedState) {
             setModal({ title: "Requesting blocked", message: blockedMessage });
             setStatus("");
+            setSubmitState("error");
+            setTimeout(() => setSubmitState("idle"), 2000);
             return;
         }
         if (!hasQualityProfiles) {
             setStatus("Configure Sonarr with a quality profile before requesting.");
+            setSubmitState("error");
+            setTimeout(() => setSubmitState("idle"), 2000);
             return;
         }
         const episodeNumbers = Array.from(checkedEpisodes[seasonNumber] || []).sort((a, b) => a - b);
         if (episodeNumbers.length === 0) {
             setStatus("Select at least one episode.");
+            setSubmitState("error");
+            setTimeout(() => setSubmitState("idle"), 2000);
             return;
         }
         setIsSubmitting(true);
-        setStatus("Submitting to Sonarr...");
+        setSubmitState("loading");
+        setStatus("");
         try {
             const res = await csrfFetch("/api/v1/request/episodes", {
                 method: "POST",
@@ -298,23 +331,49 @@ export function TvDetailClientNew({
             if (!res.ok) {
                 if (res.status === 403 && data.error === "notifications_required") {
                     setModal({ title: "Requesting blocked", message: blockedMessage });
-                    setStatus("");
+                    setSubmitState("error");
+                    setTimeout(() => setSubmitState("idle"), 2000);
                     return;
                 }
                 if (res.status === 409 && (data.error === "already_requested" || data.error === "already_in_sonarr")) {
                     setModal({ title: data.error === "already_in_sonarr" ? "Already in Sonarr" : "Already requested", message: data.message || "These episodes have already been requested or already exist." });
-                    setStatus("");
+                    setSubmitState("error");
+                    setTimeout(() => setSubmitState("idle"), 2000);
                     return;
                 }
                 throw new Error(data.error || data.message || "Request failed");
             }
-            if (data.pending) setModal({ title: "Sent for approval", message: "An admin needs to approve this request before it is added." });
-            else setModal({ title: "Request submitted!", message: `Successfully requested ${data.count} episode${data.count !== 1 ? 's' : ''}. Request ID: ${data.requestId}` });
-            setStatus("");
+            if (data.pending) {
+                toast.success("Request sent for approval! An admin needs to approve before it is added.", { timeoutMs: 4000 });
+            } else {
+                toast.success(`Successfully requested ${data.count} episode${data.count !== 1 ? 's' : ''}!`, { timeoutMs: 3000 });
+            }
+            setSeasonEpisodes(prev => {
+                const episodes = prev[seasonNumber];
+                if (!episodes) return prev;
+                const nextEpisodes = episodes.map(episode => {
+                    if (!episodeNumbers.includes(episode.episode_number)) {
+                        return episode;
+                    }
+                    return {
+                        ...episode,
+                        requested: true,
+                        requestStatus: data.pending ? "pending" : "submitted"
+                    };
+                });
+                return { ...prev, [seasonNumber]: nextEpisodes };
+            });
+            setSubmitState("success");
             setCheckedEpisodes(prev => ({ ...prev, [seasonNumber]: new Set() }));
             router.refresh();
+            setTimeout(() => {
+                setEpisodeRequestModal(null);
+                setSubmitState("idle");
+            }, 1500);
         } catch (err: any) {
-            setStatus(`Failed: ${err?.message ?? String(err)}`);
+            toast.error(`Failed to submit request: ${err?.message ?? String(err)}`, { timeoutMs: 4000 });
+            setSubmitState("error");
+            setTimeout(() => setSubmitState("idle"), 2000);
         } finally {
             setIsSubmitting(false);
         }
@@ -360,12 +419,16 @@ export function TvDetailClientNew({
                 }
                 throw new Error(data.error || data.message || "Request failed");
             }
-            if (data.pending) setModal({ title: "Sent for approval", message: "An admin needs to approve this request before it is added." });
-            else setModal({ title: "Request submitted!", message: `Successfully requested ${data.count} episode${data.count !== 1 ? 's' : ''}. Request ID: ${data.requestId}` });
+            if (data.pending) {
+                toast.success("Request sent for approval! An admin needs to approve before it is added.", { timeoutMs: 4000 });
+            } else {
+                toast.success(`Successfully requested ${data.count} episode${data.count !== 1 ? 's' : ''}!`, { timeoutMs: 3000 });
+            }
             setStatus("");
             setSeasonQuickOpen(false);
             router.refresh();
         } catch (err: any) {
+            toast.error(`Failed to submit request: ${err?.message ?? String(err)}`, { timeoutMs: 4000 });
             setStatus(`Failed: ${err?.message ?? String(err)}`);
         } finally {
             setIsSubmitting(false);
@@ -391,14 +454,124 @@ export function TvDetailClientNew({
     return (
         <div className="media-page">
             <Modal open={!!modal} title={modal?.title ?? ""} onClose={() => setModal(null)}>{modal?.message ?? ""}</Modal>
+
+            {/* Episode Request Confirmation Modal */}
+            <Modal
+                open={episodeRequestModal?.open ?? false}
+                title="Confirm Episode Request"
+                onClose={() => setEpisodeRequestModal(null)}
+                backgroundImage={backdrop ?? poster ?? undefined}
+            >
+                <div className="space-y-4">
+                    <div className="p-4 rounded-lg bg-purple-500/10 border border-purple-500/20">
+                        <p className="text-sm text-gray-300">
+                            You are about to request <span className="font-bold text-purple-300">{getCheckedCount(episodeRequestModal?.seasonNumber ?? 0)} episode{getCheckedCount(episodeRequestModal?.seasonNumber ?? 0) !== 1 ? 's' : ''}</span> from {tv.name}.
+                        </p>
+                    </div>
+
+                    {qualityProfilesState.length > 0 && (
+                        <div className="text-sm text-gray-300">
+                            <div className="mb-2 font-semibold">Quality Profile</div>
+                            <Select
+                                value={String(selectedQualityProfileId)}
+                                onValueChange={(value) => setSelectedQualityProfileId(Number(value))}
+                                disabled={isSubmitting}
+                            >
+                                <SelectTrigger className="w-full">
+                                    <SelectValue placeholder="Select quality profile" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {qualityProfilesState.map((profile) => (
+                                        <SelectItem key={profile.id} value={String(profile.id)}>
+                                            {profile.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    )}
+
+                    <label className="flex items-center gap-3 cursor-pointer group p-3 rounded-lg hover:bg-white/5 transition-colors">
+                        <div className={`h-5 w-5 rounded border flex items-center justify-center transition-colors ${monitorEpisodes ? 'bg-purple-500 border-purple-500' : 'border-gray-500 group-hover:border-purple-400'}`}>
+                            {monitorEpisodes && <CheckCircle className="h-4 w-4 text-white" />}
+                        </div>
+                        <div className="flex-1">
+                            <span className="text-sm font-medium text-gray-200 group-hover:text-white transition-colors block">Monitor episodes</span>
+                            <span className="text-xs text-gray-400">Automatically search for episodes when they become available</span>
+                        </div>
+                        <input type="checkbox" checked={monitorEpisodes} onChange={(e) => setMonitorEpisodes(e.target.checked)} className="hidden" />
+                    </label>
+
+                    {status && (
+                        <div className="text-sm text-gray-300 p-3 rounded-lg bg-white/5">
+                            {status}
+                        </div>
+                    )}
+
+                    <div className="flex gap-3 pt-4">
+                        <button
+                            onClick={() => {
+                                setEpisodeRequestModal(null);
+                                setSubmitState("idle");
+                            }}
+                            className="flex-1 px-4 py-2 rounded-lg border border-gray-700 bg-gray-800 hover:bg-gray-700 text-white text-sm font-medium transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled={isSubmitting}
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={() => {
+                                if (episodeRequestModal) {
+                                    requestEpisodes(episodeRequestModal.seasonNumber);
+                                }
+                            }}
+                            className={`flex-1 px-4 py-2 rounded-lg text-white text-sm font-bold shadow-lg transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${
+                                submitState === "success"
+                                    ? "bg-green-600 hover:bg-green-700 shadow-green-600/20"
+                                    : submitState === "error"
+                                    ? "bg-red-600 hover:bg-red-700 shadow-red-600/20"
+                                    : "bg-purple-600 hover:bg-purple-700 shadow-purple-600/20"
+                            }`}
+                            disabled={!hasQualityProfiles || isSubmitting}
+                        >
+                            {submitState === "loading" && <Loader2 className="h-4 w-4 animate-spin" />}
+                            {submitState === "success" && <Check className="h-4 w-4" />}
+                            {submitState === "error" && <X className="h-4 w-4" />}
+                            <span>
+                                {submitState === "loading"
+                                    ? "Requesting..."
+                                    : submitState === "success"
+                                    ? "Success"
+                                    : submitState === "error"
+                                    ? "Failed"
+                                    : "Confirm Request"}
+                            </span>
+                        </button>
+                    </div>
+                </div>
+            </Modal>
+
             <Modal open={seasonQuickOpen} title={`${tv.name} — Quick Request`} onClose={() => setSeasonQuickOpen(false)}>
                 <div className="space-y-4">
                     {qualityProfilesState.length > 0 && (
                         <div className="text-sm text-gray-300">
                             <div className="mb-2 font-semibold">Quality Profile</div>
-                            <select value={selectedQualityProfileId} onChange={e => setSelectedQualityProfileId(Number(e.target.value))} className="w-full input">
-                                {qualityProfilesState.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}
-                            </select>
+                            <Select
+                                value={String(selectedQualityProfileId)}
+                                onValueChange={(value) => setSelectedQualityProfileId(Number(value))}
+                                disabled={isSubmitting}
+                            >
+                                <SelectTrigger className="w-full">
+                                    <SelectValue placeholder="Select quality profile" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {qualityProfilesState.map((profile) => (
+                                        <SelectItem key={profile.id} value={String(profile.id)}>
+                                            {profile.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
                         </div>
                     )}
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
@@ -415,7 +588,7 @@ export function TvDetailClientNew({
                                 <div className="p-3 space-y-1">
                                     <div className="font-semibold text-white text-sm truncate">{season.name || `Season ${season.season_number}`}</div>
                                     <div className="text-xs text-gray-400">{season.episode_count} episodes</div>
-                                    <button onClick={() => requestFullSeason(season.season_number)} className="mt-2 w-full px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold active:scale-95 disabled:opacity-50" disabled={requestsBlockedState || qualityProfilesState.length === 0 || isSubmitting}>Request Season</button>
+                                    <button onClick={() => requestFullSeason(season.season_number)} className="mt-2 w-full px-3 py-1.5 rounded bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold active:scale-95 disabled:opacity-50" disabled={requestsBlockedState || qualityProfilesState.length === 0 || isSubmitting}>Request Season</button>
                                 </div>
                             </div>
                         ))}
@@ -469,14 +642,14 @@ export function TvDetailClientNew({
                     <div className="media-title">
                         <div className="media-status">
                             {availableInLibraryState ? (
-                                <div className="inline-flex h-7 items-center gap-1.5 rounded-full border border-emerald-400 bg-emerald-500 px-3 text-xs font-semibold text-white shadow-sm">
+                                <div className="inline-flex h-7 items-center gap-1.5 rounded-full border border-indigo-400 bg-indigo-500 px-3 text-xs font-semibold text-white shadow-sm">
                                     <CheckCircle className="h-4 w-4" />
                                     Available
                                 </div>
                             ) : null}
                             {isExisting && existingSeriesState?.monitored && (
-                                <div className="inline-flex h-7 items-center gap-1.5 rounded-full border border-emerald-400 bg-emerald-500 px-3 text-xs font-semibold text-white shadow-sm">
-                                    <CheckCircle className="h-4 w-4" />
+                                <div className="inline-flex h-7 items-center gap-1.5 rounded-full border border-purple-400 bg-purple-500 px-3 text-xs font-semibold text-white shadow-sm">
+                                    <Eye className="h-4 w-4" />
                                     Monitored
                                 </div>
                             )}
@@ -553,7 +726,7 @@ export function TvDetailClientNew({
                                             ]}
                                         />
                                     ) : null}
-                                    {requestInfoLoaded && !isExisting && qualityProfilesState.length > 0 && (
+                                    {canRequestSeries && (
                                         <>
                                             <ButtonWithDropdown
                                                 text={
@@ -572,10 +745,10 @@ export function TvDetailClientNew({
                                                 qualityProfiles={qualityProfilesState}
                                                 defaultQualityProfileId={selectedQualityProfileId}
                                                 requestsBlocked={requestsBlockedState}
-                                                isAdmin={isAdminState}
                                                 title={tv.name}
                                                 posterUrl={poster}
                                                 backdropUrl={backdrop}
+                                                isLoading={!requestInfoLoaded}
                                                 onRequestPlaced={() => {
                                                     setRequestModalOpen(false);
                                                     router.refresh();
@@ -583,7 +756,7 @@ export function TvDetailClientNew({
                                             />
                                         </>
                                     )}
-                                    {requestInfoLoaded && !isExisting && qualityProfilesState.length === 0 && (
+                                    {!isExisting && qualityProfilesState.length === 0 && requestInfoLoaded && (
                                         <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-2 text-amber-200 text-sm">
                                             ⚠️ Configure Sonarr first
                                         </div>
@@ -662,7 +835,8 @@ export function TvDetailClientNew({
                                     const isLoading = loadingSeasons.has(season.season_number);
                                     const episodes = seasonEpisodes[season.season_number] || [];
                                     const checkedCount = getCheckedCount(season.season_number);
-                                    const allChecked = episodes.length > 0 && checkedCount === episodes.length;
+                                    const selectableCount = episodes.filter(e => !e.requested).length;
+                                    const allChecked = selectableCount > 0 && checkedCount === selectableCount;
                                     return (
                                         <div key={season.season_number} className="overflow-hidden rounded-xl border border-white/10 bg-black/20 backdrop-blur-sm transition-all hover:bg-black/30">
                                             <button onClick={() => toggleSeason(season.season_number)} className="w-full flex items-center justify-between p-6 transition-colors">
@@ -688,13 +862,22 @@ export function TvDetailClientNew({
                                                     ) : (
                                                         <>
                                                             <div className="flex flex-wrap items-center justify-between gap-4 mb-6 pb-4 border-b border-white/5">
-                                                                <label className="flex items-center gap-3 cursor-pointer group">
-                                                                    <div className={`h-5 w-5 rounded border flex items-center justify-center transition-colors ${allChecked ? 'bg-white border-white' : 'border-gray-500 group-hover:border-white'}`}>{allChecked && <CheckCircle className="h-3.5 w-3.5 text-black" />}</div>
-                                                                    <span className="text-sm font-medium text-gray-300 group-hover:text-white transition-colors">Select All Episodes</span>
-                                                                    <input type="checkbox" checked={allChecked} onChange={() => toggleAllInSeason(season.season_number)} className="hidden" />
-                                                                </label>
+                                                                <div className="flex flex-col gap-3">
+                                                                    <label className="flex items-center gap-3 cursor-pointer group">
+                                                                        <div className={`h-5 w-5 rounded border flex items-center justify-center transition-colors ${allChecked ? 'bg-white border-white' : 'border-gray-500 group-hover:border-white'}`}>{allChecked && <CheckCircle className="h-3.5 w-3.5 text-black" />}</div>
+                                                                        <span className="text-sm font-medium text-gray-300 group-hover:text-white transition-colors">Select All Episodes</span>
+                                                                        <input type="checkbox" checked={allChecked} onChange={() => toggleAllInSeason(season.season_number)} className="hidden" />
+                                                                    </label>
+                                                                    {checkedCount > 0 && (
+                                                                        <label className="flex items-center gap-3 cursor-pointer group ml-8">
+                                                                            <div className={`h-4 w-4 rounded border flex items-center justify-center transition-colors ${monitorEpisodes ? 'bg-purple-500 border-purple-500' : 'border-gray-500 group-hover:border-purple-400'}`}>{monitorEpisodes && <CheckCircle className="h-3 w-3 text-white" />}</div>
+                                                                            <span className="text-xs font-medium text-gray-400 group-hover:text-gray-300 transition-colors">Monitor episodes after request</span>
+                                                                            <input type="checkbox" checked={monitorEpisodes} onChange={(e) => setMonitorEpisodes(e.target.checked)} className="hidden" />
+                                                                        </label>
+                                                                    )}
+                                                                </div>
                                                                 {checkedCount > 0 && (
-                                                                    <button onClick={() => requestEpisodes(season.season_number)} className="px-6 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold shadow-lg shadow-emerald-500/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed" disabled={!hasQualityProfiles || isSubmitting}>Request {checkedCount} Episode{checkedCount !== 1 ? 's' : ''}</button>
+                                                                    <button onClick={() => setEpisodeRequestModal({ open: true, seasonNumber: season.season_number })} className="px-6 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm font-bold shadow-lg shadow-purple-600/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed" disabled={!hasQualityProfiles || isSubmitting}>Request {checkedCount} Episode{checkedCount !== 1 ? 's' : ''}</button>
                                                                 )}
                                                             </div>
                                                             <div className="divide-y divide-white/10">
@@ -702,25 +885,46 @@ export function TvDetailClientNew({
                                                                     const isChecked = checkedEpisodes[season.season_number]?.has(episode.episode_number);
                                                                     const stillUrl = episode.still_path ? `https://image.tmdb.org/t/p/w300${episode.still_path}` : null;
                                                                     const airBadge = getAiringBadge(episode.air_date);
+                                                                    const isRequested = episode.requested ?? false;
+                                                                    const isDisabled = isRequested;
+
                                                                     return (
                                                                         <label
                                                                             key={episode.episode_number}
-                                                                            className={`relative flex gap-5 py-5 cursor-pointer transition-colors ${isChecked ? "bg-emerald-500/10" : "hover:bg-white/5"}`}
+                                                                            className={`relative flex gap-5 py-5 transition-colors ${
+                                                                                isDisabled ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-white/5"
+                                                                            } ${isChecked ? "bg-purple-500/10" : ""}`}
                                                                         >
                                                                             <input
                                                                                 type="checkbox"
                                                                                 checked={isChecked}
-                                                                                onChange={() => toggleEpisode(season.season_number, episode.episode_number)}
+                                                                                onChange={() => toggleEpisode(season.season_number, episode.episode_number, episode)}
                                                                                 className="hidden"
+                                                                                disabled={isDisabled}
                                                                             />
-                                                                            <div className={`mt-1 h-5 w-5 rounded border flex items-center justify-center transition-colors ${isChecked ? "bg-emerald-400 border-emerald-400" : "border-gray-500"}`}>
-                                                                                {isChecked && <CheckCircle className="h-4 w-4 text-black" />}
+                                                                            <div className={`mt-1 h-5 w-5 rounded border flex items-center justify-center transition-colors ${
+                                                                                isDisabled ? "bg-gray-700 border-gray-600" :
+                                                                                isChecked ? "bg-purple-500 border-purple-500" : "border-gray-500"
+                                                                            }`}>
+                                                                                {(isChecked || isDisabled) && <CheckCircle className="h-4 w-4 text-white" />}
                                                                             </div>
                                                                             <div className="flex-1 min-w-0">
                                                                                 <div className="flex flex-wrap items-center gap-2">
-                                                                                    <h4 className={`text-base font-semibold leading-snug ${isChecked ? "text-emerald-100" : "text-gray-100"}`}>
+                                                                                    <h4 className={`text-base font-semibold leading-snug ${isChecked ? "text-purple-100" : "text-gray-100"}`}>
                                                                                         {episode.episode_number} - {episode.name || "Untitled"}
                                                                                     </h4>
+                                                                                    {episode.available && (
+                                                                                        <span className="inline-flex items-center gap-1 rounded-full bg-green-500/20 border border-green-500/40 px-2.5 py-0.5 text-xs font-semibold text-green-300">
+                                                                                            <CheckCircle className="h-3 w-3" />
+                                                                                            Available
+                                                                                        </span>
+                                                                                    )}
+                                                                                    {isRequested && (
+                                                                                        <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/20 border border-blue-500/40 px-2.5 py-0.5 text-xs font-semibold text-blue-300">
+                                                                                            <Info className="h-3 w-3" />
+                                                                                            Already requested
+                                                                                        </span>
+                                                                                    )}
                                                                                     <span className="inline-flex items-center rounded-full bg-white/10 px-2.5 py-0.5 text-xs font-semibold text-gray-200">
                                                                                         {formatDate(episode.air_date)}
                                                                                     </span>
@@ -749,7 +953,7 @@ export function TvDetailClientNew({
                                                                                     </div>
                                                                                 )}
                                                                                 {isChecked && (
-                                                                                    <div className="absolute inset-0 bg-emerald-500/20" />
+                                                                                    <div className="absolute inset-0 bg-purple-500/20" />
                                                                                 )}
                                                                             </div>
                                                                         </label>

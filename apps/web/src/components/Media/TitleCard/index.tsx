@@ -10,6 +10,7 @@ import { useToast } from "@/components/Providers/ToastProvider";
 import { useIsTouch } from "@/hooks/useIsTouch";
 import { StatusBadgeMini, MediaStatus } from "@/components/Common/StatusBadgeMini";
 import { RequestMediaModal } from "@/components/Requests/RequestMediaModal";
+import { SeriesRequestModal } from "@/components/Requests/SeriesRequestModal";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
 import CachedImage from "@/components/Common/CachedImage";
@@ -245,8 +246,22 @@ export function TitleCard({
         </div>
       </div>
 
-      {/* Request Modal */}
-      {requestModalOpen && mediaType && (
+      {/* Request Modal - Use SeriesRequestModal for TV, RequestMediaModal for movies */}
+      {requestModalOpen && mediaType === "tv" && (
+          <SeriesRequestModal
+              open={requestModalOpen}
+              onClose={() => setRequestModalOpen(false)}
+              tmdbId={id}
+              qualityProfiles={profileData?.qualityProfiles ?? []}
+              defaultQualityProfileId={profileData?.defaultQualityProfileId ?? 1}
+              requestsBlocked={profileData?.requestsBlocked ?? false}
+              title={title}
+              posterUrl={finalImage}
+              backdropUrl={finalImage}
+              isLoading={profilesLoading}
+          />
+      )}
+      {requestModalOpen && mediaType === "movie" && (
           <RequestMediaModal
               open={requestModalOpen}
               onClose={() => setRequestModalOpen(false)}
@@ -255,7 +270,6 @@ export function TitleCard({
               qualityProfiles={profileData?.qualityProfiles ?? []}
               defaultQualityProfileId={profileData?.defaultQualityProfileId ?? 1}
               requestsBlocked={profileData?.requestsBlocked ?? false}
-              isAdmin={profileData?.isAdmin ?? false}
               title={title}
               posterUrl={finalImage}
               backdropUrl={finalImage}

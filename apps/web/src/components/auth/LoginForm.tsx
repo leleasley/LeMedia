@@ -8,9 +8,12 @@ import { CsrfTokenInput } from "@/components/Common/CsrfTokenInput";
 interface LoginFormProps {
     from: string;
     csrfToken?: string;
+    formId?: string;
+    action?: string;
+    submitLabel?: string;
 }
 
-export function LoginForm({ from, csrfToken }: LoginFormProps) {
+export function LoginForm({ from, csrfToken, formId, action = "/api/v1/login", submitLabel = "Sign In" }: LoginFormProps) {
     const searchParams = useSearchParams();
     const toast = useToast();
 
@@ -27,7 +30,7 @@ export function LoginForm({ from, csrfToken }: LoginFormProps) {
     }, [searchParams, toast]);
 
     return (
-        <form className="space-y-5" method="post" action="/api/v1/login">
+        <form id={formId} className="space-y-5" method="post" action={action}>
             <input type="hidden" name="from" value={from} />
             <CsrfTokenInput value={csrfToken} />
             <div className="space-y-1.5">
@@ -63,7 +66,7 @@ export function LoginForm({ from, csrfToken }: LoginFormProps) {
                 type="submit"
                 className="w-full mt-2 bg-white text-black hover:bg-gray-100 py-3.5 text-sm font-bold uppercase tracking-wide rounded-lg shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200"
             >
-                Sign In
+                {submitLabel}
             </button>
         </form>
     );

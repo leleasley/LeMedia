@@ -127,7 +127,6 @@ export function MovieRequestPanel({
           qualityProfiles={info.qualityProfiles}
           defaultQualityProfileId={info.defaultQualityProfileId}
           requestsBlocked={info.requestsBlocked}
-          isAdmin={info.isAdmin}
           title={title}
           posterUrl={posterUrl}
           backdropUrl={backdropUrl}

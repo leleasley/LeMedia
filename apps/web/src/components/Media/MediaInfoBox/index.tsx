@@ -78,6 +78,8 @@ export function MediaInfoBox({
     jellyfinUrl,
     externalRatingsSlot
 }: MediaInfoBoxProps) {
+    const ratingBadgeClass =
+        "media-rating px-1 sm:px-2 py-1.5 sm:py-2 rounded-lg hover:bg-white/5 transition-all";
 
     const formatDate = (dateStr: string | undefined) => {
         if (!dateStr) return "Unknown";
@@ -144,7 +146,7 @@ export function MediaInfoBox({
                             href={`https://www.themoviedb.org/${type}/${tmdbId}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="flex flex-col items-center gap-0.5 sm:gap-1 px-1 sm:px-2 py-1.5 sm:py-2 rounded-lg hover:bg-white/5 transition-all"
+                            className={ratingBadgeClass}
                             title={`TMDB User Score: ${(voteAverage * 10).toFixed(0)}%`}
                         >
                             <div className="w-5 h-5 sm:w-6 sm:h-6 relative">
@@ -163,7 +165,7 @@ export function MediaInfoBox({
                                     href={rtUrl || "#"}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="flex flex-col items-center gap-0.5 sm:gap-1 px-1 sm:px-2 py-1.5 sm:py-2 rounded-lg hover:bg-white/5 transition-all"
+                                    className={ratingBadgeClass}
                                     title={`Rotten Tomatoes Critics: ${rtCriticsScore}%`}
                                 >
                                     <div className="w-5 h-5 sm:w-6 sm:h-6 relative">
@@ -184,7 +186,7 @@ export function MediaInfoBox({
                                     href={rtUrl || "#"}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="flex flex-col items-center gap-0.5 sm:gap-1 px-1 sm:px-2 py-1.5 sm:py-2 rounded-lg hover:bg-white/5 transition-all"
+                                    className={ratingBadgeClass}
                                     title={`Rotten Tomatoes Audience: ${rtAudienceScore}%`}
                                 >
                                     <div className="w-5 h-5 sm:w-6 sm:h-6 relative">
@@ -205,7 +207,7 @@ export function MediaInfoBox({
                                     href={`https://www.imdb.com/title/${imdbId}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="flex flex-col items-center gap-0.5 sm:gap-1 px-1 sm:px-2 py-1.5 sm:py-2 rounded-lg hover:bg-white/5 transition-all"
+                                    className={ratingBadgeClass}
                                     title={`IMDb Rating: ${imdbRating}/10`}
                                 >
                                     <div className="w-5 h-5 sm:w-6 sm:h-6 relative">

@@ -44,7 +44,7 @@ export function PlayButton({ links }: PlayButtonProps) {
     if (!trailerUrl) return null;
     const id = parseYouTubeId(trailerUrl);
     if (!id) return null;
-    return `https://www.youtube.com/embed/${id}?autoplay=1&rel=0`;
+    return `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&rel=0`;
   }, [trailerUrl]);
 
   if (!hasLinks) {

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/auth";
-import { listJobs, updateJob } from "@/db";
+import { listJobs, updateJobSchedule } from "@/db";
 import { z } from "zod";
+import { computeNextRun } from "@/lib/jobs";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,8 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { id, schedule, intervalSeconds } = UpdateJobSchema.parse(body);
-    await updateJob(id, schedule, intervalSeconds);
+    const nextRun = computeNextRun(schedule, intervalSeconds);
+    await updateJobSchedule(id, schedule, intervalSeconds, nextRun);
     return NextResponse.json({ success: true });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 400 });
