@@ -24,7 +24,8 @@ const Body = z.object({
   serviceId: z.coerce.number().int().optional(),
   rootFolder: z.string().min(1).optional(),
   languageProfileId: z.coerce.number().int().optional(),
-  tags: z.array(z.coerce.number().int()).optional()
+  tags: z.array(z.coerce.number().int()).optional(),
+  monitor: z.boolean().optional()
 });
 
 const REQUESTS_REQUIRE_NOTIFICATIONS =
@@ -160,7 +161,7 @@ export async function POST(req: NextRequest) {
       }
 
       const lookupResult = lookup[0];
-      const series = await addSeriesFromLookup(lookupResult, true, body.qualityProfileId, {
+      const series = await addSeriesFromLookup(lookupResult, body.monitor ?? true, body.qualityProfileId, {
         serviceId: sonarrService.id,
         rootFolder: body.rootFolder,
         tags: body.tags,

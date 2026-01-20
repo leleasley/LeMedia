@@ -50,11 +50,18 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
   let qualityProfiles: any[] = [];
   let existingSeries: any = null;
 
-  const seriesKey = tvdbId ? `agg:sonarr:series:tvdb:${tvdbId}` : `agg:sonarr:series:tmdb:${tmdbId}`;
+  const seriesKey = `agg:sonarr:series:tv:${tmdbId}:${tvdbId ?? "none"}`;
+  const seriesLookup = async () => {
+    if (tvdbId) {
+      const byTvdb = await getSeriesByTvdbId(tvdbId).catch(() => null);
+      if (byTvdb) return byTvdb;
+    }
+    return getSeriesByTmdbId(tmdbId).catch(() => null);
+  };
   const [profilesResult, seriesResult] = await Promise.allSettled([
     withCache("agg:sonarr:profiles", 60 * 1000, () => listSonarrQualityProfiles().catch(() => [])),
     withCache(seriesKey, 30 * 1000, () => {
-      return tvdbId ? getSeriesByTvdbId(tvdbId).catch(() => null) : getSeriesByTmdbId(tmdbId).catch(() => null);
+      return seriesLookup();
     })
   ]);
 
@@ -98,11 +105,13 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
   }
 
   let playUrl: string | null = null;
-  try {
-    const jellyfinItemId = await getJellyfinItemId("tv", tmdbId, title || `TMDB ${tmdbId}`, tvdbId ?? null);
-    playUrl = await getJellyfinPlayUrl(jellyfinItemId);
-  } catch {
-    playUrl = null;
+  if (availableInJellyfin === true) {
+    try {
+      const jellyfinItemId = await getJellyfinItemId("tv", tmdbId, title || `TMDB ${tmdbId}`, tvdbId ?? null);
+      playUrl = await getJellyfinPlayUrl(jellyfinItemId);
+    } catch {
+      playUrl = null;
+    }
   }
 
   const details = includeDetails ? await getTvDetailAggregate(tmdbId) : null;
@@ -112,7 +121,7 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
       tmdbId,
       tvdbId: tvdbId ?? null,
       isAdmin,
-      availableInLibrary: availableInJellyfin === true || Boolean(existingSeriesSummary?.monitored),
+      availableInLibrary: availableInJellyfin === true,
       playUrl,
       manage: {
         itemId: isAdmin ? existingSeriesSummary?.id ?? null : null,

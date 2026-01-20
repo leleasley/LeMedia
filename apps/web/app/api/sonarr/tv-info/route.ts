@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireUser } from "@/auth";
 import { getUserWithHash } from "@/db";
 import { hasAssignedNotificationEndpoints } from "@/lib/notifications";
-import { listSonarrQualityProfiles, getSeriesByTvdbId } from "@/lib/sonarr";
+import { listSonarrQualityProfiles, getSeriesByTmdbId, getSeriesByTvdbId } from "@/lib/sonarr";
 import { getActiveMediaService } from "@/lib/media-services";
 import { isAvailableByExternalIds } from "@/lib/jellyfin";
 import { jsonResponseWithETag } from "@/lib/api-optimization";
@@ -29,7 +29,13 @@ export async function GET(req: NextRequest) {
   try {
     const [profiles, existing] = await Promise.all([
       listSonarrQualityProfiles(),
-      parsed.data.tvdbId ? getSeriesByTvdbId(parsed.data.tvdbId).catch(() => null) : null
+      (async () => {
+        if (parsed.data.tvdbId) {
+          const byTvdb = await getSeriesByTvdbId(parsed.data.tvdbId).catch(() => null);
+          if (byTvdb) return byTvdb;
+        }
+        return getSeriesByTmdbId(parsed.data.tmdbId).catch(() => null);
+      })()
     ]);
     qualityProfiles = profiles ?? [];
     existingSeries = existing;

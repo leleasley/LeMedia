@@ -47,6 +47,18 @@ async function jellyfinFetch(path: string) {
   }
 }
 
+function hasPhysicalFile(item: any) {
+  const locationType = String(item?.LocationType ?? "").toLowerCase();
+  const itemType = String(item?.Type ?? "").toLowerCase();
+  if (locationType === "virtual" || item?.IsVirtual === true) return false;
+  if (itemType === "series") return false;
+
+  const mediaSources = Array.isArray(item?.MediaSources) ? item.MediaSources : [];
+  const hasMediaSourcePath = mediaSources.some((source: any) => Boolean(source?.Path));
+  const hasPath = Boolean(item?.Path);
+  return hasMediaSourcePath || hasPath;
+}
+
 export async function syncJellyfinAvailability(): Promise<{ scanned: number; added: number; updated: number }> {
   let totalScanned = 0;
   let totalAdded = 0;
@@ -93,13 +105,14 @@ async function syncLibrary(library: { id: string; name: string; type: "movie" | 
   let scanned = 0;
   let added = 0;
   let updated = 0;
+  const scanStartedAt = new Date();
 
   try {
-    const includeItemTypes = library.type === "movie" ? "Movie" : "Series,Episode";
+    const includeItemTypes = library.type === "movie" ? "Movie" : "Series,Season,Episode";
 
     // Fetch all items from the library
     const response = await jellyfinFetch(
-      `/Items?ParentId=${library.id}&Recursive=true&IncludeItemTypes=${includeItemTypes}&Fields=ProviderIds,ParentId,IndexNumber,ParentIndexNumber,Type&Limit=10000`
+      `/Items?ParentId=${library.id}&Recursive=true&IncludeItemTypes=${includeItemTypes}&Fields=ProviderIds,ParentId,IndexNumber,ParentIndexNumber,Type,LocationType,MediaSources,Path,IsVirtual&Limit=10000`
     );
 
     if (!response || !Array.isArray(response.Items)) {
@@ -111,6 +124,24 @@ async function syncLibrary(library: { id: string; name: string; type: "movie" | 
     }
 
     const items = response.Items;
+    const seriesById = new Map<string, { tmdbId: number | null; tvdbId: number | null; imdbId: string | null }>();
+    const seasonToSeriesId = new Map<string, string>();
+
+    for (const item of items) {
+      const itemType = String(item.Type ?? "").toLowerCase();
+      const itemId = item.Id ? String(item.Id) : "";
+      if (!itemId) continue;
+
+      if (itemType === "series") {
+        seriesById.set(itemId, {
+          tmdbId: item.ProviderIds?.Tmdb ? Number(item.ProviderIds.Tmdb) : null,
+          tvdbId: item.ProviderIds?.Tvdb ? Number(item.ProviderIds.Tvdb) : null,
+          imdbId: item.ProviderIds?.Imdb ?? null
+        });
+      } else if (itemType === "season" && item.ParentId) {
+        seasonToSeriesId.set(itemId, String(item.ParentId));
+      }
+    }
     logger.info("[Jellyfin Availability Sync] Processing library", {
       libraryId: library.id,
       libraryName: library.name,
@@ -123,9 +154,9 @@ async function syncLibrary(library: { id: string; name: string; type: "movie" | 
       const title = item.Name ?? null;
 
       // Extract provider IDs
-      const tmdbId = item.ProviderIds?.Tmdb ? Number(item.ProviderIds.Tmdb) : null;
-      const tvdbId = item.ProviderIds?.Tvdb ? Number(item.ProviderIds.Tvdb) : null;
-      const imdbId = item.ProviderIds?.Imdb ?? null;
+      let tmdbId = item.ProviderIds?.Tmdb ? Number(item.ProviderIds.Tmdb) : null;
+      let tvdbId = item.ProviderIds?.Tvdb ? Number(item.ProviderIds.Tvdb) : null;
+      let imdbId = item.ProviderIds?.Imdb ?? null;
 
       let mediaType: 'movie' | 'episode' | 'season' | 'series';
       let seasonNumber: number | null = null;
@@ -147,6 +178,21 @@ async function syncLibrary(library: { id: string; name: string; type: "movie" | 
         continue;
       }
 
+      if ((itemType === "movie" || itemType === "episode") && !hasPhysicalFile(item)) {
+        continue;
+      }
+
+      if (itemType === "episode" || itemType === "season") {
+        const parentId = item.ParentId ? String(item.ParentId) : "";
+        const seriesId = seasonToSeriesId.get(parentId) ?? (seriesById.has(parentId) ? parentId : "");
+        if (seriesId && seriesById.has(seriesId)) {
+          const seriesIds = seriesById.get(seriesId)!;
+          if (seriesIds.tmdbId) tmdbId = seriesIds.tmdbId;
+          if (seriesIds.tvdbId) tvdbId = seriesIds.tvdbId;
+          if (seriesIds.imdbId) imdbId = seriesIds.imdbId;
+        }
+      }
+
       const result = await upsertJellyfinAvailability({
         tmdbId,
         tvdbId,
@@ -165,6 +211,23 @@ async function syncLibrary(library: { id: string; name: string; type: "movie" | 
       } else {
         updated++;
       }
+    }
+
+    const pool = getPool();
+    const removed = await pool.query(
+      `DELETE FROM jellyfin_availability
+       WHERE jellyfin_library_id = $1
+         AND last_scanned_at < $2
+         AND media_type IN ('movie','episode')
+       RETURNING 1`,
+      [library.id, scanStartedAt]
+    );
+    if (removed.rowCount) {
+      logger.info("[Jellyfin Availability Sync] Removed stale items", {
+        libraryId: library.id,
+        libraryName: library.name,
+        removed: removed.rowCount
+      });
     }
   } catch (err) {
     logger.error("[Jellyfin Availability Sync] Error syncing library", {
@@ -186,18 +249,26 @@ export async function triggerManualAvailabilitySync(): Promise<void> {
 // Get cached episode availability for a TV show
 export async function getCachedEpisodeAvailability(
   tmdbId: number,
-  seasonNumber: number
+  seasonNumber: number,
+  tvdbId?: number | null
 ): Promise<Map<number, { available: boolean; jellyfinItemId: string | null }>> {
   const pool = getPool();
-  const res = await pool.query(
-    `SELECT episode_number, jellyfin_item_id
-     FROM jellyfin_availability
-     WHERE tmdb_id = $1
-       AND media_type = 'episode'
-       AND season_number = $2
-       AND episode_number IS NOT NULL`,
-    [tmdbId, seasonNumber]
-  );
+  const hasTvdbId = Number(tvdbId ?? 0) > 0;
+  const query = hasTvdbId
+    ? `SELECT episode_number, jellyfin_item_id
+       FROM jellyfin_availability
+       WHERE media_type = 'episode'
+         AND season_number = $3
+         AND episode_number IS NOT NULL
+         AND (tmdb_id = $1 OR tvdb_id = $2)`
+    : `SELECT episode_number, jellyfin_item_id
+       FROM jellyfin_availability
+       WHERE tmdb_id = $1
+         AND media_type = 'episode'
+         AND season_number = $2
+         AND episode_number IS NOT NULL`;
+  const params = hasTvdbId ? [tmdbId, tvdbId, seasonNumber] : [tmdbId, seasonNumber];
+  const res = await pool.query(query, params);
 
   const availabilityMap = new Map<number, { available: boolean; jellyfinItemId: string | null }>();
 

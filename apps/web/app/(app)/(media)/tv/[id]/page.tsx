@@ -128,9 +128,7 @@ export default async function TvPage({ params }: { params: ParamsInput }) {
           tvdbId={tvdbId}
           prefetchedAggregate={aggregate}
           externalRatingsSlot={
-            <div className="mt-4">
-              <ExternalRatings tmdbId={tv.id} mediaType="tv" imdbId={imdbId} />
-            </div>
+            <ExternalRatings tmdbId={tv.id} mediaType="tv" imdbId={imdbId} />
           }
         >
           {/* Recommendations Section */}

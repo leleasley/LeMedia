@@ -259,7 +259,8 @@ export function TvDetailClientNew({
         setLoadingSeasons(next);
         try {
             // Use the fast endpoint that doesn't check Jellyfin per-episode
-            const res = await fetch(`/api/v1/tmdb/tv/${tv.id}/season/${seasonNumber}/fast`);
+            const seasonParams = tvdbId ? `?tvdbId=${encodeURIComponent(String(tvdbId))}` : "";
+            const res = await fetch(`/api/v1/tmdb/tv/${tv.id}/season/${seasonNumber}/fast${seasonParams}`);
             const data = await res.json();
             if (res.ok && data.episodes) {
                 setSeasonEpisodes(prev => ({ ...prev, [seasonNumber]: data.episodes }));
@@ -749,6 +750,7 @@ export function TvDetailClientNew({
                                                 posterUrl={poster}
                                                 backdropUrl={backdrop}
                                                 isLoading={!requestInfoLoaded}
+                                                monitor={monitorEpisodes}
                                                 onRequestPlaced={() => {
                                                     setRequestModalOpen(false);
                                                     router.refresh();

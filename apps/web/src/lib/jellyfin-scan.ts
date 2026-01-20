@@ -1,4 +1,4 @@
-import { getJellyfinConfig } from "@/db";
+import { getJellyfinConfig, getPool } from "@/db";
 import { upsertJellyfinAvailability, startJellyfinScan, updateJellyfinScan } from "@/db";
 import { logger } from "@/lib/logger";
 import { decryptSecret } from "@/lib/encryption";
@@ -73,6 +73,18 @@ async function jellyfinFetch(path: string) {
   }
 }
 
+function hasPhysicalFile(item: any) {
+  const locationType = String(item?.LocationType ?? "").toLowerCase();
+  const itemType = String(item?.Type ?? "").toLowerCase();
+  if (locationType === "virtual" || item?.IsVirtual === true) return false;
+  if (itemType === "series") return false;
+
+  const mediaSources = Array.isArray(item?.MediaSources) ? item.MediaSources : [];
+  const hasMediaSourcePath = mediaSources.some((source: any) => Boolean(source?.Path));
+  const hasPath = Boolean(item?.Path);
+  return hasMediaSourcePath || hasPath;
+}
+
 export async function getJellyfinScanStatus(): Promise<ScanStatus> {
   const config = await getJellyfinConfig();
   return {
@@ -104,13 +116,22 @@ export async function startJellyfinLibraryScan(): Promise<void> {
   });
 
   (async () => {
-    const scanId = await startJellyfinScan({
-      libraryId: null,
-      libraryName: "All Enabled Libraries"
-    });
+    let scanId: number | null = null;
+    try {
+      scanId = await startJellyfinScan({
+        libraryId: null,
+        libraryName: "All Enabled Libraries"
+      });
+    } catch (err) {
+      logger.error("[Jellyfin Scan] Failed to start scan log", { error: String(err) });
+      scanState.running = false;
+      scanState.currentLibrary = null;
+      return;
+    }
 
     let totalScanned = 0;
     let totalAdded = 0;
+    let totalRemoved = 0;
 
     try {
       for (const library of enabledLibraries) {
@@ -128,13 +149,15 @@ export async function startJellyfinLibraryScan(): Promise<void> {
         const result = await scanLibrary(library);
         totalScanned += result.itemsScanned;
         totalAdded += result.itemsAdded;
+        totalRemoved += result.itemsRemoved;
         scanState.newItemsCount += result.itemsAdded;
 
         logger.info("[Jellyfin Scan] Library scan complete", {
           libraryId: library.id,
           libraryName: library.name,
           itemsScanned: result.itemsScanned,
-          itemsAdded: result.itemsAdded
+          itemsAdded: result.itemsAdded,
+          itemsRemoved: result.itemsRemoved
         });
 
         // Update the library's lastScan timestamp in config
@@ -144,11 +167,14 @@ export async function startJellyfinLibraryScan(): Promise<void> {
         config.libraries = updatedLibraries;
       }
 
-      await updateJellyfinScan(scanId, {
+      if (scanId) {
+        await updateJellyfinScan(scanId, {
         itemsScanned: totalScanned,
         itemsAdded: totalAdded,
+        itemsRemoved: totalRemoved,
         scanStatus: "completed"
       });
+      }
 
       logger.info("[Jellyfin Scan] Manual library scan completed", {
         totalScanned,
@@ -156,10 +182,12 @@ export async function startJellyfinLibraryScan(): Promise<void> {
       });
     } catch (err) {
       logger.error("[Jellyfin Scan] Failed during manual scan", { error: String(err) });
-      await updateJellyfinScan(scanId, {
-        scanStatus: "failed",
-        errorMessage: String(err)
-      });
+      if (scanId) {
+        await updateJellyfinScan(scanId, {
+          scanStatus: "failed",
+          errorMessage: String(err)
+        });
+      }
     } finally {
       scanState.running = false;
       scanState.currentLibrary = null;
@@ -167,16 +195,18 @@ export async function startJellyfinLibraryScan(): Promise<void> {
   })();
 }
 
-async function scanLibrary(library: JellyfinLibrary): Promise<{ itemsScanned: number; itemsAdded: number }> {
+async function scanLibrary(library: JellyfinLibrary): Promise<{ itemsScanned: number; itemsAdded: number; itemsRemoved: number }> {
   let itemsScanned = 0;
   let itemsAdded = 0;
+  let itemsRemoved = 0;
+  const scanStartedAt = new Date();
 
   try {
-    const includeItemTypes = library.type === "movie" ? "Movie" : "Series,Episode";
+    const includeItemTypes = library.type === "movie" ? "Movie" : "Series,Season,Episode";
 
     // Fetch all items from the library
     const response = await jellyfinFetch(
-      `/Items?ParentId=${library.id}&Recursive=true&IncludeItemTypes=${includeItemTypes}&Fields=ProviderIds,ParentId,IndexNumber,ParentIndexNumber,Type&Limit=10000`
+      `/Items?ParentId=${library.id}&Recursive=true&IncludeItemTypes=${includeItemTypes}&Fields=ProviderIds,ParentId,IndexNumber,ParentIndexNumber,Type,LocationType,MediaSources,Path,IsVirtual&Limit=10000`
     );
 
     if (!response || !Array.isArray(response.Items)) {
@@ -184,10 +214,28 @@ async function scanLibrary(library: JellyfinLibrary): Promise<{ itemsScanned: nu
         libraryId: library.id,
         libraryName: library.name
       });
-      return { itemsScanned: 0, itemsAdded: 0 };
+      return { itemsScanned: 0, itemsAdded: 0, itemsRemoved: 0 };
     }
 
     const items = response.Items;
+    const seriesById = new Map<string, { tmdbId: number | null; tvdbId: number | null; imdbId: string | null }>();
+    const seasonToSeriesId = new Map<string, string>();
+
+    for (const item of items) {
+      const itemType = String(item.Type ?? "").toLowerCase();
+      const itemId = item.Id ? String(item.Id) : "";
+      if (!itemId) continue;
+
+      if (itemType === "series") {
+        seriesById.set(itemId, {
+          tmdbId: item.ProviderIds?.Tmdb ? Number(item.ProviderIds.Tmdb) : null,
+          tvdbId: item.ProviderIds?.Tvdb ? Number(item.ProviderIds.Tvdb) : null,
+          imdbId: item.ProviderIds?.Imdb ?? null
+        });
+      } else if (itemType === "season" && item.ParentId) {
+        seasonToSeriesId.set(itemId, String(item.ParentId));
+      }
+    }
     logger.info("[Jellyfin Scan] Found items in library", {
       libraryId: library.id,
       libraryName: library.name,
@@ -202,9 +250,9 @@ async function scanLibrary(library: JellyfinLibrary): Promise<{ itemsScanned: nu
       const title = item.Name ?? null;
 
       // Extract provider IDs
-      const tmdbId = item.ProviderIds?.Tmdb ? Number(item.ProviderIds.Tmdb) : null;
-      const tvdbId = item.ProviderIds?.Tvdb ? Number(item.ProviderIds.Tvdb) : null;
-      const imdbId = item.ProviderIds?.Imdb ?? null;
+      let tmdbId = item.ProviderIds?.Tmdb ? Number(item.ProviderIds.Tmdb) : null;
+      let tvdbId = item.ProviderIds?.Tvdb ? Number(item.ProviderIds.Tvdb) : null;
+      let imdbId = item.ProviderIds?.Imdb ?? null;
 
       let mediaType: 'movie' | 'episode' | 'season' | 'series';
       let seasonNumber: number | null = null;
@@ -224,6 +272,21 @@ async function scanLibrary(library: JellyfinLibrary): Promise<{ itemsScanned: nu
       } else {
         // Skip unknown types
         continue;
+      }
+
+      if ((itemType === "movie" || itemType === "episode") && !hasPhysicalFile(item)) {
+        continue;
+      }
+
+      if (itemType === "episode" || itemType === "season") {
+        const parentId = item.ParentId ? String(item.ParentId) : "";
+        const seriesId = seasonToSeriesId.get(parentId) ?? (seriesById.has(parentId) ? parentId : "");
+        if (seriesId && seriesById.has(seriesId)) {
+          const seriesIds = seriesById.get(seriesId)!;
+          if (seriesIds.tmdbId) tmdbId = seriesIds.tmdbId;
+          if (seriesIds.tvdbId) tvdbId = seriesIds.tvdbId;
+          if (seriesIds.imdbId) imdbId = seriesIds.imdbId;
+        }
       }
 
       const result = await upsertJellyfinAvailability({
@@ -249,6 +312,17 @@ async function scanLibrary(library: JellyfinLibrary): Promise<{ itemsScanned: nu
         });
       }
     }
+
+    const pool = getPool();
+    const removed = await pool.query(
+      `DELETE FROM jellyfin_availability
+       WHERE jellyfin_library_id = $1
+         AND last_scanned_at < $2
+         AND media_type IN ('movie','episode')
+       RETURNING 1`,
+      [library.id, scanStartedAt]
+    );
+    itemsRemoved = removed.rowCount ?? 0;
   } catch (err) {
     logger.error("[Jellyfin Scan] Error scanning library", {
       libraryId: library.id,
@@ -257,7 +331,7 @@ async function scanLibrary(library: JellyfinLibrary): Promise<{ itemsScanned: nu
     });
   }
 
-  return { itemsScanned, itemsAdded };
+  return { itemsScanned, itemsAdded, itemsRemoved };
 }
 
 export function cancelJellyfinLibraryScan(): void {

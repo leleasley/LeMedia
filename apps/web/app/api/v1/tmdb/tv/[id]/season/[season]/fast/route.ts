@@ -31,6 +31,8 @@ export async function GET(
   const resolved = await resolveParams(params);
   const tmdbId = z.coerce.number().int().parse(resolved.id);
   const seasonNumber = z.coerce.number().int().parse(resolved.season);
+  const tvdbParam = req.nextUrl.searchParams.get("tvdbId");
+  const tvdbId = tvdbParam && /^\d+$/.test(tvdbParam) ? Number(tvdbParam) : null;
 
   // Fetch season data from TMDB
   const url = new URL(`${TMDB_BASE}/tv/${tmdbId}/season/${seasonNumber}`);
@@ -58,7 +60,7 @@ export async function GET(
   );
 
   // Get cached availability from database (fast!)
-  const availabilityMap = await getCachedEpisodeAvailability(tmdbId, seasonNumber).catch(() => new Map());
+  const availabilityMap = await getCachedEpisodeAvailability(tmdbId, seasonNumber, tvdbId).catch(() => new Map());
 
   // Add request info and cached availability
   const enhancedEpisodes = episodes.map((episode: any) => {

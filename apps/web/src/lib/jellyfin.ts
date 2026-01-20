@@ -35,7 +35,8 @@ export async function isAvailableByExternalIds(
 ): Promise<boolean | null> {
     const connection = await getJellyfinConnection();
     if (!connection) return null;
-    const key = cacheKey(kind, (kind === "movie" ? tmdbId : tvdbId) || 0);
+    const keyId = kind === "movie" ? tmdbId : (tvdbId ?? tmdbId);
+    const key = cacheKey(kind, Number(keyId ?? 0));
     const now = Date.now();
     const cached = cache.get(key);
     if (cached && cached.expiresAt > now) return cached.value;
@@ -91,6 +92,24 @@ export async function isAvailableByExternalIds(
                 `/Items?ExternalId=tvdb:${tvdbId}&IncludeItemTypes=${includeType}&Fields=LocationType,MediaSources,Path,IsVirtual,Type`
             );
             if (Array.isArray(byTvdb?.Items) && hasItemWithFile(byTvdb.Items)) {
+                found = true;
+            }
+        }
+    }
+
+    if (!found && kind === "tv") {
+        let seriesId: string | null = null;
+        if (typeof tmdbId === "number" && tmdbId > 0) {
+            seriesId = await getJellyfinItemIdByTmdb("tv", tmdbId);
+        }
+        if (!seriesId && typeof tvdbId === "number" && tvdbId > 0) {
+            seriesId = await getJellyfinItemIdByTvdb(tvdbId);
+        }
+        if (seriesId) {
+            const episodes = await jellyfinFetch(
+                `/Shows/${seriesId}/Episodes?Fields=LocationType,MediaSources,Path,IsVirtual,Type&Limit=200`
+            );
+            if (Array.isArray(episodes?.Items) && episodes.Items.some((item: any) => hasPhysicalFile(item))) {
                 found = true;
             }
         }

@@ -188,11 +188,6 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
           <h2>Overview</h2>
           <p>{movie.overview || "No overview available."}</p>
 
-          {/* External Ratings - loads after page appears */}
-          <div className="mt-4">
-            <ExternalRatings tmdbId={movie.id} mediaType="movie" imdbId={imdbId} />
-          </div>
-
           {keywords.length > 0 && (
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center justify-center rounded-full border border-white/10 bg-white/5 p-1.5 text-gray-300">
@@ -282,6 +277,7 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
             productionCountries={movie.production_countries ?? []}
             releaseDates={null}
             type="movie"
+            externalRatingsSlot={<ExternalRatings tmdbId={movie.id} mediaType="movie" imdbId={imdbId} />}
           />
         </div>
       </div>

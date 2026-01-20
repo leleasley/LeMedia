@@ -275,7 +275,8 @@ export async function getSeriesByTvdbId(tvdbId: number) {
   try {
     const series = await sonarrFetch(`/api/v3/series?tvdbId=${tvdbId}`);
     if (Array.isArray(series) && series.length > 0) {
-      return series[0];
+      const match = series.find((item: any) => Number(item?.tvdbId ?? 0) === Number(tvdbId));
+      return match ?? null;
     }
     return null;
   } catch {
@@ -287,7 +288,8 @@ export async function getSeriesByTmdbId(tmdbId: number) {
   try {
     const series = await sonarrFetch(`/api/v3/series?tmdbId=${tmdbId}`);
     if (Array.isArray(series) && series.length > 0) {
-      return series[0];
+      const match = series.find((item: any) => Number(item?.tmdbId ?? 0) === Number(tmdbId));
+      return match ?? null;
     }
     return null;
   } catch {

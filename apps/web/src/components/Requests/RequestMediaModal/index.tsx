@@ -30,7 +30,8 @@ export function RequestMediaModal({
   posterUrl,
   backdropUrl,
   onRequestPlaced,
-  isLoading = false
+  isLoading = false,
+  monitor = true
 }: {
   open: boolean;
   onClose: () => void;
@@ -44,6 +45,7 @@ export function RequestMediaModal({
   backdropUrl?: string | null;
   onRequestPlaced?: () => void;
   isLoading?: boolean;
+  monitor?: boolean;
 }) {
   const [selectedQualityProfileId, setSelectedQualityProfileId] = useState<number>(defaultQualityProfileId);
   const [overrides, setOverrides] = useState<RequestOverrides>({});
@@ -70,6 +72,10 @@ export function RequestMediaModal({
         tmdbId,
         qualityProfileId: selectedQualityProfileId
       };
+
+      if (mediaType === "tv") {
+        body.monitor = monitor;
+      }
 
       if (overrides.server) {
         body.serviceId = overrides.server;

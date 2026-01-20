@@ -525,7 +525,7 @@
   }
 
   .media-ratings {
-    @apply flex items-center justify-center space-x-5 border-b border-gray-700 px-4 py-2 font-medium last:border-b-0;
+    @apply flex items-center justify-center space-x-4 border-b border-gray-700 px-4 py-3 font-medium last:border-b-0;
   }
 
   /* Mobile-only improvements for media info pages */
