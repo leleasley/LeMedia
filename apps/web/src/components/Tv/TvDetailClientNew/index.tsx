@@ -232,7 +232,7 @@ export function TvDetailClientNew({
 
     const hasQualityProfiles = qualityProfilesState.length > 0;
     const isExisting = !!existingSeriesState;
-    const canRequestSeries = !isExisting && hasQualityProfiles;
+    const canRequestSeries = hasQualityProfiles;
 
     // Determine if partially available (some seasons available but not all)
     const totalSeasons = seasons.filter(s => s.season_number !== 0).length;

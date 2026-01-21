@@ -6,11 +6,13 @@ import { listSeries } from "@/lib/sonarr";
 import { getMovie, getTv, tmdbImageUrl } from "@/lib/tmdb";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
 import {
+  AvailabilityStatus,
   MediaStatus,
   seriesHasFiles,
   isSeriesPartiallyAvailable,
   STATUS_STRINGS
 } from "@/lib/media-status";
+import { getAvailableSeasons, hasCachedEpisodeAvailability } from "@/db";
 
 const MAX_TAKE = 40;
 const DEFAULT_TAKE = 20;
@@ -92,14 +94,55 @@ export async function GET(request: NextRequest) {
       (sonarrSeriesRaw ?? []).map(async (series: any) => {
         if (!series?.tmdbId) return null;
         let poster = findPosterUrl(series.images) ?? null;
+        let details: any = null;
         if (!isTmdbPoster(poster)) {
-          const details = await getTv(series.tmdbId).catch(() => null);
+          details = await getTv(series.tmdbId).catch(() => null);
           poster = tmdbImageUrl(details?.poster_path, "w500", imageProxyEnabled);
         }
 
         // Use shared utilities for consistent status detection
         const hasSomeFiles = seriesHasFiles(series);
         const isPartial = isSeriesPartiallyAvailable(series);
+
+        let availabilityStatus: AvailabilityStatus | null = null;
+        let availableSeasons: number[] = [];
+        try {
+          availableSeasons = await getAvailableSeasons({ tmdbId: series.tmdbId });
+        } catch {
+          availableSeasons = [];
+        }
+
+        const seasonCount = availableSeasons.filter((season) => Number(season) > 0).length;
+        let hasJellyfinEpisodes = seasonCount > 0;
+        if (!hasJellyfinEpisodes) {
+          try {
+            hasJellyfinEpisodes = await hasCachedEpisodeAvailability({ tmdbId: series.tmdbId });
+          } catch {
+            hasJellyfinEpisodes = false;
+          }
+        }
+
+        if (hasJellyfinEpisodes) {
+          if (!details) {
+            details = await getTv(series.tmdbId).catch(() => null);
+          }
+          const totalSeasons = Array.isArray(details?.seasons)
+            ? details.seasons.filter((season: any) => Number(season?.season_number ?? 0) > 0).length
+            : Number(details?.number_of_seasons ?? 0);
+          if (totalSeasons > 0) {
+            availabilityStatus = seasonCount >= totalSeasons ? "available" : "partially_available";
+          } else {
+            availabilityStatus = "available";
+          }
+        }
+
+        if (!availabilityStatus) {
+          availabilityStatus = hasSomeFiles
+            ? isPartial
+              ? "partially_available"
+              : "available"
+            : "unavailable";
+        }
 
         return {
           id: series.tmdbId,
@@ -109,8 +152,13 @@ export async function GET(request: NextRequest) {
           overview: series.overview ?? "",
           type: "tv" as const,
           addedAt: series.added ? new Date(series.added).getTime() : 0,
-          available: hasSomeFiles,
-          mediaStatus: isPartial ? MediaStatus.PARTIALLY_AVAILABLE : hasSomeFiles ? MediaStatus.AVAILABLE : MediaStatus.DOWNLOADING
+          available: availabilityStatus !== "unavailable",
+          mediaStatus:
+            availabilityStatus === "partially_available"
+              ? MediaStatus.PARTIALLY_AVAILABLE
+              : availabilityStatus === "available"
+              ? MediaStatus.AVAILABLE
+              : MediaStatus.DOWNLOADING
         };
       })
     )

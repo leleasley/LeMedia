@@ -3,9 +3,10 @@ import { listSeries } from "@/lib/sonarr";
 import {
   AvailabilityStatus,
   getSeriesAvailabilityStatus,
-  seriesHasFiles,
-  STATUS_STRINGS
+  seriesHasFiles
 } from "@/lib/media-status";
+import { getAvailableSeasons, hasCachedEpisodeAvailability } from "@/db";
+import { getTv } from "@/lib/tmdb";
 
 type CacheEntry = { expiresAt: number; map: Map<number, boolean> };
 type StatusCacheEntry = { expiresAt: number; map: Map<number, AvailabilityStatus> };
@@ -110,9 +111,52 @@ export async function getAvailabilityByTmdbIds(type: "movie" | "tv", ids: number
 
 export async function getAvailabilityStatusByTmdbIds(type: "movie" | "tv", ids: number[]) {
   const map = await getAvailabilityStatusMap(type);
-  const out: Record<number, AvailabilityStatus> = {};
-  for (const id of ids) {
-    out[id] = map.get(id) ?? "unavailable";
+  if (type !== "tv") {
+    const out: Record<number, AvailabilityStatus> = {};
+    for (const id of ids) {
+      out[id] = map.get(id) ?? "unavailable";
+    }
+    return out;
   }
-  return out;
+
+  const entries = await Promise.all(
+    ids.map(async (id) => {
+      const baseStatus = map.get(id) ?? "unavailable";
+      let status = baseStatus;
+      let availableSeasons: number[] = [];
+
+      try {
+        availableSeasons = await getAvailableSeasons({ tmdbId: id });
+      } catch {
+        availableSeasons = [];
+      }
+
+      const seasonCount = availableSeasons.filter((season) => Number(season) > 0).length;
+      let hasJellyfinEpisodes = seasonCount > 0;
+      if (!hasJellyfinEpisodes) {
+        try {
+          hasJellyfinEpisodes = await hasCachedEpisodeAvailability({ tmdbId: id });
+        } catch {
+          hasJellyfinEpisodes = false;
+        }
+      }
+
+      if (hasJellyfinEpisodes) {
+        const tv = await getTv(id).catch(() => null);
+        const totalSeasons = Array.isArray(tv?.seasons)
+          ? tv.seasons.filter((season: any) => Number(season?.season_number ?? 0) > 0).length
+          : Number(tv?.number_of_seasons ?? 0);
+
+        if (totalSeasons > 0) {
+          status = seasonCount >= totalSeasons ? "available" : "partially_available";
+        } else if (status === "unavailable") {
+          status = "available";
+        }
+      }
+
+      return [id, status] as const;
+    })
+  );
+
+  return Object.fromEntries(entries);
 }

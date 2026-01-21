@@ -254,7 +254,7 @@ export function AllRequestsClient({
       <div className="rounded-xl border border-white/10 bg-slate-900/60 p-4 shadow-lg space-y-4">
         <div className="flex flex-col md:flex-row gap-4">
           <div className="relative flex-1">
-            <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none z-10">
+            <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10">
               <Search className="h-4 w-4 text-white/40" />
             </div>
             <input
@@ -262,7 +262,7 @@ export function AllRequestsClient({
               placeholder="Search by title or username..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 rounded-lg border border-white/10 bg-white/5 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-transparent relative"
+              className="w-full h-10 pl-10 pr-4 rounded-lg border border-white/10 bg-white/5 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-transparent relative"
             />
           </div>
           <div className="flex gap-2">
