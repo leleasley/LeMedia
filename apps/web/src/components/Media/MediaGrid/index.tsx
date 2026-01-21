@@ -7,8 +7,8 @@ import type { TmdbListFilters } from "@/lib/tmdb-client";
 import type { MediaGridItem, MediaGridPage } from "@/types/media-grid";
 import useVerticalScroll from "@/hooks/useVerticalScroll";
 import useSWRInfinite from "swr/infinite";
-import { fetchAvailabilityBatched } from "@/lib/availability-client";
-import { MediaStatus } from "@/components/Common/StatusBadgeMini";
+import { fetchAvailabilityStatusBatched } from "@/lib/availability-client";
+import { MediaStatus, availabilityToMediaStatus } from "@/lib/media-status";
 
 type MediaCard = {
   id: number;
@@ -21,7 +21,7 @@ type MediaCard = {
   mediaStatus?: MediaStatus;
 };
 
-function toCards(list: MediaGridItem[], type: "movie" | "tv", availability: Record<number, boolean>): MediaCard[] {
+function toCards(list: MediaGridItem[], type: "movie" | "tv", availability: Record<number, string>): MediaCard[] {
   return list.map(item => ({
     id: item.id,
     title: type === "movie" ? item.title ?? "Untitled" : item.name ?? "Untitled",
@@ -32,7 +32,8 @@ function toCards(list: MediaGridItem[], type: "movie" | "tv", availability: Reco
     poster: tmdbImageUrl(item.poster_path, "w500"),
     href: type === "movie" ? `/movie/${item.id}` : `/tv/${item.id}`,
     overview: item.overview,
-    mediaStatus: availability[item.id] ? MediaStatus.AVAILABLE : undefined
+    // Use shared utility for consistent status mapping
+    mediaStatus: availabilityToMediaStatus(availability[item.id])
   }));
 }
 
@@ -63,19 +64,19 @@ export function MediaGrid({
   const filtersKey = useMemo(() => JSON.stringify(filters ?? {}), [filters]);
   const resetKey = `${filtersKey}-${type}`;
   
-  const [availabilityState, setAvailabilityState] = useState({ key: resetKey, data: {} as Record<number, boolean> });
+  const [availabilityState, setAvailabilityState] = useState({ key: resetKey, data: {} as Record<number, string> });
   const availability = useMemo(() => 
     availabilityState.key === resetKey ? availabilityState.data : {},
     [availabilityState, resetKey]
   );
-  const setAvailability = useCallback((data: Record<number, boolean> | ((prev: Record<number, boolean>) => Record<number, boolean>)) => {
+  const setAvailability = useCallback((data: Record<number, string> | ((prev: Record<number, string>) => Record<number, string>)) => {
     setAvailabilityState(prev => ({
       key: resetKey,
       data: typeof data === 'function' ? data(prev.key === resetKey ? prev.data : {}) : data
     }));
   }, [resetKey]);
   
-  const availabilityRef = useRef<Record<number, boolean>>({});
+  const availabilityRef = useRef<Record<number, string>>({});
   const cacheKey = useMemo(() => `${type}:${filtersKey}`, [type, filtersKey]);
   const initialPages = Math.max(1, Math.min(initialPageCount, 5));
   const normalizedInitialData = Array.isArray(initialData)
@@ -142,7 +143,7 @@ export function MediaGrid({
       .map(item => item.id)
       .filter(id => availabilityRef.current[id] === undefined);
     if (!missing.length) return;
-    fetchAvailabilityBatched(type, missing)
+    fetchAvailabilityStatusBatched(type, missing)
       .then(next => {
         if (Object.keys(next).length) setAvailability(prev => ({ ...prev, ...next }));
       })

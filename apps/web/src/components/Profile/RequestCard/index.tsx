@@ -22,7 +22,17 @@ export interface RequestCardProps {
 export function RequestCard({ request, onImageLoad }: RequestCardProps) {
   const statusConfig = useMemo(() => {
     const status = request.status.toLowerCase();
-    
+
+    if (status === "partially_available") {
+      return {
+        icon: CheckCircle,
+        label: "Partially Available",
+        color: "text-purple-500",
+        bgColor: "bg-purple-500/10",
+        borderColor: "border-purple-500/30",
+      };
+    }
+
     if (["available", "completed"].includes(status)) {
       return {
         icon: CheckCircle,

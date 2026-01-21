@@ -30,6 +30,7 @@ interface RecentRequestsSliderProps {
 
 const statusClasses: Record<string, { bg: string; text: string; border: string }> = {
     available: { bg: "bg-green-500", text: "text-green-100", border: "border-green-500/50" },
+    partially_available: { bg: "bg-purple-500", text: "text-purple-100", border: "border-purple-500/50" },
     downloading: { bg: "bg-amber-500", text: "text-amber-100", border: "border-amber-500/50" },
     submitted: { bg: "bg-blue-500", text: "text-blue-100", border: "border-blue-500/50" },
     pending: { bg: "bg-sky-500", text: "text-sky-100", border: "border-sky-500/50" },

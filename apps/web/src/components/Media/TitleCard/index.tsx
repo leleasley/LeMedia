@@ -59,7 +59,8 @@ export function TitleCard({
   const canRequest =
     !mediaStatus ||
     mediaStatus === MediaStatus.UNKNOWN ||
-    mediaStatus === MediaStatus.DELETED;
+    mediaStatus === MediaStatus.DELETED ||
+    mediaStatus === MediaStatus.PARTIALLY_AVAILABLE;
   const descriptionLines = canRequest ? 2 : 3;
   
   // Extract year from date string if needed

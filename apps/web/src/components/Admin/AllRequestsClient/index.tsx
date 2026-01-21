@@ -22,6 +22,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getAvatarSrc, getAvatarAlt } from "@/lib/avatar";
+import { csrfFetch } from "@/lib/csrf-client";
+import { useToast } from "@/components/Providers/ToastProvider";
 
 const statusConfig: Record<string, {
   bg: string;
@@ -36,6 +38,13 @@ const statusConfig: Record<string, {
     border: "border-emerald-500/30",
     icon: CheckCircle2,
     label: "Available"
+  },
+  partially_available: {
+    bg: "bg-purple-500/10",
+    text: "text-purple-400",
+    border: "border-purple-500/30",
+    icon: CheckCircle2,
+    label: "Partially Available"
   },
   downloading: {
     bg: "bg-amber-500/10",
@@ -119,7 +128,11 @@ type Request = {
 };
 
 type ViewMode = "grid" | "list";
-type FilterStatus = "all" | "pending" | "submitted" | "downloading" | "available" | "denied" | "failed";
+type FilterStatus = "all" | "pending" | "submitted" | "downloading" | "available" | "partially_available" | "denied" | "failed";
+
+function formatStatusLabel(status: string) {
+  return status.replace(/_/g, " ").replace(/\b\w/g, m => m.toUpperCase());
+}
 
 export function AllRequestsClient({
   initialRequests,
@@ -127,14 +140,12 @@ export function AllRequestsClient({
   denyRequest,
   deleteRequest,
   markRequestAvailable,
-  syncRequests
 }: {
   initialRequests: Request[];
   approveRequest: (formData: FormData) => Promise<void>;
   denyRequest: (formData: FormData) => Promise<void>;
   deleteRequest: (formData: FormData) => Promise<void>;
   markRequestAvailable: (formData: FormData) => Promise<void>;
-  syncRequests: () => Promise<void>;
 }) {
   const [optimisticRemovals, setOptimisticRemovals] = useState<Set<string | number>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
@@ -142,6 +153,7 @@ export function AllRequestsClient({
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [isSyncing, setIsSyncing] = useState(false);
   const router = useRouter();
+  const toast = useToast();
 
   const handleAction = async (action: string, requestId: string | number) => {
     if (action === "approve" || action === "deny" || action === "delete") {
@@ -160,10 +172,23 @@ export function AllRequestsClient({
   };
 
   const handleSync = async () => {
+    if (isSyncing) return;
     setIsSyncing(true);
-    await syncRequests();
-    setIsSyncing(false);
-    router.refresh();
+    try {
+      const res = await csrfFetch("/api/v1/admin/requests/sync", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || "Sync failed");
+      }
+      if (data?.message) {
+        toast.success(data.message, { timeoutMs: 3000 });
+      }
+      router.refresh();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Sync failed", { timeoutMs: 4000 });
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const filteredRequests = useMemo(() => {
@@ -190,6 +215,7 @@ export function AllRequestsClient({
       pending: visible.filter(r => r.status === "pending").length,
       submitted: visible.filter(r => r.status === "submitted").length,
       downloading: visible.filter(r => r.status === "downloading").length,
+      partiallyAvailable: visible.filter(r => r.status === "partially_available").length,
       available: visible.filter(r => r.status === "available").length,
     };
   }, [initialRequests, optimisticRemovals]);
@@ -197,7 +223,7 @@ export function AllRequestsClient({
   return (
     <div className="space-y-6">
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <div className="rounded-xl border border-white/10 bg-gradient-to-br from-slate-900/60 to-slate-900/40 p-4 shadow-lg">
           <div className="text-xs font-medium text-white/60 uppercase tracking-wider">Total</div>
           <div className="text-2xl font-bold text-white mt-1">{stats.total}</div>
@@ -214,6 +240,10 @@ export function AllRequestsClient({
           <div className="text-xs font-medium text-amber-400 uppercase tracking-wider">Downloading</div>
           <div className="text-2xl font-bold text-white mt-1">{stats.downloading}</div>
         </div>
+        <div className="rounded-xl border border-purple-500/20 bg-gradient-to-br from-purple-500/10 to-purple-500/5 p-4 shadow-lg">
+          <div className="text-xs font-medium text-purple-400 uppercase tracking-wider">Partial</div>
+          <div className="text-2xl font-bold text-white mt-1">{stats.partiallyAvailable}</div>
+        </div>
         <div className="rounded-xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 p-4 shadow-lg">
           <div className="text-xs font-medium text-emerald-400 uppercase tracking-wider">Available</div>
           <div className="text-2xl font-bold text-white mt-1">{stats.available}</div>
@@ -224,7 +254,9 @@ export function AllRequestsClient({
       <div className="rounded-xl border border-white/10 bg-slate-900/60 p-4 shadow-lg space-y-4">
         <div className="flex flex-col md:flex-row gap-4">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/40 pointer-events-none z-10" />
+            <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none z-10">
+              <Search className="h-4 w-4 text-white/40" />
+            </div>
             <input
               type="text"
               placeholder="Search by title or username..."
@@ -253,7 +285,7 @@ export function AllRequestsClient({
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {(["all", "pending", "submitted", "downloading", "available", "denied", "failed"] as FilterStatus[]).map((status) => (
+          {(["all", "partially_available", "available", "pending", "submitted", "downloading", "denied", "failed"] as FilterStatus[]).map((status) => (
             <button
               key={status}
               onClick={() => setFilterStatus(status)}
@@ -264,7 +296,7 @@ export function AllRequestsClient({
                   : "bg-white/5 text-white/60 hover:bg-white/10 hover:text-white"
               )}
             >
-              {status.charAt(0).toUpperCase() + status.slice(1)}
+              {formatStatusLabel(status)}
             </button>
           ))}
         </div>

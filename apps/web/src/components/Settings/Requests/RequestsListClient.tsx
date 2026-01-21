@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 
 const statusClasses: Record<string, string> = {
   available: "bg-emerald-500/10 text-emerald-100 border border-emerald-500/30",
+  partially_available: "bg-emerald-500/10 text-emerald-100 border border-emerald-500/30",
   downloading: "bg-amber-500/10 text-amber-100 border border-amber-500/30",
   submitted: "bg-blue-500/10 text-blue-100 border border-blue-500/30",
   pending: "bg-sky-500/10 text-sky-100 border border-sky-500/30",

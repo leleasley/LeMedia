@@ -5,8 +5,9 @@ import { Slider } from "@/components/Media/Slider";
 import Link from "next/link";
 import { ArrowRightCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { fetchAvailabilityBatched } from "@/lib/availability-client";
+import { fetchAvailabilityStatusBatched } from "@/lib/availability-client";
 import { tmdbImageUrl } from "@/lib/tmdb-images";
+import { availabilityToMediaStatus } from "@/lib/media-status";
 
 interface MediaResult {
   id: number;
@@ -32,8 +33,8 @@ export function MediaSlider({ title, url, linkUrl, sliderKey, mediaType }: Media
   const [data, setData] = useState<MediaResult[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [availability, setAvailability] = useState<Record<number, boolean>>({});
-  const availabilityRef = useRef<Record<number, boolean>>({});
+  const [availability, setAvailability] = useState<Record<number, string>>({});
+  const availabilityRef = useRef<Record<number, string>>({});
 
   useEffect(() => {
     const fetchData = async () => {
@@ -67,7 +68,7 @@ export function MediaSlider({ title, url, linkUrl, sliderKey, mediaType }: Media
       .map(item => item.id)
       .filter(id => availabilityRef.current[id] === undefined);
     if (!missing.length) return;
-    fetchAvailabilityBatched(mediaType, missing)
+    fetchAvailabilityStatusBatched(mediaType, missing)
       .then(next => {
         if (Object.keys(next).length) setAvailability(prev => ({ ...prev, ...next }));
       })
@@ -87,13 +88,10 @@ export function MediaSlider({ title, url, linkUrl, sliderKey, mediaType }: Media
     const itemTitle = item.title || item.name || "";
     const itemYear = item.release_date || item.first_air_date || "";
     const itemDescription = item.overview || "";
-    const itemAvailable = availability[item.id];
+    const itemStatus = availability[item.id];
 
-    // Map availability boolean to MediaStatus enum
-    let mediaStatus = undefined;
-    if (itemAvailable === true) {
-      mediaStatus = 5; // MediaStatus.AVAILABLE
-    }
+    // Use shared utility for consistent status mapping
+    const mediaStatus = availabilityToMediaStatus(itemStatus);
 
     return (
       <div key={item.id} className="w-36 sm:w-36 md:w-44">

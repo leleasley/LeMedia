@@ -105,6 +105,29 @@ export function SeriesRequestModal({
         // Filter out season 0 (specials) unless it's the only season
         const allSeasons = (data.seasons || []).filter((s: Season) => s.season_number > 0 || data.seasons.length === 1);
         setSeasons(allSeasons);
+
+        // Pre-load all season episodes in parallel for immediate availability display
+        const episodePromises = allSeasons.map(async (season: Season) => {
+          try {
+            const episodeRes = await fetch(`/api/v1/tmdb/tv/${tmdbId}/season/${season.season_number}/enhanced`);
+            if (episodeRes.ok) {
+              const episodeData = await episodeRes.json();
+              return { seasonNumber: season.season_number, episodes: episodeData.episodes || [] };
+            }
+          } catch {
+            // Ignore errors for individual seasons
+          }
+          return null;
+        });
+
+        const results = await Promise.all(episodePromises);
+        const newSeasonEpisodes: Record<number, Episode[]> = {};
+        for (const result of results) {
+          if (result) {
+            newSeasonEpisodes[result.seasonNumber] = result.episodes;
+          }
+        }
+        setSeasonEpisodes(newSeasonEpisodes);
       }
     } catch (err) {
       console.error("Failed to load seasons", err);
@@ -336,6 +359,9 @@ export function SeriesRequestModal({
                   const checkedCount = getCheckedCount(season.season_number);
                   const selectableCount = episodes.filter(e => !(e.available || e.requested)).length;
                   const allChecked = selectableCount > 0 && checkedCount === selectableCount;
+                  const availableCount = episodes.filter(e => e.available).length;
+                  const isSeasonAvailable = episodes.length > 0 && availableCount === episodes.length;
+                  const isSeasonPartial = availableCount > 0 && availableCount < episodes.length;
 
                   return (
                     <div key={season.season_number} className="rounded-lg border border-white/10 bg-white/5 overflow-hidden">
@@ -369,6 +395,16 @@ export function SeriesRequestModal({
                             {checkedCount > 0 && (
                               <span className="text-purple-400 font-medium bg-purple-400/10 px-1.5 py-0.5 rounded">
                                 {checkedCount} selected
+                              </span>
+                            )}
+                            {isSeasonAvailable && (
+                              <span className="text-emerald-300 font-medium bg-emerald-500/10 px-1.5 py-0.5 rounded">
+                                Available
+                              </span>
+                            )}
+                            {!isSeasonAvailable && isSeasonPartial && (
+                              <span className="text-purple-200 font-medium bg-purple-500/10 px-1.5 py-0.5 rounded">
+                                Partially Available
                               </span>
                             )}
                           </div>
@@ -416,6 +452,7 @@ export function SeriesRequestModal({
                                   const isAvailable = episode.available ?? false;
                                   const isRequested = episode.requested ?? false;
                                   const isDisabled = isAvailable || isRequested;
+                                  const isCheckedForUi = Boolean(isChecked || isAvailable);
 
                                   return (
                                     <label
@@ -426,7 +463,7 @@ export function SeriesRequestModal({
                                     >
                                       <input
                                         type="checkbox"
-                                        checked={isChecked || false}
+                                        checked={isCheckedForUi}
                                         onChange={() => toggleEpisode(season.season_number, episode.episode_number, episode)}
                                         disabled={isDisabled}
                                         className="hidden"
@@ -435,7 +472,7 @@ export function SeriesRequestModal({
                                         isDisabled ? 'bg-gray-700 border-gray-600' :
                                         isChecked ? 'bg-purple-500 border-purple-500' : 'border-gray-500'
                                       }`}>
-                                        {(isChecked || isDisabled) && <Check className="h-3 w-3 text-white" />}
+                                        {(isCheckedForUi || isDisabled) && <Check className="h-3 w-3 text-white" />}
                                       </div>
 
                                       <div className="flex-1 min-w-0">

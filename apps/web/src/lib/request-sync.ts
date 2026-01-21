@@ -9,10 +9,12 @@ import { notifyRequestAvailable } from "./notification-helper";
 import { getRadarrMovie, radarrQueue } from "./radarr";
 import { getEpisodesForSeries, getSeries, sonarrQueue } from "./sonarr";
 import { isServiceNotFoundError } from "./fetch-utils";
+import { isSeriesPartiallyAvailable, seriesHasFiles, STATUS_STRINGS } from "./media-status";
 
 type SyncSummary = {
   processed: number;
   available: number;
+  partiallyAvailable: number;
   downloading: number;
   removed: number;
   errors: number;
@@ -127,9 +129,26 @@ async function syncEpisodeRequest(request: RequestForSync, queueMap: Map<number,
     })
     .filter(Boolean) as Array<{ id: number; hasFile: boolean }>;
 
-  if (requested.length && requested.every(ep => ep.hasFile)) {
-    await updateRequestStatuses(request, "available");
-    return "available";
+  const availableCount = requested.filter(ep => ep.hasFile).length;
+
+  // Use shared utility to check if series is partially available
+  const isSeriesPartial = isSeriesPartiallyAvailable(series);
+
+  // If all requested episodes are available
+  if (requested.length && availableCount === requested.length) {
+    // But if the series itself is only partially available, mark as partially_available
+    if (isSeriesPartial) {
+      await updateRequestStatuses(request, STATUS_STRINGS.PARTIALLY_AVAILABLE);
+      return STATUS_STRINGS.PARTIALLY_AVAILABLE;
+    }
+    await updateRequestStatuses(request, STATUS_STRINGS.AVAILABLE);
+    return STATUS_STRINGS.AVAILABLE;
+  }
+
+  // Some but not all requested episodes are available
+  if (requested.length && availableCount > 0) {
+    await updateRequestStatuses(request, STATUS_STRINGS.PARTIALLY_AVAILABLE);
+    return STATUS_STRINGS.PARTIALLY_AVAILABLE;
   }
 
   const hasQueue = requested.some(ep => queueMap.has(ep.id));
@@ -274,7 +293,7 @@ export async function syncWatchlists() {
 export async function syncPendingRequests(): Promise<SyncSummary> {
   const requests = await listRequestsForSync(100);
   if (!requests.length) {
-    return { processed: 0, available: 0, downloading: 0, removed: 0, errors: 0 };
+    return { processed: 0, available: 0, partiallyAvailable: 0, downloading: 0, removed: 0, errors: 0 };
   }
 
   const [radarrQueueRes, sonarrQueueRes] = await Promise.all([
@@ -305,7 +324,7 @@ export async function syncPendingRequests(): Promise<SyncSummary> {
     }
   }
 
-  const summary: SyncSummary = { processed: 0, available: 0, downloading: 0, removed: 0, errors: 0 };
+  const summary: SyncSummary = { processed: 0, available: 0, partiallyAvailable: 0, downloading: 0, removed: 0, errors: 0 };
   for (const request of requests) {
     try {
       summary.processed += 1;
@@ -314,6 +333,7 @@ export async function syncPendingRequests(): Promise<SyncSummary> {
           ? await syncMovieRequest(request, radarrQueueMap)
           : await syncEpisodeRequest(request, sonarrQueueMap);
       if (result === "available") summary.available += 1;
+      if (result === "partially_available") summary.partiallyAvailable += 1;
       if (result === "downloading") summary.downloading += 1;
       if (result === "removed") summary.removed += 1;
     } catch (err) {

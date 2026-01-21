@@ -12,7 +12,7 @@ import { csrfFetch } from "@/lib/csrf-client";
 import { MediaInfoBox } from "@/components/Media/MediaInfoBox";
 import { MediaActionMenu } from "@/components/Media/MediaActionMenu";
 import { MediaListButtons } from "@/components/Media/MediaListButtons";
-import { RequestMediaModal } from "@/components/Requests/RequestMediaModal";
+import { SeriesRequestModal } from "@/components/Requests/SeriesRequestModal";
 import { PlayButton } from "@/components/Media/PlayButton";
 import ButtonWithDropdown from "@/components/Common/ButtonWithDropdown";
 import { ArrowDownTrayIcon, FilmIcon } from "@heroicons/react/24/outline";
@@ -772,11 +772,10 @@ export function TvDetailClientNew({
                                                 }
                                                 onClick={() => setRequestModalOpen(true)}
                                             />
-                                            <RequestMediaModal
+                                            <SeriesRequestModal
                                                 open={requestModalOpen}
                                                 onClose={() => setRequestModalOpen(false)}
                                                 tmdbId={tv.id}
-                                                mediaType="tv"
                                                 qualityProfiles={qualityProfilesState}
                                                 defaultQualityProfileId={selectedQualityProfileId}
                                                 requestsBlocked={requestsBlockedState}
@@ -784,7 +783,6 @@ export function TvDetailClientNew({
                                                 posterUrl={poster}
                                                 backdropUrl={backdrop}
                                                 isLoading={!requestInfoLoaded}
-                                                monitor={monitorEpisodes}
                                                 onRequestPlaced={() => {
                                                     setRequestModalOpen(false);
                                                     router.refresh();
@@ -825,11 +823,10 @@ export function TvDetailClientNew({
                                                 }
                                                 onClick={() => setRequestModalOpen(true)}
                                             />
-                                            <RequestMediaModal
+                                            <SeriesRequestModal
                                                 open={requestModalOpen}
                                                 onClose={() => setRequestModalOpen(false)}
                                                 tmdbId={tv.id}
-                                                mediaType="tv"
                                                 qualityProfiles={qualityProfilesState}
                                                 defaultQualityProfileId={selectedQualityProfileId}
                                                 requestsBlocked={requestsBlockedState}
@@ -837,7 +834,6 @@ export function TvDetailClientNew({
                                                 posterUrl={poster}
                                                 backdropUrl={backdrop}
                                                 isLoading={!requestInfoLoaded}
-                                                monitor={monitorEpisodes}
                                                 onRequestPlaced={() => {
                                                     setRequestModalOpen(false);
                                                     router.refresh();

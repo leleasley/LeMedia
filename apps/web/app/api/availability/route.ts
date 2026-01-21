@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { getAvailabilityByTmdbIds } from "@/lib/library-availability";
+import { getAvailabilityByTmdbIds, getAvailabilityStatusByTmdbIds } from "@/lib/library-availability";
 import { requireUser } from "@/auth";
 import { jsonResponseWithETag } from "@/lib/api-optimization";
 
@@ -21,6 +21,16 @@ export async function GET(req: NextRequest) {
     if (user instanceof NextResponse) return user;
     const type = TypeSchema.parse(req.nextUrl.searchParams.get("type") ?? "");
     const ids = IdsSchema.parse(req.nextUrl.searchParams.get("ids") ?? "");
+    const includeStatus = req.nextUrl.searchParams.get("includeStatus") === "1";
+
+    if (includeStatus) {
+      const statuses = await getAvailabilityStatusByTmdbIds(type, ids);
+      const availability = Object.fromEntries(
+        Object.entries(statuses).map(([id, status]) => [id, status !== "unavailable"])
+      );
+      return jsonResponseWithETag(req, { availability, statuses });
+    }
+
     const availability = await getAvailabilityByTmdbIds(type, ids);
     return jsonResponseWithETag(req, { availability });
   } catch (err) {

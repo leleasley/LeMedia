@@ -36,6 +36,13 @@ const statusConfig: Record<string, { bg: string; text: string; border: string; g
     glow: "shadow-emerald-500/20",
     icon: "✓"
   },
+  partially_available: {
+    bg: "bg-purple-500/15",
+    text: "text-purple-300",
+    border: "border-purple-500/40",
+    glow: "shadow-purple-500/20",
+    icon: "◐"
+  },
   downloading: { 
     bg: "bg-amber-500/15", 
     text: "text-amber-300", 
@@ -194,6 +201,7 @@ export function RequestsPageClient({ initialRequests }: { initialRequests: Reque
   const stats = {
     total: requests.length,
     available: requests.filter(r => r.status === 'available').length,
+    partiallyAvailable: requests.filter(r => r.status === 'partially_available').length,
     pending: requests.filter(r => ['submitted', 'pending', 'downloading'].includes(r.status)).length,
   };
 
@@ -219,6 +227,12 @@ export function RequestsPageClient({ initialRequests }: { initialRequests: Reque
                 <span className="text-emerald-300/70 text-sm">Available</span>
                 <span className="font-bold text-emerald-300">{stats.available}</span>
               </div>
+              {stats.partiallyAvailable > 0 && (
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-purple-500/10 border border-purple-500/20">
+                  <span className="text-purple-300/70 text-sm">Partial</span>
+                  <span className="font-bold text-purple-300">{stats.partiallyAvailable}</span>
+                </div>
+              )}
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20">
                 <span className="text-amber-300/70 text-sm">In Progress</span>
                 <span className="font-bold text-amber-300">{stats.pending}</span>

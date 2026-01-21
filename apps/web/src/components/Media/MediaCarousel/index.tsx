@@ -6,8 +6,9 @@ import Image from "next/image";
 import { ChevronLeft, ChevronRight, ArrowRight } from "lucide-react";
 import { HoverMediaCard } from "@/components/Media/HoverMediaCard";
 import { cn } from "@/lib/utils";
-import { fetchAvailabilityBatched } from "@/lib/availability-client";
+import { fetchAvailabilityStatusBatched } from "@/lib/availability-client";
 import { useWheelForHorizontalScroll } from "@/hooks/useWheelForHorizontalScroll";
+import { availabilityToMediaStatus } from "@/lib/media-status";
 
 export interface CarouselItem {
     id: number;
@@ -38,8 +39,8 @@ export function MediaCarousel({ title, items, itemType, viewAllHref, className, 
     const [canScrollRight, setCanScrollRight] = useState(true);
     const handleWheel = useWheelForHorizontalScroll(scrollRef);
     const [isVisible, setIsVisible] = useState(!lazy);
-    const [availability, setAvailability] = useState<Record<string, boolean>>({});
-    const availabilityRef = useRef<Record<string, boolean>>({});
+    const [availabilityStatus, setAvailabilityStatus] = useState<Record<string, string>>({});
+    const availabilityRef = useRef<Record<string, string>>({});
 
     const checkScroll = () => {
         if (scrollRef.current) {
@@ -97,8 +98,8 @@ export function MediaCarousel({ title, items, itemType, viewAllHref, className, 
     }, [items.length, isVisible]);
 
     useEffect(() => {
-        availabilityRef.current = availability;
-    }, [availability]);
+        availabilityRef.current = availabilityStatus;
+    }, [availabilityStatus]);
 
     useEffect(() => {
         if (!isVisible || items.length === 0) return;
@@ -111,14 +112,14 @@ export function MediaCarousel({ title, items, itemType, viewAllHref, className, 
 
         const fetchForType = (type: "movie" | "tv", ids: number[]) => {
             if (!ids.length) return;
-            fetchAvailabilityBatched(type, ids)
+            fetchAvailabilityStatusBatched(type, ids)
                 .then(next => {
                     if (!Object.keys(next).length) return;
-                    const mapped: Record<string, boolean> = {};
+                    const mapped: Record<string, string> = {};
                     for (const [id, value] of Object.entries(next)) {
-                        mapped[`${type}:${id}`] = Boolean(value);
+                        mapped[`${type}:${id}`] = String(value);
                     }
-                    setAvailability(prev => ({ ...prev, ...mapped }));
+                    setAvailabilityStatus(prev => ({ ...prev, ...mapped }));
                 })
                 .catch(() => { });
         };
@@ -198,7 +199,10 @@ export function MediaCarousel({ title, items, itemType, viewAllHref, className, 
                                     href={item.type === "tv" ? `/tv/${item.id}` : `/movie/${item.id}`}
                                     genres={item.genres}
                                     mediaType={item.type ?? itemType}
-                                    mediaStatus={item.mediaStatus ?? (availability[`${item.type ?? itemType}:${item.id}`] ? 5 : undefined)}
+                                    mediaStatus={
+                                        item.mediaStatus ??
+                                        availabilityToMediaStatus(availabilityStatus[`${item.type ?? itemType}:${item.id}`])
+                                    }
                                     imagePriority={idx < 6}
                                     imageLoading={idx < 6 ? "eager" : "lazy"}
                                     imageFetchPriority={idx < 6 ? "high" : "auto"}

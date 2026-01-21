@@ -5,7 +5,8 @@ import { HoverMediaCard } from "@/components/Media/HoverMediaCard";
 import { PrefetchLink } from "@/components/Layout/PrefetchLink";
 import { ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { fetchAvailabilityBatched } from "@/lib/availability-client";
+import { fetchAvailabilityStatusBatched } from "@/lib/availability-client";
+import { availabilityToMediaStatus, MediaStatus } from "@/lib/media-status";
 
 export interface MediaCard {
     id: number;
@@ -15,7 +16,8 @@ export interface MediaCard {
     rating?: number;
     description?: string;
     type?: "movie" | "tv";
-    statusBadge?: "available";
+    statusBadge?: "available" | "partially_available";
+    mediaStatus?: number;
 }
 
 interface DashboardMediaSectionProps {
@@ -35,8 +37,8 @@ export function DashboardMediaSection({
 }: DashboardMediaSectionProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const [isVisible, setIsVisible] = useState(!lazy);
-    const [availability, setAvailability] = useState<Record<string, boolean>>({});
-    const availabilityRef = useRef<Record<string, boolean>>({});
+    const [availability, setAvailability] = useState<Record<string, string>>({});
+    const availabilityRef = useRef<Record<string, string>>({});
 
     useEffect(() => {
         if (!lazy) return;
@@ -75,12 +77,12 @@ export function DashboardMediaSection({
 
         const fetchForType = (type: "movie" | "tv", ids: number[]) => {
             if (!ids.length) return;
-            fetchAvailabilityBatched(type, ids)
+            fetchAvailabilityStatusBatched(type, ids)
                 .then((next) => {
                     if (!Object.keys(next).length) return;
-                    const mapped: Record<string, boolean> = {};
+                    const mapped: Record<string, string> = {};
                     for (const [id, value] of Object.entries(next)) {
-                        mapped[`${type}:${id}`] = Boolean(value);
+                        mapped[`${type}:${id}`] = String(value);
                     }
                     setAvailability((prev) => ({ ...prev, ...mapped }));
                 })
@@ -117,8 +119,15 @@ export function DashboardMediaSection({
             <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-4 px-4 md:px-0">
                 {displayItems.map((item, idx) => {
                     const key = `${item.type}:${item.id}`;
-                    const isAvailable = item.statusBadge === "available" || availability[key];
+                    const status = availability[key];
                     const href = item.type === "tv" ? `/tv/${item.id}` : `/movie/${item.id}`;
+
+                    // Use shared utility for consistent status mapping
+                    // Priority: item.mediaStatus from API > availability check > statusBadge
+                    const finalMediaStatus: MediaStatus | undefined =
+                        item.mediaStatus ??
+                        availabilityToMediaStatus(status) ??
+                        availabilityToMediaStatus(item.statusBadge);
 
                     return (
                         <HoverMediaCard
@@ -131,7 +140,7 @@ export function DashboardMediaSection({
                             rating={item.rating}
                             description={item.description}
                             mediaType={item.type}
-                            mediaStatus={isAvailable ? 5 : undefined}
+                            mediaStatus={finalMediaStatus}
                             imagePriority={!lazy || idx < 12}
                         />
                     );

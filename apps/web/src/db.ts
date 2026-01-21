@@ -700,7 +700,7 @@ export async function listRequestsForSync(limit = 100): Promise<RequestForSync[]
     FROM media_request r
     JOIN request_item i ON i.request_id = r.id
     JOIN app_user u ON u.id = r.requested_by
-    WHERE r.status IN ('submitted', 'downloading', 'available', 'removed')
+    WHERE r.status IN ('submitted', 'downloading', 'available', 'partially_available', 'removed')
     GROUP BY r.id, u.username
     ORDER BY r.created_at ASC
     LIMIT $1

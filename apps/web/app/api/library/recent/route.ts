@@ -5,6 +5,12 @@ import { listRadarrMovies } from "@/lib/radarr";
 import { listSeries } from "@/lib/sonarr";
 import { getMovie, getTv, tmdbImageUrl } from "@/lib/tmdb";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
+import {
+  MediaStatus,
+  seriesHasFiles,
+  isSeriesPartiallyAvailable,
+  STATUS_STRINGS
+} from "@/lib/media-status";
 
 const MAX_TAKE = 40;
 const DEFAULT_TAKE = 20;
@@ -75,7 +81,7 @@ export async function GET(request: NextRequest) {
           type: "movie" as const,
           addedAt: movie.added ? new Date(movie.added).getTime() : 0,
           available: hasFile,
-          mediaStatus: hasFile ? 5 : 8
+          mediaStatus: hasFile ? MediaStatus.AVAILABLE : MediaStatus.DOWNLOADING
         };
       })
     )
@@ -90,7 +96,11 @@ export async function GET(request: NextRequest) {
           const details = await getTv(series.tmdbId).catch(() => null);
           poster = tmdbImageUrl(details?.poster_path, "w500", imageProxyEnabled);
         }
-        const hasFile = Boolean(series.statistics?.episodeFileCount || series.statistics?.sizeOnDisk || series.sizeOnDisk);
+
+        // Use shared utilities for consistent status detection
+        const hasSomeFiles = seriesHasFiles(series);
+        const isPartial = isSeriesPartiallyAvailable(series);
+
         return {
           id: series.tmdbId,
           title: series.title ?? "Untitled",
@@ -99,8 +109,8 @@ export async function GET(request: NextRequest) {
           overview: series.overview ?? "",
           type: "tv" as const,
           addedAt: series.added ? new Date(series.added).getTime() : 0,
-          available: hasFile,
-          mediaStatus: hasFile ? 5 : 8
+          available: hasSomeFiles,
+          mediaStatus: isPartial ? MediaStatus.PARTIALLY_AVAILABLE : hasSomeFiles ? MediaStatus.AVAILABLE : MediaStatus.DOWNLOADING
         };
       })
     )
@@ -118,7 +128,11 @@ export async function GET(request: NextRequest) {
       description: item.overview,
       type: item.type,
       mediaStatus: item.mediaStatus,
-      statusBadge: item.available ? "available" : undefined
+      statusBadge: item.mediaStatus === MediaStatus.PARTIALLY_AVAILABLE
+        ? STATUS_STRINGS.PARTIALLY_AVAILABLE
+        : item.available
+          ? STATUS_STRINGS.AVAILABLE
+          : undefined
     }));
 
   return cacheableJsonResponseWithETag(request, { items }, { maxAge: 20, sMaxAge: 60 });

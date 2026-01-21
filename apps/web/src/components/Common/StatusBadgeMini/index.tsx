@@ -1,24 +1,17 @@
-import { 
-  CheckCircleIcon, 
-  ClockIcon, 
-  BellIcon, 
-  EyeSlashIcon, 
+import {
+  CheckCircleIcon,
+  ClockIcon,
+  BellIcon,
+  EyeSlashIcon,
   MinusSmallIcon,
   TrashIcon,
   ArrowDownTrayIcon
 } from "@heroicons/react/24/solid";
 import { Loader2 } from "lucide-react";
+import { MediaStatus } from "@/lib/media-status";
 
-export enum MediaStatus {
-  UNKNOWN = 1,
-  PENDING = 2,
-  PROCESSING = 3,
-  PARTIALLY_AVAILABLE = 4,
-  AVAILABLE = 5,
-  BLACKLISTED = 6,
-  DELETED = 7,
-  DOWNLOADING = 8,
-}
+// Re-export MediaStatus for backwards compatibility
+export { MediaStatus } from "@/lib/media-status";
 
 interface StatusBadgeMiniProps {
   status: MediaStatus;
@@ -70,7 +63,7 @@ export function StatusBadgeMini({
       break;
     case MediaStatus.PARTIALLY_AVAILABLE:
       badgeStyle.push(
-        'bg-green-500 border-green-400 ring-green-400 text-green-100'
+        'bg-purple-500 border-purple-400 ring-purple-400 text-purple-100'
       );
       indicatorIcon = <MinusSmallIcon />;
       break;

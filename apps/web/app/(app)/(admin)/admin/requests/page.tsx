@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getUser } from "@/auth";
 import { listRequests } from "@/db";
 import { getMovie, getTv, tmdbImageUrl } from "@/lib/tmdb";
-import { approveRequest, denyRequest, deleteRequest, markRequestAvailable, syncRequests } from "./actions";
+import { approveRequest, denyRequest, deleteRequest, markRequestAvailable } from "./actions";
 import { getImageProxyEnabled } from "@/lib/app-settings";
 import { AllRequestsClient } from "@/components/Admin/AllRequestsClient";
 
@@ -63,7 +63,6 @@ export default async function AllRequestsPage() {
         denyRequest={denyRequest}
         deleteRequest={deleteRequest}
         markRequestAvailable={markRequestAvailable}
-        syncRequests={syncRequests}
       />
     </section>
   );

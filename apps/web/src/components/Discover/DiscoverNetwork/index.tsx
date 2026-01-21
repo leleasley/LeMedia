@@ -6,7 +6,7 @@ import Image from "next/image";
 import { HoverMediaCard } from "@/components/Media/HoverMediaCard";
 import { tmdbImageUrl } from "@/lib/tmdb-images";
 import useVerticalScroll from "@/hooks/useVerticalScroll";
-import { fetchAvailabilityBatched } from "@/lib/availability-client";
+import { fetchAvailabilityStatusBatched } from "@/lib/availability-client";
 
 interface Network {
     id: number;
@@ -36,8 +36,8 @@ export default function DiscoverNetwork() {
     const networkId = params.networkId as string;
     const [network, setNetwork] = useState<Network | null>(null);
     const [items, setItems] = useState<TvShow[]>([]);
-    const [availability, setAvailability] = useState<Record<number, boolean>>({});
-    const availabilityRef = useRef<Record<number, boolean>>({});
+    const [availability, setAvailability] = useState<Record<number, string>>({});
+    const availabilityRef = useRef<Record<number, string>>({});
     const [loading, setLoading] = useState(false);
     const [initialLoading, setInitialLoading] = useState(true);
     const [hasMore, setHasMore] = useState(true);
@@ -77,7 +77,7 @@ export default function DiscoverNetwork() {
                 .filter(id => availabilityRef.current[id] === undefined);
 
             if (missing.length) {
-                fetchAvailabilityBatched("tv", missing)
+                fetchAvailabilityStatusBatched("tv", missing)
                     .then(next => {
                         if (Object.keys(next).length) setAvailability(prev => ({ ...prev, ...next }));
                     })
@@ -111,7 +111,11 @@ export default function DiscoverNetwork() {
             poster: tmdbImageUrl(show.poster_path, "w500"),
             href: `/tv/${show.id}`,
             overview: show.overview,
-            mediaStatus: availability[show.id] ? 5 : undefined
+            mediaStatus: availability[show.id] === "partially_available"
+                ? 4
+                : availability[show.id] === "available"
+                ? 5
+                : undefined
         }));
     }, [items, availability]);
 
