@@ -79,7 +79,7 @@ export function MediaInfoBox({
     externalRatingsSlot
 }: MediaInfoBoxProps) {
     const ratingBadgeClass =
-        "media-rating px-1 sm:px-2 py-1.5 sm:py-2 rounded-lg hover:bg-white/5 transition-all";
+        "media-rating px-0.5 sm:px-2 py-1 sm:py-2 rounded-lg hover:bg-white/5 transition-all";
 
     const formatDate = (dateStr: string | undefined) => {
         if (!dateStr) return "Unknown";
@@ -149,7 +149,7 @@ export function MediaInfoBox({
                             className={ratingBadgeClass}
                             title={`TMDB User Score: ${(voteAverage * 10).toFixed(0)}%`}
                         >
-                            <div className="w-5 h-5 sm:w-6 sm:h-6 relative">
+                            <div className="w-4 h-4 sm:w-5 sm:h-5 relative">
                                 <Image src={tmdbLogo} alt="TMDB" fill className="object-contain" />
                             </div>
                             <span className="text-xs sm:text-sm font-bold text-white">{(voteAverage * 10).toFixed(0)}%</span>
@@ -168,7 +168,7 @@ export function MediaInfoBox({
                                     className={ratingBadgeClass}
                                     title={`Rotten Tomatoes Critics: ${rtCriticsScore}%`}
                                 >
-                                    <div className="w-5 h-5 sm:w-6 sm:h-6 relative">
+                                    <div className="w-4 h-4 sm:w-5 sm:h-5 relative">
                                         <Image
                                             src={rtCriticsScore >= 60 ? rtFreshLogo : rtRottenLogo}
                                             alt="RT Critics"
@@ -189,7 +189,7 @@ export function MediaInfoBox({
                                     className={ratingBadgeClass}
                                     title={`Rotten Tomatoes Audience: ${rtAudienceScore}%`}
                                 >
-                                    <div className="w-5 h-5 sm:w-6 sm:h-6 relative">
+                                    <div className="w-4 h-4 sm:w-5 sm:h-5 relative">
                                         <Image
                                             src={rtAudienceScore >= 60 ? rtAudFreshLogo : rtAudRottenLogo}
                                             alt="RT Audience"
@@ -210,7 +210,7 @@ export function MediaInfoBox({
                                     className={ratingBadgeClass}
                                     title={`IMDb Rating: ${imdbRating}/10`}
                                 >
-                                    <div className="w-5 h-5 sm:w-6 sm:h-6 relative">
+                                    <div className="w-4 h-4 sm:w-5 sm:h-5 relative">
                                         <Image src={imdbLogo} alt="IMDb" fill className="object-contain" />
                                     </div>
                                     <span className="text-xs sm:text-sm font-bold text-white">{imdbRating}</span>
@@ -299,11 +299,11 @@ export function MediaInfoBox({
                 <div className="media-fact">
                     <span className="text-xs sm:text-sm">Currently Streaming On</span>
                     <div className="media-fact-value">
-                        <div className="flex flex-wrap gap-1.5 sm:gap-2">
+                        <div className="flex flex-wrap gap-1 sm:gap-2">
                             {streamingProviders.slice(0, 6).map((provider) => (
                                 <div
                                     key={provider.provider_id}
-                                    className="w-7 h-7 sm:w-9 sm:h-9 rounded-md overflow-hidden border border-white/10 hover:border-white/30 transition-all hover:scale-110"
+                                    className="w-6 h-6 sm:w-8 sm:h-8 rounded overflow-hidden border border-white/10 hover:border-white/30 transition-all hover:scale-110"
                                     title={provider.provider_name}
                                 >
                                     <Image

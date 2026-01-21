@@ -289,7 +289,7 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
             <Users className="h-4 w-4" />
             Top Cast
           </h3>
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-2 sm:gap-3">
+          <div className="grid grid-cols-4 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-1.5 sm:gap-3">
             {cast.map((person: any) => {
               const name = person.name ?? "Unknown";
               const character = person.character ?? "";

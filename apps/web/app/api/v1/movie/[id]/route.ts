@@ -97,7 +97,7 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
       // Use fallback strategies: TMDB ID first, then name search
       jellyfinItemId = await getJellyfinItemId("movie", tmdbId, title);
       if (jellyfinItemId) {
-        playUrl = await getJellyfinPlayUrl(jellyfinItemId);
+        playUrl = await getJellyfinPlayUrl(jellyfinItemId, "movie");
       }
     }
   } catch {

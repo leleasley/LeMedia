@@ -1,11 +1,11 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { getUser } from "@/auth";
-import { getUserWithHash } from "@/db";
+import { getUserWithHash, getCachedJellyfinSeriesItemId, hasCachedEpisodeAvailability, getAvailableSeasons } from "@/db";
 import { hasAssignedNotificationEndpoints } from "@/lib/notifications";
 import { listSonarrQualityProfiles, getSeriesByTmdbId, getSeriesByTvdbId } from "@/lib/sonarr";
 import { getActiveMediaService } from "@/lib/media-services";
-import { getJellyfinItemId, isAvailableByExternalIds } from "@/lib/jellyfin";
+import { getJellyfinItemId } from "@/lib/jellyfin";
 import { getJellyfinPlayUrl } from "@/lib/jellyfin-links";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
 import { withCache } from "@/lib/local-cache";
@@ -77,6 +77,23 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
     sonarrError = sonarrError ?? (seriesResult.reason?.message ?? "Sonarr unavailable");
   }
 
+  const sonarrSeasons = Array.isArray(existingSeries?.seasons) ? existingSeries.seasons : [];
+  const sonarrAvailableSeasons = sonarrSeasons
+    .map((season: any) => ({
+      number: Number(season?.seasonNumber ?? season?.season_number ?? season?.season ?? 0),
+      hasFiles: Number(season?.statistics?.episodeFileCount ?? 0) > 0 ||
+        Number(season?.statistics?.sizeOnDisk ?? 0) > 0 ||
+        Number(season?.sizeOnDisk ?? 0) > 0
+    }))
+    .filter((season: any) => Number.isFinite(season.number) && season.number > 0 && season.hasFiles)
+    .map((season: any) => season.number);
+
+  const sonarrHasFiles =
+    Number(existingSeries?.statistics?.episodeFileCount ?? 0) > 0 ||
+    Number(existingSeries?.statistics?.sizeOnDisk ?? 0) > 0 ||
+    Number(existingSeries?.sizeOnDisk ?? 0) > 0 ||
+    sonarrAvailableSeasons.length > 0;
+
   const existingSeriesSummary = existingSeries
     ? {
         id: existingSeries.id ?? null,
@@ -97,18 +114,20 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
       0
   );
 
-  let availableInJellyfin: boolean | null = null;
-  try {
-    availableInJellyfin = await isAvailableByExternalIds("tv", tmdbId, tvdbId);
-  } catch {
-    availableInJellyfin = null;
-  }
+  const cachedAvailable = await hasCachedEpisodeAvailability({ tmdbId, tvdbId: tvdbId ?? null }).catch(() => false);
+  const availableInJellyfin = cachedAvailable ? true : false;
+
+  const cachedSeasons = await getAvailableSeasons({ tmdbId, tvdbId: tvdbId ?? null }).catch(() => []);
+  const availableSeasons = Array.from(new Set([...(cachedSeasons ?? []), ...sonarrAvailableSeasons]))
+    .filter((season) => Number.isFinite(season) && season > 0)
+    .sort((a, b) => a - b);
 
   let playUrl: string | null = null;
   if (availableInJellyfin === true) {
     try {
-      const jellyfinItemId = await getJellyfinItemId("tv", tmdbId, title || `TMDB ${tmdbId}`, tvdbId ?? null);
-      playUrl = await getJellyfinPlayUrl(jellyfinItemId);
+      const cachedSeriesId = await getCachedJellyfinSeriesItemId({ tmdbId, tvdbId: tvdbId ?? null }).catch(() => null);
+      const jellyfinItemId = cachedSeriesId ?? await getJellyfinItemId("tv", tmdbId, title || `TMDB ${tmdbId}`, tvdbId ?? null);
+      playUrl = await getJellyfinPlayUrl(jellyfinItemId, "tv");
     } catch {
       playUrl = null;
     }
@@ -121,7 +140,8 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
       tmdbId,
       tvdbId: tvdbId ?? null,
       isAdmin,
-      availableInLibrary: availableInJellyfin === true,
+      availableInLibrary: availableInJellyfin === true || sonarrHasFiles,
+      availableSeasons,
       playUrl,
       manage: {
         itemId: isAdmin ? existingSeriesSummary?.id ?? null : null,
@@ -134,7 +154,8 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
         sonarrError,
         defaultQualityProfileId,
         requestsBlocked,
-        availableInJellyfin
+        availableInJellyfin,
+        availableSeasons
       },
       details
     },

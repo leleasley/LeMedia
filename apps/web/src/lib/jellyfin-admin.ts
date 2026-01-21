@@ -121,6 +121,36 @@ export async function listJellyfinLibraries(baseUrl: string, apiKey: string): Pr
   }
 }
 
+/**
+ * Generate a consistent device ID for LeMedia admin operations
+ */
+export async function getJellyfinDeviceId(): Promise<string> {
+  return Buffer.from('BOT_LeMedia').toString('base64');
+}
+
+type JellyfinAuthExtendedResponse = {
+  User: {
+    Id: string;
+    Name: string;
+    ServerId?: string;
+    Policy?: {
+      IsAdministrator?: boolean;
+    };
+  };
+  AccessToken: string;
+  ServerId?: string;
+  ServerName?: string;
+};
+
+export type JellyfinAuthResult = {
+  userId: string;
+  username: string;
+  accessToken: string;
+  serverId?: string;
+  serverName?: string;
+  isAdmin: boolean;
+};
+
 export async function jellyfinLogin(input: {
   baseUrl: string;
   username: string;
@@ -153,6 +183,112 @@ export async function jellyfinLogin(input: {
     username: payload.User.Name,
     accessToken: payload.AccessToken
   };
+}
+
+/**
+ * Authenticate with Jellyfin and return extended information including serverId
+ */
+export async function jellyfinAuthenticate(input: {
+  baseUrl: string;
+  username: string;
+  password: string;
+  clientIp?: string;
+}): Promise<JellyfinAuthResult> {
+  const deviceId = await getJellyfinDeviceId();
+  const headers: HeadersInit = {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+    "X-Emby-Authorization": `MediaBrowser Client="LeMedia", Device="LeMedia", DeviceId="${deviceId}", Version="0.1.0"`
+  };
+  if (input.clientIp) {
+    headers["X-Forwarded-For"] = input.clientIp;
+  }
+  const res = await fetch(`${input.baseUrl.replace(/\/+$/, "")}/Users/AuthenticateByName`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ Username: input.username, Pw: input.password })
+  });
+  if (!res.ok) {
+    const errorText = await res.text().catch(() => "");
+    throw new Error(`Login failed (${res.status}): ${errorText || "Invalid credentials"}`);
+  }
+  const payload = (await res.json()) as JellyfinAuthExtendedResponse;
+  if (!payload?.User?.Id || !payload?.AccessToken) {
+    throw new Error("Invalid Jellyfin response");
+  }
+  return {
+    userId: payload.User.Id,
+    username: payload.User.Name,
+    accessToken: payload.AccessToken,
+    serverId: payload.User.ServerId || payload.ServerId,
+    serverName: payload.ServerName,
+    isAdmin: Boolean(payload.User.Policy?.IsAdministrator)
+  };
+}
+
+/**
+ * Validate that the authenticated user is a Jellyfin administrator
+ */
+export async function validateJellyfinAdmin(baseUrl: string, accessToken: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${baseUrl.replace(/\/+$/, "")}/Users/Me`, {
+      headers: {
+        Accept: "application/json",
+        "X-Emby-Token": accessToken
+      }
+    });
+    if (!res.ok) return false;
+    const user = await res.json();
+    return Boolean(user?.Policy?.IsAdministrator);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Create a new API key for LeMedia using the access token
+ */
+export async function createJellyfinApiKey(baseUrl: string, accessToken: string): Promise<string> {
+  const normalized = baseUrl.replace(/\/+$/, "");
+
+  // Create the API key
+  const createRes = await fetch(`${normalized}/Auth/Keys?App=LeMedia`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "X-Emby-Token": accessToken
+    }
+  });
+
+  if (!createRes.ok) {
+    throw new Error(`Failed to create API key (${createRes.status})`);
+  }
+
+  // Retrieve the newly created key
+  const listRes = await fetch(`${normalized}/Auth/Keys`, {
+    headers: {
+      Accept: "application/json",
+      "X-Emby-Token": accessToken
+    }
+  });
+
+  if (!listRes.ok) {
+    throw new Error(`Failed to retrieve API keys (${listRes.status})`);
+  }
+
+  const keys = (await listRes.json()) as { Items?: Array<{ AppName: string; AccessToken: string; DateCreated: string }> };
+  const items = keys.Items ?? [];
+
+  // Find the most recently created LeMedia key
+  const lemediaKeys = items
+    .filter(k => k.AppName === "LeMedia")
+    .sort((a, b) => new Date(b.DateCreated).getTime() - new Date(a.DateCreated).getTime());
+
+  if (lemediaKeys.length === 0) {
+    throw new Error("API key was created but could not be retrieved");
+  }
+
+  return lemediaKeys[0].AccessToken;
 }
 
 export async function listJellyfinUsers(baseUrl: string, apiKey: string): Promise<JellyfinUserSummary[]> {

@@ -5,6 +5,7 @@ import { useToast } from "@/components/Providers/ToastProvider";
 import { AnimatedCheckbox } from "@/components/Common/AnimatedCheckbox";
 import { csrfFetch } from "@/lib/csrf-client";
 import useSWR from "swr";
+import { JellyfinSetup } from "@/components/Auth/JellyfinSetup";
 
 type JellyfinLibrary = {
     id: string;
@@ -22,7 +23,6 @@ type JellyfinFormState = {
     externalUrl: string;
     jellyfinForgotPasswordUrl: string;
     serverId: string;
-    apiKey: string;
     hasApiKey: boolean;
 };
 
@@ -35,7 +35,6 @@ const initialState: JellyfinFormState = {
     externalUrl: "",
     jellyfinForgotPasswordUrl: "",
     serverId: "",
-    apiKey: "",
     hasApiKey: false
 };
 
@@ -48,8 +47,8 @@ export function JellyfinSettingsPanel() {
     const toast = useToast();
     const [form, setForm] = useState<JellyfinFormState>(initialState);
     const [saving, setSaving] = useState(false);
-    const [testing, setTesting] = useState(false);
     const [syncing, setSyncing] = useState(false);
+    const [showSetup, setShowSetup] = useState(false);
     const sslId = useId();
 
     const { data, isLoading, mutate } = useSWR("/api/v1/admin/settings/jellyfin", fetcher, {
@@ -80,7 +79,6 @@ export function JellyfinSettingsPanel() {
                 externalUrl: data.externalUrl ?? "",
                 jellyfinForgotPasswordUrl: data.jellyfinForgotPasswordUrl ?? "",
                 serverId: data.serverId ?? "",
-                apiKey: "",
                 hasApiKey: Boolean(data.hasApiKey)
             });
         }
@@ -92,14 +90,6 @@ export function JellyfinSettingsPanel() {
 
     const handleSave = async (event: React.FormEvent) => {
         event.preventDefault();
-        if (!form.hostname.trim()) {
-            toast.error("Hostname is required");
-            return;
-        }
-        if (form.port === "" || !Number.isFinite(Number(form.port))) {
-            toast.error("Port must be a valid number");
-            return;
-        }
 
         setSaving(true);
         try {
@@ -113,8 +103,7 @@ export function JellyfinSettingsPanel() {
                     useSsl: form.useSsl,
                     urlBase: form.urlBase.trim(),
                     externalUrl: form.externalUrl.trim(),
-                    jellyfinForgotPasswordUrl: form.jellyfinForgotPasswordUrl.trim(),
-                    apiKey: form.apiKey.trim()
+                    jellyfinForgotPasswordUrl: form.jellyfinForgotPasswordUrl.trim()
                 })
             });
             const body = await res.json().catch(() => ({}));
@@ -122,7 +111,6 @@ export function JellyfinSettingsPanel() {
                 throw new Error(body?.error || "Failed to save Jellyfin settings");
             }
             toast.success("Jellyfin settings saved");
-            setForm(prev => ({ ...prev, apiKey: "", hasApiKey: prev.hasApiKey || !!prev.apiKey }));
             mutate();
         } catch (err: any) {
             toast.error(err?.message ?? "Unable to save Jellyfin settings");
@@ -209,45 +197,6 @@ export function JellyfinSettingsPanel() {
         }
     };
 
-    const handleTest = async () => {
-        if (!form.hostname.trim()) {
-            toast.error("Hostname is required to test");
-            return;
-        }
-        if (form.port === "" || !Number.isFinite(Number(form.port))) {
-            toast.error("Port must be a valid number");
-            return;
-        }
-        if (!form.apiKey.trim()) {
-            toast.error("API key is required for testing");
-            return;
-        }
-        setTesting(true);
-        try {
-            const res = await csrfFetch("/api/v1/admin/settings/jellyfin/test", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                credentials: "include",
-                body: JSON.stringify({
-                    hostname: form.hostname.trim(),
-                    port: Number(form.port),
-                    useSsl: form.useSsl,
-                    urlBase: form.urlBase.trim(),
-                    apiKey: form.apiKey.trim()
-                })
-            });
-            const body = await res.json().catch(() => ({}));
-            if (!res.ok) {
-                throw new Error(body?.error || "Connection failed");
-            }
-            toast.success("Connection succeeded");
-        } catch (err: any) {
-            toast.error(err?.message ?? "Connection failed");
-        } finally {
-            setTesting(false);
-        }
-    };
-
     const libraries: JellyfinLibrary[] = Array.isArray(data?.libraries) ? data.libraries : [];
 
     return (
@@ -255,126 +204,92 @@ export function JellyfinSettingsPanel() {
             <div>
                 <p className="text-xs uppercase tracking-[0.2em] text-muted">Jellyfin</p>
                 <h3 className="text-xl font-semibold text-white">Jellyfin settings</h3>
-                <p className="text-sm text-muted">Configure the internal and external Jellyfin endpoints and API key.</p>
+                <p className="text-sm text-muted">Configure your Jellyfin server connection and settings.</p>
             </div>
 
-            <form onSubmit={handleSave} className="space-y-6">
-                <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-1 text-sm">
-                        <label className="font-semibold text-white">Server Name</label>
-                        <input
-                            value={form.name || "Not detected"}
-                            className="w-full input"
-                            readOnly
-                            disabled={isLoading}
-                        />
-                    </div>
-                    <div className="space-y-1 text-sm">
-                        <label className="font-semibold text-white">Hostname or IP</label>
-                        <input
-                            value={form.hostname}
-                            onChange={event => updateForm({ hostname: event.target.value })}
-                            className="w-full input"
-                            placeholder="jellyfin.local"
-                            disabled={isLoading}
-                        />
-                    </div>
+            {showSetup ? (
+                <div className="rounded-lg border border-white/10 bg-black/20 p-6">
+                    <JellyfinSetup
+                        isInitialSetup={!form.hasApiKey}
+                        currentConfig={{
+                            hostname: form.hostname,
+                            port: typeof form.port === "number" ? form.port : undefined,
+                            useSsl: form.useSsl,
+                            urlBase: form.urlBase,
+                            externalUrl: form.externalUrl
+                        }}
+                        onSuccess={() => {
+                            setShowSetup(false);
+                            mutate();
+                        }}
+                        onCancel={() => setShowSetup(false)}
+                    />
                 </div>
+            ) : (
+                <div className="space-y-4">
+                    <div className="rounded-lg border border-white/10 bg-white/5 p-4">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <p className="text-sm font-semibold text-white">Connection Status</p>
+                                <p className="text-xs text-muted mt-1">
+                                    {form.hasApiKey
+                                        ? `Connected to ${form.name || "Jellyfin server"}`
+                                        : "Not configured"}
+                                </p>
+                                {form.serverId && (
+                                    <p className="text-xs text-muted mt-1">
+                                        Server ID: {form.serverId}
+                                    </p>
+                                )}
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowSetup(true)}
+                                className="btn btn-primary"
+                            >
+                                {form.hasApiKey ? "Reconfigure" : "Connect to Jellyfin"}
+                            </button>
+                        </div>
+                    </div>
 
-                <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-1 text-sm">
-                        <label className="font-semibold text-white">Port</label>
-                        <input
-                            type="number"
-                            value={form.port}
-                            onChange={event =>
-                                updateForm({
-                                    port: event.target.value === "" ? "" : Number(event.target.value)
-                                })
-                            }
-                            className="w-full input"
-                            disabled={isLoading}
-                        />
-                    </div>
-                    <div className="space-y-1 text-sm">
-                        <label className="font-semibold text-white">URL Base</label>
-                        <input
-                            value={form.urlBase}
-                            onChange={event => updateForm({ urlBase: event.target.value })}
-                            className="w-full input"
-                            placeholder="/jellyfin"
-                            disabled={isLoading}
-                        />
-                    </div>
+                    {form.hasApiKey && (
+                        <div className="text-sm text-muted bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
+                            <p className="font-semibold text-blue-400 mb-1">Authentication Method</p>
+                            <p>Jellyfin is configured using secure credential-based authentication. Click "Reconfigure" above to update your connection settings.</p>
+                        </div>
+                    )}
                 </div>
+            )}
 
-                <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-1 text-sm">
-                        <label className="font-semibold text-white">External URL (optional)</label>
-                        <input
-                            value={form.externalUrl}
-                            onChange={event => updateForm({ externalUrl: event.target.value })}
-                            className="w-full input"
-                            placeholder="https://jellyfin.example.com"
-                            disabled={isLoading}
-                        />
+            {form.hasApiKey && !showSetup && (
+                <form onSubmit={handleSave} className="space-y-6">
+                    <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted">Optional Settings</p>
+                        <h4 className="text-lg font-semibold text-white">Additional Configuration</h4>
+                        <p className="text-sm text-muted">Configure optional Jellyfin URLs.</p>
                     </div>
-                    <div className="space-y-1 text-sm">
-                        <label className="font-semibold text-white">Forgot Password URL (optional)</label>
-                        <input
-                            value={form.jellyfinForgotPasswordUrl}
-                            onChange={event => updateForm({ jellyfinForgotPasswordUrl: event.target.value })}
-                            className="w-full input"
-                            placeholder="https://jellyfin.example.com/forgot"
-                            disabled={isLoading}
-                        />
-                    </div>
-                </div>
 
-                <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-1 text-sm">
-                        <label className="font-semibold text-white">Jellyfin Server ID</label>
-                        <input
-                            value={form.serverId || "Not detected"}
-                            className="w-full input"
-                            readOnly
-                            disabled={isLoading}
-                        />
-                        <p className="text-xs text-muted">Auto-detected from Jellyfin. Used to build play links.</p>
+                    <div className="grid gap-4 md:grid-cols-2">
+                        <div className="space-y-1 text-sm">
+                            <label className="font-semibold text-white">Forgot Password URL (optional)</label>
+                            <input
+                                value={form.jellyfinForgotPasswordUrl}
+                                onChange={event => updateForm({ jellyfinForgotPasswordUrl: event.target.value })}
+                                className="w-full input"
+                                placeholder="https://jellyfin.example.com/forgot"
+                                disabled={isLoading}
+                            />
+                            <p className="text-xs text-muted">Custom URL for password reset (shown on login page)</p>
+                        </div>
                     </div>
-                    <div className="space-y-1 text-sm">
-                        <label className="font-semibold text-white">API key</label>
-                        <input
-                            type="password"
-                            value={form.apiKey}
-                            onChange={event => updateForm({ apiKey: event.target.value })}
-                            className="w-full input"
-                            placeholder={form.hasApiKey ? "Stored (leave blank to keep)" : "Enter API key"}
-                            disabled={isLoading}
-                        />
-                        <p className="text-xs text-muted">
-                            {form.hasApiKey ? "An API key is already stored." : "Create an API key in Jellyfin and paste it here."}
-                        </p>
+
+                    <div className="flex flex-wrap gap-2">
+                        <button className="btn btn-primary" type="submit" disabled={saving || isLoading}>
+                            {saving ? "Saving…" : "Save optional settings"}
+                        </button>
                     </div>
-                </div>
-
-                <AnimatedCheckbox
-                    id={sslId}
-                    label="Use SSL for internal requests"
-                    checked={form.useSsl}
-                    onChange={event => updateForm({ useSsl: event.target.checked })}
-                    disabled={isLoading}
-                />
-
-                <div className="flex flex-wrap gap-2">
-                    <button className="btn" type="button" onClick={handleTest} disabled={testing || isLoading}>
-                        {testing ? "Testing…" : "Test connection"}
-                    </button>
-                    <button className="btn btn-primary" type="submit" disabled={saving || isLoading}>
-                        {saving ? "Saving…" : "Save changes"}
-                    </button>
-                </div>
-            </form>
+                </form>
+            )}
 
             <div className="space-y-4">
                 <div>

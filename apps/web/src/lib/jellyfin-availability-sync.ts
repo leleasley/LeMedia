@@ -112,7 +112,7 @@ async function syncLibrary(library: { id: string; name: string; type: "movie" | 
 
     // Fetch all items from the library
     const response = await jellyfinFetch(
-      `/Items?ParentId=${library.id}&Recursive=true&IncludeItemTypes=${includeItemTypes}&Fields=ProviderIds,ParentId,IndexNumber,ParentIndexNumber,Type,LocationType,MediaSources,Path,IsVirtual&Limit=10000`
+      `/Items?ParentId=${library.id}&Recursive=true&IncludeItemTypes=${includeItemTypes}&Fields=ProviderIds,ParentId,IndexNumber,ParentIndexNumber,Type,LocationType,MediaSources,Path,IsVirtual,PremiereDate&Limit=10000`
     );
 
     if (!response || !Array.isArray(response.Items)) {
@@ -161,6 +161,7 @@ async function syncLibrary(library: { id: string; name: string; type: "movie" | 
       let mediaType: 'movie' | 'episode' | 'season' | 'series';
       let seasonNumber: number | null = null;
       let episodeNumber: number | null = null;
+      let airDate: string | null = null;
 
       if (itemType === "movie") {
         mediaType = "movie";
@@ -173,6 +174,9 @@ async function syncLibrary(library: { id: string; name: string; type: "movie" | 
         mediaType = "episode";
         seasonNumber = item.ParentIndexNumber ?? null;
         episodeNumber = item.IndexNumber ?? null;
+        if (item.PremiereDate) {
+          airDate = String(item.PremiereDate).slice(0, 10);
+        }
       } else {
         // Skip unknown types
         continue;
@@ -201,6 +205,7 @@ async function syncLibrary(library: { id: string; name: string; type: "movie" | 
         title,
         seasonNumber,
         episodeNumber,
+        airDate,
         jellyfinItemId,
         jellyfinLibraryId: library.id
       });
@@ -251,35 +256,46 @@ export async function getCachedEpisodeAvailability(
   tmdbId: number,
   seasonNumber: number,
   tvdbId?: number | null
-): Promise<Map<number, { available: boolean; jellyfinItemId: string | null }>> {
+): Promise<{
+  byEpisode: Map<number, { available: boolean; jellyfinItemId: string | null }>;
+  byAirDate: Map<string, { available: boolean; jellyfinItemId: string | null }>;
+}> {
   const pool = getPool();
   const hasTvdbId = Number(tvdbId ?? 0) > 0;
   const query = hasTvdbId
-    ? `SELECT episode_number, jellyfin_item_id
+    ? `SELECT episode_number, air_date, jellyfin_item_id
        FROM jellyfin_availability
        WHERE media_type = 'episode'
          AND season_number = $3
-         AND episode_number IS NOT NULL
+         AND (episode_number IS NOT NULL OR air_date IS NOT NULL)
          AND (tmdb_id = $1 OR tvdb_id = $2)`
-    : `SELECT episode_number, jellyfin_item_id
+    : `SELECT episode_number, air_date, jellyfin_item_id
        FROM jellyfin_availability
        WHERE tmdb_id = $1
          AND media_type = 'episode'
          AND season_number = $2
-         AND episode_number IS NOT NULL`;
+         AND (episode_number IS NOT NULL OR air_date IS NOT NULL)`;
   const params = hasTvdbId ? [tmdbId, tvdbId, seasonNumber] : [tmdbId, seasonNumber];
   const res = await pool.query(query, params);
 
-  const availabilityMap = new Map<number, { available: boolean; jellyfinItemId: string | null }>();
+  const byEpisode = new Map<number, { available: boolean; jellyfinItemId: string | null }>();
+  const byAirDate = new Map<string, { available: boolean; jellyfinItemId: string | null }>();
 
   for (const row of res.rows) {
     if (row.episode_number !== null) {
-      availabilityMap.set(row.episode_number, {
+      byEpisode.set(row.episode_number, {
+        available: true,
+        jellyfinItemId: row.jellyfin_item_id
+      });
+    }
+    if (row.air_date) {
+      const dateKey = String(row.air_date).slice(0, 10);
+      byAirDate.set(dateKey, {
         available: true,
         jellyfinItemId: row.jellyfin_item_id
       });
     }
   }
 
-  return availabilityMap;
+  return { byEpisode, byAirDate };
 }

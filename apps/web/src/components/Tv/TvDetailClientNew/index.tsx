@@ -75,6 +75,7 @@ export function TvDetailClientNew({
     sonarrError,
     existingSeries,
     availableInJellyfin,
+    availableSeasons = [],
     streamingProviders = [],
     rtCriticsScore,
     rtCriticsRating,
@@ -107,6 +108,7 @@ export function TvDetailClientNew({
     sonarrError?: string | null;
     existingSeries?: any;
     availableInJellyfin?: boolean | null;
+    availableSeasons?: number[];
     streamingProviders?: any[];
     rtCriticsScore?: number | null;
     rtCriticsRating?: string | null;
@@ -164,13 +166,16 @@ export function TvDetailClientNew({
     const [manageBaseUrlState, setManageBaseUrlState] = useState<string | null>(manageBaseUrl ?? null);
     const [isAdminState, setIsAdminState] = useState<boolean>(isAdmin);
     const [availableInLibraryState, setAvailableInLibraryState] = useState<boolean>(availableInLibrary);
+    const [availableSeasonsState, setAvailableSeasonsState] = useState<number[]>(availableSeasons);
 
     const aggregateParams = new URLSearchParams();
     if (tvdbId) aggregateParams.set("tvdbId", String(tvdbId));
     if (tv?.name) aggregateParams.set("title", String(tv.name));
     const aggregateKey = `/api/v1/tv/${tv.id}${aggregateParams.toString() ? `?${aggregateParams.toString()}` : ""}`;
     const { data: aggregate } = useSWR<any>(aggregateKey, fetcher, {
-        revalidateOnFocus: false,
+        revalidateOnFocus: true,
+        revalidateIfStale: true,
+        refreshInterval: 30000,
         fallbackData: prefetchedAggregate
     });
 
@@ -199,12 +204,18 @@ export function TvDetailClientNew({
         if (sonarr.availableInJellyfin !== undefined) {
             setAvailableInJellyfinState(sonarr.availableInJellyfin);
         }
+        if (Array.isArray(sonarr.availableSeasons)) {
+            setAvailableSeasonsState(sonarr.availableSeasons);
+        }
         if (typeof sonarr.defaultQualityProfileId === "number" && sonarr.defaultQualityProfileId > 0) {
             setSelectedQualityProfileId(prev => (prev > 0 ? prev : sonarr.defaultQualityProfileId));
         }
 
         if (typeof aggregate.availableInLibrary === "boolean") {
             setAvailableInLibraryState(aggregate.availableInLibrary);
+        }
+        if (Array.isArray(aggregate.availableSeasons)) {
+            setAvailableSeasonsState(aggregate.availableSeasons);
         }
         if (typeof aggregate.isAdmin === "boolean") {
             setIsAdminState(aggregate.isAdmin);
@@ -222,6 +233,22 @@ export function TvDetailClientNew({
     const hasQualityProfiles = qualityProfilesState.length > 0;
     const isExisting = !!existingSeriesState;
     const canRequestSeries = !isExisting && hasQualityProfiles;
+
+    // Determine if partially available (some seasons available but not all)
+    const totalSeasons = seasons.filter(s => s.season_number !== 0).length;
+    const availableSeasonsCount = availableSeasonsState.filter(s => s !== 0).length;
+    const hasAvailableEpisodes = Object.values(seasonEpisodes).some((episodes) =>
+        episodes.some(episode => episode.available)
+    );
+    const hasAnyAvailable =
+        availableSeasonsCount > 0 ||
+        hasAvailableEpisodes ||
+        availableInJellyfinState === true ||
+        availableInLibraryState;
+    const isFullyAvailable = availableSeasonsCount > 0 && availableSeasonsCount >= totalSeasons;
+    const isPartiallyAvailable = hasAnyAvailable && !isFullyAvailable;
+    const showManageButton = (isPartiallyAvailable || isFullyAvailable) && isAdminState && manageItemIdState;
+
     const cast = (tv.aggregate_credits?.cast ?? tv.credits?.cast ?? []).slice(0, 12);
     const creators = Array.isArray(tv.created_by) ? tv.created_by.slice(0, 6) : [];
     const crew = Array.isArray(tv.credits?.crew) ? tv.credits.crew : [];
@@ -264,6 +291,14 @@ export function TvDetailClientNew({
             const data = await res.json();
             if (res.ok && data.episodes) {
                 setSeasonEpisodes(prev => ({ ...prev, [seasonNumber]: data.episodes }));
+                const hasAvailable = data.episodes.some((episode: Episode) => episode.available);
+                if (hasAvailable) {
+                    setAvailableSeasonsState(prev => {
+                        if (prev.includes(seasonNumber)) return prev;
+                        const nextSeasons = [...prev, seasonNumber].sort((a, b) => a - b);
+                        return nextSeasons;
+                    });
+                }
             }
         } catch (err) {
             console.error("Failed to load episodes", err);
@@ -579,23 +614,36 @@ export function TvDetailClientNew({
                         </div>
                     )}
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                        {seasons.map(season => (
-                            <div key={season.season_number} className="rounded-lg overflow-hidden border border-white/10 bg-white/5">
-                                <div className="relative aspect-[2/3] bg-neutral-900">
-                                    {season.poster_path ? (
-                                        <Image src={`https://image.tmdb.org/t/p/w300${season.poster_path}`} alt="" fill className="object-cover" />
-                                    ) : (
-                                        <div className="absolute inset-0 flex items-center justify-center text-gray-500"><Tv className="h-6 w-6" /></div>
-                                    )}
-                                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+                        {seasons.map(season => {
+                            const isSeasonAvailable = availableSeasonsState.includes(season.season_number);
+                            return (
+                                <div key={season.season_number} className="rounded-lg overflow-hidden border border-white/10 bg-white/5">
+                                    <div className="relative aspect-[2/3] bg-neutral-900">
+                                        {season.poster_path ? (
+                                            <Image src={`https://image.tmdb.org/t/p/w300${season.poster_path}`} alt="" fill className="object-cover" />
+                                        ) : (
+                                            <div className="absolute inset-0 flex items-center justify-center text-gray-500"><Tv className="h-6 w-6" /></div>
+                                        )}
+                                        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+                                        {isSeasonAvailable && (
+                                            <div className="absolute top-2 right-2 flex items-center gap-1 rounded-full bg-green-500/90 px-2 py-1 text-xs font-semibold text-white">
+                                                <CheckCircle className="h-3 w-3" />
+                                                Available
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="p-3 space-y-1">
+                                        <div className="font-semibold text-white text-sm truncate">{season.name || `Season ${season.season_number}`}</div>
+                                        <div className="text-xs text-gray-400">{season.episode_count} episodes</div>
+                                        {isSeasonAvailable ? (
+                                            <button className="mt-2 w-full px-3 py-1.5 rounded bg-green-600 text-white text-xs font-bold cursor-not-allowed opacity-70" disabled>Already Available</button>
+                                        ) : (
+                                            <button onClick={() => requestFullSeason(season.season_number)} className="mt-2 w-full px-3 py-1.5 rounded bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold active:scale-95 disabled:opacity-50" disabled={requestsBlockedState || qualityProfilesState.length === 0 || isSubmitting}>Request Season</button>
+                                        )}
+                                    </div>
                                 </div>
-                                <div className="p-3 space-y-1">
-                                    <div className="font-semibold text-white text-sm truncate">{season.name || `Season ${season.season_number}`}</div>
-                                    <div className="text-xs text-gray-400">{season.episode_count} episodes</div>
-                                    <button onClick={() => requestFullSeason(season.season_number)} className="mt-2 w-full px-3 py-1.5 rounded bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold active:scale-95 disabled:opacity-50" disabled={requestsBlockedState || qualityProfilesState.length === 0 || isSubmitting}>Request Season</button>
-                                </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
             </Modal>
@@ -645,19 +693,24 @@ export function TvDetailClientNew({
                     {/* Media Title Section */}
                     <div className="media-title">
                         <div className="media-status">
-                            {availableInLibraryState ? (
+                            {isFullyAvailable ? (
                                 <div className="inline-flex h-7 items-center gap-1.5 rounded-full border border-indigo-400 bg-indigo-500 px-3 text-xs font-semibold text-white shadow-sm">
                                     <CheckCircle className="h-4 w-4" />
                                     Available
                                 </div>
+                            ) : isPartiallyAvailable ? (
+                                <div className="inline-flex h-7 items-center gap-1.5 rounded-full border border-indigo-400 bg-indigo-500 px-3 text-xs font-semibold text-white shadow-sm">
+                                    <CheckCircle className="h-4 w-4" />
+                                    Partially Available
+                                </div>
                             ) : null}
-                            {isExisting && existingSeriesState?.monitored && (
+                            {isExisting && existingSeriesState?.monitored && !hasAnyAvailable && (
                                 <div className="inline-flex h-7 items-center gap-1.5 rounded-full border border-purple-400 bg-purple-500 px-3 text-xs font-semibold text-white shadow-sm">
                                     <Eye className="h-4 w-4" />
                                     Monitored
                                 </div>
                             )}
-                            {isExisting && existingSeriesState?.monitored === false && (
+                            {isExisting && existingSeriesState?.monitored === false && !hasAnyAvailable && (
                                 <div className="inline-flex h-7 items-center gap-1.5 rounded-full border border-amber-400 bg-amber-500 px-3 text-xs font-semibold text-white shadow-sm">
                                     Not monitored
                                 </div>
@@ -684,7 +737,7 @@ export function TvDetailClientNew({
 
                         {/* Action Buttons */}
                         <div className="media-actions">
-                            {availableInLibraryState ? (
+                            {hasAnyAvailable ? (
                                 <>
                                     <MediaListButtons tmdbId={tv.id} mediaType="tv" />
                                     <ShareButton
@@ -704,10 +757,41 @@ export function TvDetailClientNew({
                                         backdropUrl={backdrop ?? undefined}
                                         isAdmin={isAdminState}
                                         showReport
-                                        manageItemId={manageItemIdState ?? null}
-                                        manageSlug={manageSlugState ?? null}
-                                        manageBaseUrl={manageBaseUrlState ?? null}
+                                        manageItemId={showManageButton ? manageItemIdState ?? null : null}
+                                        manageSlug={showManageButton ? manageSlugState ?? null : null}
+                                        manageBaseUrl={showManageButton ? manageBaseUrlState ?? null : null}
                                     />
+                                    {isPartiallyAvailable && canRequestSeries && (
+                                        <>
+                                            <ButtonWithDropdown
+                                                text={
+                                                    <>
+                                                        <ArrowDownTrayIcon />
+                                                        <span>Request</span>
+                                                    </>
+                                                }
+                                                onClick={() => setRequestModalOpen(true)}
+                                            />
+                                            <RequestMediaModal
+                                                open={requestModalOpen}
+                                                onClose={() => setRequestModalOpen(false)}
+                                                tmdbId={tv.id}
+                                                mediaType="tv"
+                                                qualityProfiles={qualityProfilesState}
+                                                defaultQualityProfileId={selectedQualityProfileId}
+                                                requestsBlocked={requestsBlockedState}
+                                                title={tv.name}
+                                                posterUrl={poster}
+                                                backdropUrl={backdrop}
+                                                isLoading={!requestInfoLoaded}
+                                                monitor={monitorEpisodes}
+                                                onRequestPlaced={() => {
+                                                    setRequestModalOpen(false);
+                                                    router.refresh();
+                                                }}
+                                            />
+                                        </>
+                                    )}
                                 </>
                             ) : (
                                 <>
@@ -844,7 +928,7 @@ export function TvDetailClientNew({
                                     const allChecked = selectableCount > 0 && checkedCount === selectableCount;
                                     return (
                                         <div key={season.season_number} className="overflow-hidden rounded-xl border border-white/10 bg-black/20 backdrop-blur-sm transition-all hover:bg-black/30">
-                                            <button onClick={() => toggleSeason(season.season_number)} className="w-full flex items-center justify-between p-6 transition-colors">
+                                            <button onClick={() => toggleSeason(season.season_number)} className="w-full flex items-center justify-between p-3 sm:p-6 transition-colors">
                                                 <div className="flex items-center gap-6">
                                                     {season.poster_path ? (
                                                         <div className="h-16 w-12 rounded bg-neutral-800 flex-shrink-0 relative overflow-hidden hidden sm:block"><Image src={`https://image.tmdb.org/t/p/w200${season.poster_path}`} alt="" fill className="object-cover" /></div>
@@ -859,14 +943,14 @@ export function TvDetailClientNew({
                                                 {isExpanded ? (<ChevronUp className="h-5 w-5 text-gray-400" />) : (<ChevronDown className="h-5 w-5 text-gray-400" />)}
                                             </button>
                                             {isExpanded && (
-                                                <div className="border-t border-white/10 bg-black/20 p-6 animate-in slide-in-from-top-2 duration-200">
+                                                <div className="border-t border-white/10 bg-black/20 p-3 sm:p-6 animate-in slide-in-from-top-2 duration-200">
                                                     {isLoading ? (
                                                         <div className="flex items-center justify-center py-12 text-gray-400 gap-2"><div className="h-4 w-4 rounded-full border-2 border-white/20 border-t-white animate-spin" />Loading episodes...</div>
                                                     ) : episodes.length === 0 ? (
                                                         <div className="text-center py-12 text-gray-400">No episodes found</div>
                                                     ) : (
                                                         <>
-                                                            <div className="flex flex-wrap items-center justify-between gap-4 mb-6 pb-4 border-b border-white/5">
+                                                            <div className="flex flex-wrap items-center justify-between gap-3 sm:gap-4 mb-4 sm:mb-6 pb-3 sm:pb-4 border-b border-white/5">
                                                                 <div className="flex flex-col gap-3">
                                                                     <label className="flex items-center gap-3 cursor-pointer group">
                                                                         <div className={`h-5 w-5 rounded border flex items-center justify-center transition-colors ${allChecked ? 'bg-white border-white' : 'border-gray-500 group-hover:border-white'}`}>{allChecked && <CheckCircle className="h-3.5 w-3.5 text-black" />}</div>
@@ -897,7 +981,7 @@ export function TvDetailClientNew({
                                                                     return (
                                                                         <label
                                                                             key={episode.episode_number}
-                                                                            className={`relative flex gap-5 py-5 transition-colors ${
+                                                                            className={`relative flex gap-3 sm:gap-5 py-3 sm:py-5 transition-colors ${
                                                                                 isDisabled ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-white/5"
                                                                             } ${isChecked ? "bg-purple-500/10" : ""}`}
                                                                         >
@@ -955,7 +1039,7 @@ export function TvDetailClientNew({
                                                                                     {episode.overview || "No overview available."}
                                                                                 </p>
                                                                             </div>
-                                                                            <div className="hidden md:block w-44 h-24 relative rounded-lg overflow-hidden bg-neutral-800 flex-shrink-0">
+                                                                            <div className="hidden sm:block w-28 sm:w-44 h-16 sm:h-24 relative rounded-lg overflow-hidden bg-neutral-800 flex-shrink-0">
                                                                                 {stillUrl ? (
                                                                                     <Image src={stillUrl} alt={episode.name} fill className="object-cover" />
                                                                                 ) : (
@@ -1013,7 +1097,7 @@ export function TvDetailClientNew({
                 {cast.length > 0 && (
                     <div className="mt-10 sm:mt-16 md:mt-24">
                         <h2 className="text-xl sm:text-2xl font-bold text-white tracking-wide mb-4 sm:mb-6">Cast</h2>
-                        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-2 sm:gap-3">
+                        <div className="grid grid-cols-4 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-1.5 sm:gap-3">
                             {cast.map((person: any) => {
                                 const img = person.profile_path ? `https://image.tmdb.org/t/p/w300${person.profile_path}` : null;
                                 const name = person.name ?? "Unknown";

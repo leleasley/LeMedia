@@ -60,13 +60,18 @@ export async function GET(
   );
 
   // Get cached availability from database (fast!)
-  const availabilityMap = await getCachedEpisodeAvailability(tmdbId, seasonNumber, tvdbId).catch(() => new Map());
+  const availabilityResult = await getCachedEpisodeAvailability(tmdbId, seasonNumber, tvdbId).catch(() => ({
+    byEpisode: new Map(),
+    byAirDate: new Map()
+  }));
 
   // Add request info and cached availability
   const enhancedEpisodes = episodes.map((episode: any) => {
     const episodeNumber = episode.episode_number;
     const requestInfo = requestedEpisodesMap.get(Number(episodeNumber));
-    const availabilityInfo = availabilityMap.get(Number(episodeNumber));
+    const availabilityInfo =
+      availabilityResult.byEpisode.get(Number(episodeNumber)) ??
+      (episode.air_date ? availabilityResult.byAirDate.get(String(episode.air_date).slice(0, 10)) : undefined);
 
     return {
       ...episode,

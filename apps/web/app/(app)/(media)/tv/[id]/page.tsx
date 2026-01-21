@@ -19,12 +19,15 @@ async function resolveParams(params: ParamsInput) {
 async function fetchTvAggregate(tmdbId: number, tvdbId?: number | null, title?: string) {
   const headerStore = await headers();
   const host = headerStore.get("x-forwarded-host") ?? headerStore.get("host");
-  if (!host) return null;
   const proto = headerStore.get("x-forwarded-proto") ?? "http";
+  const fallbackBaseUrl = process.env.INTERNAL_APP_BASE_URL ?? process.env.APP_BASE_URL ?? "";
+  const baseUrl = host ? `${proto}://${host}` : fallbackBaseUrl;
+  if (!baseUrl) return null;
   const params = new URLSearchParams();
   if (title) params.set("title", title);
   if (tvdbId) params.set("tvdbId", String(tvdbId));
-  const url = `${proto}://${host}/api/v1/tv/${tmdbId}${params.toString() ? `?${params.toString()}` : ""}`;
+  const normalizedBaseUrl = baseUrl.replace(/\/+$/, "");
+  const url = `${normalizedBaseUrl}/api/v1/tv/${tmdbId}${params.toString() ? `?${params.toString()}` : ""}`;
   try {
     const res = await fetch(url, {
       headers: { cookie: headerStore.get("cookie") ?? "" },
@@ -55,18 +58,17 @@ export default async function TvPage({ params }: { params: ParamsInput }) {
   try {
     const { id } = Params.parse(await resolveParams(params));
 
-    // Fetch only fast data - no slow external APIs (OMDB, Rotten Tomatoes)
-    const [details, aggregate] = await Promise.all([
-      getTvDetailAggregateFast(id),
-      fetchTvAggregate(id, null, "")
-    ]);
-
+    // Fetch details first to get tvdbId
+    const details = await getTvDetailAggregateFast(id);
     const tv = details.tv;
     const imageProxyEnabled = details.imageProxyEnabled;
     const streamingProviders = details.streamingProviders;
     const keywords = details.keywords;
     const tvdbId = details.tvdbId;
     const imdbId = details.imdbId;
+
+    // Now fetch aggregate with proper tvdbId
+    const aggregate = await fetchTvAggregate(id, tvdbId, tv.name || "");
 
     // Extract aggregate data
     const sonarr = aggregate?.sonarr ?? {};
@@ -76,6 +78,7 @@ export default async function TvPage({ params }: { params: ParamsInput }) {
     const sonarrError = sonarr.sonarrError ?? null;
     const existingSeries = sonarr.existingSeries ?? null;
     const availableInJellyfin = sonarr.availableInJellyfin ?? null;
+    const availableSeasons = Array.isArray(aggregate?.availableSeasons) ? aggregate.availableSeasons : [];
     const availableInLibrary = Boolean(aggregate?.availableInLibrary);
     const playUrl = aggregate?.playUrl ?? null;
     const isAdmin = Boolean(aggregate?.isAdmin);
@@ -111,6 +114,7 @@ export default async function TvPage({ params }: { params: ParamsInput }) {
           requestsBlocked={requestsBlocked}
           existingSeries={existingSeries}
           availableInJellyfin={availableInJellyfin}
+          availableSeasons={availableSeasons}
           availableInLibrary={availableInLibrary}
           streamingProviders={streamingProviders}
           imdbRating={null}

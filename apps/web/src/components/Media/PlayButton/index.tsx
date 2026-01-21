@@ -59,6 +59,8 @@ export function PlayButton({ links }: PlayButtonProps) {
       setTrailerOpen(true);
       return;
     }
+    // Prevent default to avoid opening the link twice (once from href, once from window.open)
+    event?.preventDefault();
     window.open(link.url, "_blank", "noopener,noreferrer");
   };
 

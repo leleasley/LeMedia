@@ -542,56 +542,8 @@
       @apply -mx-0 px-3;
     }
 
-    /* Mobile header - make it cleaner */
-    .media-header {
-      @apply pt-4 gap-3;
-    }
-
-    /* Mobile poster - keep original size */
-    .media-poster {
-      @apply w-32 shadow-2xl;
-    }
-
-    /* Mobile title section - keep original sizes */
-    .media-title {
-      @apply mt-4;
-    }
-
-    /* Mobile overview section */
-    .media-overview {
-      @apply pt-8 pb-4;
-    }
-
-    .media-ratings {
-      @apply space-x-3 px-2 py-3;
-    }
-
-    .media-ratings > a {
-      @apply px-1;
-    }
-
-    .media-fact {
-      @apply flex-col items-start gap-1 px-3 py-3;
-    }
-
-    .media-fact-value {
-      @apply ml-0 text-left;
-    }
-
-    .media-overview-right {
-      @apply mt-6;
-    }
-
     .media-facts {
       @apply text-sm;
-    }
-
-    ul.media-crew {
-      @apply gap-4;
-    }
-
-    .tagline {
-      @apply text-lg mb-3;
     }
   }
 
@@ -760,35 +712,72 @@
    MOBILE-ONLY ENHANCEMENTS (< 640px)
    ============================================ */
 @media (max-width: 639px) {
-  /* Compact title on mobile */
+  /* Compact header - horizontal layout */
+  .media-header {
+    @apply flex-row items-start gap-3 pt-2;
+  }
+
+  .media-poster {
+    @apply w-24 flex-shrink-0;
+  }
+
+  .media-title {
+    @apply mt-0 text-left flex-1;
+  }
+
   .media-title > h1 {
-    @apply text-xl leading-tight;
+    @apply text-lg leading-tight;
   }
 
   h1 .media-year {
-    @apply text-lg;
+    @apply text-base;
+  }
+
+  .media-attributes {
+    @apply justify-start text-xs mt-1;
   }
 
   /* Compact action buttons */
   .media-actions {
-    @apply gap-1.5 mt-3;
+    @apply mt-2 gap-1.5 justify-start flex-wrap;
   }
 
   .media-actions > * {
-    @apply mb-2;
+    @apply mb-1;
   }
 
-  /* Smaller overview section */
+  /* Compact info box */
+  .media-ratings {
+    @apply py-2 px-2 gap-2;
+  }
+
+  .media-fact {
+    @apply flex-row items-center justify-between py-1.5 px-2;
+  }
+
+  .media-fact-value {
+    @apply ml-0 text-right;
+  }
+
+  /* Compact overview */
   .media-overview {
-    @apply pt-5 pb-2;
+    @apply pt-4 pb-2;
   }
 
   .media-overview h2 {
-    @apply text-lg;
+    @apply text-base;
   }
 
   .media-overview p {
     @apply text-xs leading-relaxed;
+  }
+
+  .tagline {
+    @apply text-sm mb-2;
+  }
+
+  .media-overview-right {
+    @apply mt-4;
   }
 
   /* Better button sizing */
@@ -814,5 +803,23 @@
 
   .slider-header {
     @apply mt-4 mb-3;
+  }
+
+  /* Compact season/episode cards */
+  .season-card-header {
+    @apply p-3;
+  }
+
+  .episode-row {
+    @apply py-3 gap-3;
+  }
+
+  .episode-still {
+    @apply w-24 h-16;
+  }
+
+  /* Compact crew list */
+  ul.media-crew {
+    @apply gap-3 mt-4;
   }
 }

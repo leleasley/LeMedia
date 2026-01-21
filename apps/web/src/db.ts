@@ -4267,6 +4267,7 @@ export type JellyfinAvailabilityItem = {
   title: string | null;
   seasonNumber: number | null;
   episodeNumber: number | null;
+  airDate: string | null;
   jellyfinItemId: string;
   jellyfinLibraryId: string | null;
   lastScannedAt: string;
@@ -4294,6 +4295,59 @@ export type NewJellyfinItem = {
   addedAt: string;
 };
 
+export async function hasCachedEpisodeAvailability(params: {
+  tmdbId: number;
+  tvdbId?: number | null;
+}): Promise<boolean> {
+  const p = getPool();
+  const tvdbId = params.tvdbId ?? null;
+  const res = await p.query(
+    `SELECT 1
+     FROM jellyfin_availability
+     WHERE media_type = 'episode'
+       AND (tmdb_id = $1 OR ($2 IS NOT NULL AND tvdb_id = $2))
+     LIMIT 1`,
+    [params.tmdbId, tvdbId]
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
+export async function getAvailableSeasons(params: {
+  tmdbId: number;
+  tvdbId?: number | null;
+}): Promise<number[]> {
+  const p = getPool();
+  const tvdbId = params.tvdbId ?? null;
+  const res = await p.query(
+    `SELECT DISTINCT season_number
+     FROM jellyfin_availability
+     WHERE media_type = 'episode'
+       AND season_number IS NOT NULL
+       AND (tmdb_id = $1 OR ($2 IS NOT NULL AND tvdb_id = $2))
+     ORDER BY season_number`,
+    [params.tmdbId, tvdbId]
+  );
+  return res.rows.map((row: any) => row.season_number);
+}
+
+export async function getCachedJellyfinSeriesItemId(params: {
+  tmdbId: number;
+  tvdbId?: number | null;
+}): Promise<string | null> {
+  const p = getPool();
+  const tvdbId = params.tvdbId ?? null;
+  const res = await p.query(
+    `SELECT jellyfin_item_id
+     FROM jellyfin_availability
+     WHERE media_type = 'series'
+       AND (tmdb_id = $1 OR ($2 IS NOT NULL AND tvdb_id = $2))
+     ORDER BY last_scanned_at DESC
+     LIMIT 1`,
+    [params.tmdbId, tvdbId]
+  );
+  return res.rows[0]?.jellyfin_item_id ?? null;
+}
+
 export async function upsertJellyfinAvailability(params: {
   tmdbId?: number | null;
   tvdbId?: number | null;
@@ -4302,21 +4356,23 @@ export async function upsertJellyfinAvailability(params: {
   title?: string | null;
   seasonNumber?: number | null;
   episodeNumber?: number | null;
+  airDate?: string | null;
   jellyfinItemId: string;
   jellyfinLibraryId?: string | null;
 }): Promise<{ isNew: boolean }> {
   const p = getPool();
   const res = await p.query(
     `INSERT INTO jellyfin_availability
-      (tmdb_id, tvdb_id, imdb_id, media_type, title, season_number, episode_number, jellyfin_item_id, jellyfin_library_id, last_scanned_at, created_at)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+      (tmdb_id, tvdb_id, imdb_id, media_type, title, season_number, episode_number, air_date, jellyfin_item_id, jellyfin_library_id, last_scanned_at, created_at)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
     ON CONFLICT (jellyfin_item_id)
     DO UPDATE SET
       last_scanned_at = NOW(),
       title = COALESCE($5, jellyfin_availability.title),
       tmdb_id = COALESCE($1, jellyfin_availability.tmdb_id),
       tvdb_id = COALESCE($2, jellyfin_availability.tvdb_id),
-      imdb_id = COALESCE($3, jellyfin_availability.imdb_id)
+      imdb_id = COALESCE($3, jellyfin_availability.imdb_id),
+      air_date = COALESCE($8, jellyfin_availability.air_date)
     RETURNING (xmax = 0) AS is_new`,
     [
       params.tmdbId ?? null,
@@ -4326,6 +4382,7 @@ export async function upsertJellyfinAvailability(params: {
       params.title ?? null,
       params.seasonNumber ?? null,
       params.episodeNumber ?? null,
+      params.airDate ?? null,
       params.jellyfinItemId,
       params.jellyfinLibraryId ?? null
     ]

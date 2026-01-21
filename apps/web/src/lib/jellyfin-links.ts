@@ -17,15 +17,16 @@ export async function getJellyfinExternalBaseUrl() {
   return base || null;
 }
 
-export async function getJellyfinPlayUrl(itemId?: string | null) {
+export async function getJellyfinPlayUrl(itemId?: string | null, mediaType?: "movie" | "tv") {
   if (!itemId) return null;
   const config = await getJellyfinConfig();
   const base = buildBaseUrl(config);
   if (!base) return null;
   const serverId = (config.serverId ?? "").trim();
   const serverIdParam = serverId ? `&serverId=${encodeURIComponent(serverId)}` : "";
-  // Use details page like Jellyseerr does - it shows the item with a play button available
-  return `${base}/web/index.html#!/details?id=${encodeURIComponent(itemId)}&context=home${serverIdParam}`;
+  const context = mediaType === "tv" ? "tvshows" : "home";
+  // Modern Jellyfin uses # instead of index.html#!/
+  return `${base}/web/#/details?id=${encodeURIComponent(itemId)}&context=${context}${serverIdParam}`;
 }
 
 export async function getJellyfinDetailsUrl(itemId?: string | null) {
