@@ -2,6 +2,7 @@ import { getJellyfinConfig, getPool } from "@/db";
 import { upsertJellyfinAvailability, startJellyfinScan, updateJellyfinScan } from "@/db";
 import { logger } from "@/lib/logger";
 import { decryptSecret } from "@/lib/encryption";
+import { validateExternalServiceUrl } from "@/lib/url-validation";
 
 type JellyfinLibrary = {
   id: string;
@@ -34,6 +35,15 @@ async function getJellyfinConnection(): Promise<{ baseUrl: string; apiKey: strin
   if (!config.hostname || !config.apiKeyEncrypted) return null;
   const baseUrl = buildBaseUrl(config);
   if (!baseUrl) return null;
+
+  // Validate URL to prevent SSRF attacks
+  try {
+    validateExternalServiceUrl(baseUrl, "Jellyfin Scan");
+  } catch (err) {
+    logger.error("[Jellyfin Scan] URL validation failed", err);
+    return null;
+  }
+
   try {
     const apiKey = decryptSecret(config.apiKeyEncrypted);
     return { baseUrl, apiKey };
@@ -46,6 +56,13 @@ async function getJellyfinConnection(): Promise<{ baseUrl: string; apiKey: strin
 function buildBaseUrl(config: { hostname: string; port: number; useSsl: boolean; urlBase: string }) {
   const host = config.hostname.trim();
   if (!host) return "";
+
+  // Prevent URL injection by validating hostname doesn't contain protocol
+  if (host.includes('://')) {
+    logger.error("[Jellyfin Scan] Invalid hostname - contains protocol", { hostname: host });
+    return "";
+  }
+
   const basePath = config.urlBase.trim();
   const normalizedPath = basePath
     ? basePath.startsWith("/")
