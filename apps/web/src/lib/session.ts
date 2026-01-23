@@ -1,5 +1,6 @@
 import { SignJWT, jwtVerify } from "jose";
 import { z } from "zod";
+import { logger } from "@/lib/logger";
 
 export type SessionData = {
   username: string;
@@ -39,8 +40,9 @@ export async function verifySessionToken(token: string): Promise<SessionData | n
     return { username, groups, exp, jti };
   } catch (err) {
     // Token verification failures are expected (expired, invalid, etc.) - only log in debug
-    if (process.env.AUTH_DEBUG === "1") {
-      console.debug("[Session] Token verification failed:", err instanceof Error ? err.message : String(err));
+    // Never log in production to prevent information disclosure
+    if (process.env.AUTH_DEBUG === "1" && process.env.NODE_ENV !== "production") {
+      logger.debug("[Session] Token verification failed", { error: err instanceof Error ? err.message : String(err) });
     }
     return null;
   }

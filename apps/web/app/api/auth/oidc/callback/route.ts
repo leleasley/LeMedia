@@ -169,7 +169,8 @@ export async function GET(req: NextRequest) {
     const verified = await jwtVerify(idToken, jwks, verifyOptions);
     claims = verified.payload as Record<string, any>;
   } catch (err) {
-    if (process.env.OIDC_DEBUG === "1") {
+    // Never log sensitive OIDC data in production
+    if (process.env.OIDC_DEBUG === "1" && process.env.NODE_ENV !== "production") {
       try {
         const header = decodeProtectedHeader(idToken);
         const payload = decodeJwt(idToken);
