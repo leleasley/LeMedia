@@ -3,6 +3,7 @@
  */
 
 import { logger } from "@/lib/logger";
+import { isIP } from "net";
 
 /**
  * Private IP ranges that should be rejected to prevent SSRF
@@ -32,6 +33,7 @@ const BLOCKED_HOSTNAMES = [
 export interface UrlValidationOptions {
   allowHttp?: boolean;
   allowPrivateIPs?: boolean;
+  allowedCidrs?: string[];
   requireHttps?: boolean;
 }
 
@@ -49,6 +51,51 @@ function isPrivateIP(hostname: string): boolean {
   // Check against private IP patterns
   for (const pattern of PRIVATE_IP_RANGES) {
     if (pattern.test(hostname)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+type IPv4Cidr = {
+  base: number;
+  mask: number;
+};
+
+function parseIPv4(ip: string): number | null {
+  const parts = ip.split(".");
+  if (parts.length !== 4) return null;
+  let value = 0;
+  for (const part of parts) {
+    const octet = Number(part);
+    if (!Number.isInteger(octet) || octet < 0 || octet > 255) return null;
+    value = (value << 8) | octet;
+  }
+  return value >>> 0;
+}
+
+function parseIPv4Cidr(cidr: string): IPv4Cidr | null {
+  const [ipPart, maskPart] = cidr.split("/");
+  if (!ipPart) return null;
+  const base = parseIPv4(ipPart);
+  if (base === null) return null;
+  const prefix = maskPart === undefined ? 32 : Number(maskPart);
+  if (!Number.isInteger(prefix) || prefix < 0 || prefix > 32) return null;
+  const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
+  return { base, mask };
+}
+
+function isHostnameAllowedByCidrs(hostname: string, allowedCidrs: string[] | undefined): boolean {
+  if (!allowedCidrs || allowedCidrs.length === 0) return false;
+  if (isIP(hostname) !== 4) return false;
+  const ipValue = parseIPv4(hostname);
+  if (ipValue === null) return false;
+  for (const rawCidr of allowedCidrs) {
+    const cidr = rawCidr.trim();
+    if (!cidr) continue;
+    const parsed = parseIPv4Cidr(cidr);
+    if (!parsed) continue;
+    if ((ipValue & parsed.mask) === (parsed.base & parsed.mask)) {
       return true;
     }
   }
@@ -78,6 +125,7 @@ export function validateUrl(
   const {
     allowHttp = process.env.NODE_ENV === 'development',
     allowPrivateIPs = process.env.NODE_ENV === 'development',
+    allowedCidrs,
     requireHttps = process.env.NODE_ENV === 'production',
   } = options;
 
@@ -113,6 +161,9 @@ export function validateUrl(
 
   // Check for private IPs (unless explicitly allowed)
   if (!allowPrivateIPs && isPrivateIP(url.hostname)) {
+    if (isHostnameAllowedByCidrs(url.hostname, allowedCidrs)) {
+      return url;
+    }
     throw new UrlValidationError(
       `Private IP addresses are not allowed: ${url.hostname}`
     );
@@ -135,7 +186,8 @@ export function validateUrl(
  */
 export function validateExternalServiceUrl(
   baseUrl: string | undefined | null,
-  serviceName: string
+  serviceName: string,
+  options: UrlValidationOptions = {}
 ): string {
   if (!baseUrl) {
     throw new UrlValidationError(`${serviceName} base URL is required`);
@@ -143,6 +195,7 @@ export function validateExternalServiceUrl(
 
   const url = validateUrl(baseUrl, {
     requireHttps: process.env.NODE_ENV === 'production',
+    ...options,
   });
 
   // Remove trailing slash for consistency

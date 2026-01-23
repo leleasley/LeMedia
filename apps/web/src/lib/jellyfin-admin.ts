@@ -44,7 +44,15 @@ export async function getJellyfinBaseUrl() {
 
   // Validate URL to prevent SSRF attacks
   try {
-    return validateExternalServiceUrl(baseUrl, "Jellyfin Admin");
+    const allowHttp = process.env.JELLYFIN_ALLOW_HTTP === "true";
+    const allowPrivateIPs = process.env.JELLYFIN_ALLOW_PRIVATE_IPS === "true";
+    const allowedCidrs = process.env.JELLYFIN_ALLOWED_CIDRS?.split(",").map(part => part.trim()).filter(Boolean);
+    return validateExternalServiceUrl(baseUrl, "Jellyfin Admin", {
+        allowHttp,
+        allowPrivateIPs,
+        allowedCidrs,
+        requireHttps: !allowHttp && process.env.NODE_ENV === "production"
+    });
   } catch (err) {
     logger.error("[Jellyfin Admin] URL validation failed", err);
     return null;

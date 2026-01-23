@@ -38,7 +38,15 @@ async function getJellyfinConnection(): Promise<{ baseUrl: string; apiKey: strin
 
   // Validate URL to prevent SSRF attacks
   try {
-    validateExternalServiceUrl(baseUrl, "Jellyfin Scan");
+  const allowHttp = process.env.JELLYFIN_ALLOW_HTTP === "true";
+  const allowPrivateIPs = process.env.JELLYFIN_ALLOW_PRIVATE_IPS === "true";
+  const allowedCidrs = process.env.JELLYFIN_ALLOWED_CIDRS?.split(",").map(part => part.trim()).filter(Boolean);
+  validateExternalServiceUrl(baseUrl, "Jellyfin Scan", {
+    allowHttp,
+    allowPrivateIPs,
+    allowedCidrs,
+    requireHttps: !allowHttp && process.env.NODE_ENV === "production"
+  });
   } catch (err) {
     logger.error("[Jellyfin Scan] URL validation failed", err);
     return null;
