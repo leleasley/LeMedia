@@ -198,6 +198,8 @@ export async function createRequestWithItemsTransaction(input: {
 }): Promise<{ id: string }> {
   const requestStatus = input.requestStatus ?? "queued";
   const client = await getPool().connect();
+  let clientReleased = false;
+
   try {
     await client.query("BEGIN");
 
@@ -257,26 +259,49 @@ export async function createRequestWithItemsTransaction(input: {
     await client.query("COMMIT");
     return { id: requestId };
   } catch (err: any) {
-    await client.query("ROLLBACK").catch(() => {});
-    if (err?.code === "23505") {
-      const existingRes = await client.query(
-        `
-        SELECT id
-        FROM media_request
-        WHERE request_type = $1
-          AND tmdb_id = $2
-          AND status = ANY($3::text[])
-        ORDER BY created_at DESC
-        LIMIT 1
-        `,
-        [input.requestType, input.tmdbId, ACTIVE_REQUEST_STATUSES]
-      );
-      const existingId = existingRes.rows[0]?.id as string | undefined;
-      throw new ActiveRequestExistsError("Active request already exists", existingId);
+    // Rollback transaction on any error
+    try {
+      await client.query("ROLLBACK");
+    } catch (rollbackErr) {
+      logger.error("[DB] Transaction rollback failed", rollbackErr);
     }
+
+    // Handle duplicate key error (unique constraint violation)
+    if (err?.code === "23505") {
+      // Release client before using pool for new query
+      client.release();
+      clientReleased = true;
+
+      try {
+        const pool = getPool();
+        const existingRes = await pool.query(
+          `
+          SELECT id
+          FROM media_request
+          WHERE request_type = $1
+            AND tmdb_id = $2
+            AND status = ANY($3::text[])
+          ORDER BY created_at DESC
+          LIMIT 1
+          `,
+          [input.requestType, input.tmdbId, ACTIVE_REQUEST_STATUSES]
+        );
+        const existingId = existingRes.rows[0]?.id as string | undefined;
+        throw new ActiveRequestExistsError("Active request already exists", existingId);
+      } catch (queryErr) {
+        // If query for existing request fails, still throw the duplicate error
+        logger.error("[DB] Failed to query existing request after duplicate error", queryErr);
+        throw new ActiveRequestExistsError("Active request already exists", undefined);
+      }
+    }
+
+    // Re-throw original error
     throw err;
   } finally {
-    client.release();
+    // Ensure client is always released
+    if (!clientReleased) {
+      client.release();
+    }
   }
 }
 
@@ -718,13 +743,13 @@ export async function listRequestsForSync(limit = 100): Promise<RequestForSync[]
     username: row.requested_by_username ?? "",
     items: Array.isArray(row.items)
       ? row.items.map((item: any) => ({
-          id: Number(item.id),
-          provider: item.provider,
-          provider_id: item.provider_id !== null ? Number(item.provider_id) : null,
-          season: item.season !== null ? Number(item.season) : null,
-          episode: item.episode !== null ? Number(item.episode) : null,
-          status: item.status
-        }))
+        id: Number(item.id),
+        provider: item.provider,
+        provider_id: item.provider_id !== null ? Number(item.provider_id) : null,
+        season: item.season !== null ? Number(item.season) : null,
+        episode: item.episode !== null ? Number(item.episode) : null,
+        status: item.status
+      }))
       : []
   }));
 }
@@ -1099,30 +1124,30 @@ export async function listUsers(): Promise<DbUser[]> {
     ORDER BY u.created_at DESC
     `
   );
-    return res.rows.map(row => ({
-      id: row.id,
-      username: row.username,
-      jellyfinUserId: row.jellyfin_user_id ?? null,
-      jellyfinUsername: row.jellyfin_username ?? null,
-      discordUserId: row.discord_user_id ?? null,
-      avatarUrl: row.avatar_url ?? null,
-      avatarVersion: row.avatar_version ?? null,
-      email: row.email,
-      groups: (row.groups as string)?.split(",").filter(Boolean) ?? [],
-      created_at: row.created_at,
-      last_seen_at: row.last_seen_at,
-      mfa_enabled: !!row.mfa_secret,
-      discoverRegion: row.discover_region ?? null,
-      originalLanguage: row.original_language ?? null,
-      watchlistSyncMovies: !!row.watchlist_sync_movies,
-      watchlistSyncTv: !!row.watchlist_sync_tv,
-      requestLimitMovie: row.request_limit_movie ?? null,
-      requestLimitMovieDays: row.request_limit_movie_days ?? null,
-      requestLimitSeries: row.request_limit_series ?? null,
-      requestLimitSeriesDays: row.request_limit_series_days ?? null,
-      banned: !!row.banned,
-      weeklyDigestOptIn: !!row.weekly_digest_opt_in,
-      notificationEndpointIds: Array.isArray(row.notification_endpoint_ids)
+  return res.rows.map(row => ({
+    id: row.id,
+    username: row.username,
+    jellyfinUserId: row.jellyfin_user_id ?? null,
+    jellyfinUsername: row.jellyfin_username ?? null,
+    discordUserId: row.discord_user_id ?? null,
+    avatarUrl: row.avatar_url ?? null,
+    avatarVersion: row.avatar_version ?? null,
+    email: row.email,
+    groups: (row.groups as string)?.split(",").filter(Boolean) ?? [],
+    created_at: row.created_at,
+    last_seen_at: row.last_seen_at,
+    mfa_enabled: !!row.mfa_secret,
+    discoverRegion: row.discover_region ?? null,
+    originalLanguage: row.original_language ?? null,
+    watchlistSyncMovies: !!row.watchlist_sync_movies,
+    watchlistSyncTv: !!row.watchlist_sync_tv,
+    requestLimitMovie: row.request_limit_movie ?? null,
+    requestLimitMovieDays: row.request_limit_movie_days ?? null,
+    requestLimitSeries: row.request_limit_series ?? null,
+    requestLimitSeriesDays: row.request_limit_series_days ?? null,
+    banned: !!row.banned,
+    weeklyDigestOptIn: !!row.weekly_digest_opt_in,
+    notificationEndpointIds: Array.isArray(row.notification_endpoint_ids)
       ? row.notification_endpoint_ids.map((id: any) => Number(id)).filter((n: number) => Number.isFinite(n))
       : []
   }));
@@ -2176,7 +2201,17 @@ async function bootstrapDashboardSlidersForUser(userId: number) {
   }
 }
 
-function mapDashboardSliderRow(r: any): DashboardSlider {
+interface DashboardSliderRow {
+  id: number | string;
+  type: number | string;
+  title: string | null;
+  data: string | null;
+  enabled: boolean;
+  order_index: number | string;
+  is_builtin: boolean;
+}
+
+function mapDashboardSliderRow(r: DashboardSliderRow): DashboardSlider {
   return {
     id: Number(r.id),
     type: Number(r.type),
@@ -2385,7 +2420,7 @@ export async function listMediaIssues(limit = 200): Promise<MediaIssue[]> {
     `,
     [limit]
   );
-  return res.rows.map((row: any) => ({
+  return res.rows.map((row: { id: string; media_type: "movie" | "tv"; tmdb_id: number; title: string; category: string; description: string; reporter_id: number; status: string; created_at: string; reporter_username: string | null }) => ({
     id: row.id,
     media_type: row.media_type,
     tmdb_id: row.tmdb_id,
@@ -2522,7 +2557,32 @@ export type NotificationEndpointPublic = {
   created_at: string;
 };
 
-export type NotificationEndpointFull = NotificationEndpointPublic & { config: any };
+// Proper types for notification endpoint configs
+export type TelegramConfig = {
+  botToken: string;
+  chatId: string;
+};
+
+export type DiscordConfig = {
+  webhookUrl: string;
+};
+
+export type EmailConfig = {
+  to: string;
+};
+
+export type WebhookConfig = {
+  url: string;
+};
+
+export type NotificationEndpointConfig =
+  | TelegramConfig
+  | DiscordConfig
+  | EmailConfig
+  | WebhookConfig
+  | Record<string, unknown>; // Fallback for unknown configs
+
+export type NotificationEndpointFull = NotificationEndpointPublic & { config: NotificationEndpointConfig };
 
 export async function listNotificationEndpoints(): Promise<NotificationEndpointPublic[]> {
   await ensureSchema();
@@ -3468,20 +3528,20 @@ export async function getRequestAnalytics(input: {
   requestsByStatus: Array<{ status: string; count: number }>;
 }> {
   const p = getPool();
-  
+
   const dateFilter = input.startDate && input.endDate
     ? `WHERE mr.created_at >= $1 AND mr.created_at <= $2`
     : input.startDate
-    ? `WHERE mr.created_at >= $1`
-    : input.endDate
-    ? `WHERE mr.created_at <= $1`
-    : "";
-  
+      ? `WHERE mr.created_at >= $1`
+      : input.endDate
+        ? `WHERE mr.created_at <= $1`
+        : "";
+
   const params = input.startDate && input.endDate
     ? [input.startDate, input.endDate]
     : input.startDate || input.endDate
-    ? [input.startDate || input.endDate]
-    : [];
+      ? [input.startDate || input.endDate]
+      : [];
 
   // Overall stats
   const statsQuery = `
