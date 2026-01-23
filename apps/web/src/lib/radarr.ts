@@ -6,9 +6,9 @@ import { baseFetch } from "./fetch-utils";
 
 const normalizeUrl = (baseUrl: string) => baseUrl.replace(/\/+$/, "");
 
-export function createRadarrFetcher(baseUrl: string, apiKey: string) {
+export function createRadarrFetcher(baseUrl: string, apiKey: string, timeoutOverride?: number) {
   const root = normalizeUrl(baseUrl);
-  return (path: string, init?: RequestInit) => baseFetch(root, path, apiKey, init, "Radarr");
+  return (path: string, init?: RequestInit) => baseFetch(root, path, apiKey, init, "Radarr", timeoutOverride);
 }
 
 export function listRadarrQualityProfilesForService(baseUrl: string, apiKey: string) {

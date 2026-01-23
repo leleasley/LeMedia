@@ -4,9 +4,9 @@ import { baseFetch } from "./fetch-utils";
 
 const normalizeSonarrUrl = (baseUrl: string) => baseUrl.replace(/\/+$/, "");
 
-export function createSonarrFetcher(baseUrl: string, apiKey: string) {
+export function createSonarrFetcher(baseUrl: string, apiKey: string, timeoutOverride?: number) {
   const root = normalizeSonarrUrl(baseUrl);
-  return (path: string, init?: RequestInit) => baseFetch(root, path, apiKey, init, "Sonarr");
+  return (path: string, init?: RequestInit) => baseFetch(root, path, apiKey, init, "Sonarr", timeoutOverride);
 }
 
 export function listSonarrQualityProfilesForService(baseUrl: string, apiKey: string) {

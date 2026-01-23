@@ -3,7 +3,8 @@ export async function baseFetch(
   path: string,
   apiKey: string,
   init?: RequestInit,
-  serviceName?: string
+  serviceName?: string,
+  timeoutOverride?: number
 ) {
   const url = new URL(baseUrl + path);
   const headers = new Headers(init?.headers);
@@ -11,7 +12,8 @@ export async function baseFetch(
   if (init?.body) headers.set("Content-Type", "application/json");
 
   const timeoutMsRaw = process.env.SERVICE_FETCH_TIMEOUT_MS;
-  const timeoutMs = Number.isFinite(Number(timeoutMsRaw)) ? Number(timeoutMsRaw) : 10000;
+  const defaultTimeout = Number.isFinite(Number(timeoutMsRaw)) ? Number(timeoutMsRaw) : 20000;
+  const timeoutMs = timeoutOverride ?? defaultTimeout;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let res: Response;

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getUser } from "@/auth";
 import { listUpgradeFinderItems } from "@/lib/upgrade-finder";
+import { listUpgradeFinderHints } from "@/db";
 import { UpgradeFinderClient } from "@/components/Admin/UpgradeFinderClient";
 
 export const metadata = {
@@ -22,18 +23,35 @@ export default async function UpgradeFinderPage() {
     );
   }
 
-  const items = await listUpgradeFinderItems();
+  const [items, hints] = await Promise.all([
+    listUpgradeFinderItems(),
+    listUpgradeFinderHints().catch(() => [])
+  ]);
+
+  const hintMap = new Map(
+    hints.map(hint => [`${hint.mediaType}:${hint.mediaId}`, hint])
+  );
+
+  const itemsWithHints = items.map(item => {
+    const hint = hintMap.get(`${item.mediaType}:${item.id}`);
+    return {
+      ...item,
+      hintStatus: hint?.status ?? undefined,
+      hintText: hint?.hintText ?? null,
+      checkedAt: hint?.checkedAt ?? null,
+    };
+  });
 
   return (
     <section className="space-y-6">
       <div className="flex flex-col gap-3">
         <div>
           <h1 className="text-3xl font-bold text-white tracking-tight">Upgrade Finder</h1>
-          <p className="text-sm text-white/60 mt-1">Review your library and trigger Radarr/Sonarr searches for better releases.</p>
+          <p className="text-sm text-white/60 mt-1">Review your movie library and trigger Radarr searches for better quality releases.</p>
         </div>
       </div>
 
-      <UpgradeFinderClient initialItems={items} />
+      <UpgradeFinderClient initialItems={itemsWithHints} />
     </section>
   );
 }

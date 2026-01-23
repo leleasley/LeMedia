@@ -3,10 +3,10 @@ import { z } from "zod";
 import { requireAdmin } from "@/auth";
 import { requireCsrf } from "@/lib/csrf";
 import { jsonResponseWithETag } from "@/lib/api-optimization";
-import { listUpgradeFinderItems } from "@/lib/upgrade-finder";
+import { listUpgradeFinderItems, checkUpgradeHintForItem } from "@/lib/upgrade-finder";
 import { getActiveMediaService } from "@/lib/media-services";
 import { createRadarrFetcher } from "@/lib/radarr";
-import { createSonarrFetcher } from "@/lib/sonarr";
+import { listUpgradeFinderHints } from "@/db";
 
 const actionSchema = z.object({
   mediaType: z.enum(["movie", "tv"]),
@@ -18,23 +18,35 @@ export async function GET(req: NextRequest) {
   const user = await requireAdmin();
   if (user instanceof NextResponse) return user;
 
-  const [items, radarrService, sonarrService] = await Promise.all([
+  const [items, hints, radarrService] = await Promise.all([
     listUpgradeFinderItems(),
-    getActiveMediaService("radarr").catch(() => null),
-    getActiveMediaService("sonarr").catch(() => null)
+    listUpgradeFinderHints().catch(() => []),
+    getActiveMediaService("radarr").catch(() => null)
   ]);
 
   const radarrUiBase = (radarrService?.config as any)?.externalUrl ?? radarrService?.base_url ?? "";
-  const sonarrUiBase = (sonarrService?.config as any)?.externalUrl ?? sonarrService?.base_url ?? "";
+  const hintMap = new Map(
+    hints.map(hint => [`${hint.mediaType}:${hint.mediaId}`, hint])
+  );
 
   const itemsWithLinks = items.map(item => {
-    if (item.mediaType === "movie" && radarrUiBase) {
-      return { ...item, interactiveUrl: `${radarrUiBase.replace(/\/+$/, "")}/#/movie/${item.id}/interactive` };
+    const hint = hintMap.get(`${item.mediaType}:${item.id}`);
+    // All items are movies now
+    if (radarrUiBase) {
+      return {
+        ...item,
+        hintStatus: hint?.status ?? undefined,
+        hintText: hint?.hintText ?? null,
+        checkedAt: hint?.checkedAt ?? null,
+        interactiveUrl: `${radarrUiBase.replace(/\/+$/, "")}/#/movie/${item.id}/interactive`
+      };
     }
-    if (item.mediaType === "tv" && sonarrUiBase) {
-      return { ...item, interactiveUrl: `${sonarrUiBase.replace(/\/+$/, "")}/#/series/${item.id}/search` };
-    }
-    return item;
+    return {
+      ...item,
+      hintStatus: hint?.status ?? undefined,
+      hintText: hint?.hintText ?? null,
+      checkedAt: hint?.checkedAt ?? null
+    };
   });
 
   return jsonResponseWithETag(req, { items: itemsWithLinks });
@@ -60,52 +72,26 @@ export async function POST(req: NextRequest) {
 
   const { mediaType, id, mode } = parsed.data;
 
+  // Only movies are supported
+  if (mediaType !== "movie") {
+    return NextResponse.json({ error: "Only movies are supported for upgrade finder" }, { status: 400 });
+  }
+
   try {
-    if (mediaType === "movie") {
-      const service = await getActiveMediaService("radarr");
-      if (!service) return NextResponse.json({ error: "No Radarr service configured" }, { status: 400 });
-      const fetcher = createRadarrFetcher(service.base_url, service.apiKey);
-      if (mode === "check") {
-        const releases = await fetcher(`/api/v3/release?movieId=${id}`);
-        const normalized = Array.isArray(releases) ? releases : [];
-        const hint = normalized.find((rel: any) => {
-          const name = `${rel?.quality?.quality?.name ?? rel?.quality?.name ?? ""}`.toLowerCase();
-          return name.includes("2160") || name.includes("4k");
-        });
-        return NextResponse.json({
-          ok: true,
-          hint: hint ? "4K available" : "No 4K found",
-          count: normalized.length
-        });
-      }
-      await fetcher("/api/v3/command", {
-        method: "POST",
-        body: JSON.stringify({ name: "MoviesSearch", movieIds: [id] })
-      });
-      return NextResponse.json({ ok: true, message: "Radarr search triggered" });
+    const service = await getActiveMediaService("radarr");
+    if (!service) return NextResponse.json({ error: "No Radarr service configured" }, { status: 400 });
+    const fetcher = createRadarrFetcher(service.base_url, service.apiKey);
+
+    if (mode === "check") {
+      const result = await checkUpgradeHintForItem("movie", id);
+      return NextResponse.json({ ok: true, hint: result.hintText, status: result.status, count: result.count });
     }
 
-    const service = await getActiveMediaService("sonarr");
-    if (!service) return NextResponse.json({ error: "No Sonarr service configured" }, { status: 400 });
-    const fetcher = createSonarrFetcher(service.base_url, service.apiKey);
-    if (mode === "check") {
-      const releases = await fetcher(`/api/v3/release?seriesId=${id}`);
-      const normalized = Array.isArray(releases) ? releases : [];
-      const hint = normalized.find((rel: any) => {
-        const name = `${rel?.quality?.quality?.name ?? rel?.quality?.name ?? ""}`.toLowerCase();
-        return name.includes("2160") || name.includes("4k");
-      });
-      return NextResponse.json({
-        ok: true,
-        hint: hint ? "4K available" : "No 4K found",
-        count: normalized.length
-      });
-    }
     await fetcher("/api/v3/command", {
       method: "POST",
-      body: JSON.stringify({ name: "SeriesSearch", seriesId: id })
+      body: JSON.stringify({ name: "MoviesSearch", movieIds: [id] })
     });
-    return NextResponse.json({ ok: true, message: "Sonarr search triggered" });
+    return NextResponse.json({ ok: true, message: "Radarr search triggered" });
   } catch (err: any) {
     return NextResponse.json({ error: err?.message ?? "Failed to trigger search" }, { status: 500 });
   }

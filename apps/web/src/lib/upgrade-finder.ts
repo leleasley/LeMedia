@@ -1,5 +1,9 @@
-import { listRadarrMovies, listRadarrQualityProfiles } from "@/lib/radarr";
-import { listSeries, listSonarrQualityProfiles } from "@/lib/sonarr";
+import { listRadarrMovies, listRadarrQualityProfiles, createRadarrFetcher } from "@/lib/radarr";
+import { getActiveMediaService } from "@/lib/media-services";
+import { upsertUpgradeFinderHint } from "@/db";
+import { logger } from "@/lib/logger";
+
+export type UpgradeHintStatus = "available" | "none" | "error";
 
 export type UpgradeFinderItem = {
   id: number;
@@ -13,6 +17,9 @@ export type UpgradeFinderItem = {
   episodeFileCount?: number;
   totalEpisodeCount?: number;
   interactiveUrl?: string;
+  hintStatus?: UpgradeHintStatus | "checking" | "idle";
+  hintText?: string | null;
+  checkedAt?: string | null;
 };
 
 function resolveProfileCutoffName(profileId: number | null | undefined, profiles: any[]) {
@@ -26,11 +33,9 @@ function resolveProfileCutoffName(profileId: number | null | undefined, profiles
 }
 
 export async function listUpgradeFinderItems(): Promise<UpgradeFinderItem[]> {
-  const [radarrMovies, sonarrSeries, radarrProfiles, sonarrProfiles] = await Promise.all([
+  const [radarrMovies, radarrProfiles] = await Promise.all([
     listRadarrMovies().catch(() => []),
-    listSeries().catch(() => []),
-    listRadarrQualityProfiles().catch(() => []),
-    listSonarrQualityProfiles().catch(() => [])
+    listRadarrQualityProfiles().catch(() => [])
   ]);
 
   const movieItems: UpgradeFinderItem[] = (radarrMovies as any[]).map(movie => {
@@ -56,35 +61,113 @@ export async function listUpgradeFinderItems(): Promise<UpgradeFinderItem[]> {
     };
   });
 
-  const seriesItems: UpgradeFinderItem[] = (sonarrSeries as any[]).map(series => {
-    const stats = series?.statistics ?? {};
-    const episodeFileCount = Number(stats?.episodeFileCount ?? 0);
-    const totalEpisodeCount = Number(stats?.totalEpisodeCount ?? 0);
-    const hasAnyFile = episodeFileCount > 0;
-    const qualityCutoffNotMet = Boolean(stats?.qualityCutoffNotMet);
+  return movieItems;
+}
 
-    let upgradeStatus: UpgradeFinderItem["upgradeStatus"] = "up-to-date";
-    if (!hasAnyFile) {
-      upgradeStatus = "missing";
-    } else if (qualityCutoffNotMet) {
-      upgradeStatus = "upgrade";
-    } else if (totalEpisodeCount > 0 && episodeFileCount < totalEpisodeCount) {
-      upgradeStatus = "partial";
+function extractReleaseTitle(release: any) {
+  return String(release?.title ?? release?.releaseTitle ?? "");
+}
+
+function extractQualityName(release: any) {
+  return String(release?.quality?.quality?.name ?? release?.quality?.name ?? "");
+}
+
+function releaseLooks4k(release: any) {
+  const title = extractReleaseTitle(release).toLowerCase();
+  const quality = extractQualityName(release).toLowerCase();
+  return title.includes("2160") || title.includes("4k") || quality.includes("2160") || quality.includes("4k");
+}
+
+export async function getUpgradeFinderReleases(mediaType: "movie" | "tv", id: number) {
+  // Only movies are supported for upgrade finder
+  if (mediaType !== "movie") {
+    throw new Error("Only movies are supported for upgrade finder");
+  }
+
+  // Release endpoint queries all indexers and can be very slow - use 2 minute timeout
+  const releaseTimeout = 120000;
+  const service = await getActiveMediaService("radarr");
+  if (!service) throw new Error("No Radarr service configured");
+  const fetcher = createRadarrFetcher(service.base_url, service.apiKey, releaseTimeout);
+  const releases = await fetcher(`/api/v3/release?movieId=${id}`);
+  return Array.isArray(releases) ? releases : [];
+}
+
+export async function checkUpgradeHintForItem(mediaType: "movie" | "tv", id: number) {
+  // Only movies are supported
+  if (mediaType !== "movie") {
+    throw new Error("Only movies are supported for upgrade finder");
+  }
+
+  try {
+    const releases = await getUpgradeFinderReleases(mediaType, id);
+    const has4k = releases.some(releaseLooks4k);
+    const hintText = has4k ? "4K available" : "No 4K found";
+    await upsertUpgradeFinderHint({
+      mediaType,
+      mediaId: id,
+      status: has4k ? "available" : "none",
+      hintText
+    });
+    return { status: has4k ? "available" : "none", hintText, count: releases.length } as const;
+  } catch (err: any) {
+    logger.warn("[UpgradeFinder] Hint check failed", {
+      mediaType,
+      id,
+      error: err?.message ?? String(err)
+    });
+    await upsertUpgradeFinderHint({
+      mediaType,
+      mediaId: id,
+      status: "error",
+      hintText: null
+    });
+    return { status: "error", hintText: "Check failed", count: 0 } as const;
+  }
+}
+
+export async function refreshUpgradeHintsForAll() {
+  const items = await listUpgradeFinderItems();
+  // Only process movies (all items are movies now, but being explicit)
+  const movieItems = items.filter(item => item.mediaType === "movie");
+
+  const concurrency = 2; // Reduced from 4 to be gentler on services
+  let processed = 0;
+  let available = 0;
+  let errored = 0;
+
+  for (let i = 0; i < movieItems.length; i += concurrency) {
+    const batch = movieItems.slice(i, i + concurrency);
+    const results = await Promise.all(batch.map(item => checkUpgradeHintForItem(item.mediaType, item.id)));
+    results.forEach(result => {
+      processed += 1;
+      if (result.status === "available") available += 1;
+      if (result.status === "error") errored += 1;
+    });
+
+    // Add a small delay between batches to avoid overwhelming services
+    if (i + concurrency < movieItems.length) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
     }
+  }
 
-    return {
-      id: series?.id,
-      mediaType: "tv",
-      title: series?.title ?? "Untitled",
-      year: series?.year ?? null,
-      currentQuality: hasAnyFile ? "Mixed" : "Missing",
-      currentSizeBytes: stats?.sizeOnDisk,
-      targetQuality: resolveProfileCutoffName(series?.qualityProfileId, sonarrProfiles as any[]),
-      upgradeStatus,
-      episodeFileCount,
-      totalEpisodeCount
-    };
-  });
+  return { processed, available, errored };
+}
 
-  return [...movieItems, ...seriesItems];
+export function mapReleaseToRow(release: any) {
+  return {
+    guid: release?.guid ?? release?.downloadUrl ?? "",
+    indexerId: release?.indexerId ?? null,
+    title: extractReleaseTitle(release),
+    indexer: release?.indexer ?? release?.indexerName ?? "",
+    protocol: release?.protocol ?? "",
+    downloadUrl: release?.downloadUrl ?? "",
+    size: release?.size ?? release?.sizeBytes ?? null,
+    age: release?.age ?? null,
+    seeders: release?.seeders ?? null,
+    leechers: release?.leechers ?? null,
+    quality: extractQualityName(release),
+    language: release?.languages?.[0]?.name ?? release?.language?.name ?? "",
+    rejected: Array.isArray(release?.rejections) ? release.rejections.map((r: any) => r?.reason || r) : []
+  };
 }

@@ -133,6 +133,14 @@ export async function getRequestCounts(): Promise<{
   };
 }
 
+export type UpgradeFinderHint = {
+  mediaType: "movie" | "tv";
+  mediaId: number;
+  status: "available" | "none" | "error";
+  hintText: string | null;
+  checkedAt: string | null;
+};
+
 export async function createRequest(input: {
   requestType: "movie" | "episode";
   tmdbId: number;
@@ -2142,6 +2150,18 @@ async function ensureSchema() {
     await p.query(`CREATE INDEX IF NOT EXISTS idx_media_share_expires ON media_share(expires_at);`);
 
     await p.query(`
+      CREATE TABLE IF NOT EXISTS upgrade_finder_hint (
+        media_type TEXT NOT NULL CHECK (media_type IN ('movie','tv')),
+        media_id INTEGER NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('available','none','error')),
+        hint_text TEXT,
+        checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (media_type, media_id)
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_upgrade_finder_hint_checked_at ON upgrade_finder_hint(checked_at DESC);`);
+
+    await p.query(`
       CREATE TABLE IF NOT EXISTS jobs (
         id SERIAL PRIMARY KEY,
         name VARCHAR(255) NOT NULL UNIQUE,
@@ -2162,11 +2182,14 @@ async function ensureSchema() {
     await p.query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS disabled_reason TEXT;`);
     await p.query(`
       INSERT INTO jobs (name, schedule, interval_seconds, type, run_on_start)
-      VALUES 
+      VALUES
           ('request-sync', '*/5 * * * *', 300, 'system', TRUE),
           ('watchlist-sync', '0 * * * *', 3600, 'system', FALSE),
           ('weekly-digest', '0 9 * * 1', 604800, 'system', FALSE),
-          ('session-cleanup', '0 * * * *', 3600, 'system', TRUE)
+          ('session-cleanup', '0 * * * *', 3600, 'system', TRUE),
+          ('calendar-notifications', '0 */6 * * *', 21600, 'system', FALSE),
+          ('jellyfin-availability-sync', '0 */4 * * *', 14400, 'system', FALSE),
+          ('upgrade-finder-4k', '0 3 * * *', 86400, 'system', FALSE)
       ON CONFLICT (name) DO NOTHING;
     `);
   })();
@@ -3679,6 +3702,45 @@ export async function listWeeklyDigestRecipients(): Promise<Array<{ id: number; 
     email: row.email,
     username: row.username
   }));
+}
+
+export async function listUpgradeFinderHints(): Promise<UpgradeFinderHint[]> {
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(
+    `SELECT media_type, media_id, status, hint_text, checked_at
+     FROM upgrade_finder_hint
+     ORDER BY checked_at DESC`
+  );
+  return res.rows.map((row) => ({
+    mediaType: row.media_type,
+    mediaId: Number(row.media_id),
+    status: row.status,
+    hintText: row.hint_text ?? null,
+    checkedAt: row.checked_at ? new Date(row.checked_at).toISOString() : null
+  }));
+}
+
+export async function upsertUpgradeFinderHint(input: {
+  mediaType: "movie" | "tv";
+  mediaId: number;
+  status: "available" | "none" | "error";
+  hintText?: string | null;
+}) {
+  await ensureSchema();
+  const p = getPool();
+  await p.query(
+    `
+    INSERT INTO upgrade_finder_hint (media_type, media_id, status, hint_text, checked_at)
+    VALUES ($1, $2, $3, $4, NOW())
+    ON CONFLICT (media_type, media_id)
+    DO UPDATE SET
+      status = EXCLUDED.status,
+      hint_text = EXCLUDED.hint_text,
+      checked_at = EXCLUDED.checked_at
+    `,
+    [input.mediaType, input.mediaId, input.status, input.hintText ?? null]
+  );
 }
 
 export type Job = {
