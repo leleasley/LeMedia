@@ -1,6 +1,7 @@
 import { decryptSecret } from "@/lib/encryption";
 import { getJellyfinConfig } from "@/db";
 import { logger } from "@/lib/logger";
+import { validateExternalServiceUrl } from "@/lib/url-validation";
 
 // Simple in-memory cache for availability lookups
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
@@ -600,6 +601,15 @@ async function getJellyfinConnection(): Promise<{ baseUrl: string; apiKey: strin
     if (!config.hostname || !config.apiKeyEncrypted) return null;
     const baseUrl = buildBaseUrl(config);
     if (!baseUrl) return null;
+
+    // Validate URL to prevent SSRF attacks
+    try {
+        validateExternalServiceUrl(baseUrl, "Jellyfin");
+    } catch (err) {
+        logger.error("[Jellyfin] URL validation failed", err);
+        return null;
+    }
+
     try {
         const apiKey = decryptSecret(config.apiKeyEncrypted);
         return { baseUrl, apiKey };
@@ -612,6 +622,13 @@ async function getJellyfinConnection(): Promise<{ baseUrl: string; apiKey: strin
 function buildBaseUrl(config: { hostname: string; port: number; useSsl: boolean; urlBase: string }) {
     const host = config.hostname.trim();
     if (!host) return "";
+
+    // Prevent URL injection by validating hostname doesn't contain protocol
+    if (host.includes('://')) {
+        logger.error("[Jellyfin] Invalid hostname - contains protocol", { hostname: host });
+        return "";
+    }
+
     const basePath = config.urlBase.trim();
     const normalizedPath = basePath
         ? basePath.startsWith("/")

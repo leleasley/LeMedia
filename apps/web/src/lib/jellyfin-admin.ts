@@ -3,6 +3,7 @@
 import { decryptSecret } from "@/lib/encryption";
 import { getJellyfinConfig } from "@/db";
 import { logger } from "@/lib/logger";
+import { validateExternalServiceUrl } from "@/lib/url-validation";
 
 type JellyfinUser = {
   Id: string;
@@ -29,10 +30,25 @@ export async function getJellyfinBaseUrl() {
   const config = await getJellyfinConfig();
   const host = config.hostname.trim();
   if (!host) return null;
+
+  // Prevent URL injection by validating hostname doesn't contain protocol
+  if (host.includes('://')) {
+    logger.error("[Jellyfin Admin] Invalid hostname - contains protocol", { hostname: host });
+    return null;
+  }
+
   const port = config.port ? `:${config.port}` : "";
   const base = config.urlBase.trim();
   const path = base ? (base.startsWith("/") ? base : `/${base}`) : "";
-  return `${config.useSsl ? "https" : "http"}://${host}${port}${path}`;
+  const baseUrl = `${config.useSsl ? "https" : "http"}://${host}${port}${path}`;
+
+  // Validate URL to prevent SSRF attacks
+  try {
+    return validateExternalServiceUrl(baseUrl, "Jellyfin Admin");
+  } catch (err) {
+    logger.error("[Jellyfin Admin] URL validation failed", err);
+    return null;
+  }
 }
 
 export async function getJellyfinApiKey() {
