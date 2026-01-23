@@ -369,7 +369,75 @@ export function TvDetailClientNew({
 
     // Pre-load availability on mount
     useEffect(() => {
-        loadAllSeasonAvailabilityCounts();
+        const abortController = new AbortController();
+
+        const loadWithAbort = async () => {
+            if (loadingSeasonCounts || seasons.length === 0) return;
+            setLoadingSeasonCounts(true);
+
+            try {
+                const seasonParams = tvdbId ? `?tvdbId=${encodeURIComponent(String(tvdbId))}` : "";
+
+                // Load all seasons in parallel
+                const results = await Promise.all(
+                    seasons.map(async (season) => {
+                        try {
+                            const res = await fetch(
+                                `/api/v1/tmdb/tv/${tv.id}/season/${season.season_number}/fast${seasonParams}`,
+                                { signal: abortController.signal, credentials: "include" }
+                            );
+                            if (!res.ok) return { seasonNumber: season.season_number, available: 0, total: season.episode_count };
+                            const data = await res.json();
+                            if (data.episodes && Array.isArray(data.episodes)) {
+                                const availableCount = data.episodes.filter((ep: Episode) => ep.available).length;
+                                return {
+                                    seasonNumber: season.season_number,
+                                    available: availableCount,
+                                    total: data.episodes.length
+                                };
+                            }
+                            return { seasonNumber: season.season_number, available: 0, total: season.episode_count };
+                        } catch (err: any) {
+                            if (err.name === 'AbortError') throw err;
+                            return { seasonNumber: season.season_number, available: 0, total: season.episode_count };
+                        }
+                    })
+                );
+
+                // Only update state if not aborted
+                if (!abortController.signal.aborted) {
+                    const counts: Record<number, { available: number; total: number }> = {};
+                    const newAvailableSeasons: number[] = [];
+
+                    results.forEach(({ seasonNumber, available, total }) => {
+                        counts[seasonNumber] = { available, total };
+                        if (available > 0) {
+                            newAvailableSeasons.push(seasonNumber);
+                        }
+                    });
+
+                    setSeasonAvailabilityCounts(counts);
+                    setAvailableSeasonsState(prev => {
+                        const merged = new Set([...prev, ...newAvailableSeasons]);
+                        return Array.from(merged).sort((a, b) => a - b);
+                    });
+                }
+            } catch (err: any) {
+                if (err.name !== 'AbortError') {
+                    logger.error("Failed to load season availability counts", err);
+                }
+            } finally {
+                if (!abortController.signal.aborted) {
+                    setLoadingSeasonCounts(false);
+                }
+            }
+        };
+
+        loadWithAbort();
+
+        return () => {
+            abortController.abort();
+        };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [tv.id, tvdbId]);
 

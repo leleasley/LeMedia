@@ -38,18 +38,20 @@ import {
   Search,
   CheckCircle2,
   Download,
-  Play
+  Play,
+  RefreshCw
 } from "lucide-react";
 import { clsx } from "clsx";
 import { GenreFilterDropdown } from "./GenreFilterDropdown";
+import { logger } from "@/lib/logger";
 
 interface CalendarEvent {
   id: string;
   title: string;
   date: string;
   type: "movie_release" | "tv_premiere" | "tv_episode" | "season_premiere"
-        | "request_pending" | "request_approved"
-        | "sonarr_monitored" | "radarr_monitored";
+  | "request_pending" | "request_approved"
+  | "sonarr_monitored" | "radarr_monitored";
   tmdbId?: number;
   tvdbId?: number;
   posterPath?: string | null;
@@ -119,14 +121,14 @@ export function CalendarView() {
 
   const { start: calendarStart, end: calendarEnd } = getDateRange();
 
-  // Fetch data for the visible range
-  const { data, isLoading, mutate } = useSWR<{ events: CalendarEvent[] }>(
+  // Fetch data for the visible range with error handling
+  const { data, isLoading, error, mutate } = useSWR<{ events: CalendarEvent[] }>(
     `/api/calendar?start=${format(calendarStart, 'yyyy-MM-dd')}&end=${format(calendarEnd, 'yyyy-MM-dd')}`,
     fetcher,
     { revalidateOnFocus: false } // Don't revalidate on tab focus
   );
 
-  const { data: feedData } = useSWR<{ httpsUrl: string; webcalUrl: string }>(
+  const { data: feedData, error: feedError } = useSWR<{ httpsUrl: string; webcalUrl: string }>(
     "/api/calendar/feed",
     fetcher,
     { revalidateOnFocus: false }
@@ -137,24 +139,49 @@ export function CalendarView() {
     return /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
   };
 
-  // Prefetch adjacent months
+  // Prefetch adjacent months with proper cleanup
   useEffect(() => {
+    let nextTimeout: NodeJS.Timeout | null = null;
+    let prevTimeout: NodeJS.Timeout | null = null;
+    const abortController = new AbortController();
+
     const prefetchNext = () => {
       const nextMonthStart = startOfMonth(addMonths(currentDate, 1));
       const nextMonthEnd = endOfMonth(addMonths(currentDate, 1));
-      fetch(`/api/calendar?start=${format(startOfWeek(nextMonthStart), 'yyyy-MM-dd')}&end=${format(endOfWeek(nextMonthEnd), 'yyyy-MM-dd')}`);
+      fetch(`/api/calendar?start=${format(startOfWeek(nextMonthStart), 'yyyy-MM-dd')}&end=${format(endOfWeek(nextMonthEnd), 'yyyy-MM-dd')}`, {
+        signal: abortController.signal
+      }).catch(err => {
+        // Ignore abort errors
+        if (err.name !== 'AbortError') {
+          logger.error('Prefetch next month failed', err);
+        }
+      });
     };
 
     const prefetchPrev = () => {
       const prevMonthStart = startOfMonth(subMonths(currentDate, 1));
       const prevMonthEnd = endOfMonth(subMonths(currentDate, 1));
-      fetch(`/api/calendar?start=${format(startOfWeek(prevMonthStart), 'yyyy-MM-dd')}&end=${format(endOfWeek(prevMonthEnd), 'yyyy-MM-dd')}`);
+      fetch(`/api/calendar?start=${format(startOfWeek(prevMonthStart), 'yyyy-MM-dd')}&end=${format(endOfWeek(prevMonthEnd), 'yyyy-MM-dd')}`, {
+        signal: abortController.signal
+      }).catch(err => {
+        // Ignore abort errors
+        if (err.name !== 'AbortError') {
+          logger.error('Prefetch prev month failed', err);
+        }
+      });
     };
 
     if (!isLoading) {
-      setTimeout(prefetchNext, 100);
-      setTimeout(prefetchPrev, 200);
+      nextTimeout = setTimeout(prefetchNext, 100);
+      prevTimeout = setTimeout(prefetchPrev, 200);
     }
+
+    // Cleanup function to prevent memory leaks
+    return () => {
+      if (nextTimeout) clearTimeout(nextTimeout);
+      if (prevTimeout) clearTimeout(prevTimeout);
+      abortController.abort();
+    };
   }, [currentDate, isLoading]);
 
   const days = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
@@ -299,6 +326,19 @@ export function CalendarView() {
           <div className="flex items-center justify-center py-20">
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
           </div>
+        ) : error ? (
+          <div className="flex flex-col items-center justify-center py-20 space-y-4">
+            <div className="text-red-400 text-center">
+              <p className="font-semibold">Failed to load calendar events</p>
+              <p className="text-sm text-gray-400 mt-1">Please try again</p>
+            </div>
+            <button
+              onClick={() => mutate()}
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition"
+            >
+              Retry
+            </button>
+          </div>
         ) : viewMode === "list" ? (
           <ListView events={filteredEvents} onEventClick={setSelectedEvent} getEventColor={getEventColor} getEventIcon={getEventIcon} />
         ) : (
@@ -324,34 +364,34 @@ export function CalendarView() {
 
   return (
     <div className="space-y-6">
-        <CalendarHeader
-          currentDate={currentDate}
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
-          onPrevPeriod={prevPeriod}
-          onNextPeriod={nextPeriod}
-          onToday={goToToday}
-          filters={filters}
-          onFiltersChange={setFilters}
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          feedUrl={feedData?.webcalUrl}
-          feedCopied={feedCopied}
-          onCopyFeed={async () => {
-            if (!feedData?.webcalUrl) return;
-            if (isIOS()) {
-              window.location.href = feedData.webcalUrl;
-              return;
-            }
-            try {
-              await navigator.clipboard.writeText(feedData.webcalUrl);
-              setFeedCopied(true);
-              setTimeout(() => setFeedCopied(false), 1500);
-            } catch {
-              // Ignore clipboard failures silently
-            }
-          }}
-        />
+      <CalendarHeader
+        currentDate={currentDate}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        onPrevPeriod={prevPeriod}
+        onNextPeriod={nextPeriod}
+        onToday={goToToday}
+        filters={filters}
+        onFiltersChange={setFilters}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        feedUrl={feedData?.webcalUrl}
+        feedCopied={feedCopied}
+        onCopyFeed={async () => {
+          if (!feedData?.webcalUrl) return;
+          if (isIOS()) {
+            window.location.href = feedData.webcalUrl;
+            return;
+          }
+          try {
+            await navigator.clipboard.writeText(feedData.webcalUrl);
+            setFeedCopied(true);
+            setTimeout(() => setFeedCopied(false), 1500);
+          } catch {
+            // Ignore clipboard failures silently
+          }
+        }}
+      />
 
       {/* Calendar Grid */}
       <div className="bg-gray-900/50 backdrop-blur rounded-xl border border-white/10 overflow-hidden shadow-xl">
@@ -369,6 +409,18 @@ export function CalendarView() {
           {isLoading ? (
             <div className="col-span-7 flex items-center justify-center py-20">
               <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            </div>
+          ) : error ? (
+            <div className="col-span-1 md:col-span-7 flex flex-col items-center justify-center py-20 space-y-4">
+              <div className="text-red-400 text-center">
+                <p className="font-semibold">Failed to load calendar events</p>
+                <button
+                  onClick={() => mutate()}
+                  className="text-sm text-primary hover:underline mt-2 flex items-center justify-center gap-2 mx-auto"
+                >
+                  <RefreshCw className="w-3 h-3" /> Retry
+                </button>
+              </div>
             </div>
           ) : (
             days.map((day, dayIdx) => {
@@ -530,14 +582,14 @@ function CalendarHeader({
 
         <div className="flex flex-wrap items-center gap-2">
           <Filter className="w-4 h-4 text-gray-400 mr-1" />
-          <FilterButton active={filters.movies} onClick={() => onFiltersChange({...filters, movies: !filters.movies})} label="Movies" color="blue" />
-          <FilterButton active={filters.tv} onClick={() => onFiltersChange({...filters, tv: !filters.tv})} label="TV" color="purple" />
-          <FilterButton active={filters.requests} onClick={() => onFiltersChange({...filters, requests: !filters.requests})} label="Requests" color="yellow" />
-          <FilterButton active={filters.sonarr} onClick={() => onFiltersChange({...filters, sonarr: !filters.sonarr})} label="Sonarr" color="cyan" />
-          <FilterButton active={filters.radarr} onClick={() => onFiltersChange({...filters, radarr: !filters.radarr})} label="Radarr" color="emerald" />
+          <FilterButton active={filters.movies} onClick={() => onFiltersChange({ ...filters, movies: !filters.movies })} label="Movies" color="blue" />
+          <FilterButton active={filters.tv} onClick={() => onFiltersChange({ ...filters, tv: !filters.tv })} label="TV" color="purple" />
+          <FilterButton active={filters.requests} onClick={() => onFiltersChange({ ...filters, requests: !filters.requests })} label="Requests" color="yellow" />
+          <FilterButton active={filters.sonarr} onClick={() => onFiltersChange({ ...filters, sonarr: !filters.sonarr })} label="Sonarr" color="cyan" />
+          <FilterButton active={filters.radarr} onClick={() => onFiltersChange({ ...filters, radarr: !filters.radarr })} label="Radarr" color="emerald" />
           <GenreFilterDropdown
             selectedGenres={filters.genreFilters}
-            onGenresChange={(genreIds) => onFiltersChange({...filters, genreFilters: genreIds})}
+            onGenresChange={(genreIds) => onFiltersChange({ ...filters, genreFilters: genreIds })}
             mediaType="all"
           />
         </div>
@@ -752,74 +804,74 @@ function EventDetailsModal({ event, onClose, getEventColor, getEventIcon, getEve
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div className="bg-gray-900 border border-white/10 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
         <div className="relative aspect-video bg-gray-800">
-           {posterSrc ? (
-             <Image
-               src={posterSrc}
-               alt={event.title}
-               fill
-               className="object-cover opacity-60"
-               unoptimized
-             />
-           ) : (
-             <div className="w-full h-full flex items-center justify-center text-gray-600">
-               <Film className="w-12 h-12" />
-             </div>
-           )}
-           <div className="absolute inset-0 bg-gradient-to-t from-gray-900 to-transparent" />
-           <button
-             onClick={onClose}
-             className="absolute top-2 right-2 p-2 bg-black/40 rounded-full text-white hover:bg-black/60 transition"
-           >
-             <X className="w-5 h-5" />
-           </button>
-           <div className="absolute bottom-4 left-4 right-4">
-             <h3 className="text-xl font-bold text-white leading-tight drop-shadow-md">{event.title}</h3>
-             <p className="text-gray-300 text-sm mt-1 flex items-center gap-2">
-               {getEventIcon(event.type)}
-               {format(parseISO(event.date), 'MMMM do, yyyy')}
-             </p>
-           </div>
+          {posterSrc ? (
+            <Image
+              src={posterSrc}
+              alt={event.title}
+              fill
+              className="object-cover opacity-60"
+              unoptimized
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-gray-600">
+              <Film className="w-12 h-12" />
+            </div>
+          )}
+          <div className="absolute inset-0 bg-gradient-to-t from-gray-900 to-transparent" />
+          <button
+            onClick={onClose}
+            className="absolute top-2 right-2 p-2 bg-black/40 rounded-full text-white hover:bg-black/60 transition"
+          >
+            <X className="w-5 h-5" />
+          </button>
+          <div className="absolute bottom-4 left-4 right-4">
+            <h3 className="text-xl font-bold text-white leading-tight drop-shadow-md">{event.title}</h3>
+            <p className="text-gray-300 text-sm mt-1 flex items-center gap-2">
+              {getEventIcon(event.type)}
+              {format(parseISO(event.date), 'MMMM do, yyyy')}
+            </p>
+          </div>
         </div>
 
         <div className="p-6 space-y-4">
-           <div className="flex items-center gap-2 text-sm flex-wrap">
-             <span className={clsx("px-2 py-1 rounded-full border", getEventColor(event.type))}>
-               {getEventTypeLabel(event).toUpperCase()}
-             </span>
-             {event.mediaType && (
-               <span className="px-2 py-1 rounded-full bg-gray-800 text-gray-400 border border-white/10 uppercase text-xs">
-                 {event.mediaType}
-               </span>
-             )}
-             {event.metadata?.isAvailable && (
-               <span className="px-2 py-1 rounded-full bg-green-500/20 text-green-300 border border-green-500/30 text-xs flex items-center gap-1">
-                 <CheckCircle2 className="w-3 h-3" />
-                 Available
-               </span>
-             )}
-           </div>
+          <div className="flex items-center gap-2 text-sm flex-wrap">
+            <span className={clsx("px-2 py-1 rounded-full border", getEventColor(event.type))}>
+              {getEventTypeLabel(event).toUpperCase()}
+            </span>
+            {event.mediaType && (
+              <span className="px-2 py-1 rounded-full bg-gray-800 text-gray-400 border border-white/10 uppercase text-xs">
+                {event.mediaType}
+              </span>
+            )}
+            {event.metadata?.isAvailable && (
+              <span className="px-2 py-1 rounded-full bg-green-500/20 text-green-300 border border-green-500/30 text-xs flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3" />
+                Available
+              </span>
+            )}
+          </div>
 
-           {event.metadata?.overview && (
-             <p className="text-gray-400 text-sm leading-relaxed">
-               {event.metadata.overview}
-             </p>
-           )}
+          {event.metadata?.overview && (
+            <p className="text-gray-400 text-sm leading-relaxed">
+              {event.metadata.overview}
+            </p>
+          )}
 
-           {event.type.includes('request') && event.metadata?.status && (
-             <div className="text-sm text-gray-500 bg-gray-800/50 p-3 rounded-lg border border-white/5">
-                Request Status: <span className="text-white capitalize">{event.metadata.status}</span>
-             </div>
-           )}
+          {event.type.includes('request') && event.metadata?.status && (
+            <div className="text-sm text-gray-500 bg-gray-800/50 p-3 rounded-lg border border-white/5">
+              Request Status: <span className="text-white capitalize">{event.metadata.status}</span>
+            </div>
+          )}
 
-           {(event.tmdbId || event.metadata?.tmdbId) && (
-              <Link
-                href={`/${(event.mediaType || (event.type === 'movie_release' ? 'movie' : 'tv'))}/${event.tmdbId || event.metadata?.tmdbId}`}
-                className="mt-4 flex items-center justify-center gap-2 w-full py-3 bg-primary hover:bg-primary/90 text-primary-foreground font-medium rounded-lg transition-colors"
-              >
-                {event.mediaType === 'tv' || event.type.includes('tv') ? <Tv className="w-4 h-4" /> : <Film className="w-4 h-4" />}
-                View {event.mediaType === 'tv' || event.type.includes('tv') ? 'Show' : 'Movie'}
-              </Link>
-           )}
+          {(event.tmdbId || event.metadata?.tmdbId) && (
+            <Link
+              href={`/${(event.mediaType || (event.type === 'movie_release' ? 'movie' : 'tv'))}/${event.tmdbId || event.metadata?.tmdbId}`}
+              className="mt-4 flex items-center justify-center gap-2 w-full py-3 bg-primary hover:bg-primary/90 text-primary-foreground font-medium rounded-lg transition-colors"
+            >
+              {event.mediaType === 'tv' || event.type.includes('tv') ? <Tv className="w-4 h-4" /> : <Film className="w-4 h-4" />}
+              View {event.mediaType === 'tv' || event.type.includes('tv') ? 'Show' : 'Movie'}
+            </Link>
+          )}
         </div>
       </div>
     </div>

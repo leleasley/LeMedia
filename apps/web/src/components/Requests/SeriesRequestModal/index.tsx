@@ -76,9 +76,68 @@ export function SeriesRequestModal({
 
   // Load seasons when modal opens
   useEffect(() => {
-    if (open && tmdbId) {
-      loadSeasons();
-    }
+    if (!open || !tmdbId) return;
+
+    const abortController = new AbortController();
+
+    const loadSeasonsWithAbort = async () => {
+      setLoadingSeasons(true);
+      try {
+        const res = await fetch(`/api/v1/tmdb/tv/${tmdbId}`, { signal: abortController.signal });
+        if (res.ok) {
+          const data = await res.json();
+          // Filter out season 0 (specials) unless it's the only season
+          const allSeasons = (data.seasons || []).filter((s: Season) => s.season_number > 0 || data.seasons.length === 1);
+
+          if (abortController.signal.aborted) return;
+          setSeasons(allSeasons);
+
+          // Pre-load all season episodes in parallel for immediate availability display
+          const episodePromises = allSeasons.map(async (season: Season) => {
+            try {
+              const episodeRes = await fetch(
+                `/api/v1/tmdb/tv/${tmdbId}/season/${season.season_number}/enhanced`,
+                { signal: abortController.signal }
+              );
+              if (episodeRes.ok) {
+                const episodeData = await episodeRes.json();
+                return { seasonNumber: season.season_number, episodes: episodeData.episodes || [] };
+              }
+            } catch (err: any) {
+              if (err.name === 'AbortError') throw err;
+              // Ignore errors for individual seasons
+            }
+            return null;
+          });
+
+          const results = await Promise.all(episodePromises);
+
+          if (abortController.signal.aborted) return;
+
+          const newSeasonEpisodes: Record<number, Episode[]> = {};
+          for (const result of results) {
+            if (result) {
+              newSeasonEpisodes[result.seasonNumber] = result.episodes;
+            }
+          }
+          setSeasonEpisodes(newSeasonEpisodes);
+        }
+      } catch (err: any) {
+        if (err.name !== 'AbortError') {
+          logger.error("Failed to load seasons", err);
+        }
+      } finally {
+        if (!abortController.signal.aborted) {
+          setLoadingSeasons(false);
+        }
+      }
+    };
+
+    loadSeasonsWithAbort();
+
+    return () => {
+      abortController.abort();
+    };
   }, [open, tmdbId]);
 
   // Reset state when modal closes
@@ -90,46 +149,6 @@ export function SeriesRequestModal({
       setSubmitState("idle");
     }
   }, [open]);
-
-  async function loadSeasons() {
-    setLoadingSeasons(true);
-    try {
-      const res = await fetch(`/api/v1/tmdb/tv/${tmdbId}`);
-      if (res.ok) {
-        const data = await res.json();
-        // Filter out season 0 (specials) unless it's the only season
-        const allSeasons = (data.seasons || []).filter((s: Season) => s.season_number > 0 || data.seasons.length === 1);
-        setSeasons(allSeasons);
-
-        // Pre-load all season episodes in parallel for immediate availability display
-        const episodePromises = allSeasons.map(async (season: Season) => {
-          try {
-            const episodeRes = await fetch(`/api/v1/tmdb/tv/${tmdbId}/season/${season.season_number}/enhanced`);
-            if (episodeRes.ok) {
-              const episodeData = await episodeRes.json();
-              return { seasonNumber: season.season_number, episodes: episodeData.episodes || [] };
-            }
-          } catch {
-            // Ignore errors for individual seasons
-          }
-          return null;
-        });
-
-        const results = await Promise.all(episodePromises);
-        const newSeasonEpisodes: Record<number, Episode[]> = {};
-        for (const result of results) {
-          if (result) {
-            newSeasonEpisodes[result.seasonNumber] = result.episodes;
-          }
-        }
-        setSeasonEpisodes(newSeasonEpisodes);
-      }
-    } catch (err) {
-      logger.error("Failed to load seasons", err);
-    } finally {
-      setLoadingSeasons(false);
-    }
-  }
 
   async function loadSeasonEpisodes(seasonNumber: number) {
     if (seasonEpisodes[seasonNumber]) return;
