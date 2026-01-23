@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/auth";
 import { getJellyfinConfig, setJellyfinConfig } from "@/db";
 import { fetchJellyfinServerInfo, getJellyfinBaseUrl, getJellyfinApiKey } from "@/lib/jellyfin-admin";
+import { invalidateJellyfinCaches } from "@/lib/jellyfin";
 
 /**
  * Admin endpoint to fetch and populate missing Jellyfin serverId
@@ -49,6 +50,7 @@ export async function GET(req: NextRequest) {
       serverId: serverInfo.id,
       name: serverInfo.name || config.name
     });
+    invalidateJellyfinCaches("jellyfin serverId updated");
 
     return NextResponse.json({
       ok: true,

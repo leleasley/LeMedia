@@ -231,47 +231,64 @@ export function SeriesRequestModal({
     setSubmitState("loading");
 
     try {
-      // Group episodes by season and submit requests
-      const seasonNumbers = Object.keys(checkedEpisodes).map(Number).filter(s => checkedEpisodes[s]?.size > 0);
-      let successCount = 0;
-      let errorMessage = "";
+      const seasons = Object.keys(checkedEpisodes)
+        .map(Number)
+        .filter(seasonNumber => checkedEpisodes[seasonNumber]?.size > 0)
+        .map(seasonNumber => ({
+          seasonNumber,
+          episodeNumbers: Array.from(checkedEpisodes[seasonNumber] || []).sort((a, b) => a - b)
+        }))
+        .filter(season => season.episodeNumbers.length > 0);
 
-      for (const seasonNumber of seasonNumbers) {
-        const episodeNumbers = Array.from(checkedEpisodes[seasonNumber] || []).sort((a, b) => a - b);
-        if (episodeNumbers.length === 0) continue;
+      const res = await csrfFetch("/api/v1/request/episodes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tmdbTvId: tmdbId,
+          seasons,
+          qualityProfileId: selectedQualityProfileId
+        })
+      });
 
-        const res = await csrfFetch("/api/v1/request/episodes", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            tmdbTvId: tmdbId,
-            seasonNumber,
-            episodeNumbers,
-            qualityProfileId: selectedQualityProfileId
-          })
-        });
+      const j = await readJson(res);
 
-        const j = await readJson(res);
-
-        if (!res.ok) {
-          if (j?.error === "notifications_required") {
-            setErrorModal({ title: "Requesting blocked", message: blockedMessage });
-            setSubmitState("error");
-            setTimeout(() => setSubmitState("idle"), 2000);
-            return;
-          }
-          if (res.status === 409 && j?.error === "already_requested") {
-            // Some episodes already requested, continue with others
-            continue;
-          }
-          errorMessage = j?.error || j?.message || "Request failed";
-        } else {
-          successCount += j?.count || episodeNumbers.length;
+      if (!res.ok) {
+        if (j?.error === "notifications_required") {
+          setErrorModal({ title: "Requesting blocked", message: blockedMessage });
+          setSubmitState("error");
+          setTimeout(() => setSubmitState("idle"), 2000);
+          return;
         }
+
+        if (res.status === 422 && j?.error === "missing_episodes" && Array.isArray(j?.missingEpisodes)) {
+          const missingList = j.missingEpisodes
+            .map((ep: { seasonNumber: number; episodeNumber: number }) => `S${ep.seasonNumber}E${String(ep.episodeNumber).padStart(2, "0")}`)
+            .join(", ");
+          setErrorModal({
+            title: "Some episodes could not be matched in Sonarr",
+            message: missingList ? `Missing in Sonarr: ${missingList}` : "Some episodes could not be matched in Sonarr."
+          });
+          setSubmitState("error");
+          setTimeout(() => setSubmitState("idle"), 2000);
+          return;
+        }
+
+        if (res.status === 409 && j?.error === "already_requested") {
+          toast.info("All selected episodes have already been requested", { timeoutMs: 3000 });
+          setSubmitState("idle");
+          return;
+        }
+
+        throw new Error(j?.error || j?.message || "Request failed");
       }
 
+      const successCount = Number(j?.count ?? 0);
+      const skippedCount = Array.isArray(j?.skippedEpisodes) ? j.skippedEpisodes.length : Number(j?.skipped ?? 0);
       if (successCount > 0) {
-        toast.success(`Successfully requested ${successCount} episode${successCount !== 1 ? 's' : ''}!`, { timeoutMs: 3000 });
+        toast.success(`Successfully requested ${successCount} episode${successCount !== 1 ? "s" : ""}!`, { timeoutMs: 3000 });
+        if (skippedCount > 0) {
+          toast.info(`Skipped ${skippedCount} episode${skippedCount !== 1 ? "s" : ""} already requested.`, { timeoutMs: 3000 });
+        }
         setSubmitState("success");
         router.refresh();
         if (onRequestPlaced) onRequestPlaced();
@@ -279,8 +296,6 @@ export function SeriesRequestModal({
           setCheckedEpisodes({});
           onClose();
         }, 1500);
-      } else if (errorMessage) {
-        throw new Error(errorMessage);
       } else {
         toast.info("All selected episodes have already been requested", { timeoutMs: 3000 });
         setSubmitState("idle");

@@ -12,6 +12,7 @@ import { z } from "zod";
 import { requireCsrf } from "@/lib/csrf";
 import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/rate-limit";
+import { invalidateJellyfinCaches } from "@/lib/jellyfin";
 
 const authPayloadSchema = z.object({
   username: z.string().trim().min(1),
@@ -149,6 +150,7 @@ export async function POST(req: NextRequest) {
       serverId,
       apiKeyEncrypted: encryptSecret(apiKey),
     });
+    invalidateJellyfinCaches("jellyfin auth configured");
 
     // Log successful configuration
     await logAuditEvent({

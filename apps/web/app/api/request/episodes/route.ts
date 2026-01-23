@@ -4,7 +4,7 @@ import { requireUser } from "@/auth";
 import {
   createRequestWithItemsTransaction,
   upsertUser,
-  findActiveEpisodeRequestItems
+  listActiveEpisodeRequestItemsByTmdb
 } from "@/db";
 import { getTv, getTvExternalIds } from "@/lib/tmdb";
 import {
@@ -55,12 +55,46 @@ async function waitForSeriesEpisodes(seriesId: number, tries = 1, delayMs = 1200
   return [];
 }
 
-const Body = z.object({
+const SeasonSelection = z.object({
+  seasonNumber: z.coerce.number().int().min(1),
+  episodeNumbers: z.array(z.coerce.number().int().min(1)).min(1),
+});
+
+const SingleSeasonBody = z.object({
   tmdbTvId: z.coerce.number().int(),
-  seasonNumber: z.coerce.number().int(),
-  episodeNumbers: z.array(z.coerce.number().int()).min(1),
+  seasonNumber: z.coerce.number().int().min(1),
+  episodeNumbers: z.array(z.coerce.number().int().min(1)).min(1),
   qualityProfileId: z.coerce.number().int().optional()
 });
+
+const MultiSeasonBody = z.object({
+  tmdbTvId: z.coerce.number().int(),
+  seasons: z.array(SeasonSelection).min(1),
+  qualityProfileId: z.coerce.number().int().optional()
+});
+
+const Body = z.union([SingleSeasonBody, MultiSeasonBody]);
+
+type NormalizedRequest = {
+  tmdbTvId: number;
+  seasons: Array<{ seasonNumber: number; episodeNumbers: number[] }>;
+  qualityProfileId?: number;
+};
+
+function normalizeRequestBody(body: z.infer<typeof Body>): NormalizedRequest {
+  if ("seasons" in body) {
+    return {
+      tmdbTvId: body.tmdbTvId,
+      seasons: body.seasons,
+      qualityProfileId: body.qualityProfileId
+    };
+  }
+  return {
+    tmdbTvId: body.tmdbTvId,
+    seasons: [{ seasonNumber: body.seasonNumber, episodeNumbers: body.episodeNumbers }],
+    qualityProfileId: body.qualityProfileId
+  };
+}
 
 export async function POST(req: NextRequest) {
   const user = await requireUser();
@@ -70,7 +104,7 @@ export async function POST(req: NextRequest) {
   const csrf = requireCsrf(req);
   if (csrf) return csrf;
 
-  const body = Body.parse(await req.json());
+  const body = normalizeRequestBody(Body.parse(await req.json()));
 
   const tv = await getTv(body.tmdbTvId);
   const title = tv.name ?? `TMDB TV ${body.tmdbTvId}`;
@@ -91,21 +125,53 @@ export async function POST(req: NextRequest) {
   let response: NextResponse | null = null;
 
   await asyncLock.dispatch(body.tmdbTvId, async () => {
-    const existingItems = await findActiveEpisodeRequestItems({
-      tmdbTvId: body.tmdbTvId,
-      season: body.seasonNumber,
-      episodeNumbers: body.episodeNumbers
-    });
-    const already = new Set(existingItems.map(i => i.episode));
-    const episodeNumbers = body.episodeNumbers.filter(n => !already.has(n));
-    if (episodeNumbers.length === 0) {
-      const requestId = existingItems[0]?.request_id ?? null;
+    const selectionEntries = body.seasons.flatMap((season) =>
+      season.episodeNumbers.map((episodeNumber) => ({
+        seasonNumber: season.seasonNumber,
+        episodeNumber
+      }))
+    );
+
+    const selectionMap = new Map<string, { seasonNumber: number; episodeNumber: number }>();
+    for (const entry of selectionEntries) {
+      if (entry.seasonNumber <= 0 || entry.episodeNumber <= 0) continue;
+      const key = `${entry.seasonNumber}:${entry.episodeNumber}`;
+      selectionMap.set(key, entry);
+    }
+    const selections = Array.from(selectionMap.values());
+
+    if (selections.length === 0) {
+      response = NextResponse.json({ ok: false, error: "invalid_selection" }, { status: 400 });
+      return;
+    }
+
+    const existingItems = await listActiveEpisodeRequestItemsByTmdb(body.tmdbTvId);
+    const existingMap = new Map(
+      existingItems.map((item) => [
+        `${Number(item.season)}:${Number(item.episode)}`,
+        { requestId: item.request_id, status: item.request_status }
+      ])
+    );
+
+    const skippedEpisodes = selections
+      .filter((entry) => existingMap.has(`${entry.seasonNumber}:${entry.episodeNumber}`))
+      .map((entry) => ({
+        seasonNumber: entry.seasonNumber,
+        episodeNumber: entry.episodeNumber,
+        requestId: existingMap.get(`${entry.seasonNumber}:${entry.episodeNumber}`)?.requestId ?? null
+      }));
+
+    const pendingEpisodes = selections.filter(
+      (entry) => !existingMap.has(`${entry.seasonNumber}:${entry.episodeNumber}`)
+    );
+
+    if (pendingEpisodes.length === 0) {
       response = NextResponse.json(
         {
           ok: false,
-          requestId,
           error: "already_requested",
-          message: `These episodes have already been requested: ${Array.from(already).sort((a, b) => a - b).map(n => `E${n}`).join(", ")}`
+          message: "These episodes have already been requested.",
+          skippedEpisodes
         },
         { status: 409 }
       );
@@ -119,11 +185,11 @@ export async function POST(req: NextRequest) {
         title,
         userId: dbUser.id,
         requestStatus: "pending",
-        items: episodeNumbers.map(ep => ({
+        items: pendingEpisodes.map(ep => ({
           provider: "sonarr",
           providerId: null,
-          season: body.seasonNumber,
-          episode: ep,
+          season: ep.seasonNumber,
+          episode: ep.episodeNumber,
           status: "pending"
         })),
         posterPath: tv?.poster_path ?? null,
@@ -139,7 +205,15 @@ export async function POST(req: NextRequest) {
         userId: dbUser.id,
         ...tvMeta
       });
-      response = NextResponse.json({ ok: true, pending: true, requestId: r.id, tvdbId, count: episodeNumbers.length, skipped: already.size });
+      response = NextResponse.json({
+        ok: true,
+        pending: true,
+        requestId: r.id,
+        tvdbId,
+        count: pendingEpisodes.length,
+        skipped: skippedEpisodes.length,
+        skippedEpisodes
+      });
       return;
     }
 
@@ -162,15 +236,35 @@ export async function POST(req: NextRequest) {
 
       const attempts = seriesAdded ? 4 : 1;
       const episodes = await waitForSeriesEpisodes(series.id, attempts);
-      const wanted: RequestedEpisode[] = episodes
-        .filter((e: any) => e.seasonNumber === body.seasonNumber && episodeNumbers.includes(e.episodeNumber))
-        .map(
-          (e: any): RequestedEpisode => ({
-            id: e.id,
-            seasonNumber: e.seasonNumber,
-            episodeNumber: e.episodeNumber
-          })
+      const episodeMap = new Map<string, RequestedEpisode>();
+      for (const e of episodes) {
+        if (typeof e?.seasonNumber !== "number" || typeof e?.episodeNumber !== "number") continue;
+        if (typeof e?.id !== "number") continue;
+        episodeMap.set(`${e.seasonNumber}:${e.episodeNumber}`, {
+          id: e.id,
+          seasonNumber: e.seasonNumber,
+          episodeNumber: e.episodeNumber
+        });
+      }
+
+      const wanted: RequestedEpisode[] = [];
+      const missing: Array<{ seasonNumber: number; episodeNumber: number }> = [];
+      for (const entry of pendingEpisodes) {
+        const match = episodeMap.get(`${entry.seasonNumber}:${entry.episodeNumber}`);
+        if (match) {
+          wanted.push(match);
+        } else {
+          missing.push({ seasonNumber: entry.seasonNumber, episodeNumber: entry.episodeNumber });
+        }
+      }
+
+      if (missing.length > 0) {
+        response = NextResponse.json(
+          { ok: false, error: "missing_episodes", missingEpisodes: missing, skippedEpisodes },
+          { status: 422 }
         );
+        return;
+      }
 
       if (wanted.length === 0) throw new Error("No matching episodes found in Sonarr (series added but episodes not populated yet?)");
 
@@ -207,7 +301,15 @@ export async function POST(req: NextRequest) {
         ...tvMeta
       });
 
-      response = NextResponse.json({ ok: true, requestId: r.id, sonarrSeriesId: series.id, tvdbId, count: wanted.length, skipped: already.size });
+      response = NextResponse.json({
+        ok: true,
+        requestId: r.id,
+        sonarrSeriesId: series.id,
+        tvdbId,
+        count: wanted.length,
+        skipped: skippedEpisodes.length,
+        skippedEpisodes
+      });
     } catch (e: any) {
       const msg = e?.message ?? String(e);
       const fakeRequestId = `failed-episodes-${body.tmdbTvId}-${randomUUID()}`;

@@ -3,6 +3,10 @@ import {
   disableCalendarSubscriptionNotifications,
   getUserById,
   listNotificationEndpointsForUser,
+  type DiscordConfig,
+  type TelegramConfig,
+  type EmailConfig,
+  type WebhookConfig,
 } from "@/db";
 import { isAvailableByExternalIds } from "@/lib/jellyfin";
 import { getMovie, getTv } from "@/lib/tmdb";
@@ -126,20 +130,24 @@ async function sendCalendarNotification(subscription: any) {
 
       try {
         if (endpoint.type === "discord") {
-          const webhookUrl = String(endpoint.config?.webhookUrl ?? "");
+          const config = endpoint.config as DiscordConfig;
+          const webhookUrl = String(config?.webhookUrl ?? "");
           if (!webhookUrl) continue;
           await sendDiscordNotification(webhookUrl, title, mediaDetails, mediaType);
         } else if (endpoint.type === "telegram") {
-          const botToken = String(endpoint.config?.botToken ?? "");
-          const chatId = String(endpoint.config?.chatId ?? "");
+          const config = endpoint.config as TelegramConfig;
+          const botToken = String(config?.botToken ?? "");
+          const chatId = String(config?.chatId ?? "");
           if (!botToken || !chatId) continue;
           await sendTelegramNotification(botToken, chatId, title);
         } else if (endpoint.type === "email") {
-          const to = String(endpoint.config?.to ?? "");
+          const config = endpoint.config as EmailConfig;
+          const to = String(config?.to ?? "");
           if (!to) continue;
           await sendEmailNotification(to, user.username, title);
         } else if (endpoint.type === "webhook") {
-          const url = String(endpoint.config?.url ?? "");
+          const config = endpoint.config as WebhookConfig;
+          const url = String(config?.url ?? "");
           if (!url) continue;
           await sendWebhookNotification(url, title, subscription);
         }

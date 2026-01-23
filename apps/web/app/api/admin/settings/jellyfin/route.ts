@@ -8,6 +8,7 @@ import { jsonResponseWithETag } from "@/lib/api-optimization";
 import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/rate-limit";
 import { fetchJellyfinServerInfo } from "@/lib/jellyfin-admin";
+import { invalidateJellyfinCaches } from "@/lib/jellyfin";
 
 const payloadSchema = z.object({
     hostname: z.string().trim(),
@@ -103,6 +104,7 @@ export async function PUT(req: NextRequest) {
         serverId,
         apiKeyEncrypted
     });
+    invalidateJellyfinCaches("admin settings updated");
 
     // Log settings change
     const user = await requireAdmin();

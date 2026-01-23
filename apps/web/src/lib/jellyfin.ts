@@ -3,30 +3,116 @@ import { getJellyfinConfig } from "@/db";
 import { logger } from "@/lib/logger";
 import { validateExternalServiceUrl } from "@/lib/url-validation";
 
+type CacheEntry<T> = { expiresAt: number; value: T };
+
+class LruCache<K, V> {
+    private maxSize: number;
+    private map = new Map<K, V>();
+
+    constructor(maxSize: number) {
+        this.maxSize = Math.max(1, maxSize);
+    }
+
+    get(key: K): V | undefined {
+        const value = this.map.get(key);
+        if (value === undefined) return undefined;
+        this.map.delete(key);
+        this.map.set(key, value);
+        return value;
+    }
+
+    set(key: K, value: V) {
+        if (this.map.has(key)) {
+            this.map.delete(key);
+        }
+        this.map.set(key, value);
+        if (this.map.size > this.maxSize) {
+            const oldestKey = this.map.keys().next().value;
+            if (oldestKey !== undefined) {
+                this.map.delete(oldestKey);
+            }
+        }
+    }
+
+    clear() {
+        this.map.clear();
+    }
+}
+
+function createConcurrencyLimiter(limit: number) {
+    const max = Math.max(1, limit);
+    let active = 0;
+    const waiters: Array<() => void> = [];
+
+    return async function limit<T>(fn: () => Promise<T>): Promise<T> {
+        if (active >= max) {
+            await new Promise<void>((resolve) => waiters.push(resolve));
+        }
+        active += 1;
+        try {
+            return await fn();
+        } finally {
+            active -= 1;
+            const next = waiters.shift();
+            if (next) next();
+        }
+    };
+}
+
 // Simple in-memory cache for availability lookups
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
-const cache = new Map<string, { expiresAt: number; value: boolean }>();
-const itemIdCache = new Map<string, { expiresAt: number; value: string | null }>();
+const CACHE_MAX_ENTRIES = 10000;
+const cache = new LruCache<string, CacheEntry<boolean>>(CACHE_MAX_ENTRIES);
+const itemIdCache = new LruCache<string, CacheEntry<string | null>>(CACHE_MAX_ENTRIES);
+const CONNECTION_CACHE_TTL_MS = 5 * 60 * 1000;
+const jellyfinLimit = createConcurrencyLimiter(
+    Number(process.env.JELLYFIN_CONCURRENCY_LIMIT ?? "5") || 5
+);
+
+type JellyfinConnection = { baseUrl: string; apiKey: string };
+let connectionCache: CacheEntry<JellyfinConnection> | null = null;
+
+export function invalidateJellyfinCaches(reason?: string) {
+    cache.clear();
+    itemIdCache.clear();
+    connectionCache = null;
+    if (reason) {
+        logger.info("[Jellyfin] Cache invalidated", { reason });
+    }
+}
 
 function cacheKey(kind: "movie" | "tv", id: number) {
     return `${kind}:${id}`;
 }
 
 async function jellyfinFetch(path: string) {
-    const connection = await getJellyfinConnection();
-    if (!connection) return null;
-    const baseUrl = connection.baseUrl.replace(/\/+$/, "");
-    const url = new URL(baseUrl + path);
-    const headers = new Headers();
-    headers.set("X-Emby-Token", connection.apiKey);
-    const res = await fetch(url, { headers, cache: "no-store" });
-    if (!res.ok) return null;
-    try {
-        return await res.json();
-    } catch (err) {
-        logger.debug("[Jellyfin] Failed to parse JSON response", { path, error: String(err) });
-        return null;
-    }
+    return jellyfinLimit(async () => {
+        const connection = await getJellyfinConnection();
+        if (!connection) return null;
+        const baseUrl = connection.baseUrl.replace(/\/+$/, "");
+        const url = new URL(baseUrl + path);
+        const headers = new Headers();
+        headers.set("X-Emby-Token", connection.apiKey);
+
+        let res: Response | null = null;
+        for (let attempt = 0; attempt < 3; attempt++) {
+            res = await fetch(url, { headers, cache: "no-store" });
+            if (!res.ok && (res.status === 429 || res.status === 503)) {
+                const delayMs = 500 * Math.pow(2, attempt);
+                await new Promise(resolve => setTimeout(resolve, delayMs));
+                continue;
+            }
+            break;
+        }
+
+        if (!res || !res.ok) return null;
+        try {
+            return await res.json();
+        } catch (err) {
+            logger.debug("[Jellyfin] Failed to parse JSON response", { path, error: String(err) });
+            return null;
+        }
+    });
 }
 
 export async function isAvailableByExternalIds(
@@ -48,20 +134,20 @@ export async function isAvailableByExternalIds(
     // Only count items with real files; ignore series containers without media.
     const includeType = kind === "tv" ? "Episode" : "Movie";
 
-    const hasItemWithFile = (items: any[], providerCheck?: (item: any) => boolean) =>
-        items.some((item: any) => {
+    const hasItemWithFile = (items: JellyfinApiItem[], providerCheck?: (item: JellyfinApiItem) => boolean) =>
+        items.some((item: JellyfinApiItem) => {
             const typeMatches =
                 String(item?.Type ?? "").toLowerCase() === includeType.toLowerCase();
             const providerMatches = providerCheck ? providerCheck(item) : true;
             return typeMatches && providerMatches && hasPhysicalFile(item);
         });
 
-    const tmdbProviderMatches = (item: any) => {
+    const tmdbProviderMatches = (item: JellyfinApiItem) => {
         const pid = item?.ProviderIds?.Tmdb ?? item?.ProviderIds?.tmdb;
         return Number(pid ?? 0) === Number(tmdbId ?? 0);
     };
 
-    const tvdbProviderMatches = (item: any) => {
+    const tvdbProviderMatches = (item: JellyfinApiItem) => {
         const pid = item?.ProviderIds?.Tvdb ?? item?.ProviderIds?.tvdb;
         return Number(pid ?? 0) === Number(tvdbId ?? 0);
     };
@@ -110,7 +196,7 @@ export async function isAvailableByExternalIds(
             const episodes = await jellyfinFetch(
                 `/Shows/${seriesId}/Episodes?Fields=LocationType,MediaSources,Path,IsVirtual,Type&Limit=200`
             );
-            if (Array.isArray(episodes?.Items) && episodes.Items.some((item: any) => hasPhysicalFile(item))) {
+            if (Array.isArray(episodes?.Items) && episodes.Items.some((item: JellyfinApiItem) => hasPhysicalFile(item))) {
                 found = true;
             }
         }
@@ -135,7 +221,7 @@ export async function isAvailableByTmdb(kind: "movie" | "tv", tmdbId: number): P
     );
     const found =
         Array.isArray(byTmdb?.Items) &&
-        byTmdb.Items.some((item: any) => {
+        byTmdb.Items.some((item: JellyfinApiItem) => {
             const typeMatches =
                 String(item?.Type ?? "").toLowerCase() === includeType.toLowerCase();
             return typeMatches && hasPhysicalFile(item);
@@ -158,7 +244,7 @@ export async function getJellyfinItemIdByTmdb(kind: "movie" | "tv", tmdbId: numb
     );
     let itemId = "";
     if (Array.isArray(byTmdbProvider?.Items) && byTmdbProvider.Items.length > 0) {
-        const match = byTmdbProvider.Items.find((item: any) => {
+        const match = byTmdbProvider.Items.find((item: JellyfinApiItem) => {
             const typeMatches = String(item?.Type ?? "").toLowerCase() === includeType.toLowerCase();
             const providerMatches = Number(item?.ProviderIds?.Tmdb ?? item?.ProviderIds?.tmdb ?? 0) === Number(tmdbId);
             return typeMatches && providerMatches;
@@ -170,12 +256,12 @@ export async function getJellyfinItemIdByTmdb(kind: "movie" | "tv", tmdbId: numb
     if (!itemId) {
         const byTmdb = await jellyfinFetch(`/Items?ExternalId=tmdb:${tmdbId}&IncludeItemTypes=${includeType}`);
         if (Array.isArray(byTmdb?.Items) && byTmdb.Items.length > 0) {
-            const match = byTmdb.Items.find((item: any) => String(item?.Type ?? "").toLowerCase() === includeType.toLowerCase());
+            const match = byTmdb.Items.find((item: JellyfinApiItem) => String(item?.Type ?? "").toLowerCase() === includeType.toLowerCase());
             itemId = String((match ?? byTmdb.Items[0])?.Id ?? "");
         } else {
             const fallback = await jellyfinFetch(`/Items?ExternalId=tmdb:${tmdbId}`);
             if (Array.isArray(fallback?.Items) && fallback.Items.length > 0) {
-                const match = fallback.Items.find((item: any) => String(item?.Type ?? "").toLowerCase() === includeType.toLowerCase());
+                const match = fallback.Items.find((item: JellyfinApiItem) => String(item?.Type ?? "").toLowerCase() === includeType.toLowerCase());
                 itemId = String((match ?? fallback.Items[0])?.Id ?? "");
             }
         }
@@ -197,7 +283,7 @@ export async function getJellyfinItemIdByTvdb(tvdbId: number): Promise<string | 
     );
     let itemId = "";
     if (Array.isArray(byTvdbProvider?.Items) && byTvdbProvider.Items.length > 0) {
-        const match = byTvdbProvider.Items.find((item: any) => {
+        const match = byTvdbProvider.Items.find((item: JellyfinApiItem) => {
             const typeMatches = String(item?.Type ?? "").toLowerCase() === "series";
             const providerMatches = Number(item?.ProviderIds?.Tvdb ?? item?.ProviderIds?.tvdb ?? 0) === Number(tvdbId);
             return typeMatches && providerMatches;
@@ -209,12 +295,12 @@ export async function getJellyfinItemIdByTvdb(tvdbId: number): Promise<string | 
     if (!itemId) {
         const byTvdb = await jellyfinFetch(`/Items?ExternalId=tvdb:${tvdbId}&IncludeItemTypes=Series`);
         if (Array.isArray(byTvdb?.Items) && byTvdb.Items.length > 0) {
-            const match = byTvdb.Items.find((item: any) => String(item?.Type ?? "").toLowerCase() === "series");
+            const match = byTvdb.Items.find((item: JellyfinApiItem) => String(item?.Type ?? "").toLowerCase() === "series");
             itemId = String((match ?? byTvdb.Items[0])?.Id ?? "");
         } else {
             const fallback = await jellyfinFetch(`/Items?ExternalId=tvdb:${tvdbId}`);
             if (Array.isArray(fallback?.Items) && fallback.Items.length > 0) {
-                const match = fallback.Items.find((item: any) => String(item?.Type ?? "").toLowerCase() === "series");
+                const match = fallback.Items.find((item: JellyfinApiItem) => String(item?.Type ?? "").toLowerCase() === "series");
                 itemId = String((match ?? fallback.Items[0])?.Id ?? "");
             }
         }
@@ -237,7 +323,7 @@ export async function getJellyfinItemIdByName(kind: "movie" | "tv", name: string
     let itemId = "";
     if (Array.isArray(searchResults?.Items) && searchResults.Items.length > 0) {
         // Try exact match first
-        const exactMatch = searchResults.Items.find((item: any) =>
+        const exactMatch = searchResults.Items.find((item: JellyfinApiItem) =>
             String(item?.Name ?? "").toLowerCase() === name.toLowerCase() &&
             String(item?.Type ?? "").toLowerCase() === includeType.toLowerCase()
         );
@@ -245,7 +331,7 @@ export async function getJellyfinItemIdByName(kind: "movie" | "tv", name: string
             itemId = String(exactMatch.Id ?? "");
         } else {
             // Fall back to first matching type
-            const typeMatch = searchResults.Items.find((item: any) =>
+            const typeMatch = searchResults.Items.find((item: JellyfinApiItem) =>
                 String(item?.Type ?? "").toLowerCase() === includeType.toLowerCase()
             );
             if (typeMatch) {
@@ -297,7 +383,28 @@ type EpisodeAvailabilityInput = {
     seriesType?: string | null;
 };
 
-function hasPhysicalFile(item: any) {
+type JellyfinApiItem = {
+    Id?: string | number;
+    Name?: string;
+    Type?: string;
+    ProviderIds?: {
+        Tmdb?: string | number | null;
+        Tvdb?: string | number | null;
+        Imdb?: string | number | null;
+        tmdb?: string | number | null;
+        tvdb?: string | number | null;
+    };
+    LocationType?: string | null;
+    MediaSources?: Array<{ Path?: string | null }>;
+    Path?: string | null;
+    IsVirtual?: boolean;
+    IndexNumber?: number | null;
+    ParentIndexNumber?: number | null;
+    PremiereDate?: string | null;
+    DateCreated?: string | null;
+};
+
+function hasPhysicalFile(item: JellyfinApiItem) {
     const locationType = String(item?.LocationType ?? "").toLowerCase();
     const itemType = String(item?.Type ?? "").toLowerCase();
     if (locationType === "virtual" || item?.IsVirtual === true) return false;
@@ -305,7 +412,7 @@ function hasPhysicalFile(item: any) {
     if (itemType === "series") return false;
 
     const mediaSources = Array.isArray(item?.MediaSources) ? item.MediaSources : [];
-    const hasMediaSourcePath = mediaSources.some((source: any) => Boolean(source?.Path));
+    const hasMediaSourcePath = mediaSources.some((source: { Path?: string | null }) => Boolean(source?.Path));
     const hasPath = Boolean(item?.Path);
 
     // Require a real path on either the item or one of its media sources.
@@ -349,7 +456,7 @@ export async function isEpisodeAvailable({
         );
         if (Array.isArray(byEpisodeId?.Items) && byEpisodeId.Items.length > 0) {
             logger.debug("[Jellyfin] Found episodes by TVDB ID", { count: byEpisodeId.Items.length, seriesTitle });
-            const match = byEpisodeId.Items.find((ep: any) => {
+            const match = byEpisodeId.Items.find((ep: JellyfinApiItem) => {
                 const providerMatches = Number(ep?.ProviderIds?.Tvdb ?? 0) === Number(tvdbEpisodeId);
                 return providerMatches && hasPhysicalFile(ep);
             });
@@ -368,7 +475,7 @@ export async function isEpisodeAvailable({
         );
         if (Array.isArray(byTmdbEpisodeId?.Items) && byTmdbEpisodeId.Items.length > 0) {
             logger.debug("[Jellyfin] Found episodes by TMDB ID", { count: byTmdbEpisodeId.Items.length, seriesTitle });
-            const match = byTmdbEpisodeId.Items.find((ep: any) => {
+            const match = byTmdbEpisodeId.Items.find((ep: JellyfinApiItem) => {
                 const providerMatches = Number(ep?.ProviderIds?.Tmdb ?? 0) === Number(tmdbEpisodeId);
                 return providerMatches && hasPhysicalFile(ep);
             });
@@ -380,9 +487,9 @@ export async function isEpisodeAvailable({
     }
 
     // Helper to test provider id matches inside a list of episodes
-    const matchByProviderId = (items: any[], providerId: number | null | undefined, key: "Tmdb" | "Tvdb") => {
+    const matchByProviderId = (items: JellyfinApiItem[], providerId: number | null | undefined, key: "Tmdb" | "Tvdb") => {
         if (!providerId) return null;
-        const match = items.find((ep: any) => {
+        const match = items.find((ep: JellyfinApiItem) => {
             const providerValue = ep?.ProviderIds?.[key];
             return providerValue && Number(providerValue) === Number(providerId) && hasPhysicalFile(ep);
         });
@@ -413,7 +520,7 @@ export async function isEpisodeAvailable({
         `/Shows/${seriesId}/Episodes?Fields=ProviderIds,IndexNumber,ParentIndexNumber,PremiereDate,DateCreated,Name,OriginalTitle,LocationType,MediaSources,Path,IsVirtual&Limit=4000`
     );
 
-    let items: any[] = Array.isArray(episodes?.Items) ? episodes.Items : [];
+    let items: JellyfinApiItem[] = Array.isArray(episodes?.Items) ? episodes.Items : [];
     // Drop metadata-only episodes that don't have an attached file
     items = items.filter((ep) => hasPhysicalFile(ep));
 
@@ -441,7 +548,7 @@ export async function isEpisodeAvailable({
     let seasonFilteredItems = items;
     if (!isDaily && hasValidSeasonNumber) {
         // Use Number() coercion for consistent type comparison - Jellyfin may return string or number
-        seasonFilteredItems = items.filter((ep: any) =>
+        seasonFilteredItems = items.filter((ep: JellyfinApiItem) =>
             Number(ep?.ParentIndexNumber) === Number(seasonNumber)
         );
         // If we got results with season filter, use those. Otherwise fall back to all episodes.
@@ -454,7 +561,7 @@ export async function isEpisodeAvailable({
         seriesTitle,
         seasonNumber,
         episodeCount: items.length,
-        episodes: items.map((ep: any) => ({
+        episodes: items.map((ep: JellyfinApiItem) => ({
             indexNumber: ep?.IndexNumber,
             parentIndexNumber: ep?.ParentIndexNumber,
             premiereDate: ep?.PremiereDate,
@@ -465,7 +572,7 @@ export async function isEpisodeAvailable({
 
     const matchByNumber = allowAirDateOnly
         ? null
-        : items.find((ep: any) => {
+        : items.find((ep: JellyfinApiItem) => {
               const indexMatch = Number(ep?.IndexNumber ?? -1) === Number(episodeNumber);
               const seasonMatch =
                   ep?.ParentIndexNumber === undefined ||
@@ -503,7 +610,7 @@ export async function isEpisodeAvailable({
             episodeCount: items.length
         });
 
-        const matchByDate = items.find((ep: any) => {
+        const matchByDate = items.find((ep: JellyfinApiItem) => {
             const premiereDate = String(ep?.PremiereDate || "").split("T")[0];
             if (!premiereDate) {
                 logger.debug("[Jellyfin] Episode has no premiere date", {
@@ -561,7 +668,7 @@ export async function isEpisodeAvailable({
     if (airDate) {
         const normalizedAirDate = airDate.split("T")[0];
         const air = new Date(normalizedAirDate);
-        const matchByCreated = items.find((ep: any) => {
+        const matchByCreated = items.find((ep: JellyfinApiItem) => {
             const created = ep?.DateCreated ? new Date(ep.DateCreated) : null;
             if (!created) return false;
             const diffDays = Math.abs(
@@ -596,7 +703,12 @@ export async function isEpisodeAvailable({
     return { available: false };
 }
 
-async function getJellyfinConnection(): Promise<{ baseUrl: string; apiKey: string } | null> {
+async function getJellyfinConnection(): Promise<JellyfinConnection | null> {
+    const now = Date.now();
+    if (connectionCache && connectionCache.expiresAt > now) {
+        return connectionCache.value;
+    }
+
     const config = await getJellyfinConfig();
     if (!config.hostname || !config.apiKeyEncrypted) return null;
     const baseUrl = buildBaseUrl(config);
@@ -612,7 +724,9 @@ async function getJellyfinConnection(): Promise<{ baseUrl: string; apiKey: strin
 
     try {
         const apiKey = decryptSecret(config.apiKeyEncrypted);
-        return { baseUrl, apiKey };
+        const connection = { baseUrl, apiKey };
+        connectionCache = { expiresAt: now + CONNECTION_CACHE_TTL_MS, value: connection };
+        return connection;
     } catch (err) {
         logger.error("[Jellyfin] Failed to decrypt API key", err);
         return null;
@@ -671,8 +785,8 @@ export async function findAvailableMovieByTmdb(
     const res = await jellyfinFetch(
         `/Items?searchTerm=${encoded}&Recursive=true&IncludeItemTypes=Movie&Fields=ProviderIds,LocationType,MediaSources,Path,IsVirtual,Type&Limit=20`
     );
-    const items: any[] = Array.isArray(res?.Items) ? res.Items : [];
-    const matched = items.find((item: any) => {
+    const items: JellyfinApiItem[] = Array.isArray(res?.Items) ? res.Items : [];
+    const matched = items.find((item: JellyfinApiItem) => {
         const typeMatches = String(item?.Type ?? "").toLowerCase() === "movie";
         const providerMatches = Number(item?.ProviderIds?.Tmdb ?? 0) === Number(tmdbId);
         return typeMatches && providerMatches && hasPhysicalFile(item);
@@ -691,8 +805,8 @@ export async function findAvailableSeriesByIds(
     const res = await jellyfinFetch(
         `/Items?searchTerm=${encoded}&Recursive=true&IncludeItemTypes=Series&Fields=ProviderIds,Type&Limit=10`
     );
-    const items: any[] = Array.isArray(res?.Items) ? res.Items : [];
-    const seriesMatch = items.find((item: any) => {
+    const items: JellyfinApiItem[] = Array.isArray(res?.Items) ? res.Items : [];
+    const seriesMatch = items.find((item: JellyfinApiItem) => {
         const typeMatches = String(item?.Type ?? "").toLowerCase() === "series";
         const tmdbMatches = tmdbId ? Number(item?.ProviderIds?.Tmdb ?? 0) === Number(tmdbId) : false;
         const tvdbMatches = tvdbId ? Number(item?.ProviderIds?.Tvdb ?? 0) === Number(tvdbId) : false;
@@ -704,7 +818,7 @@ export async function findAvailableSeriesByIds(
     const episodes = await jellyfinFetch(
         `/Shows/${seriesMatch.Id}/Episodes?Fields=LocationType,MediaSources,Path,IsVirtual,Type&Limit=5`
     );
-    const epItems: any[] = Array.isArray(episodes?.Items) ? episodes.Items : [];
+    const epItems: JellyfinApiItem[] = Array.isArray(episodes?.Items) ? episodes.Items : [];
     const hasFile = epItems.some((ep) => hasPhysicalFile(ep));
 
     if (!hasFile) return { available: false };
@@ -717,9 +831,9 @@ export async function findAvailableMovieByName(title: string): Promise<{ availab
     const res = await jellyfinFetch(
         `/Items?searchTerm=${encoded}&Recursive=true&IncludeItemTypes=Movie&Fields=ProviderIds,LocationType,MediaSources,Path,IsVirtual,Type&Limit=20`
     );
-    const items: any[] = Array.isArray(res?.Items) ? res.Items : [];
+    const items: JellyfinApiItem[] = Array.isArray(res?.Items) ? res.Items : [];
     // Only consider actual Movies with physical files AND exact name match
-    const exactMatch = items.find((item: any) => {
+    const exactMatch = items.find((item: JellyfinApiItem) => {
         const typeMatches = String(item?.Type ?? '').toLowerCase() === 'movie';
         const nameMatches = String(item?.Name ?? '').toLowerCase() === title.toLowerCase();
         return typeMatches && nameMatches && hasPhysicalFile(item);

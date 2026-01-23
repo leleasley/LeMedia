@@ -20,7 +20,7 @@ export function getPool(): Pool {
     pool = new Pool({
       connectionString: cachedDatabaseUrl,
       // Optimized connection pool settings (based on Seerr best practices)
-      max: Number(process.env.DB_POOL_MAX ?? "20"), // Maximum pool size (default: 10 is too low)
+      max: Number(process.env.DB_POOL_MAX ?? "50"), // Maximum pool size (default: 10 is too low)
       min: Number(process.env.DB_POOL_MIN ?? "2"), // Minimum idle connections
       idleTimeoutMillis: Number(process.env.DB_POOL_IDLE_TIMEOUT ?? "30000"), // Close idle connections after 30s
       connectionTimeoutMillis: Number(process.env.DB_POOL_CONNECTION_TIMEOUT ?? "2000"), // Wait max 2s for connection
@@ -2602,7 +2602,7 @@ export async function listNotificationEndpoints(): Promise<NotificationEndpointP
       type: r.type,
       enabled: !!r.enabled,
       is_global: !!r.is_global,
-      events: Array.isArray(r.events) ? r.events.map((e: any) => String(e)) : [],
+      events: Array.isArray(r.events) ? r.events.map((e: unknown) => String(e)) : [],
       types: Number.isFinite(Number(r.types)) ? Number(r.types) : 0,
       config: r.config,
       created_at: r.created_at
@@ -2628,7 +2628,7 @@ export async function listNotificationEndpointsFull(): Promise<NotificationEndpo
       type: r.type,
       enabled: !!r.enabled,
       is_global: !!r.is_global,
-      events: Array.isArray(r.events) ? r.events.map((e: any) => String(e)) : [],
+      events: Array.isArray(r.events) ? r.events.map((e: unknown) => String(e)) : [],
       types: Number.isFinite(Number(r.types)) ? Number(r.types) : 0,
       config: r.config,
       created_at: r.created_at
@@ -3001,7 +3001,7 @@ export async function createNotificationEndpoint(input: {
   enabled?: boolean;
   is_global?: boolean;
   events?: string[];
-  config: any;
+  config: NotificationEndpointConfig;
 }) {
   await ensureSchema();
   const p = getPool();
@@ -3039,7 +3039,7 @@ export async function createNotificationEndpoint(input: {
     type: row.type as NotificationEndpointType,
     enabled: !!row.enabled,
     is_global: !!row.is_global,
-    events: Array.isArray(row.events) ? row.events.map((e: any) => String(e)) : [],
+    events: Array.isArray(row.events) ? row.events.map((e: unknown) => String(e)) : [],
     types: Number.isFinite(Number(row.types)) ? Number(row.types) : 0,
     created_at: row.created_at as string
   };
@@ -3071,7 +3071,7 @@ export async function getNotificationEndpointByIdFull(id: number): Promise<Notif
     type: r.type,
     enabled: !!r.enabled,
     is_global: !!r.is_global,
-    events: Array.isArray(r.events) ? r.events.map((e: any) => String(e)) : [],
+    events: Array.isArray(r.events) ? r.events.map((e: unknown) => String(e)) : [],
     types: Number.isFinite(Number(r.types)) ? Number(r.types) : 0,
     config: r.config,
     created_at: r.created_at
@@ -3080,7 +3080,7 @@ export async function getNotificationEndpointByIdFull(id: number): Promise<Notif
 
 export async function updateNotificationEndpoint(
   id: number,
-  input: { name: string; enabled: boolean; is_global: boolean; events: string[]; config: any }
+  input: { name: string; enabled: boolean; is_global: boolean; events: string[]; config: NotificationEndpointConfig }
 ): Promise<NotificationEndpointPublic | null> {
   await ensureSchema();
   const p = getPool();
@@ -3112,7 +3112,7 @@ export async function updateNotificationEndpoint(
     type: row.type as NotificationEndpointType,
     enabled: !!row.enabled,
     is_global: !!row.is_global,
-    events: Array.isArray(row.events) ? row.events.map((e: any) => String(e)) : [],
+    events: Array.isArray(row.events) ? row.events.map((e: unknown) => String(e)) : [],
     types: Number.isFinite(Number(row.types)) ? Number(row.types) : 0,
     created_at: row.created_at as string
   };
@@ -3137,7 +3137,7 @@ export async function listGlobalNotificationEndpointsFull(): Promise<Notificatio
       type: r.type,
       enabled: !!r.enabled,
       is_global: !!r.is_global,
-      events: Array.isArray(r.events) ? r.events.map((e: any) => String(e)) : [],
+      events: Array.isArray(r.events) ? r.events.map((e: unknown) => String(e)) : [],
       types: Number.isFinite(Number(r.types)) ? Number(r.types) : 0,
       config: r.config,
       created_at: r.created_at
@@ -3167,7 +3167,7 @@ export async function listNotificationEndpointsForUser(userId: number): Promise<
       type: r.type,
       enabled: !!r.enabled,
       is_global: !!r.is_global,
-      events: Array.isArray(r.events) ? r.events.map((e: any) => String(e)) : [],
+      events: Array.isArray(r.events) ? r.events.map((e: unknown) => String(e)) : [],
       types: Number.isFinite(Number(r.types)) ? Number(r.types) : 0,
       config: r.config,
       created_at: r.created_at
@@ -3323,7 +3323,7 @@ export async function createApprovalRule(input: {
   enabled: boolean;
   priority: number;
   ruleType: string;
-  conditions: Record<string, any>;
+  conditions: Record<string, unknown>;
 }) {
   const p = getPool();
   const res = await p.query(
@@ -3343,7 +3343,7 @@ export async function updateApprovalRule(id: number, input: {
   description?: string;
   enabled?: boolean;
   priority?: number;
-  conditions?: Record<string, any>;
+  conditions?: Record<string, unknown>;
 }) {
   const p = getPool();
   const updates: string[] = [];
@@ -3401,7 +3401,7 @@ export async function listApprovalRules() {
     enabled: r.enabled as boolean,
     priority: r.priority as number,
     ruleType: r.rule_type as string,
-    conditions: r.conditions as Record<string, any>,
+    conditions: r.conditions as Record<string, unknown>,
     createdAt: r.created_at as string,
     updatedAt: r.updated_at as string,
   }));
@@ -3424,7 +3424,7 @@ export async function getApprovalRuleById(id: number) {
     enabled: r.enabled as boolean,
     priority: r.priority as number,
     ruleType: r.rule_type as string,
-    conditions: r.conditions as Record<string, any>,
+    conditions: r.conditions as Record<string, unknown>,
     createdAt: r.created_at as string,
     updatedAt: r.updated_at as string,
   };
@@ -3442,7 +3442,7 @@ export async function getActiveApprovalRules() {
     id: r.id as number,
     name: r.name as string,
     ruleType: r.rule_type as string,
-    conditions: r.conditions as Record<string, any>,
+    conditions: r.conditions as Record<string, unknown>,
     priority: r.priority as number,
   }));
 }
@@ -3794,7 +3794,7 @@ export type UserNotification = {
   message: string;
   link: string | null;
   isRead: boolean;
-  metadata: any;
+  metadata: Record<string, unknown> | null;
   createdAt: string;
 };
 
@@ -3804,7 +3804,7 @@ export async function createNotification(params: {
   title: string;
   message: string;
   link?: string | null;
-  metadata?: any;
+  metadata?: Record<string, unknown> | null;
 }): Promise<UserNotification> {
   const p = getPool();
   const res = await p.query(
@@ -4154,7 +4154,7 @@ export async function setCalendarPreferences(
   userId: number,
   prefs: {
     defaultView?: 'month' | 'week' | 'list' | 'agenda';
-    filters?: any;
+    filters?: Record<string, unknown> | null;
     genreFilters?: number[];
     monitoredOnly?: boolean;
   }

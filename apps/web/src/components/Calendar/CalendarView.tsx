@@ -214,12 +214,27 @@ export function CalendarView() {
         if (!hasMatchingGenre) return false;
       }
 
-      return true;
-    });
-  }, [data, filters, searchQuery]);
+    return true;
+  });
+}, [data, filters, searchQuery]);
+
+  const eventsByDay = useMemo(() => {
+    const map = new Map<string, typeof filteredEvents>();
+    for (const event of filteredEvents) {
+      const key = String(event.date).split("T")[0];
+      const bucket = map.get(key);
+      if (bucket) {
+        bucket.push(event);
+      } else {
+        map.set(key, [event]);
+      }
+    }
+    return map;
+  }, [filteredEvents]);
 
   const getEventsForDay = (day: Date) => {
-    return filteredEvents.filter(event => isSameDay(parseISO(event.date), day));
+    const key = format(day, "yyyy-MM-dd");
+    return eventsByDay.get(key) ?? [];
   };
 
   const nextPeriod = () => {

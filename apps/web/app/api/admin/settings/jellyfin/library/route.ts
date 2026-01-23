@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/auth";
 import { getJellyfinConfig, setJellyfinConfig } from "@/db";
 import { getJellyfinBaseUrl, getJellyfinApiKey, listJellyfinLibraries } from "@/lib/jellyfin-admin";
+import { invalidateJellyfinCaches } from "@/lib/jellyfin";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +49,7 @@ export async function GET(req: NextRequest) {
 
   if (sync || enabledIds) {
     await setJellyfinConfig({ ...config, libraries });
+    invalidateJellyfinCaches("jellyfin libraries updated");
   }
 
   return NextResponse.json({ ok: true, libraries });

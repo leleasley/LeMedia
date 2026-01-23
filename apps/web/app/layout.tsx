@@ -105,12 +105,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className={cn(inter.className, "antialiased min-h-screen md:overflow-hidden")}>
         <ThemeProvider attribute="class" defaultTheme="dark" storageKey="lemedia-theme" enableSystem>
           <IntlProviderWrapper>
-            <SWRProvider>
-              <ToastProvider initialToasts={initialToasts}>
+            <ToastProvider initialToasts={initialToasts}>
+              <SWRProvider>
                 <ServiceWorkerReset />
                 {children}
-              </ToastProvider>
-            </SWRProvider>
+              </SWRProvider>
+            </ToastProvider>
           </IntlProviderWrapper>
         </ThemeProvider>
       </body>

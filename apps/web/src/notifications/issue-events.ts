@@ -1,4 +1,12 @@
-import { listGlobalNotificationEndpointsFull, listNotificationEndpointsForUser, NotificationEndpointFull } from "@/db";
+import {
+  listGlobalNotificationEndpointsFull,
+  listNotificationEndpointsForUser,
+  NotificationEndpointFull,
+  type DiscordConfig,
+  type TelegramConfig,
+  type EmailConfig,
+  type WebhookConfig
+} from "@/db";
 import { DiscordEmbed, sendDiscordWebhook } from "@/notifications/discord";
 import { sendEmail } from "@/notifications/email";
 import { sendTelegramMessage } from "@/notifications/telegram";
@@ -134,23 +142,27 @@ export async function notifyIssueEvent(event: IssueNotificationEvent, ctx: Issue
     endpoints.map(async endpoint => {
       try {
         if (endpoint.type === "discord") {
-          const webhookUrl = String(endpoint.config?.webhookUrl ?? "");
+          const config = endpoint.config as DiscordConfig;
+          const webhookUrl = String(config?.webhookUrl ?? "");
           await sendDiscordWebhook({ webhookUrl, embeds: [discordEmbed] });
           return;
         }
         if (endpoint.type === "telegram") {
-          const botToken = String(endpoint.config?.botToken ?? "");
-          const chatId = String(endpoint.config?.chatId ?? "");
+          const config = endpoint.config as TelegramConfig;
+          const botToken = String(config?.botToken ?? "");
+          const chatId = String(config?.chatId ?? "");
           await sendTelegramMessage({ botToken, chatId, text: plain });
           return;
         }
         if (endpoint.type === "email") {
-          const to = String(endpoint.config?.to ?? "");
+          const config = endpoint.config as EmailConfig;
+          const to = String(config?.to ?? "");
           await sendEmail({ to, subject: "[LeMedia] Issue reported", text: plain });
           return;
         }
         if (endpoint.type === "webhook") {
-          const url = String(endpoint.config?.url ?? "");
+          const config = endpoint.config as WebhookConfig;
+          const url = String(config?.url ?? "");
           await sendGenericWebhook({ url, body: payload });
           return;
         }

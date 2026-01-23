@@ -1,4 +1,13 @@
-import { listGlobalNotificationEndpointsFull, listNotificationEndpointsForUser, NotificationEndpointFull } from "@/db";
+import {
+  listGlobalNotificationEndpointsFull,
+  listNotificationEndpointsForUser,
+  NotificationEndpointFull,
+  getUserById,
+  type DiscordConfig,
+  type TelegramConfig,
+  type EmailConfig,
+  type WebhookConfig
+} from "@/db";
 import { DiscordEmbed, sendDiscordWebhook } from "@/notifications/discord";
 import { sendEmail } from "@/notifications/email";
 import { sendTelegramMessage } from "@/notifications/telegram";
@@ -6,7 +15,6 @@ import { sendGenericWebhook } from "@/notifications/webhook";
 import { notifyUserPushEvent } from "@/notifications/push-events";
 import { logger } from "@/lib/logger";
 import { getMovie, getTv } from "@/lib/tmdb";
-import { getUserById } from "@/db";
 
 export type RequestNotificationEvent =
   | "request_pending"
@@ -274,7 +282,8 @@ export async function notifyRequestEvent(event: RequestNotificationEvent, ctx: R
     endpoints.map(async endpoint => {
       try {
         if (endpoint.type === "discord") {
-          const webhookUrl = String(endpoint.config?.webhookUrl ?? "");
+          const config = endpoint.config as DiscordConfig;
+          const webhookUrl = String(config?.webhookUrl ?? "");
           await sendDiscordWebhook({
             webhookUrl,
             content: discordContent,
@@ -284,18 +293,21 @@ export async function notifyRequestEvent(event: RequestNotificationEvent, ctx: R
           return;
         }
         if (endpoint.type === "telegram") {
-          const botToken = String(endpoint.config?.botToken ?? "");
-          const chatId = String(endpoint.config?.chatId ?? "");
+          const config = endpoint.config as TelegramConfig;
+          const botToken = String(config?.botToken ?? "");
+          const chatId = String(config?.chatId ?? "");
           await sendTelegramMessage({ botToken, chatId, text: plain });
           return;
         }
         if (endpoint.type === "email") {
-          const to = String(endpoint.config?.to ?? "");
+          const config = endpoint.config as EmailConfig;
+          const to = String(config?.to ?? "");
           await sendEmail({ to, subject: emailSubject, text: plain });
           return;
         }
         if (endpoint.type === "webhook") {
-          const url = String(endpoint.config?.url ?? "");
+          const config = endpoint.config as WebhookConfig;
+          const url = String(config?.url ?? "");
           await sendGenericWebhook({ url, body: webhookPayload });
           return;
         }

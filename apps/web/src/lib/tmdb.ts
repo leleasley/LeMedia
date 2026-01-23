@@ -1,6 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import ExternalAPI from "@/lib/external-api";
+import { logger } from "@/lib/logger";
 import { tmdbImageUrl } from "./tmdb-images";
 import cacheManager from "@/lib/cache-manager";
 
@@ -14,12 +15,42 @@ const TWELVE_HOURS_MS = 12 * 60 * 60 * 1000;
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 class TmdbApi extends ExternalAPI {
+  private lastRateLimitLogAt = 0;
+
   public getRolling<T>(
     endpoint: string,
     params?: Record<string, string | number | boolean | undefined>,
     ttlSeconds?: number
   ): Promise<T> {
     return super.getRolling<T>(endpoint, { params }, ttlSeconds);
+  }
+
+  public addRateLimitLogging() {
+    this.axios.interceptors.response.use((response) => {
+      const remainingHeader =
+        response.headers?.["x-ratelimit-remaining"] ??
+        response.headers?.["x-rate-limit-remaining"];
+      const resetHeader =
+        response.headers?.["x-ratelimit-reset"] ??
+        response.headers?.["x-rate-limit-reset"];
+      const remaining = Number(remainingHeader ?? NaN);
+      const reset = Number(resetHeader ?? NaN);
+
+      if (Number.isFinite(remaining)) {
+        const now = Date.now();
+        const shouldLog = remaining <= 10 || now - this.lastRateLimitLogAt > 5 * 60 * 1000;
+        if (shouldLog) {
+          this.lastRateLimitLogAt = now;
+          if (remaining <= 10) {
+            logger.warn("[TMDB] Rate limit running low", { remaining, reset });
+          } else {
+            logger.debug("[TMDB] Rate limit status", { remaining, reset });
+          }
+        }
+      }
+
+      return response;
+    });
   }
 }
 
@@ -43,6 +74,7 @@ function getTmdbClient() {
       },
     }
   );
+  tmdbClient.addRateLimitLogging();
   return tmdbClient;
 }
 

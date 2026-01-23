@@ -161,6 +161,14 @@ For local development without a reverse proxy:
 
 **WARNING**: Never enable `ALLOW_DEV_BYPASS` in production!
 
+### CSRF Protection
+
+LeMedia uses a CSRF cookie (`lemedia_csrf`) to protect state-changing routes.
+
+- Client calls should use `csrfFetch` from `apps/web/src/lib/csrf-client.ts`, which attaches the `x-csrf-token` header from the cookie.
+- Server routes validate the token via `requireCsrf` and reject unsafe methods (`POST`, `PUT`, `PATCH`, `DELETE`) when the token is missing.
+- The token is issued by the CSRF API route (`/api/csrf` or `/api/v1/csrf`) and stored as a cookie for browser requests.
+
 ### Rebuilding
 
 - **Config changes only** (`.env` modifications): `docker compose up -d`

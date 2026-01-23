@@ -5,7 +5,9 @@ import { getPool, getCalendarFeedUserByToken } from "@/db";
 import { getSonarrCalendar } from "@/lib/sonarr";
 import { getRadarrCalendar } from "@/lib/radarr";
 import { findAvailableMovieByName, findAvailableMovieByTmdb, findAvailableSeriesByIds, isEpisodeAvailable } from "@/lib/jellyfin";
+import { getCachedEpisodeAvailability } from "@/lib/jellyfin-availability-sync";
 import { deduplicateFetch } from "@/lib/request-cache";
+import { logger } from "@/lib/logger";
 
 export interface CalendarEvent {
   id: string;
@@ -45,6 +47,7 @@ const CACHE_TTL_TMDB = 5 * 60 * 1000; // 5 minutes for TMDB releases
 const CACHE_TTL_SONARR_RADARR = 5 * 60 * 1000; // 5 minutes for Sonarr/Radarr
 const CACHE_TTL_SEASON_PREMIERES = 24 * 60 * 60 * 1000; // 24 hours for season data
 const CACHE_TTL_JELLYFIN = 10 * 60 * 1000; // 10 minutes for Jellyfin availability
+const CACHE_TTL_DB = 60 * 1000; // 1 minute for DB-backed calendar data
 
 async function fetchTvMetadata(tmdbIds: Set<number>, tvdbIds: Set<number>) {
   const tvdbToTmdb = new Map<number, number>();
@@ -382,11 +385,21 @@ async function getSeasonPremieres(userId: number, start: string, end: string): P
 
   try {
     // Get user's watchlisted TV shows
-    const result = await pool.query(`
+    const result = await deduplicateFetch(
+      `calendar-watchlist:${userId}`,
+      () =>
+        pool
+          .query(
+            `
       SELECT tmdb_id
       FROM user_media_list
       WHERE user_id = $1 AND media_type = 'tv' AND list_type = 'watchlist'
-    `, [userId]);
+    `,
+            [userId]
+          )
+          .then((queryResult) => queryResult),
+      { ttl: CACHE_TTL_DB }
+    );
 
     // For each show, check for new seasons airing in date range
     const showPromises = result.rows.map(async (row: any) => {
@@ -453,7 +466,12 @@ async function getRequestsWithReleaseDate(userId: number): Promise<CalendarEvent
   const events: CalendarEvent[] = [];
 
   try {
-    const result = await pool.query(`
+    const result = await deduplicateFetch(
+      `calendar-requests:${userId}`,
+      () =>
+        pool
+          .query(
+            `
       SELECT
         mr.id,
         mr.tmdb_id,
@@ -467,7 +485,12 @@ async function getRequestsWithReleaseDate(userId: number): Promise<CalendarEvent
         AND mr.status IN ('pending', 'approved', 'submitted')
       ORDER BY mr.created_at DESC
       LIMIT 50
-    `, [userId]);
+    `,
+            [userId]
+          )
+          .then((queryResult) => queryResult),
+      { ttl: CACHE_TTL_DB }
+    );
 
     result.rows.forEach((row: any) => {
       // Use created_at as the display date
@@ -499,6 +522,21 @@ async function getRequestsWithReleaseDate(userId: number): Promise<CalendarEvent
  */
 async function enrichWithJellyfinAvailability(events: CalendarEvent[]): Promise<CalendarEvent[]> {
   const batchSize = 10;
+  const episodeAvailabilityCache = new Map<
+    string,
+    Promise<{
+      byEpisode: Map<number, { available: boolean; jellyfinItemId: string | null }>;
+      byAirDate: Map<string, { available: boolean; jellyfinItemId: string | null }>;
+    }>
+  >();
+
+  const getCachedAvailability = (tmdbId: number, seasonNumber: number, tvdbId?: number) => {
+    const key = `${tmdbId}:${seasonNumber}:${tvdbId ?? ""}`;
+    if (!episodeAvailabilityCache.has(key)) {
+      episodeAvailabilityCache.set(key, getCachedEpisodeAvailability(tmdbId, seasonNumber, tvdbId));
+    }
+    return episodeAvailabilityCache.get(key)!;
+  };
 
   for (let i = 0; i < events.length; i += batchSize) {
     const batch = events.slice(i, i + batchSize);
@@ -541,13 +579,38 @@ async function enrichWithJellyfinAvailability(events: CalendarEvent[]): Promise<
           }
 
           if (event.mediaType === "tv" && typeof episodeNumber === "number") {
+            if (event.tmdbId && typeof seasonNumber === "number") {
+              try {
+                const cached = await getCachedAvailability(event.tmdbId, seasonNumber, event.tvdbId);
+                const cachedByEpisode = cached.byEpisode.get(episodeNumber);
+                const cachedByDate = event.date
+                  ? cached.byAirDate.get(String(event.date).slice(0, 10))
+                  : undefined;
+                const cachedHit = cachedByEpisode ?? cachedByDate;
+                if (cachedHit?.available) {
+                  if (!event.metadata) event.metadata = {};
+                  event.metadata.isAvailable = true;
+                  if (cachedHit.jellyfinItemId) {
+                    event.metadata.jellyfinItemId = cachedHit.jellyfinItemId;
+                  }
+                  return;
+                }
+              } catch (err) {
+                logger.debug("[Calendar] Cached availability lookup failed", {
+                  tmdbId: event.tmdbId,
+                  seasonNumber,
+                  error: String(err)
+                });
+              }
+            }
+
             // Include airDate in cache key for daily series to avoid cache collisions
             const isDaily = String(seriesType ?? "").toLowerCase() === "daily";
             const lookupKey = isDaily
               ? `jellyfin-episode:${event.tmdbId ?? event.tvdbId ?? event.id}:${event.date}`
               : `jellyfin-episode:${event.tmdbId ?? event.tvdbId ?? event.id}:${seasonNumber}:${episodeNumber}`;
             
-            console.log(`[Calendar] Checking episode availability:`, {
+            logger.debug("[Calendar] Checking episode availability", {
               title: baseTitle,
               tmdbId: event.tmdbId,
               tvdbId: event.tvdbId,
@@ -576,7 +639,7 @@ async function enrichWithJellyfinAvailability(events: CalendarEvent[]): Promise<
               { ttl: CACHE_TTL_JELLYFIN }
             );
 
-            console.log(`[Calendar] Episode availability result:`, {
+            logger.debug("[Calendar] Episode availability result", {
               title: baseTitle,
               available: availability?.available,
               itemId: availability?.itemId

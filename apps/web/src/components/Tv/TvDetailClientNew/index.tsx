@@ -27,29 +27,81 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import { TvSeasonItem } from "./TvSeasonItem";
+import type { Episode, Season, QualityProfile } from "./types";
 
-type Episode = {
-    episode_number: number;
-    name: string;
-    overview: string;
-    still_path: string | null;
-    air_date: string;
-    vote_average: number;
-    available?: boolean;
-    jellyfinItemId?: string | null;
-    requested?: boolean;
-    requestStatus?: string | null;
-    requestId?: string | null;
+type CreditRole = {
+    character?: string | null;
 };
 
-type Season = {
-    season_number: number;
-    episode_count: number;
-    name: string;
-    poster_path: string | null;
+type CastMember = {
+    id: number;
+    name?: string | null;
+    profile_path?: string | null;
+    character?: string | null;
+    roles?: CreditRole[] | null;
+    total_episode_count?: number | null;
 };
 
-type QualityProfile = { id: number; name: string };
+type CrewMember = {
+    id: number;
+    name?: string | null;
+    job?: string | null;
+};
+
+type TvDetail = {
+    id: number;
+    name?: string | null;
+    title?: string | null;
+    tagline?: string | null;
+    overview?: string | null;
+    status?: string | null;
+    first_air_date?: string | null;
+    original_language?: string | null;
+    production_countries?: Array<{ name?: string | null; iso_3166_1?: string | null }> | null;
+    networks?: Array<{ id?: number | null; name?: string | null; logo_path?: string | null; origin_country?: string | null }> | null;
+    external_ids?: { imdb_id?: string | null } | null;
+    vote_average?: number | null;
+    number_of_seasons?: number | null;
+    genres?: Array<{ id: number; name: string }> | null;
+    created_by?: Array<{ id: number; name?: string | null; profile_path?: string | null }> | null;
+    credits?: { cast?: CastMember[] | null; crew?: CrewMember[] | null } | null;
+    aggregate_credits?: { cast?: CastMember[] | null; crew?: CrewMember[] | null } | null;
+};
+
+type Creator = {
+    id: number;
+    name?: string | null;
+    profile_path?: string | null;
+};
+
+type SonarrSeries = {
+    monitored?: boolean | null;
+};
+
+type StreamingProvider = {
+    logo_path: string;
+    provider_id: number;
+    provider_name: string;
+    display_priority?: number;
+};
+
+type TvAggregateResponse = {
+    sonarr?: {
+        qualityProfiles?: QualityProfile[];
+        requestsBlocked?: boolean;
+        sonarrError?: string | null;
+        existingSeries?: SonarrSeries | null;
+        availableInJellyfin?: boolean | null;
+        availableSeasons?: number[];
+        defaultQualityProfileId?: number;
+    };
+    availableInLibrary?: boolean;
+    availableSeasons?: number[];
+    isAdmin?: boolean;
+    playUrl?: string | null;
+    manage?: { itemId?: number | string | null; slug?: string | null; baseUrl?: string | null };
+};
 
 function initials(name: string): string {
     const parts = name.trim().split(/\s+/g).filter(Boolean);
@@ -57,10 +109,10 @@ function initials(name: string): string {
     return parts.slice(0, 2).map(p => p[0]?.toUpperCase() ?? "").join("");
 }
 
-const fetcher = async (url: string) => {
+const fetcher = async (url: string): Promise<TvAggregateResponse | null> => {
     const res = await fetch(url, { credentials: "include" });
     if (!res.ok) return null;
-    return res.json();
+    return (await readJson(res)) as TvAggregateResponse;
 };
 
 export function TvDetailClientNew({
@@ -97,7 +149,7 @@ export function TvDetailClientNew({
     prefetchedAggregate,
     children
 }: {
-    tv: any;
+    tv: TvDetail;
     poster: string | null;
     backdrop: string | null;
     trailerUrl: string | null;
@@ -107,10 +159,10 @@ export function TvDetailClientNew({
     defaultQualityProfileId: number;
     requestsBlocked: boolean;
     sonarrError?: string | null;
-    existingSeries?: any;
+    existingSeries?: SonarrSeries | null;
     availableInJellyfin?: boolean | null;
     availableSeasons?: number[];
-    streamingProviders?: any[];
+    streamingProviders?: StreamingProvider[];
     rtCriticsScore?: number | null;
     rtCriticsRating?: string | null;
     rtAudienceScore?: number | null;
@@ -127,12 +179,12 @@ export function TvDetailClientNew({
     tvdbId?: number | null;
     externalRatingsSlot?: React.ReactNode;
     keywordsSlot?: React.ReactNode;
-    prefetchedAggregate?: any;
+    prefetchedAggregate?: unknown;
     children?: React.ReactNode;
 }) {
-    const cast = useMemo(() => (tv.aggregate_credits?.cast ?? tv.credits?.cast ?? []).slice(0, 12), [tv]);
-    const creators = useMemo(() => (Array.isArray(tv.created_by) ? tv.created_by.slice(0, 6) : []), [tv]);
-    const crew = useMemo(() => (Array.isArray(tv.credits?.crew) ? tv.credits.crew : []), [tv]);
+    const cast = useMemo<CastMember[]>(() => (tv.aggregate_credits?.cast ?? tv.credits?.cast ?? []).slice(0, 12), [tv]);
+    const creators = useMemo<Creator[]>(() => (Array.isArray(tv.created_by) ? tv.created_by.slice(0, 6) : []), [tv]);
+    const crew = useMemo<CrewMember[]>(() => (Array.isArray(tv.credits?.crew) ? tv.credits.crew : []), [tv]);
 
     const crewRoles = useMemo(() => new Set([
         "Executive Producer",
@@ -143,8 +195,10 @@ export function TvDetailClientNew({
     ]), []);
 
     const crewEntries = useMemo(() => [
-        ...creators.map((person: any) => ({ job: "Creator", person })),
-        ...crew.filter((person: any) => crewRoles.has(person.job)).map((person: any) => ({ job: person.job, person }))
+        ...creators.map((person) => ({ job: "Creator", person })),
+        ...crew
+            .filter((person) => crewRoles.has(String(person.job ?? "")))
+            .map((person) => ({ job: person.job ?? "Crew", person }))
     ].slice(0, 6), [creators, crew, crewRoles]);
 
     const totalSeasons = useMemo(() => seasons.filter(s => s.season_number !== 0).length, [seasons]);
@@ -177,7 +231,7 @@ export function TvDetailClientNew({
     const [qualityProfilesState, setQualityProfilesState] = useState<QualityProfile[]>(qualityProfiles);
     const [requestsBlockedState, setRequestsBlockedState] = useState<boolean>(requestsBlocked);
     const [sonarrErrorState, setSonarrErrorState] = useState<string | null>(sonarrError ?? null);
-    const [existingSeriesState, setExistingSeriesState] = useState<any>(existingSeries ?? null);
+    const [existingSeriesState, setExistingSeriesState] = useState<SonarrSeries | null>(existingSeries ?? null);
     const [availableInJellyfinState, setAvailableInJellyfinState] = useState<boolean | null>(availableInJellyfin ?? null);
     const [playUrlState, setPlayUrlState] = useState<string | null>(playUrl ?? null);
     const [manageItemIdState, setManageItemIdState] = useState<number | null>(manageItemId ?? null);
@@ -192,12 +246,18 @@ export function TvDetailClientNew({
     const aggregateParams = new URLSearchParams();
     if (tvdbId) aggregateParams.set("tvdbId", String(tvdbId));
     if (tv?.name) aggregateParams.set("title", String(tv.name));
-    const aggregateKey = `/api/v1/tv/${tv.id}${aggregateParams.toString() ? `?${aggregateParams.toString()}` : ""}`;
-    const { data: aggregate } = useSWR<any>(aggregateKey, fetcher, {
+    const aggregateKey = tv?.id
+        ? ([`/api/v1/tv/${tv.id}${aggregateParams.toString() ? `?${aggregateParams.toString()}` : ""}`] as const)
+        : null;
+    const aggregateFetcher = useCallback(
+        async ([url]: [string]): Promise<TvAggregateResponse | null> => fetcher(url),
+        []
+    );
+    const { data: aggregate } = useSWR<TvAggregateResponse | null>(aggregateKey, aggregateFetcher, {
         revalidateOnFocus: true,
         revalidateIfStale: true,
         refreshInterval: 30000,
-        fallbackData: prefetchedAggregate
+        fallbackData: prefetchedAggregate as TvAggregateResponse | null | undefined
     });
 
     useEffect(() => {
@@ -229,7 +289,8 @@ export function TvDetailClientNew({
             setAvailableSeasonsState(sonarr.availableSeasons);
         }
         if (typeof sonarr.defaultQualityProfileId === "number" && sonarr.defaultQualityProfileId > 0) {
-            setSelectedQualityProfileId(prev => (prev > 0 ? prev : sonarr.defaultQualityProfileId));
+            const defaultQualityProfileId = sonarr.defaultQualityProfileId;
+            setSelectedQualityProfileId(prev => (prev > 0 ? prev : defaultQualityProfileId));
         }
 
         if (typeof aggregate.availableInLibrary === "boolean") {
@@ -245,7 +306,14 @@ export function TvDetailClientNew({
             setPlayUrlState(aggregate.playUrl);
         }
         if (aggregate.manage) {
-            setManageItemIdState(aggregate.manage.itemId ?? null);
+            const rawItemId = aggregate.manage.itemId;
+            const parsedItemId =
+                typeof rawItemId === "number"
+                    ? rawItemId
+                    : typeof rawItemId === "string" && rawItemId.trim().length > 0
+                        ? Number(rawItemId)
+                        : null;
+            setManageItemIdState(Number.isFinite(Number(parsedItemId)) ? Number(parsedItemId) : null);
             setManageSlugState(aggregate.manage.slug ?? null);
             setManageBaseUrlState(aggregate.manage.baseUrl ?? null);
         }
@@ -397,8 +465,9 @@ export function TvDetailClientNew({
                                 };
                             }
                             return { seasonNumber: season.season_number, available: 0, total: season.episode_count };
-                        } catch (err: any) {
-                            if (err.name === 'AbortError') throw err;
+                        } catch (err: unknown) {
+                            const error = err as Error;
+                            if (error?.name === 'AbortError') throw err;
                             return { seasonNumber: season.season_number, available: 0, total: season.episode_count };
                         }
                     })
@@ -422,8 +491,9 @@ export function TvDetailClientNew({
                         return Array.from(merged).sort((a, b) => a - b);
                     });
                 }
-            } catch (err: any) {
-                if (err.name !== 'AbortError') {
+            } catch (err: unknown) {
+                const error = err as Error;
+                if (error?.name !== 'AbortError') {
                     logger.error("Failed to load season availability counts", err);
                 }
             } finally {
@@ -538,8 +608,9 @@ export function TvDetailClientNew({
                 setEpisodeRequestModal(null);
                 setSubmitState("idle");
             }, 1500);
-        } catch (err: any) {
-            toast.error(`Failed to submit request: ${err?.message ?? String(err)}`, { timeoutMs: 4000 });
+        } catch (err: unknown) {
+            const error = err as Error;
+            toast.error(`Failed to submit request: ${error?.message ?? String(err)}`, { timeoutMs: 4000 });
             setSubmitState("error");
             setTimeout(() => setSubmitState("idle"), 2000);
         } finally {
@@ -598,9 +669,10 @@ export function TvDetailClientNew({
             setStatus("");
             setSeasonQuickOpen(false);
             router.refresh();
-        } catch (err: any) {
-            toast.error(`Failed to submit request: ${err?.message ?? String(err)}`, { timeoutMs: 4000 });
-            setStatus(`Failed: ${err?.message ?? String(err)}`);
+        } catch (err: unknown) {
+            const error = err as Error;
+            toast.error(`Failed to submit request: ${error?.message ?? String(err)}`, { timeoutMs: 4000 });
+            setStatus(`Failed: ${error?.message ?? String(err)}`);
         } finally {
             setIsSubmitting(false);
         }
@@ -801,7 +873,7 @@ export function TvDetailClientNew({
                     {poster ? (
                         <Image
                             src={poster}
-                            alt={tv.name}
+                            alt={tv.name ?? "Poster"}
                             width={600}
                             height={900}
                             className="w-full h-auto"
@@ -856,12 +928,12 @@ export function TvDetailClientNew({
 
                     {/* Attributes */}
                     <span className="media-attributes">
-                        {tv.number_of_seasons > 0 && (
+                        {Number(tv.number_of_seasons ?? 0) > 0 && (
                             <span>
-                                {tv.number_of_seasons} {tv.number_of_seasons === 1 ? 'Season' : 'Seasons'}
+                                {Number(tv.number_of_seasons)} {Number(tv.number_of_seasons) === 1 ? 'Season' : 'Seasons'}
                             </span>
                         )}
-                        {tv.genres?.map((g: any) => (
+                        {tv.genres?.map((g) => (
                             <span key={g.id}>{g.name}</span>
                         ))}
                     </span>
@@ -874,12 +946,12 @@ export function TvDetailClientNew({
                                 <ShareButton
                                     mediaType="tv"
                                     tmdbId={tv.id}
-                                    title={tv.name}
+                                    title={tv.name ?? tv.title ?? "Unknown"}
                                     backdropPath={backdrop ?? null}
                                     posterUrl={poster ?? null}
                                 />
                                 <MediaActionMenu
-                                    title={tv.name}
+                                    title={tv.name ?? tv.title ?? "Unknown"}
                                     mediaType="tv"
                                     tmdbId={tv.id}
                                     tvdbId={tvdbId ?? undefined}
@@ -910,7 +982,7 @@ export function TvDetailClientNew({
                                             qualityProfiles={qualityProfilesState}
                                             defaultQualityProfileId={selectedQualityProfileId}
                                             requestsBlocked={requestsBlockedState}
-                                            title={tv.name}
+                                            title={tv.name ?? tv.title ?? "Unknown"}
                                             posterUrl={poster}
                                             backdropUrl={backdrop}
                                             isLoading={!requestInfoLoaded}
@@ -928,7 +1000,7 @@ export function TvDetailClientNew({
                                 <ShareButton
                                     mediaType="tv"
                                     tmdbId={tv.id}
-                                    title={tv.name}
+                                    title={tv.name ?? tv.title ?? "Unknown"}
                                     backdropPath={backdrop ?? null}
                                     posterUrl={poster ?? null}
                                 />
@@ -961,7 +1033,7 @@ export function TvDetailClientNew({
                                             qualityProfiles={qualityProfilesState}
                                             defaultQualityProfileId={selectedQualityProfileId}
                                             requestsBlocked={requestsBlockedState}
-                                            title={tv.name}
+                                            title={tv.name ?? tv.title ?? "Unknown"}
                                             posterUrl={poster}
                                             backdropUrl={backdrop}
                                             isLoading={!requestInfoLoaded}
@@ -1046,182 +1118,28 @@ export function TvDetailClientNew({
                         {seasons.length === 0 ? (
                             <div className="p-8 rounded-xl border border-white/5 bg-white/5 text-center text-gray-400">No seasons available for this show.</div>
                         ) : (
-                            seasons.map((season) => {
-                                const isExpanded = expandedSeasons.has(season.season_number);
-                                const isLoading = loadingSeasons.has(season.season_number);
-                                const episodes = seasonEpisodes[season.season_number] || [];
-                                const checkedCount = getCheckedCount(season.season_number);
-                                const selectableCount = episodes.filter(e => !e.requested).length;
-                                const allChecked = selectableCount > 0 && checkedCount === selectableCount;
-
-                                // Get availability counts for this season
-                                const availabilityCounts = seasonAvailabilityCounts[season.season_number];
-                                const seasonAvailableCount = availabilityCounts?.available ?? 0;
-                                const seasonTotalCount = availabilityCounts?.total ?? season.episode_count;
-                                const isSeasonFullyAvailable = seasonAvailableCount > 0 && seasonAvailableCount >= seasonTotalCount;
-                                const isSeasonPartiallyAvailable = seasonAvailableCount > 0 && seasonAvailableCount < seasonTotalCount;
-
-                                return (
-                                    <div key={season.season_number} className="overflow-hidden rounded-xl border border-white/10 bg-black/20 backdrop-blur-sm transition-all hover:bg-black/30">
-                                        <button onClick={() => toggleSeason(season.season_number)} className="w-full flex items-center justify-between p-3 sm:p-6 transition-colors">
-                                            <div className="flex items-center gap-6">
-                                                {season.poster_path ? (
-                                                    <div className="h-16 w-12 rounded bg-neutral-800 flex-shrink-0 relative overflow-hidden hidden sm:block"><Image src={`https://image.tmdb.org/t/p/w200${season.poster_path}`} alt="" fill className="object-cover" /></div>
-                                                ) : (
-                                                    <div className="h-16 w-12 rounded bg-white/5 flex-shrink-0 hidden sm:flex items-center justify-center"><Tv className="h-5 w-5 text-gray-500" /></div>
-                                                )}
-                                                <div className="text-left">
-                                                    <div className="flex items-center gap-2 flex-wrap">
-                                                        <span className="text-lg font-bold text-white">{season.name || `Season ${season.season_number}`}</span>
-                                                        {isSeasonFullyAvailable && (
-                                                            <span className="inline-flex items-center gap-1 rounded-full bg-green-500/20 border border-green-500/40 px-2 py-0.5 text-xs font-semibold text-green-300">
-                                                                <CheckCircle className="h-3 w-3" />
-                                                                Available
-                                                            </span>
-                                                        )}
-                                                        {isSeasonPartiallyAvailable && (
-                                                            <span className="inline-flex items-center gap-1 rounded-full bg-purple-500/20 border border-purple-500/40 px-2 py-0.5 text-xs font-semibold text-purple-300">
-                                                                <CheckCircle className="h-3 w-3" />
-                                                                Partial
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    <div className="text-sm text-gray-400 mt-1 flex items-center gap-2 flex-wrap">
-                                                        <span>{season.episode_count} Episodes</span>
-                                                        {availabilityCounts && seasonAvailableCount > 0 && (
-                                                            <span className={`font-medium px-2 py-0.5 rounded text-xs ${isSeasonFullyAvailable
-                                                                ? "text-green-400 bg-green-400/10"
-                                                                : "text-purple-400 bg-purple-400/10"
-                                                                }`}>
-                                                                {seasonAvailableCount}/{seasonTotalCount} Available
-                                                            </span>
-                                                        )}
-                                                        {checkedCount > 0 && (
-                                                            <span className="text-emerald-400 font-medium bg-emerald-400/10 px-2 py-0.5 rounded text-xs">{checkedCount} Selected</span>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            {isExpanded ? (<ChevronUp className="h-5 w-5 text-gray-400" />) : (<ChevronDown className="h-5 w-5 text-gray-400" />)}
-                                        </button>
-                                        {isExpanded && (
-                                            <div className="border-t border-white/10 bg-black/20 p-3 sm:p-6 animate-in slide-in-from-top-2 duration-200">
-                                                {isLoading ? (
-                                                    <div className="flex items-center justify-center py-12 text-gray-400 gap-2"><div className="h-4 w-4 rounded-full border-2 border-white/20 border-t-white animate-spin" />Loading episodes...</div>
-                                                ) : episodes.length === 0 ? (
-                                                    <div className="text-center py-12 text-gray-400">No episodes found</div>
-                                                ) : (
-                                                    <>
-                                                        <div className="flex flex-wrap items-center justify-between gap-3 sm:gap-4 mb-4 sm:mb-6 pb-3 sm:pb-4 border-b border-white/5">
-                                                            <div className="flex flex-col gap-3">
-                                                                <label className="flex items-center gap-3 cursor-pointer group">
-                                                                    <div className={`h-5 w-5 rounded border flex items-center justify-center transition-colors ${allChecked ? 'bg-white border-white' : 'border-gray-500 group-hover:border-white'}`}>{allChecked && <CheckCircle className="h-3.5 w-3.5 text-black" />}</div>
-                                                                    <span className="text-sm font-medium text-gray-300 group-hover:text-white transition-colors">Select All Episodes</span>
-                                                                    <input type="checkbox" checked={allChecked} onChange={() => toggleAllInSeason(season.season_number)} className="hidden" />
-                                                                </label>
-                                                                {checkedCount > 0 && (
-                                                                    <label className="flex items-center gap-3 cursor-pointer group ml-8">
-                                                                        <div className={`h-4 w-4 rounded border flex items-center justify-center transition-colors ${monitorEpisodes ? 'bg-purple-500 border-purple-500' : 'border-gray-500 group-hover:border-purple-400'}`}>{monitorEpisodes && <CheckCircle className="h-3 w-3 text-white" />}</div>
-                                                                        <span className="text-xs font-medium text-gray-400 group-hover:text-gray-300 transition-colors">Monitor episodes after request</span>
-                                                                        <input type="checkbox" checked={monitorEpisodes} onChange={(e) => setMonitorEpisodes(e.target.checked)} className="hidden" />
-                                                                    </label>
-                                                                )}
-                                                            </div>
-                                                            {checkedCount > 0 && (
-                                                                <button onClick={() => setEpisodeRequestModal({ open: true, seasonNumber: season.season_number })} className="px-6 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm font-bold shadow-lg shadow-purple-600/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed" disabled={!hasQualityProfiles || isSubmitting}>Request {checkedCount} Episode{checkedCount !== 1 ? 's' : ''}</button>
-                                                            )}
-                                                        </div>
-                                                        <div className="divide-y divide-white/10">
-                                                            {episodes.map((episode) => {
-                                                                const isChecked = checkedEpisodes[season.season_number]?.has(episode.episode_number);
-                                                                const stillUrl = episode.still_path ? `https://image.tmdb.org/t/p/w300${episode.still_path}` : null;
-                                                                const airBadge = getAiringBadge(episode.air_date);
-                                                                const isRequested = episode.requested ?? false;
-                                                                const isAvailable = episode.available ?? false;
-                                                                const isDisabled = isRequested || isAvailable;
-
-                                                                return (
-                                                                    <label
-                                                                        key={episode.episode_number}
-                                                                        className={`relative flex gap-3 sm:gap-5 py-3 sm:py-5 transition-colors ${isDisabled ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-white/5"
-                                                                            } ${isChecked ? "bg-purple-500/10" : ""}`}
-                                                                    >
-                                                                        <input
-                                                                            type="checkbox"
-                                                                            checked={isChecked}
-                                                                            onChange={() => toggleEpisode(season.season_number, episode.episode_number, episode)}
-                                                                            className="hidden"
-                                                                            disabled={isDisabled}
-                                                                        />
-                                                                        <div className={`mt-1 h-5 w-5 rounded border flex items-center justify-center transition-colors ${isAvailable ? "bg-green-500/20 border-green-400" :
-                                                                            isDisabled ? "bg-gray-700 border-gray-600" :
-                                                                                isChecked ? "bg-purple-500 border-purple-500" : "border-gray-500"
-                                                                            }`}>
-                                                                            {isAvailable ? (
-                                                                                <Check className="h-4 w-4 text-green-200" />
-                                                                            ) : (isChecked || isDisabled) ? (
-                                                                                <CheckCircle className="h-4 w-4 text-white" />
-                                                                            ) : null}
-                                                                        </div>
-                                                                        <div className="flex-1 min-w-0">
-                                                                            <div className="flex flex-wrap items-center gap-2">
-                                                                                <h4 className={`text-base font-semibold leading-snug ${isChecked ? "text-purple-100" : "text-gray-100"}`}>
-                                                                                    {episode.episode_number} - {episode.name || "Untitled"}
-                                                                                </h4>
-                                                                                {isAvailable && (
-                                                                                    <span className="inline-flex items-center gap-1 rounded-full bg-green-500/20 border border-green-500/40 px-2.5 py-0.5 text-xs font-semibold text-green-300">
-                                                                                        <CheckCircle className="h-3 w-3" />
-                                                                                        Available
-                                                                                    </span>
-                                                                                )}
-                                                                                {isRequested && (
-                                                                                    <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/20 border border-blue-500/40 px-2.5 py-0.5 text-xs font-semibold text-blue-300">
-                                                                                        <Info className="h-3 w-3" />
-                                                                                        Already requested
-                                                                                    </span>
-                                                                                )}
-                                                                                <span className="inline-flex items-center rounded-full bg-white/10 px-2.5 py-0.5 text-xs font-semibold text-gray-200">
-                                                                                    {formatDate(episode.air_date)}
-                                                                                </span>
-                                                                                {airBadge && (
-                                                                                    <span className="inline-flex items-center rounded-full bg-white/10 px-2.5 py-0.5 text-xs font-semibold text-gray-200">
-                                                                                        {airBadge}
-                                                                                    </span>
-                                                                                )}
-                                                                                {episode.vote_average > 0 && (
-                                                                                    <span className="inline-flex items-center gap-1 rounded-full bg-yellow-500/10 px-2.5 py-0.5 text-xs font-semibold text-yellow-400">
-                                                                                        <Star className="h-3 w-3 fill-current" />
-                                                                                        {formatRating(episode.vote_average)}
-                                                                                    </span>
-                                                                                )}
-                                                                            </div>
-                                                                            <p className="mt-2 text-sm text-gray-400 leading-relaxed line-clamp-3">
-                                                                                {episode.overview || "No overview available."}
-                                                                            </p>
-                                                                        </div>
-                                                                        <div className="hidden sm:block w-28 sm:w-44 h-16 sm:h-24 relative rounded-lg overflow-hidden bg-neutral-800 flex-shrink-0">
-                                                                            {stillUrl ? (
-                                                                                <Image src={stillUrl} alt={episode.name} fill className="object-cover" />
-                                                                            ) : (
-                                                                                <div className="w-full h-full flex items-center justify-center">
-                                                                                    <Tv className="h-6 w-6 text-gray-600" />
-                                                                                </div>
-                                                                            )}
-                                                                            {isChecked && (
-                                                                                <div className="absolute inset-0 bg-purple-500/20" />
-                                                                            )}
-                                                                        </div>
-                                                                    </label>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                    </>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })
+                            seasons.map((season) => (
+                                <TvSeasonItem
+                                    key={season.season_number}
+                                    season={season}
+                                    isExpanded={expandedSeasons.has(season.season_number)}
+                                    isLoading={loadingSeasons.has(season.season_number)}
+                                    episodes={seasonEpisodes[season.season_number] || []}
+                                    checkedEpisodes={checkedEpisodes[season.season_number] ?? new Set()}
+                                    availabilityCounts={seasonAvailabilityCounts[season.season_number]}
+                                    onToggleSeason={toggleSeason}
+                                    onToggleAllInSeason={toggleAllInSeason}
+                                    onToggleEpisode={toggleEpisode}
+                                    onRequestEpisodes={(seasonNumber) => setEpisodeRequestModal({ open: true, seasonNumber })}
+                                    monitorEpisodes={monitorEpisodes}
+                                    onToggleMonitorEpisodes={setMonitorEpisodes}
+                                    hasQualityProfiles={hasQualityProfiles}
+                                    isSubmitting={isSubmitting}
+                                    getAiringBadge={getAiringBadge}
+                                    formatDate={formatDate}
+                                    formatRating={formatRating}
+                                />
+                            ))
                         )}
                     </div>
                 </div>
@@ -1229,15 +1147,41 @@ export function TvDetailClientNew({
                 {/* Right Column - Info Box */}
                 <div className="media-overview-right">
                     <MediaInfoBox
-                        status={tv.status}
-                        firstAirDate={tv.first_air_date}
-                        originalLanguage={tv.original_language}
-                        productionCountries={tv.production_countries}
-                        networks={tv.networks}
-                        streamingProviders={streamingProviders}
-                        voteAverage={tv.vote_average}
+                        status={tv.status ?? undefined}
+                        firstAirDate={tv.first_air_date ?? undefined}
+                        originalLanguage={tv.original_language ?? undefined}
+                        productionCountries={
+                            tv.production_countries
+                                ? tv.production_countries
+                                      .filter((country) => Boolean(country?.name))
+                                      .map((country) => ({ name: String(country?.name) }))
+                                : undefined
+                        }
+                        networks={
+                            tv.networks
+                                ? tv.networks
+                                      .filter((network) => Boolean(network?.name))
+                                      .map((network) => ({
+                                          name: String(network?.name),
+                                          logo_path: network?.logo_path ?? undefined
+                                      }))
+                                : undefined
+                        }
+                        streamingProviders={
+                            Array.isArray(streamingProviders)
+                                ? streamingProviders
+                                      .filter((provider) => Boolean(provider?.provider_name) && Boolean(provider?.logo_path))
+                                      .map((provider) => ({
+                                          logo_path: String(provider.logo_path),
+                                          provider_id: Number(provider.provider_id),
+                                          provider_name: String(provider.provider_name),
+                                          display_priority: provider.display_priority
+                                      }))
+                                : undefined
+                        }
+                        voteAverage={tv.vote_average ?? undefined}
                         tmdbId={tv.id}
-                        imdbId={tv.external_ids?.imdb_id}
+                        imdbId={tv.external_ids?.imdb_id ?? null}
                         imdbRating={imdbRating ?? null}
                         rtCriticsScore={rtCriticsScore ?? null}
                         rtCriticsRating={rtCriticsRating ?? null}
@@ -1247,7 +1191,7 @@ export function TvDetailClientNew({
                         metacriticScore={metacriticScore ?? null}
                         type="tv"
                         tvdbId={tvdbId}
-                        jellyfinUrl={playUrlState}
+                        jellyfinUrl={playUrlState ?? null}
                         externalRatingsSlot={externalRatingsSlot}
                     />
                 </div>
@@ -1258,7 +1202,7 @@ export function TvDetailClientNew({
                 <div className="mt-10 sm:mt-16 md:mt-24">
                     <h2 className="text-xl sm:text-2xl font-bold text-white tracking-wide mb-4 sm:mb-6">Cast</h2>
                     <div className="grid grid-cols-4 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-1.5 sm:gap-3">
-                        {cast.map((person: any) => {
+                        {cast.map((person) => {
                             const img = person.profile_path ? `https://image.tmdb.org/t/p/w300${person.profile_path}` : null;
                             const name = person.name ?? "Unknown";
                             const character = person.roles ? person.roles[0]?.character : (person.character ?? "");
