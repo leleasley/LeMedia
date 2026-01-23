@@ -29,6 +29,20 @@
   --glass-border: rgba(255, 255, 255, 0.6);
   --surface: 0 0% 100%;
   --surface-strong: 0 0% 96%;
+
+  /* iOS Animation Timing Curves */
+  --ease-ios: cubic-bezier(0.4, 0.0, 0.2, 1);
+  --ease-ios-spring: cubic-bezier(0.36, 0.66, 0.04, 1);
+  --ease-ios-bounce: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  --ease-ios-decelerate: cubic-bezier(0.0, 0.0, 0.2, 1);
+  --ease-ios-accelerate: cubic-bezier(0.4, 0.0, 1, 1);
+
+  /* iOS Liquid Glass Variables - Light Mode */
+  --liquid-glass-bg: rgba(255, 255, 255, 0.72);
+  --liquid-glass-border: rgba(255, 255, 255, 0.5);
+  --liquid-glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+  --liquid-glass-blur: 20px;
+  --liquid-glass-saturation: 180%;
 }
 
 .dark {
@@ -57,6 +71,13 @@
   --glass-border: rgba(255, 255, 255, 0.1);
   --surface: 220 20% 10%;
   --surface-strong: 220 20% 14%;
+
+  /* iOS Liquid Glass Variables - Dark Mode */
+  --liquid-glass-bg: rgba(30, 30, 40, 0.65);
+  --liquid-glass-border: rgba(255, 255, 255, 0.12);
+  --liquid-glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --liquid-glass-blur: 24px;
+  --liquid-glass-saturation: 200%;
 }
 
 @layer base {
@@ -90,12 +111,43 @@
     max-width: 100vw;
   }
 
-  /* Safe area support for PWA */
+  /* Safe area support for PWA - Enhanced for Dynamic Island */
   @supports (padding: max(0px)) {
     body {
       padding-left: max(0px, env(safe-area-inset-left));
       padding-right: max(0px, env(safe-area-inset-right));
     }
+  }
+
+  /* iOS Safe Area Utilities */
+  .safe-top {
+    padding-top: max(env(safe-area-inset-top), 0.5rem);
+  }
+
+  .safe-bottom {
+    padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
+  }
+
+  .safe-left {
+    padding-left: max(env(safe-area-inset-left), 0px);
+  }
+
+  .safe-right {
+    padding-right: max(env(safe-area-inset-right), 0px);
+  }
+
+  /* Dynamic Island aware spacing (iPhone 14 Pro+) */
+  .safe-top-dynamic {
+    padding-top: max(env(safe-area-inset-top), 3rem);
+  }
+
+  /* Height utilities accounting for safe areas */
+  .h-screen-safe {
+    height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
+
+  .min-h-screen-safe {
+    min-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   }
 
   /* Light Mode - Crisp & Airy */
@@ -575,6 +627,247 @@
 
   .padding-bottom-safe {
     padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* ============================================
+     iOS LIQUID GLASS EFFECT
+     Apple-style frosted glass with blur & saturation
+     ============================================ */
+  .liquid-glass {
+    background: var(--liquid-glass-bg);
+    backdrop-filter: blur(var(--liquid-glass-blur)) saturate(var(--liquid-glass-saturation));
+    -webkit-backdrop-filter: blur(var(--liquid-glass-blur)) saturate(var(--liquid-glass-saturation));
+    border: 1px solid var(--liquid-glass-border);
+    box-shadow: var(--liquid-glass-shadow);
+    transform: translateZ(0);
+    will-change: backdrop-filter;
+  }
+
+  /* Stronger glass variant for navigation bars */
+  .liquid-glass-nav {
+    background: var(--liquid-glass-bg);
+    backdrop-filter: blur(28px) saturate(var(--liquid-glass-saturation));
+    -webkit-backdrop-filter: blur(28px) saturate(var(--liquid-glass-saturation));
+    border-top: 1px solid var(--liquid-glass-border);
+    box-shadow:
+      0 -4px 24px rgba(0, 0, 0, 0.12),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    transform: translateZ(0);
+    will-change: backdrop-filter;
+  }
+
+  html:not(.dark) .liquid-glass-nav {
+    box-shadow:
+      0 -4px 24px rgba(0, 0, 0, 0.06),
+      inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  }
+
+  /* Sheet/modal glass variant */
+  .liquid-glass-sheet {
+    background: var(--liquid-glass-bg);
+    backdrop-filter: blur(32px) saturate(var(--liquid-glass-saturation));
+    -webkit-backdrop-filter: blur(32px) saturate(var(--liquid-glass-saturation));
+    border: 1px solid var(--liquid-glass-border);
+    box-shadow:
+      0 -8px 40px rgba(0, 0, 0, 0.25),
+      inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    transform: translateZ(0);
+    will-change: backdrop-filter;
+  }
+
+  html:not(.dark) .liquid-glass-sheet {
+    background: rgba(255, 255, 255, 0.85);
+    box-shadow:
+      0 -8px 40px rgba(0, 0, 0, 0.12),
+      inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  }
+
+  /* ============================================
+     iOS DARK MODE ELEVATION
+     In dark mode, elevated surfaces are lighter
+     ============================================ */
+  .elevated-1 {
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .elevated-2 {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .elevated-3 {
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  html:not(.dark) .elevated-1 {
+    background: white;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  }
+
+  html:not(.dark) .elevated-2 {
+    background: white;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  html:not(.dark) .elevated-3 {
+    background: white;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  }
+
+  /* ============================================
+     iOS SPRING ANIMATIONS
+     ============================================ */
+  @keyframes ios-bounce-in {
+    0% {
+      opacity: 0;
+      transform: scale(0.9) translateY(10px);
+    }
+    50% {
+      transform: scale(1.02) translateY(-2px);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+  }
+
+  @keyframes ios-slide-up {
+    0% {
+      opacity: 0;
+      transform: translateY(100%);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes ios-slide-down {
+    0% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(100%);
+    }
+  }
+
+  @keyframes ios-tap {
+    0%, 100% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(0.95);
+    }
+  }
+
+  @keyframes ios-icon-bounce {
+    0%, 100% {
+      transform: scale(1) translateY(0);
+    }
+    25% {
+      transform: scale(0.9) translateY(2px);
+    }
+    50% {
+      transform: scale(1.15) translateY(-4px);
+    }
+    75% {
+      transform: scale(1.05) translateY(-1px);
+    }
+  }
+
+  @keyframes ios-badge-pulse {
+    0%, 100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+    50% {
+      transform: scale(1.15);
+      opacity: 0.9;
+    }
+  }
+
+  .animate-ios-bounce-in {
+    animation: ios-bounce-in 0.4s var(--ease-ios-spring) forwards;
+  }
+
+  .animate-ios-slide-up {
+    animation: ios-slide-up 0.35s var(--ease-ios-spring) forwards;
+  }
+
+  .animate-ios-tap {
+    animation: ios-tap 0.15s var(--ease-ios) forwards;
+  }
+
+  .animate-ios-icon-bounce {
+    animation: ios-icon-bounce 0.5s var(--ease-ios-spring) forwards;
+  }
+
+  .animate-ios-badge-pulse {
+    animation: ios-badge-pulse 2s ease-in-out infinite;
+  }
+
+  /* iOS-style active state for tappable elements */
+  .ios-pressable {
+    transition: transform 0.15s var(--ease-ios), opacity 0.15s var(--ease-ios);
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .ios-pressable:active {
+    transform: scale(0.96);
+    opacity: 0.8;
+  }
+
+  /* iOS tab bar item styling */
+  .ios-tab-item {
+    transition: all 0.2s var(--ease-ios-spring);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .ios-tab-item:active {
+    transform: scale(0.9);
+  }
+
+  .ios-tab-item.active svg {
+    animation: ios-icon-bounce 0.4s var(--ease-ios-spring) forwards;
+  }
+
+  /* ============================================
+     NATIVE iOS SELECT STYLING
+     Preserves native iOS picker while looking good
+     ============================================ */
+  .native-select-ios {
+    /* Remove default appearance but iOS still shows native picker when tapped */
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    /* Remove the default iOS styling but keep the native picker */
+    background-image: none;
+  }
+
+  /* On iOS specifically, we want to ensure the native picker shows */
+  @supports (-webkit-touch-callout: none) {
+    .native-select-ios {
+      /* iOS-specific: ensure proper text rendering */
+      -webkit-text-size-adjust: 100%;
+      /* Ensure the native picker is triggered */
+      font-size: 16px; /* Prevents iOS zoom on focus */
+    }
+
+    .native-select-ios option {
+      /* iOS options are rendered natively, but we can set some basics */
+      background: transparent;
+      color: inherit;
+    }
+  }
+
+  /* Ensure all touch devices get properly sized touch targets */
+  @media (pointer: coarse) {
+    .native-select-ios {
+      min-height: 44px; /* Apple's recommended minimum touch target */
+      font-size: 16px; /* Prevents zoom on iOS */
+    }
   }
 }
 

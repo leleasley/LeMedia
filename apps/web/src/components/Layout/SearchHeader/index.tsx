@@ -99,7 +99,11 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
                         value={searchQuery}
                         onChange={handleInputChange}
                         onKeyDown={handleKeyDown}
-                        className="block w-full rounded-full border border-white/10 bg-white/5 py-1.5 sm:py-2 pl-3 sm:pl-4 pr-8 sm:pr-11 text-sm sm:text-base text-white placeholder-gray-500 hover:border-white/20 focus:border-white/30 focus:bg-white/10 focus:placeholder-gray-400 focus:outline-none focus:ring-0 relative"
+                        className="block w-full rounded-full border border-white/10 bg-white/8 py-1.5 sm:py-2 pl-3 sm:pl-4 pr-8 sm:pr-11 text-sm sm:text-base text-white placeholder-gray-500 hover:border-white/20 focus:border-white/30 focus:bg-white/12 focus:placeholder-gray-400 focus:outline-none focus:ring-0 relative transition-all duration-200"
+                        style={{
+                            backdropFilter: 'blur(8px)',
+                            WebkitBackdropFilter: 'blur(8px)',
+                        }}
                     />
                 </div>
             </form>
@@ -123,16 +127,18 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
                     </span>
                 </button>
                 {menuOpen ? (
-                    <div className="absolute right-0 mt-2 w-52 sm:w-56 rounded-lg border border-white/10 bg-slate-900 shadow-2xl z-50">
+                    <div
+                        className="absolute right-0 mt-2 w-52 sm:w-56 rounded-2xl border border-white/10 shadow-2xl z-50 liquid-glass-sheet animate-ios-bounce-in overflow-hidden"
+                    >
                         <div className="px-4 py-3 border-b border-white/10">
                             <div className="text-sm font-semibold text-white truncate">{profile?.username ?? "User"}</div>
                             <div className="text-xs text-white/60 truncate mt-0.5">{profile?.email ?? "No email"}</div>
                         </div>
-                        <div className="py-2">
+                        <div className="py-1">
                             <Link
                                 href="/profile"
                                 prefetch={false}
-                                className="flex items-center gap-3 px-4 py-2 text-sm text-white/90 hover:text-white hover:bg-white/10 transition-colors"
+                                className="ios-pressable flex items-center gap-3 px-4 py-2.5 text-sm text-white/90 hover:text-white hover:bg-white/10 transition-colors"
                                 onClick={() => setMenuOpen(false)}
                             >
                                 <User className="h-4 w-4" />
@@ -141,7 +147,7 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
                             <Link
                                 href="/watchlist"
                                 prefetch={false}
-                                className="flex items-center gap-3 px-4 py-2 text-sm text-white/90 hover:text-white hover:bg-white/10 transition-colors"
+                                className="ios-pressable flex items-center gap-3 px-4 py-2.5 text-sm text-white/90 hover:text-white hover:bg-white/10 transition-colors"
                                 onClick={() => setMenuOpen(false)}
                             >
                                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -152,7 +158,7 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
                             <Link
                                 href="/favorites"
                                 prefetch={false}
-                                className="flex items-center gap-3 px-4 py-2 text-sm text-white/90 hover:text-white hover:bg-white/10 transition-colors"
+                                className="ios-pressable flex items-center gap-3 px-4 py-2.5 text-sm text-white/90 hover:text-white hover:bg-white/10 transition-colors"
                                 onClick={() => setMenuOpen(false)}
                             >
                                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -163,7 +169,7 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
                             <Link
                                 href="/requests"
                                 prefetch={false}
-                                className="flex items-center gap-3 px-4 py-2 text-sm text-white/90 hover:text-white hover:bg-white/10 transition-colors"
+                                className="ios-pressable flex items-center gap-3 px-4 py-2.5 text-sm text-white/90 hover:text-white hover:bg-white/10 transition-colors"
                                 onClick={() => setMenuOpen(false)}
                             >
                                 <Inbox className="h-4 w-4" />
@@ -173,7 +179,7 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
                                 <Link
                                     href="/admin/settings"
                                     prefetch={false}
-                                    className="flex items-center gap-3 px-4 py-2 text-sm text-white/90 hover:text-white hover:bg-white/10 transition-colors"
+                                    className="ios-pressable flex items-center gap-3 px-4 py-2.5 text-sm text-white/90 hover:text-white hover:bg-white/10 transition-colors"
                                     onClick={() => setMenuOpen(false)}
                                 >
                                     <Settings className="h-4 w-4" />
@@ -189,7 +195,7 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
                                             window.location.assign('/logout');
                                         }, 100);
                                     }}
-                                    className="flex items-center gap-3 px-4 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors w-full text-left"
+                                    className="ios-pressable flex items-center gap-3 px-4 py-2.5 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors w-full text-left"
                                 >
                                     <LogOut className="h-4 w-4" />
                                     Sign Out

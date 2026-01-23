@@ -8,13 +8,7 @@ import { csrfFetch } from "@/lib/csrf-client";
 import { useToast } from "@/components/Providers/ToastProvider";
 import AdvancedRequester, { RequestOverrides } from "@/components/Requests/AdvancedRequester";
 import { Check, X, Loader2 } from "lucide-react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 
 type QualityProfile = { id: number; name: string };
 
@@ -176,22 +170,17 @@ export function RequestMediaModal({
               <label className="block text-sm font-medium text-gray-300 mb-2">
                 Quality Profile
               </label>
-              <Select
+              <AdaptiveSelect
                 value={String(selectedQualityProfileId)}
                 onValueChange={(value) => setSelectedQualityProfileId(Number(value))}
                 disabled={isSubmitting}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select quality profile" />
-                </SelectTrigger>
-                <SelectContent>
-                  {qualityProfiles.map((profile) => (
-                    <SelectItem key={profile.id} value={String(profile.id)}>
-                      {profile.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                options={qualityProfiles.map((profile) => ({
+                  value: String(profile.id),
+                  label: profile.name
+                }))}
+                placeholder="Select quality profile"
+                className="w-full"
+              />
             </div>
 
             <AdvancedRequester

@@ -2,7 +2,8 @@ import { HoverMediaCard } from "@/components/Media/HoverMediaCard";
 import { PersonCard } from "@/components/Media/PersonCard";
 import type { ReadonlyURLSearchParams } from "next/navigation";
 import { searchMulti, tmdbImageUrl } from "@/lib/tmdb";
-import { getAvailabilityByTmdbIds } from "@/lib/library-availability";
+import { getAvailabilityStatusByTmdbIds } from "@/lib/library-availability";
+import { availabilityToMediaStatus } from "@/lib/media-status";
 import { z } from "zod";
 import { getImageProxyEnabled } from "@/lib/app-settings";
 import { EnhancedSearchFilters } from "@/components/Search/EnhancedSearchClient";
@@ -114,9 +115,9 @@ export default async function SearchPage({ searchParams }: { searchParams?: Sear
   }
   const movieIds = filteredResults.filter((r: any) => r?.media_type === "movie").map((r: any) => r.id);
   const tvIds = filteredResults.filter((r: any) => r?.media_type === "tv").map((r: any) => r.id);
-  const [movieAvailability, tvAvailability]: [Record<number, boolean>, Record<number, boolean>] = await Promise.all([
-    movieIds.length ? getAvailabilityByTmdbIds("movie", movieIds) : Promise.resolve({}),
-    tvIds.length ? getAvailabilityByTmdbIds("tv", tvIds) : Promise.resolve({})
+  const [movieAvailability, tvAvailability]: [Record<number, any>, Record<number, any>] = await Promise.all([
+    movieIds.length ? getAvailabilityStatusByTmdbIds("movie", movieIds) : Promise.resolve({} as Record<number, any>),
+    tvIds.length ? getAvailabilityStatusByTmdbIds("tv", tvIds) : Promise.resolve({} as Record<number, any>)
   ]);
 
   return (
@@ -156,9 +157,10 @@ export default async function SearchPage({ searchParams }: { searchParams?: Sear
             const rating = r.vote_average ?? 0;
             const poster = tmdbImageUrl(r.poster_path, "w500", imageProxyEnabled);
             const href = mediaType === "movie" ? `/movie/${r.id}` : `/tv/${r.id}`;
-            const isAvailable = mediaType === "movie"
-              ? movieAvailability[r.id] === true
-              : tvAvailability[r.id] === true;
+            const availabilityStatus = mediaType === "movie"
+              ? movieAvailability[r.id]
+              : tvAvailability[r.id];
+            const mediaStatus = availabilityToMediaStatus(availabilityStatus);
 
             return (
               <HoverMediaCard
@@ -171,7 +173,7 @@ export default async function SearchPage({ searchParams }: { searchParams?: Sear
                 rating={rating}
                 description={r.overview}
                 mediaType={mediaType}
-                mediaStatus={isAvailable ? 5 : undefined}
+                mediaStatus={mediaStatus}
               />
             );
           })}

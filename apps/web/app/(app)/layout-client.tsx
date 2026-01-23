@@ -98,18 +98,18 @@ function AppHeader({
 
     return (
         <>
-            {/* Mobile header */}
+            {/* Mobile header - iOS liquid glass style */}
             {isDesktop === false ? (
                 <div
                     className={cn(
                         "fixed left-0 right-0 top-0 z-[60] flex flex-shrink-0 transition-all duration-300",
-                        isScrolled ? "bg-gray-900/90 border-b border-white/5" : "bg-transparent"
+                        isScrolled
+                            ? "liquid-glass border-b border-white/10"
+                            : "bg-transparent"
                     )}
                     style={{
-                        backdropFilter: isScrolled ? "blur(12px)" : undefined,
-                        WebkitBackdropFilter: isScrolled ? "blur(12px)" : undefined,
-                        paddingTop: "env(safe-area-inset-top)",
-                        height: "calc(3.5rem + env(safe-area-inset-top))"
+                        paddingTop: "max(env(safe-area-inset-top), 0.5rem)",
+                        height: "calc(3.5rem + max(env(safe-area-inset-top), 0.5rem))"
                     }}
                 >
                     <div className="flex flex-1 items-center justify-between px-3">

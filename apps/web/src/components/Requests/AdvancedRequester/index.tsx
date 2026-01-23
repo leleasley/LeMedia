@@ -6,13 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import Select from "react-select";
 import useSWR from "swr";
 import { ServiceCommonServer, ServiceCommonServerWithDetails } from "@/lib/service-types";
-import {
-  Select as UiSelect,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 
 const fetcher = (url: string) =>
   fetch(url, { credentials: "include" }).then(async res => {
@@ -134,43 +128,33 @@ function AdvancedRequester({
         {hasMultipleServers && (
           <div className="space-y-1 text-sm">
             <label className="font-semibold text-white/80">Destination Server</label>
-            <UiSelect
+            <AdaptiveSelect
               value={selectedServer ? String(selectedServer) : ""}
               onValueChange={(value) => setSelectedServer(Number(value))}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select server" />
-              </SelectTrigger>
-              <SelectContent>
-                {filteredServers.map((server) => (
-                  <SelectItem key={server.id} value={String(server.id)}>
-                    {server.isDefault ? `${server.name} (Default)` : server.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </UiSelect>
+              options={filteredServers.map((server) => ({
+                value: String(server.id),
+                label: server.isDefault ? `${server.name} (Default)` : server.name
+              }))}
+              placeholder="Select server"
+              className="w-full"
+            />
           </div>
         )}
 
         {showLanguageDropdown && (
           <div className="space-y-1 text-sm">
             <label className="font-semibold text-white/80">Language Profile</label>
-            <UiSelect
+            <AdaptiveSelect
               value={selectedLanguage ? String(selectedLanguage) : ""}
               onValueChange={(value) => setSelectedLanguage(Number(value))}
               disabled={!serverData || isValidating}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select language profile" />
-              </SelectTrigger>
-              <SelectContent>
-                {serverData?.languageProfiles?.map((language) => (
-                  <SelectItem key={language.id} value={String(language.id)}>
-                    {language.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </UiSelect>
+              options={(serverData?.languageProfiles ?? []).map((language) => ({
+                value: String(language.id),
+                label: language.name
+              }))}
+              placeholder="Select language profile"
+              className="w-full"
+            />
           </div>
         )}
 

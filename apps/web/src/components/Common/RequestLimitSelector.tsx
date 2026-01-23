@@ -1,11 +1,5 @@
-import React from "react";
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
+import React, { useMemo } from "react";
+import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 
 interface RequestLimitSelectorProps {
     limit: number;
@@ -57,35 +51,35 @@ export const RequestLimitSelector: React.FC<RequestLimitSelectorProps> = ({
     // Check if current value is in presets
     const isCustom = !selectedValue;
 
+    // Build options array with potential custom value
+    const options = useMemo(() => {
+        const presetOptions = PRESETS.map((preset) => ({
+            value: `${preset.limit}-${preset.days}`,
+            label: preset.label,
+        }));
+
+        if (isCustom) {
+            presetOptions.push({
+                value: `${limit}-${days}`,
+                label: `Custom (${limit === 0 ? "Unlimited" : `${limit} per ${days} days`})`,
+            });
+        }
+
+        return presetOptions;
+    }, [isCustom, limit, days]);
+
     return (
         <div className="w-full">
-            <Select
+            <AdaptiveSelect
                 value={valueString}
                 onValueChange={(value) => {
                     const [newLimit, newDays] = value.split("-").map(Number);
                     onChange(newLimit, newDays);
                 }}
                 disabled={disabled}
-            >
-                <SelectTrigger className="w-full">
-                    <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                    {PRESETS.map((preset) => (
-                        <SelectItem
-                            key={`${preset.limit}-${preset.days}`}
-                            value={`${preset.limit}-${preset.days}`}
-                        >
-                            {preset.label}
-                        </SelectItem>
-                    ))}
-                    {isCustom && (
-                        <SelectItem value={`${limit}-${days}`}>
-                            Custom ({limit === 0 ? "Unlimited" : `${limit} per ${days} days`})
-                        </SelectItem>
-                    )}
-                </SelectContent>
-            </Select>
+                options={options}
+                className="w-full"
+            />
         </div>
     );
 };
