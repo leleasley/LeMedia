@@ -7,14 +7,9 @@ import { Modal } from "@/components/Common/Modal";
 import { readJson } from "@/lib/fetch-utils";
 import { csrfFetch } from "@/lib/csrf-client";
 import { useToast } from "@/components/Providers/ToastProvider";
+import { logger } from "@/lib/logger";
 import { Check, X, Loader2, ChevronDown, ChevronUp, Tv, CheckCircle, Info, Star } from "lucide-react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 
 type QualityProfile = { id: number; name: string };
 
@@ -130,7 +125,7 @@ export function SeriesRequestModal({
         setSeasonEpisodes(newSeasonEpisodes);
       }
     } catch (err) {
-      console.error("Failed to load seasons", err);
+      logger.error("Failed to load seasons", err);
     } finally {
       setLoadingSeasons(false);
     }
@@ -147,7 +142,7 @@ export function SeriesRequestModal({
         setSeasonEpisodes(prev => ({ ...prev, [seasonNumber]: data.episodes || [] }));
       }
     } catch (err) {
-      console.error("Failed to load episodes", err);
+      logger.error("Failed to load episodes", err);
     } finally {
       setLoadingEpisodes(prev => {
         const next = new Set(prev);
@@ -328,22 +323,17 @@ export function SeriesRequestModal({
                 <label className="block text-sm font-medium text-gray-300 mb-2">
                   Quality Profile
                 </label>
-                <Select
+                <AdaptiveSelect
                   value={String(selectedQualityProfileId)}
                   onValueChange={(value) => setSelectedQualityProfileId(Number(value))}
                   disabled={isSubmitting}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select quality profile" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {qualityProfiles.map((profile) => (
-                      <SelectItem key={profile.id} value={String(profile.id)}>
-                        {profile.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  options={qualityProfiles.map((profile) => ({
+                    value: String(profile.id),
+                    label: profile.name
+                  }))}
+                  placeholder="Select quality profile"
+                  className="w-full"
+                />
               </div>
             )}
 

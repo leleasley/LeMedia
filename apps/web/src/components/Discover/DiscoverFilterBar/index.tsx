@@ -3,13 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLockBodyScroll } from "@/hooks/useLockBodyScroll";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AdaptiveSelect } from "@/components/ui/adaptive-select";
+import { logger } from "@/lib/logger";
 
 type Genre = { id: number; name: string };
 type Language = { iso_639_1: string; english_name: string; name: string };
@@ -172,7 +167,7 @@ export function DiscoverFilterBar({
         }
       } catch (error) {
         if (!cancelled) {
-          console.error("Failed to load filter data:", error);
+          logger.error("Failed to load filter data", error);
           setIsLoading(false);
         }
       }
@@ -270,18 +265,13 @@ export function DiscoverFilterBar({
             )}
           </button>
         </div>
-        <Select value={filters.sort} onValueChange={(value) => onChange({ ...filters, sort: value as SortValue })}>
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Sort by" />
-          </SelectTrigger>
-          <SelectContent>
-            {sortOptions.map(option => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <AdaptiveSelect
+          value={filters.sort}
+          onValueChange={(value) => onChange({ ...filters, sort: value as SortValue })}
+          options={sortOptions}
+          placeholder="Sort by"
+          className="w-full"
+        />
       </div>
 
       {/* Desktop Header - Original design */}
@@ -289,18 +279,12 @@ export function DiscoverFilterBar({
         <h1 className="text-2xl font-bold text-white">{title}</h1>
 
         <div className="flex items-center gap-2">
-          <Select value={filters.sort} onValueChange={(value) => onChange({ ...filters, sort: value as SortValue })}>
-            <SelectTrigger className="w-56">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {sortOptions.map(option => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <AdaptiveSelect
+            value={filters.sort}
+            onValueChange={(value) => onChange({ ...filters, sort: value as SortValue })}
+            options={sortOptions}
+            className="w-56"
+          />
 
           <button
             type="button"
@@ -374,24 +358,16 @@ export function DiscoverFilterBar({
                     <div>
                       <label className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-gray-400">Genres</label>
                       <div className="mb-2">
-                        <Select
+                        <AdaptiveSelect
                           value=""
                           onValueChange={(value) => {
                             const id = Number(value);
                             if (Number.isFinite(id)) toggleGenre(id);
                           }}
-                        >
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Add genre" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {genres.map((genre) => (
-                              <SelectItem key={genre.id} value={String(genre.id)}>
-                                {genre.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                          options={genres.map((genre) => ({ value: String(genre.id), label: genre.name }))}
+                          placeholder="Add genre"
+                          className="w-full"
+                        />
                       </div>
                       {draftFilters.genres.length > 0 ? (
                         <div className="flex flex-wrap gap-2">
@@ -451,22 +427,16 @@ export function DiscoverFilterBar({
                   {languages.length > 0 && (
                     <div>
                       <label className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-gray-400">Language</label>
-                      <Select
+                      <AdaptiveSelect
                         value={draftFilters.language || "any"}
                         onValueChange={(value) => updateDraftFilters({ language: value === "any" ? "" : value })}
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Any" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="any">Any</SelectItem>
-                          {languages.map(lang => (
-                            <SelectItem key={lang.iso_639_1} value={lang.iso_639_1}>
-                              {lang.english_name || lang.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        options={[
+                          { value: "any", label: "Any" },
+                          ...languages.map(lang => ({ value: lang.iso_639_1, label: lang.english_name || lang.name }))
+                        ]}
+                        placeholder="Any"
+                        className="w-full"
+                      />
                     </div>
                   )}
 
@@ -476,35 +446,19 @@ export function DiscoverFilterBar({
                         Streaming Services ({providerRegion})
                       </label>
                       <div className="mb-2">
-                        <Select
+                        <AdaptiveSelect
                           value=""
                           onValueChange={(value) => {
                             const id = Number(value);
                             if (Number.isFinite(id)) toggleProvider(id);
                           }}
-                        >
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Add service" />
-                          </SelectTrigger>
-                          <SelectContent className="max-h-80">
-                            {providers.map((provider) => (
-                              <SelectItem key={provider.provider_id} value={String(provider.provider_id)}>
-                                <div className="flex items-center gap-2">
-                                  {provider.logo_path ? (
-                                    <img
-                                      src={`https://image.tmdb.org/t/p/w45${provider.logo_path}`}
-                                      alt={provider.provider_name}
-                                      className="h-5 w-5 rounded bg-gray-800 object-contain"
-                                    />
-                                  ) : (
-                                    <div className="h-5 w-5 rounded bg-gray-800" />
-                                  )}
-                                  <span>{provider.provider_name}</span>
-                                </div>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                          options={providers.map((provider) => ({
+                            value: String(provider.provider_id),
+                            label: provider.provider_name
+                          }))}
+                          placeholder="Add service"
+                          className="w-full"
+                        />
                       </div>
                       {draftFilters.providers.length > 0 ? (
                         <div className="flex flex-wrap gap-2">

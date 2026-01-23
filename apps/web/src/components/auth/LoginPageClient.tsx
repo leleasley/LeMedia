@@ -12,6 +12,7 @@ import { ChevronDown, Fingerprint, KeyRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { logger } from "@/lib/logger";
 
 type LoginPageClientProps = {
   csrfToken?: string;
@@ -53,7 +54,7 @@ export function LoginPageClient({ csrfToken, from, oidcEnabled, jellyfinEnabled 
         throw new Error(verification.error || "Verification failed");
       }
     } catch (err) {
-      console.error(err);
+      logger.error("Passkey login failed", err);
       alert("Passkey login failed. Please try your password.");
     }
   };

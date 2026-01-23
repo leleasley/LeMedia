@@ -2,6 +2,7 @@
 
 import { decryptSecret } from "@/lib/encryption";
 import { getJellyfinConfig } from "@/db";
+import { logger } from "@/lib/logger";
 
 type JellyfinUser = {
   Id: string;
@@ -360,7 +361,7 @@ export async function searchJellyfinMovie(tmdbId: number): Promise<{
 
     return { inLibrary: false };
   } catch (err) {
-    console.error("[Jellyfin] Movie search failed:", err);
+    logger.error("[Jellyfin] Movie search failed", err);
     return null;
   }
 }
@@ -417,7 +418,7 @@ export async function searchJellyfinSeries(tvdbId: number): Promise<{
 
     return { inLibrary: false };
   } catch (err) {
-    console.error("[Jellyfin] Series search failed:", err);
+    logger.error("[Jellyfin] Series search failed", err);
     return null;
   }
 }
