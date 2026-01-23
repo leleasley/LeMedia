@@ -1,5 +1,6 @@
 import { getPool } from "@/db";
 import { encryptSecret, decryptSecret } from "@/lib/encryption";
+import { validateExternalServiceUrl } from "@/lib/url-validation";
 import { z } from "zod";
 
 const ServiceTypeSchema = z.enum(["radarr", "sonarr"]);
@@ -39,6 +40,27 @@ export type MediaService = {
 };
 
 export type MediaServiceSecret = MediaService & { api_key_encrypted: string };
+
+function resolveServiceValidationOptions(type: z.infer<typeof ServiceTypeSchema>) {
+    const prefix = type.toUpperCase();
+    const allowHttpRaw = process.env[`${prefix}_ALLOW_HTTP`];
+    const allowPrivateIpsRaw = process.env[`${prefix}_ALLOW_PRIVATE_IPS`];
+    const allowedCidrsRaw = process.env[`${prefix}_ALLOWED_CIDRS`];
+    const allowedCidrs = allowedCidrsRaw
+        ? allowedCidrsRaw.split(",").map(part => part.trim()).filter(Boolean)
+        : undefined;
+
+    return {
+        allowHttp: allowHttpRaw ? allowHttpRaw === "true" : undefined,
+        allowPrivateIPs: allowPrivateIpsRaw ? allowPrivateIpsRaw === "true" : undefined,
+        allowedCidrs,
+        requireHttps: !(allowHttpRaw === "true") && process.env.NODE_ENV === "production"
+    };
+}
+
+function validateServiceBaseUrl(type: z.infer<typeof ServiceTypeSchema>, baseUrl: string) {
+    return validateExternalServiceUrl(baseUrl, `${type} service`, resolveServiceValidationOptions(type));
+}
 
 export async function listMediaServices() {
     const pool = getPool();
@@ -84,6 +106,7 @@ export async function getMediaServiceSecretById(id: number) {
 
 export async function createMediaService(input: z.infer<typeof createServiceSchema>) {
     const parsed = createServiceSchema.parse(input);
+    const validatedBaseUrl = validateServiceBaseUrl(parsed.type, parsed.baseUrl);
     const pool = getPool();
     const encryptedKey = encryptSecret(parsed.apiKey);
     const res = await pool.query(
@@ -92,7 +115,7 @@ export async function createMediaService(input: z.infer<typeof createServiceSche
         VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING id, name, type, base_url, config, enabled, created_at, updated_at
         `,
-        [parsed.name, parsed.type, parsed.baseUrl, encryptedKey, parsed.config, parsed.enabled ?? true]
+        [parsed.name, parsed.type, validatedBaseUrl, encryptedKey, parsed.config, parsed.enabled ?? true]
     );
     return res.rows[0] as MediaService;
 }
@@ -111,7 +134,12 @@ export async function updateMediaService(id: number, input: z.infer<typeof updat
         updates.push(`type = $${values.length}`);
     }
     if (parsed.baseUrl !== undefined) {
-        values.push(parsed.baseUrl);
+        const currentType = parsed.type ?? (await getMediaServiceById(id))?.type;
+        if (!currentType) {
+            throw new Error("Service not found");
+        }
+        const validatedBaseUrl = validateServiceBaseUrl(currentType, parsed.baseUrl);
+        values.push(validatedBaseUrl);
         updates.push(`base_url = $${values.length}`);
     }
     if (parsed.config !== undefined) {

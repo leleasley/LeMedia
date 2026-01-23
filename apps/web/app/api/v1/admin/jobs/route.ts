@@ -3,6 +3,7 @@ import { requireAdmin } from "@/auth";
 import { listJobs, updateJobSchedule } from "@/db";
 import { z } from "zod";
 import { computeNextRun } from "@/lib/jobs";
+import { requireCsrf } from "@/lib/csrf";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,8 @@ const UpdateJobSchema = z.object({
 export async function POST(req: NextRequest) {
   const admin = await requireAdmin();
   if (admin instanceof NextResponse) return admin;
+  const csrf = requireCsrf(req);
+  if (csrf) return csrf;
   
   try {
     const body = await req.json();

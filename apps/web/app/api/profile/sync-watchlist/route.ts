@@ -3,6 +3,7 @@ import { requireUser } from "@/auth";
 import { getUserWithHash } from "@/db";
 import { syncWatchlists } from "@/lib/request-sync";
 import { jsonResponseWithETag } from "@/lib/api-optimization";
+import { requireCsrf } from "@/lib/csrf";
 
 export const dynamic = 'force-dynamic';
 
@@ -10,6 +11,8 @@ export async function POST(req: NextRequest) {
   try {
     const user = await requireUser();
     if (user instanceof NextResponse) return user;
+    const csrf = requireCsrf(req);
+    if (csrf) return csrf;
 
     const dbUser = await getUserWithHash(user.username);
     if (!dbUser) return jsonResponseWithETag(req, { error: "User not found" }, { status: 404 });

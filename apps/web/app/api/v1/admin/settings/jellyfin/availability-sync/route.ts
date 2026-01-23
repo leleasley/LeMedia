@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/auth";
 import { triggerManualAvailabilitySync } from "@/lib/jellyfin-availability-sync";
+import { requireCsrf } from "@/lib/csrf";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,8 @@ async function ensureAdmin() {
 export async function POST(req: NextRequest) {
   const forbidden = await ensureAdmin();
   if (forbidden) return forbidden;
+  const csrf = requireCsrf(req);
+  if (csrf) return csrf;
 
   try {
     // Trigger the sync in the background

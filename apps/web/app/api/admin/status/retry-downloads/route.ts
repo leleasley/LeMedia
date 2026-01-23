@@ -4,12 +4,15 @@ import { getMediaServiceSecretById } from "@/lib/service-config";
 import { decryptSecret } from "@/lib/encryption";
 import { createRadarrFetcher } from "@/lib/radarr";
 import { createSonarrFetcher } from "@/lib/sonarr";
+import { requireCsrf } from "@/lib/csrf";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
     const user = await requireAdmin();
     if (user instanceof NextResponse) return user;
+    const csrf = requireCsrf(req);
+    if (csrf) return csrf;
 
     let body: any = {};
     try {

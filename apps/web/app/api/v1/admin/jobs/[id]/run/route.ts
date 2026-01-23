@@ -2,12 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/auth";
 import { runJobNow } from "@/lib/jobs";
 import { listJobs } from "@/db";
+import { requireCsrf } from "@/lib/csrf";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const admin = await requireAdmin();
   if (admin instanceof NextResponse) return admin;
+  const csrf = requireCsrf(req);
+  if (csrf) return csrf;
   
   const { id } = await params;
   const jobs = await listJobs();

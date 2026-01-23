@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireUser } from "@/auth";
 import { listDashboardSlidersForUser, updateDashboardSlidersForUser, upsertUser } from "@/db";
 import { cacheableJsonResponseWithETag, jsonResponseWithETag } from "@/lib/api-optimization";
+import { requireCsrf } from "@/lib/csrf";
 
 const sliderSchema = z.object({
   id: z.coerce.number().int().positive().optional(),
@@ -28,6 +29,8 @@ export async function POST(req: NextRequest) {
   const user = await requireUser();
   if (user instanceof NextResponse) return user;
   const { id: userId } = await upsertUser(user.username, user.groups);
+  const csrf = requireCsrf(req);
+  if (csrf) return csrf;
 
   try {
     const parsed = bodySchema.parse(await req.json());

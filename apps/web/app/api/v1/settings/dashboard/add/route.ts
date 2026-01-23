@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/auth";
 import { createDashboardSliderForUser, upsertUser } from "@/db";
+import { requireCsrf } from "@/lib/csrf";
 
 const bodySchema = z.object({
   type: z.coerce.number().int(),
@@ -13,6 +14,8 @@ export async function POST(req: NextRequest) {
   const user = await requireUser();
   if (user instanceof NextResponse) return user;
   const { id: userId } = await upsertUser(user.username, user.groups);
+  const csrf = requireCsrf(req);
+  if (csrf) return csrf;
 
   try {
     const body = bodySchema.parse(await req.json());
@@ -25,4 +28,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Failed to create slider" }, { status: 500 });
   }
 }
-

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/auth";
 import { getJellyfinScanStatus, startJellyfinLibraryScan, cancelJellyfinLibraryScan } from "@/lib/jellyfin-scan";
+import { requireCsrf } from "@/lib/csrf";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,8 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const forbidden = await ensureAdmin();
   if (forbidden) return forbidden;
+  const csrf = requireCsrf(req);
+  if (csrf) return csrf;
   const body = await req.json().catch(() => ({}));
   if (body?.start) {
     await startJellyfinLibraryScan();

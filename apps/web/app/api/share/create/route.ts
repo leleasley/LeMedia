@@ -7,6 +7,7 @@ import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/rate-limit";
 import { resolvePublicBaseUrl } from "@/lib/server-utils";
 import { hashSharePassword } from "@/lib/share-auth";
+import { requireCsrf } from "@/lib/csrf";
 
 const createShareSchema = z.object({
   mediaType: z.enum(["movie", "tv"]),
@@ -23,6 +24,8 @@ export async function POST(req: NextRequest) {
   try {
     const user = await getUser();
     const { id: userId } = await upsertUser(user.username, user.groups);
+    const csrf = requireCsrf(req);
+    if (csrf) return csrf;
 
     // Rate limiting
     const recentShareCount = await countRecentSharesByUser(userId, RATE_LIMIT_WINDOW);
@@ -84,7 +87,6 @@ export async function POST(req: NextRequest) {
       target: `${data.mediaType}:${data.tmdbId}`,
       metadata: {
         shareId: share.id,
-        token,
         expiresAt: expiresAt?.toISOString() ?? "never",
         mediaType: data.mediaType,
         tmdbId: data.tmdbId,

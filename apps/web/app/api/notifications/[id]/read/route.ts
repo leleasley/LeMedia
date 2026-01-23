@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/auth";
 import { markNotificationAsRead, upsertUser } from "@/db";
+import { requireCsrf } from "@/lib/csrf";
 
 export async function POST(
   request: NextRequest,
@@ -11,6 +12,8 @@ export async function POST(
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    const csrf = requireCsrf(request);
+    if (csrf) return csrf;
 
     const { id: userId } = await upsertUser(user.username, user.groups);
     const resolvedParams = await Promise.resolve(params);

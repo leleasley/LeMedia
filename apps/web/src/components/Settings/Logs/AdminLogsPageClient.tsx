@@ -28,13 +28,26 @@ type LogsResponse = {
   };
 };
 
-function formatMeta(value: unknown) {
-  if (!value) return "-";
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
+const ACTION_LABELS: Record<string, string> = {
+  "user.login": "Logged in",
+  "user.logout": "Logged out",
+  "admin.settings_changed": "Settings updated",
+  "notification_endpoint.created": "Notification endpoint created",
+  "notification_endpoint.updated": "Notification endpoint updated",
+  "notification_endpoint.deleted": "Notification endpoint deleted",
+  "media_share.created": "Share link created",
+  "media_share.revoked": "Share link revoked",
+};
+
+function formatActionLabel(action: string) {
+  const direct = ACTION_LABELS[action];
+  if (direct) return direct;
+  const cleaned = action.replace(/[_\.]+/g, " ").trim();
+  if (!cleaned) return "Activity";
+  return cleaned
+    .split(" ")
+    .map((part) => (part ? part[0].toUpperCase() + part.slice(1).toLowerCase() : part))
+    .join(" ");
 }
 
 function formatTimestamp(value: string) {
@@ -156,22 +169,47 @@ export function AdminLogsPageClient({
         </div>
       ) : null}
 
-      <div className="overflow-hidden rounded-lg border border-gray-700 bg-gray-900">
+      <div className="space-y-3 md:hidden">
+        {rows.length === 0 ? (
+          <div className="rounded-lg border border-gray-700 bg-gray-900 px-4 py-6 text-center text-sm text-gray-400">
+            No audit entries yet.
+          </div>
+        ) : (
+          rows.map((row) => (
+            <div
+              key={row.id}
+              className="rounded-xl border border-gray-800 bg-gradient-to-br from-gray-900 via-gray-900/70 to-gray-950 px-4 py-4 shadow-sm"
+            >
+              <div className="text-xs uppercase tracking-[0.2em] text-gray-500">Activity</div>
+              <div className="mt-1 text-base font-semibold text-white">
+                {formatActionLabel(row.action)}
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-gray-400">
+                <span className="rounded-full bg-gray-800 px-2 py-1 text-gray-300">
+                  {row.actor || "System"}
+                </span>
+                <span>{row.ip ?? "IP unknown"}</span>
+                <span className="text-gray-500">{formatTimestamp(row.created_at)}</span>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      <div className="hidden overflow-hidden rounded-lg border border-gray-700 bg-gray-900 md:block">
         <table className="min-w-full text-sm">
           <thead className="bg-gray-800 text-left text-xs uppercase tracking-wider text-gray-300">
             <tr>
               <th className="px-4 py-3">Time</th>
-              <th className="px-4 py-3">Actor</th>
               <th className="px-4 py-3">Action</th>
-              <th className="px-4 py-3">Target</th>
+              <th className="px-4 py-3">Actor</th>
               <th className="px-4 py-3">IP</th>
-              <th className="px-4 py-3">Metadata</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-800">
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-sm text-gray-400">
+                <td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-400">
                   No audit entries yet.
                 </td>
               </tr>
@@ -181,13 +219,11 @@ export function AdminLogsPageClient({
                   <td className="px-4 py-3 text-gray-200">
                     {formatTimestamp(row.created_at)}
                   </td>
-                  <td className="px-4 py-3 text-gray-200">{row.actor}</td>
-                  <td className="px-4 py-3 text-gray-200">{row.action}</td>
-                  <td className="px-4 py-3 text-gray-200">{row.target ?? "-"}</td>
-                  <td className="px-4 py-3 text-gray-400">{row.ip ?? "-"}</td>
-                  <td className="px-4 py-3 text-xs text-gray-400">
-                    <div className="max-w-[320px] break-words">{formatMeta(row.metadata)}</div>
+                  <td className="px-4 py-3 font-medium text-white">
+                    {formatActionLabel(row.action)}
                   </td>
+                  <td className="px-4 py-3 text-gray-200">{row.actor || "System"}</td>
+                  <td className="px-4 py-3 text-gray-400">{row.ip ?? "-"}</td>
                 </tr>
               ))
             )}

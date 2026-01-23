@@ -1,14 +1,17 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/auth";
 import { syncPendingRequests } from "@/lib/request-sync";
 import { clearCache } from "@/lib/local-cache";
+import { requireCsrf } from "@/lib/csrf";
 
-export async function POST() {
+export async function POST(req: NextRequest) {
   const user = await requireUser();
   if (user instanceof NextResponse) return user;
   if (!user.isAdmin) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+  const csrf = requireCsrf(req);
+  if (csrf) return csrf;
 
   const summary = await syncPendingRequests();
 

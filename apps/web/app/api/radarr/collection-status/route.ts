@@ -5,6 +5,7 @@ import { findActiveRequestsByTmdbIds } from "@/db";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
 import { enforceRateLimit } from "@/lib/rate-limit";
 import { requireUser } from "@/auth";
+import { requireCsrf } from "@/lib/csrf";
 
 const Body = z.object({
   tmdbIds: z.array(z.coerce.number().int()).min(1).max(100)
@@ -16,6 +17,8 @@ export async function POST(req: NextRequest) {
   if (user instanceof NextResponse) return user;
   const rateLimit = enforceRateLimit(req, "radarr-collection", collectionRateLimit);
   if (rateLimit) return rateLimit;
+  const csrf = requireCsrf(req);
+  if (csrf) return csrf;
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return cacheableJsonResponseWithETag(req, { error: "Invalid request" }, { maxAge: 0 });

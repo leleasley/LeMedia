@@ -4,6 +4,7 @@ import { trackRecentlyViewed, getRecentlyViewed, clearRecentlyViewed, upsertUser
 import { z } from "zod";
 import { getMovie, getTv, tmdbImageUrl } from "@/lib/tmdb";
 import { getImageProxyEnabled } from "@/lib/app-settings";
+import { requireCsrf } from "@/lib/csrf";
 
 const trackSchema = z.object({
   mediaType: z.enum(["movie", "tv"]),
@@ -75,6 +76,8 @@ export async function POST(req: NextRequest) {
   try {
     const user = await getUser();
     const { id: userId } = await upsertUser(user.username, user.groups);
+    const csrf = requireCsrf(req);
+    if (csrf) return csrf;
     
     const body = await req.json();
     const data = trackSchema.parse(body);
@@ -100,6 +103,8 @@ export async function DELETE(req: NextRequest) {
   try {
     const user = await getUser();
     const { id: userId } = await upsertUser(user.username, user.groups);
+    const csrf = requireCsrf(req);
+    if (csrf) return csrf;
     
     await clearRecentlyViewed(userId);
     
