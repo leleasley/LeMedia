@@ -57,15 +57,25 @@ export async function register() {
     // Check for debug flags in production
     checkDebugFlagsInProduction();
 
-    // DISABLED: Automated migrations causing issues
-    // The database schema is managed manually via db/init.sql
-    // const { runMigrations } = await import("./lib/migrations");
-    // try {
-    //   await runMigrations();
-    // } catch (error) {
-    //   console.error("❌ Failed to run migrations during startup:", error);
-    // }
+    const autoMigrations = process.env.AUTO_MIGRATIONS !== "false";
+    const allowDuringBuild = process.env.AUTO_MIGRATIONS_ALLOW_BUILD === "true";
+    const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
 
-    console.log("✓ Database migrations disabled - using manual schema management");
+    if (!autoMigrations) {
+      console.log("✓ Database migrations disabled (AUTO_MIGRATIONS=false)");
+      return;
+    }
+
+    if (isBuildPhase && !allowDuringBuild) {
+      console.log("✓ Skipping migrations during build phase");
+      return;
+    }
+
+    const { runMigrations } = await import("./lib/migrations");
+    try {
+      await runMigrations();
+    } catch (error) {
+      console.error("❌ Failed to run migrations during startup:", error);
+    }
   }
 }

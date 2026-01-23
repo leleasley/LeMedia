@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { csrfFetch } from "@/lib/csrf-client";
 
 export function useTrackView(params: {
   mediaType: "movie" | "tv";
@@ -15,7 +16,7 @@ export function useTrackView(params: {
     
     const trackView = async () => {
       try {
-        await fetch("/api/recently-viewed", {
+        await csrfFetch("/api/recently-viewed", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

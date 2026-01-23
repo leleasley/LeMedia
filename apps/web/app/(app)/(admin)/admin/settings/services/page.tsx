@@ -28,7 +28,7 @@ export default async function AdminSettingsServicesPage() {
             <div className="rounded-lg border border-white/10 bg-slate-900/60 p-5 shadow-lg shadow-black/10">
                 <h2 className="text-xl font-semibold text-white mb-1">Services</h2>
                 <p className="text-sm text-muted">
-                    Configure Radarr and Sonarr endpoints for automated media downloads
+                    Configure Radarr, Sonarr, Prowlarr, and downloaders for automated media workflows
                 </p>
             </div>
             <ServicesAdminPanel initialServices={services} />

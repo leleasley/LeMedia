@@ -8,12 +8,17 @@ import { csrfFetch } from "@/lib/csrf-client";
 import useSWR from "swr";
 import RadarrLogo from "@/assets/services/radarr.svg";
 import SonarrLogo from "@/assets/services/sonarr.svg";
+import ProwlarrLogo from "@/assets/services/prowlarr.svg";
+import SabnzbdLogo from "@/assets/services/sabnzbd.svg";
+import QbittorrentLogo from "@/assets/services/qbittorrent.svg";
+import NzbgetLogo from "@/assets/services/nzbget.svg";
 import { ServiceHealthWidget } from "./ServiceHealthWidget";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type MediaService = {
     id: number;
     name: string;
-    type: "radarr" | "sonarr";
+    type: "radarr" | "sonarr" | "prowlarr" | "sabnzbd" | "qbittorrent" | "nzbget";
     base_url: string;
     config: Record<string, unknown>;
     enabled: boolean;
@@ -27,6 +32,7 @@ type FormState = {
     name: string;
     type: MediaService["type"];
     apiKey: string;
+    username: string;
     enabled: boolean;
     hostname: string;
     port: string;
@@ -55,6 +61,7 @@ const initialForm: FormState = {
     name: "",
     type: "radarr",
     apiKey: "",
+    username: "",
     enabled: true,
     hostname: "",
     port: "",
@@ -112,8 +119,35 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
     }, []);
 
     const computedBaseUrl = buildBaseUrl(form);
-    const typeLabel = form.type === "radarr" ? "Radarr" : "Sonarr";
+    const typeLabelMap: Record<FormState["type"], string> = {
+        radarr: "Radarr",
+        sonarr: "Sonarr",
+        prowlarr: "Prowlarr",
+        sabnzbd: "SABnzbd",
+        qbittorrent: "qBittorrent",
+        nzbget: "NZBGet"
+    };
+    const typeLabel = typeLabelMap[form.type];
     const modalTitle = modal?.mode === "edit" ? `Edit ${typeLabel} server` : `Add ${typeLabel} server`;
+    const isDownloader = ["sabnzbd", "qbittorrent", "nzbget"].includes(form.type);
+    const needsUsername = form.type === "qbittorrent" || form.type === "nzbget";
+    const apiKeyLabel = needsUsername ? "Password" : "API Key";
+    const portPlaceholderMap: Record<FormState["type"], string> = {
+        radarr: "7878",
+        sonarr: "8989",
+        prowlarr: "9696",
+        sabnzbd: "8080",
+        qbittorrent: "8080",
+        nzbget: "6789"
+    };
+    const urlBasePlaceholderMap: Record<FormState["type"], string> = {
+        radarr: "/radarr",
+        sonarr: "/sonarr",
+        prowlarr: "/prowlarr",
+        sabnzbd: "",
+        qbittorrent: "",
+        nzbget: ""
+    };
 
     const handleClose = useCallback(() => {
         setModal(null);
@@ -171,7 +205,8 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
             animeQualityProfileId: toStringValue(cfg.animeQualityProfileId),
             animeRootFolder: toStringValue(cfg.animeRootFolder),
             animeTags: Array.isArray(cfg.animeTags) ? cfg.animeTags.join(", ") : toStringValue(cfg.animeTags),
-            seasonFolders: Boolean(cfg.seasonFolders ?? true)
+            seasonFolders: Boolean(cfg.seasonFolders ?? true),
+            username: toStringValue(cfg.username)
         });
         setError(null);
         setTestMessage(null);
@@ -208,7 +243,8 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
             animeQualityProfileId: parseInt(form.animeQualityProfileId, 10) || form.animeQualityProfileId,
             animeRootFolder: form.animeRootFolder.trim() || undefined,
             animeTags: form.animeTags.split(",").map(t => t.trim()).filter(Boolean),
-            seasonFolders: form.seasonFolders
+            seasonFolders: form.seasonFolders,
+            username: form.username.trim() || undefined
         };
 
         const payload: Record<string, unknown> = {
@@ -235,8 +271,8 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
                 throw new Error(b?.error || "Failed to save");
             }
             toast.success("Service saved");
-            mutate();
             handleClose();
+            await mutate();
         } catch (err: any) {
             setError(err.message);
             toast.error(err.message);
@@ -253,15 +289,23 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
         }
         
         const apiKeyToUse = form.apiKey.trim();
+        const usernameToUse = form.username.trim();
         // If edit mode and no key, allow it (backend will use stored key)
         if (!apiKeyToUse && (!modal || modal.mode !== 'edit')) {
              setTestMessage("API key required.");
              return;
         }
+        if (needsUsername && !usernameToUse && (!modal || modal.mode !== "edit")) {
+            setTestMessage("Username required.");
+            return;
+        }
 
         setTesting(true);
         try {
             const payload: any = { type: form.type, baseUrl: computedBaseUrl, apiKey: apiKeyToUse };
+            if (needsUsername && usernameToUse) {
+                payload.username = usernameToUse;
+            }
             if (modal?.mode === 'edit') {
                 payload.id = modal.service.id;
             }
@@ -299,10 +343,20 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
 
     const radarrServices = services.filter(s => s.type === "radarr");
     const sonarrServices = services.filter(s => s.type === "sonarr");
+    const prowlarrServices = services.filter(s => s.type === "prowlarr");
+    const downloaderServices = services.filter(s => ["sabnzbd", "qbittorrent", "nzbget"].includes(s.type));
 
     const renderServiceCard = (service: MediaService) => {
         const cfg = (service.config as any) || {};
-        const logo = service.type === "radarr" ? RadarrLogo : SonarrLogo;
+        const logoMap: Record<MediaService["type"], any> = {
+            radarr: RadarrLogo,
+            sonarr: SonarrLogo,
+            prowlarr: ProwlarrLogo,
+            sabnzbd: SabnzbdLogo,
+            qbittorrent: QbittorrentLogo,
+            nzbget: NzbgetLogo
+        };
+        const logo = logoMap[service.type];
         const status = statusMap[service.id]?.state ?? "idle";
 
         return (
@@ -320,10 +374,10 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
                         </div>
                         <div className="flex items-center gap-2 mt-0.5">
                             <div className={`h-1.5 w-1.5 rounded-full ${status === 'ok' ? 'bg-emerald-500 animate-pulse' : status === 'error' ? 'bg-red-500' : 'bg-gray-500'}`} />
-                            <span className="text-[10px] text-muted truncate opacity-70">{service.base_url}</span>
-                        </div>
-                    </div>
+                    <span className="text-[10px] text-muted truncate opacity-70">{service.base_url}</span>
                 </div>
+            </div>
+        </div>
 
                 <div className="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                     <button onClick={() => pingService(service)} className="p-1.5 rounded-lg hover:bg-white/10 text-white/60 hover:text-white transition-colors" title="Ping">
@@ -391,6 +445,45 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
                     )}
                 </div>
             </div>
+            {/* Prowlarr Section */}
+            <div className="rounded-xl border border-white/10 bg-slate-900/60 p-5 shadow-lg shadow-black/10">
+                <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                        <Image src={ProwlarrLogo} alt="Prowlarr" className="h-5 w-5" />
+                        <h3 className="text-lg font-bold text-white">Prowlarr</h3>
+                    </div>
+                    <button onClick={() => openCreate("prowlarr")} className="px-3 py-1.5 rounded-lg bg-indigo-600/20 text-indigo-300 text-xs font-bold hover:bg-indigo-600/30 transition-colors">
+                        Add Server
+                    </button>
+                </div>
+                <div className="space-y-2">
+                    {prowlarrServices.length === 0 ? (
+                        <div className="py-8 text-center text-xs text-muted opacity-50 border border-dashed border-white/5 rounded-xl italic">No servers configured</div>
+                    ) : (
+                        prowlarrServices.map(renderServiceCard)
+                    )}
+                </div>
+            </div>
+
+            {/* Downloaders Section */}
+            <div className="rounded-xl border border-white/10 bg-slate-900/60 p-5 shadow-lg shadow-black/10">
+                <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                        <Image src={SabnzbdLogo} alt="Downloaders" className="h-5 w-5" />
+                        <h3 className="text-lg font-bold text-white">Downloaders</h3>
+                    </div>
+                    <button onClick={() => openCreate("sabnzbd")} className="px-3 py-1.5 rounded-lg bg-indigo-600/20 text-indigo-300 text-xs font-bold hover:bg-indigo-600/30 transition-colors">
+                        Add Downloader
+                    </button>
+                </div>
+                <div className="space-y-2">
+                    {downloaderServices.length === 0 ? (
+                        <div className="py-8 text-center text-xs text-muted opacity-50 border border-dashed border-white/5 rounded-xl italic">No downloaders configured</div>
+                    ) : (
+                        downloaderServices.map(renderServiceCard)
+                    )}
+                </div>
+            </div>
 
             <Modal open={!!modal} title={modalTitle} onClose={handleClose}>
                 <form className="space-y-4 max-h-[80vh] overflow-y-auto pr-2 custom-scrollbar" onSubmit={handleSubmit}>
@@ -399,6 +492,24 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
                             <label className="font-semibold text-white/80">Name</label>
                             <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="input" required placeholder="Main Server" />
                         </div>
+                        {isDownloader && (
+                            <div className="space-y-1">
+                                <label className="font-semibold text-white/80">Downloader Type</label>
+                                <Select
+                                    value={form.type}
+                                    onValueChange={(value) => setForm({ ...form, type: value as FormState["type"] })}
+                                >
+                                    <SelectTrigger className="input">
+                                        <SelectValue placeholder="Select downloader" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="sabnzbd">SABnzbd</SelectItem>
+                                        <SelectItem value="qbittorrent">qBittorrent</SelectItem>
+                                        <SelectItem value="nzbget">NZBGet</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        )}
                         <div className="space-y-1">
                             <label className="font-semibold text-white/80">Hostname / IP</label>
                             <input value={form.hostname} onChange={e => setForm({ ...form, hostname: e.target.value })} className="input" required placeholder="192.168.1.10" />
@@ -408,11 +519,11 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
                     <div className="grid gap-4 md:grid-cols-3 text-sm">
                         <div className="space-y-1">
                             <label className="font-semibold text-white/80">Port</label>
-                            <input value={form.port} onChange={e => setForm({ ...form, port: e.target.value })} className="input" placeholder={form.type === 'radarr' ? '7878' : '8989'} />
+                            <input value={form.port} onChange={e => setForm({ ...form, port: e.target.value })} className="input" placeholder={portPlaceholderMap[form.type]} />
                         </div>
                         <div className="space-y-1">
                             <label className="font-semibold text-white/80">URL Base</label>
-                            <input value={form.urlBase} onChange={e => setForm({ ...form, urlBase: e.target.value })} className="input" placeholder="/radarr" />
+                            <input value={form.urlBase} onChange={e => setForm({ ...form, urlBase: e.target.value })} className="input" placeholder={urlBasePlaceholderMap[form.type]} />
                         </div>
                         <div className="flex flex-col justify-end pb-2">
                             <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -423,9 +534,16 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
                     </div>
 
                     <div className="space-y-1 text-xs">
-                        <label className="font-semibold text-white/80">API Key</label>
+                        <label className="font-semibold text-white/80">{apiKeyLabel}</label>
                         <input type="password" value={form.apiKey} onChange={e => setForm({ ...form, apiKey: e.target.value })} className="input" placeholder={modal?.mode === "edit" ? "Stored (leave blank to keep)" : "Pasted from service settings"} required={modal?.mode === "create"} />
                     </div>
+
+                    {needsUsername && (
+                        <div className="space-y-1 text-xs">
+                            <label className="font-semibold text-white/80">Username</label>
+                            <input value={form.username} onChange={e => setForm({ ...form, username: e.target.value })} className="input" placeholder="admin" />
+                        </div>
+                    )}
 
                     {form.type === "radarr" && (
                         <div className="space-y-3 pt-2 border-t border-white/5">
@@ -481,12 +599,16 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
                         <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-white/70 hover:text-white transition-colors">
                             <input type="checkbox" checked={form.enabled} onChange={e => setForm({ ...form, enabled: e.target.checked })} /> Enabled
                         </label>
-                        <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-white/70 hover:text-white transition-colors">
-                            <input type="checkbox" checked={form.defaultServer} onChange={e => setForm({ ...form, defaultServer: e.target.checked })} /> Default Server
-                        </label>
-                        <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-white/70 hover:text-white transition-colors">
-                            <input type="checkbox" checked={form.fourKServer} onChange={e => setForm({ ...form, fourKServer: e.target.checked })} /> 4K Server
-                        </label>
+                        {!isDownloader && (
+                            <>
+                                <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-white/70 hover:text-white transition-colors">
+                                    <input type="checkbox" checked={form.defaultServer} onChange={e => setForm({ ...form, defaultServer: e.target.checked })} /> Default Server
+                                </label>
+                                <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-white/70 hover:text-white transition-colors">
+                                    <input type="checkbox" checked={form.fourKServer} onChange={e => setForm({ ...form, fourKServer: e.target.checked })} /> 4K Server
+                                </label>
+                            </>
+                        )}
                     </div>
 
                     <div className="border-t border-white/5 pt-4">

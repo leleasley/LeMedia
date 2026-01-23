@@ -3,7 +3,7 @@ import { encryptSecret, decryptSecret } from "@/lib/encryption";
 import { validateExternalServiceUrl } from "@/lib/url-validation";
 import { z } from "zod";
 
-const ServiceTypeSchema = z.enum(["radarr", "sonarr"]);
+const ServiceTypeSchema = z.enum(["radarr", "sonarr", "prowlarr", "sabnzbd", "qbittorrent", "nzbget"]);
 
 const serviceConfigSchema = z
     .object({})
@@ -42,6 +42,9 @@ export type MediaService = {
 export type MediaServiceSecret = MediaService & { api_key_encrypted: string };
 
 function resolveServiceValidationOptions(type: z.infer<typeof ServiceTypeSchema>) {
+    const allowHttpDefaultTypes = new Set(["radarr", "sonarr", "prowlarr", "sabnzbd", "qbittorrent", "nzbget"]);
+    const allowPrivateDefaultTypes = new Set(["radarr", "sonarr", "prowlarr", "sabnzbd", "qbittorrent", "nzbget"]);
+    const allowHttpByDefault = allowHttpDefaultTypes.has(type);
     const prefix = type.toUpperCase();
     const allowHttpRaw = process.env[`${prefix}_ALLOW_HTTP`];
     const allowPrivateIpsRaw = process.env[`${prefix}_ALLOW_PRIVATE_IPS`];
@@ -50,11 +53,14 @@ function resolveServiceValidationOptions(type: z.infer<typeof ServiceTypeSchema>
         ? allowedCidrsRaw.split(",").map(part => part.trim()).filter(Boolean)
         : undefined;
 
+    const allowHttp = allowHttpRaw ? allowHttpRaw === "true" : allowHttpByDefault ? true : undefined;
+    const allowPrivateIPs = allowPrivateIpsRaw ? allowPrivateIpsRaw === "true" : allowPrivateDefaultTypes.has(type) ? true : undefined;
+
     return {
-        allowHttp: allowHttpRaw ? allowHttpRaw === "true" : undefined,
-        allowPrivateIPs: allowPrivateIpsRaw ? allowPrivateIpsRaw === "true" : undefined,
+        allowHttp,
+        allowPrivateIPs,
         allowedCidrs,
-        requireHttps: !(allowHttpRaw === "true") && process.env.NODE_ENV === "production"
+        requireHttps: allowHttpByDefault ? false : !(allowHttpRaw === "true") && process.env.NODE_ENV === "production"
     };
 }
 

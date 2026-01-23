@@ -5,6 +5,7 @@ import { Bell, Check, X } from "lucide-react";
 import useSWR from "swr";
 import { formatDistanceToNow } from "date-fns";
 import { PrefetchLink } from "@/components/Layout/PrefetchLink";
+import { csrfFetch } from "@/lib/csrf-client";
 
 type Notification = {
   id: number;
@@ -53,7 +54,7 @@ export function NotificationBell() {
 
   const markAsRead = async (notificationId: number) => {
     try {
-      await fetch(`/api/notifications/${notificationId}/read`, {
+      await csrfFetch(`/api/notifications/${notificationId}/read`, {
         method: "POST"
       });
       mutate();
@@ -64,7 +65,7 @@ export function NotificationBell() {
 
   const markAllAsRead = async () => {
     try {
-      await fetch("/api/notifications/read-all", {
+      await csrfFetch("/api/notifications/read-all", {
         method: "POST"
       });
       mutate();

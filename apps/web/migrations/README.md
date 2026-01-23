@@ -157,6 +157,8 @@ experimental: {
 | Version | Description | Date | Status |
 |---------|-------------|------|--------|
 | 001 | Initial schema (from init.sql) | 2026-01-15 | ✅ Applied |
+| 005 | Expand media_service types for Prowlarr + downloaders | 2026-01-20 | ⏳ Pending |
+| 006 | Update media_service type constraint (hotfix) | 2026-01-20 | ⏳ Pending |
 
 ## Future Migrations
 

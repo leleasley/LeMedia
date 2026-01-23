@@ -9,7 +9,7 @@ import { getClientIp } from "@/lib/rate-limit";
 
 const createSchema = z.object({
     name: z.string().min(1),
-    type: z.enum(["radarr", "sonarr"]),
+    type: z.enum(["radarr", "sonarr", "prowlarr", "sabnzbd", "qbittorrent", "nzbget"]),
     baseUrl: z.string().min(1),
     apiKey: z.string().min(1),
     config: z.record(z.string(), z.any()).optional(),

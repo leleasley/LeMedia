@@ -128,7 +128,7 @@ export function ServiceHealthWidget({ services }: { services: any[] }) {
 
             {mediaDetails.length > 0 && (
                 <div className="space-y-3">
-                    <h4 className="text-sm font-semibold text-white/80">Media Services</h4>
+                    <h4 className="text-sm font-semibold text-white/80">Services</h4>
                     <div className="grid gap-3 md:grid-cols-2">
                         {mediaDetails.map(detail => (
                             <div
@@ -161,19 +161,21 @@ export function ServiceHealthWidget({ services }: { services: any[] }) {
                                     <div className="text-[11px] text-white/60">
                                         {detail.enabled ? (detail.healthy ? "Operational" : "Offline") : "Disabled"}
                                     </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => handleRetry(detail)}
-                                        disabled={!detail.enabled || retryingId === detail.id}
-                                        className="inline-flex items-center gap-1 rounded-md border border-white/10 px-2 py-1 text-xs font-semibold text-white/90 hover:bg-white/10 disabled:opacity-60 disabled:cursor-not-allowed"
-                                    >
-                                        {retryingId === detail.id ? (
-                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                        ) : (
-                                            <RefreshCcw className="h-3.5 w-3.5" />
-                                        )}
-                                        <span>Retry failed imports</span>
-                                    </button>
+                                    {(detail.type === "radarr" || detail.type === "sonarr") && (
+                                        <button
+                                            type="button"
+                                            onClick={() => handleRetry(detail)}
+                                            disabled={!detail.enabled || retryingId === detail.id}
+                                            className="inline-flex items-center gap-1 rounded-md border border-white/10 px-2 py-1 text-xs font-semibold text-white/90 hover:bg-white/10 disabled:opacity-60 disabled:cursor-not-allowed"
+                                        >
+                                            {retryingId === detail.id ? (
+                                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                            ) : (
+                                                <RefreshCcw className="h-3.5 w-3.5" />
+                                            )}
+                                            <span>Retry failed imports</span>
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         ))}

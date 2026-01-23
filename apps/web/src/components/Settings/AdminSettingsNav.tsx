@@ -12,6 +12,7 @@ import {
     KeyIcon,
     RectangleStackIcon,
     FilmIcon,
+    ArrowUpCircleIcon,
     ClipboardDocumentListIcon,
     DocumentTextIcon,
     ChartBarIcon,
@@ -61,6 +62,7 @@ export function AdminSettingsNav() {
                 { id: "media-server", label: mediaServerLabel, href: mediaServerRoute, match: /^\/admin\/settings\/jellyfin/, icon: ServerIcon },
                 { id: "services", label: "Services", href: "/admin/settings/services", match: /^\/admin\/settings\/services/, icon: RectangleStackIcon },
                 { id: "metadata", label: "Metadata", href: "/admin/settings/metadata", match: /^\/admin\/settings\/metadata/, icon: FilmIcon },
+                { id: "upgrade-finder", label: "Upgrade Finder", href: "/admin/settings/upgrade-finder", match: /^\/admin\/settings\/upgrade-finder/, icon: ArrowUpCircleIcon },
             ]
         },
         {

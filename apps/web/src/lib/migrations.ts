@@ -19,6 +19,22 @@ interface Migration {
   sql: string;
 }
 
+const MIGRATION_LOCK_ID = 845219431;
+
+async function acquireMigrationLock(): Promise<boolean> {
+  const pool = getMigrationPool();
+  const result = await pool.query<{ locked: boolean }>(
+    "SELECT pg_try_advisory_lock($1) AS locked",
+    [MIGRATION_LOCK_ID]
+  );
+  return Boolean(result.rows[0]?.locked);
+}
+
+async function releaseMigrationLock() {
+  const pool = getMigrationPool();
+  await pool.query("SELECT pg_advisory_unlock($1)", [MIGRATION_LOCK_ID]);
+}
+
 function resolveDatabaseUrl(): string {
   const primaryUrl = process.env.MIGRATION_DATABASE_URL || process.env.DATABASE_URL;
 
@@ -143,6 +159,12 @@ export async function runMigrations() {
   console.log("\n🔄 Checking for database migrations...");
 
   try {
+    const locked = await acquireMigrationLock();
+    if (!locked) {
+      console.log("  ℹ️  Another migration process is running, skipping");
+      return;
+    }
+
     // Ensure migration tracking table exists
     await ensureMigrationTable();
 
@@ -176,6 +198,12 @@ export async function runMigrations() {
     console.error("\n❌ Migration failed:", error.message);
     console.error("   Database may be in an inconsistent state!");
     throw error;
+  } finally {
+    try {
+      await releaseMigrationLock();
+    } catch {
+      // ignore lock release errors
+    }
   }
 }
 
