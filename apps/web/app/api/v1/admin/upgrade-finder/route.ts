@@ -6,21 +6,23 @@ import { jsonResponseWithETag } from "@/lib/api-optimization";
 import { listUpgradeFinderItems, checkUpgradeHintForItem } from "@/lib/upgrade-finder";
 import { getActiveMediaService } from "@/lib/media-services";
 import { createRadarrFetcher } from "@/lib/radarr";
-import { listUpgradeFinderHints } from "@/db";
+import { listUpgradeFinderHints, listUpgradeFinderOverrides, upsertUpgradeFinderOverride } from "@/db";
 
 const actionSchema = z.object({
   mediaType: z.enum(["movie", "tv"]),
   id: z.number().int(),
-  mode: z.enum(["search", "check"]).optional()
+  mode: z.enum(["search", "check", "ignore"]).optional(),
+  ignore4k: z.boolean().optional()
 });
 
 export async function GET(req: NextRequest) {
   const user = await requireAdmin();
   if (user instanceof NextResponse) return user;
 
-  const [items, hints, radarrService] = await Promise.all([
+  const [items, hints, overrides, radarrService] = await Promise.all([
     listUpgradeFinderItems(),
     listUpgradeFinderHints().catch(() => []),
+    listUpgradeFinderOverrides().catch(() => []),
     getActiveMediaService("radarr").catch(() => null)
   ]);
 
@@ -28,9 +30,13 @@ export async function GET(req: NextRequest) {
   const hintMap = new Map(
     hints.map(hint => [`${hint.mediaType}:${hint.mediaId}`, hint])
   );
+  const overrideMap = new Map(
+    overrides.map(override => [`${override.mediaType}:${override.mediaId}`, override])
+  );
 
   const itemsWithLinks = items.map(item => {
     const hint = hintMap.get(`${item.mediaType}:${item.id}`);
+    const override = overrideMap.get(`${item.mediaType}:${item.id}`);
     // All items are movies now
     if (radarrUiBase) {
       return {
@@ -38,6 +44,7 @@ export async function GET(req: NextRequest) {
         hintStatus: hint?.status ?? undefined,
         hintText: hint?.hintText ?? null,
         checkedAt: hint?.checkedAt ?? null,
+        ignore4k: override?.ignore4k ?? false,
         interactiveUrl: `${radarrUiBase.replace(/\/+$/, "")}/#/movie/${item.id}/interactive`
       };
     }
@@ -45,7 +52,8 @@ export async function GET(req: NextRequest) {
       ...item,
       hintStatus: hint?.status ?? undefined,
       hintText: hint?.hintText ?? null,
-      checkedAt: hint?.checkedAt ?? null
+      checkedAt: hint?.checkedAt ?? null,
+      ignore4k: override?.ignore4k ?? false
     };
   });
 
@@ -70,7 +78,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid payload", details: parsed.error.issues }, { status: 400 });
   }
 
-  const { mediaType, id, mode } = parsed.data;
+  const { mediaType, id, mode, ignore4k } = parsed.data;
 
   // Only movies are supported
   if (mediaType !== "movie") {
@@ -78,6 +86,15 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    if (mode === "ignore") {
+      await upsertUpgradeFinderOverride({
+        mediaType,
+        mediaId: id,
+        ignore4k: !!ignore4k
+      });
+      return NextResponse.json({ ok: true, ignore4k: !!ignore4k });
+    }
+
     const service = await getActiveMediaService("radarr");
     if (!service) return NextResponse.json({ error: "No Radarr service configured" }, { status: 400 });
     const fetcher = createRadarrFetcher(service.base_url, service.apiKey);

@@ -141,6 +141,13 @@ export type UpgradeFinderHint = {
   checkedAt: string | null;
 };
 
+export type UpgradeFinderOverride = {
+  mediaType: "movie" | "tv";
+  mediaId: number;
+  ignore4k: boolean;
+  updatedAt: string | null;
+};
+
 export async function createRequest(input: {
   requestType: "movie" | "episode";
   tmdbId: number;
@@ -2162,6 +2169,17 @@ async function ensureSchema() {
     await p.query(`CREATE INDEX IF NOT EXISTS idx_upgrade_finder_hint_checked_at ON upgrade_finder_hint(checked_at DESC);`);
 
     await p.query(`
+      CREATE TABLE IF NOT EXISTS upgrade_finder_override (
+        media_type TEXT NOT NULL CHECK (media_type IN ('movie','tv')),
+        media_id INTEGER NOT NULL,
+        ignore_4k BOOLEAN NOT NULL DEFAULT FALSE,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (media_type, media_id)
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_upgrade_finder_override_updated_at ON upgrade_finder_override(updated_at DESC);`);
+
+    await p.query(`
       CREATE TABLE IF NOT EXISTS jobs (
         id SERIAL PRIMARY KEY,
         name VARCHAR(255) NOT NULL UNIQUE,
@@ -3743,6 +3761,42 @@ export async function upsertUpgradeFinderHint(input: {
   );
 }
 
+export async function listUpgradeFinderOverrides(): Promise<UpgradeFinderOverride[]> {
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(
+    `SELECT media_type, media_id, ignore_4k, updated_at
+     FROM upgrade_finder_override
+     ORDER BY updated_at DESC`
+  );
+  return res.rows.map((row) => ({
+    mediaType: row.media_type,
+    mediaId: Number(row.media_id),
+    ignore4k: !!row.ignore_4k,
+    updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null
+  }));
+}
+
+export async function upsertUpgradeFinderOverride(input: {
+  mediaType: "movie" | "tv";
+  mediaId: number;
+  ignore4k: boolean;
+}) {
+  await ensureSchema();
+  const p = getPool();
+  await p.query(
+    `
+    INSERT INTO upgrade_finder_override (media_type, media_id, ignore_4k, updated_at)
+    VALUES ($1, $2, $3, NOW())
+    ON CONFLICT (media_type, media_id)
+    DO UPDATE SET
+      ignore_4k = EXCLUDED.ignore_4k,
+      updated_at = EXCLUDED.updated_at
+    `,
+    [input.mediaType, input.mediaId, input.ignore4k]
+  );
+}
+
 export type Job = {
   id: number;
   name: string;
@@ -4427,7 +4481,7 @@ export async function hasCachedEpisodeAvailability(params: {
     `SELECT 1
      FROM jellyfin_availability
      WHERE media_type = 'episode'
-       AND (tmdb_id = $1 OR ($2 IS NOT NULL AND tvdb_id = $2))
+       AND (tmdb_id = $1 OR ($2::int IS NOT NULL AND tvdb_id = $2::int))
      LIMIT 1`,
     [params.tmdbId, tvdbId]
   );
@@ -4445,7 +4499,7 @@ export async function getAvailableSeasons(params: {
      FROM jellyfin_availability
      WHERE media_type = 'episode'
        AND season_number IS NOT NULL
-       AND (tmdb_id = $1 OR ($2 IS NOT NULL AND tvdb_id = $2))
+       AND (tmdb_id = $1 OR ($2::int IS NOT NULL AND tvdb_id = $2::int))
      ORDER BY season_number`,
     [params.tmdbId, tvdbId]
   );
@@ -4462,7 +4516,7 @@ export async function getCachedJellyfinSeriesItemId(params: {
     `SELECT jellyfin_item_id
      FROM jellyfin_availability
      WHERE media_type = 'series'
-       AND (tmdb_id = $1 OR ($2 IS NOT NULL AND tvdb_id = $2))
+       AND (tmdb_id = $1 OR ($2::int IS NOT NULL AND tvdb_id = $2::int))
      ORDER BY last_scanned_at DESC
      LIMIT 1`,
     [params.tmdbId, tvdbId]

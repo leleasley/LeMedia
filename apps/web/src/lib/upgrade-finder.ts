@@ -20,6 +20,7 @@ export type UpgradeFinderItem = {
   hintStatus?: UpgradeHintStatus | "checking" | "idle";
   hintText?: string | null;
   checkedAt?: string | null;
+  ignore4k?: boolean;
 };
 
 function resolveProfileCutoffName(profileId: number | null | undefined, profiles: any[]) {
@@ -155,19 +156,25 @@ export async function refreshUpgradeHintsForAll() {
 }
 
 export function mapReleaseToRow(release: any) {
+  const history = Array.isArray(release?.history) ? release.history : [];
   return {
     guid: release?.guid ?? release?.downloadUrl ?? "",
     indexerId: release?.indexerId ?? null,
     title: extractReleaseTitle(release),
     indexer: release?.indexer ?? release?.indexerName ?? "",
     protocol: release?.protocol ?? "",
-    downloadUrl: release?.downloadUrl ?? "",
+    infoUrl: release?.infoUrl ?? release?.indexerUrl ?? "",
     size: release?.size ?? release?.sizeBytes ?? null,
     age: release?.age ?? null,
     seeders: release?.seeders ?? null,
     leechers: release?.leechers ?? null,
     quality: extractQualityName(release),
     language: release?.languages?.[0]?.name ?? release?.language?.name ?? "",
-    rejected: Array.isArray(release?.rejections) ? release.rejections.map((r: any) => r?.reason || r) : []
+    rejected: Array.isArray(release?.rejections) ? release.rejections.map((r: any) => r?.reason || r) : [],
+    history: history.map((entry: any) => ({
+      date: entry?.date ?? entry?.dateUtc ?? null,
+      eventType: entry?.eventType ?? entry?.eventTypeName ?? entry?.eventTypeId ?? null,
+      source: entry?.source ?? entry?.downloadClient ?? null
+    }))
   };
 }

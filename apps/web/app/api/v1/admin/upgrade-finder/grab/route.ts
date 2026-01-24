@@ -14,8 +14,7 @@ const GrabSchema = z.object({
   indexerId: z.number().int().optional(),
   downloadUrl: z.string().url().optional(),
   title: z.string().optional(),
-  protocol: z.string().optional(),
-  forceGrab: z.boolean().optional()
+  protocol: z.string().optional()
 });
 
 function buildGrabPayload(input: z.infer<typeof GrabSchema>) {
@@ -63,37 +62,36 @@ export async function POST(req: NextRequest) {
       let originalMovie: any = null;
       let originalProfileId: number | null = null;
 
-      // If force grab is enabled, temporarily change quality profile to "Ultra-HD"
-      if (parsed.data.forceGrab) {
-        try {
-          // Get current movie data
-          originalMovie = await fetcher(`/api/v3/movie/${parsed.data.mediaId}`);
-          originalProfileId = originalMovie.qualityProfileId;
+      // Always use Ultra-HD profile for grabbing from interactive search
+      try {
+        // Get current movie data
+        originalMovie = await fetcher(`/api/v3/movie/${parsed.data.mediaId}`);
+        originalProfileId = originalMovie.qualityProfileId;
 
-          // Get all quality profiles
-          const profiles = await fetcher("/api/v3/qualityprofile");
+        // Get all quality profiles
+        const profiles = await fetcher("/api/v3/qualityprofile");
 
-          // Find the "Ultra-HD" profile
-          const ultraHdProfile = Array.isArray(profiles)
-            ? profiles.find((p: any) => p.name === "Ultra-HD")
-            : null;
+        // Find the "Ultra-HD" profile
+        const ultraHdProfile = Array.isArray(profiles)
+          ? profiles.find((p: any) => p.name === "Ultra-HD")
+          : null;
 
-          if (ultraHdProfile) {
-            // Temporarily update the movie to use the "Ultra-HD" profile
-            await fetcher(`/api/v3/movie/${parsed.data.mediaId}`, {
-              method: "PUT",
-              body: JSON.stringify({
-                ...originalMovie,
-                qualityProfileId: ultraHdProfile.id
-              })
-            });
-          } else {
-            throw new Error("Ultra-HD quality profile not found in Radarr");
-          }
-        } catch (profileErr: any) {
-          // If we can't change the profile, throw error
-          throw new Error(`Failed to set Ultra-HD profile: ${profileErr.message}`);
+        if (!ultraHdProfile) {
+          throw new Error("Ultra-HD quality profile not found in Radarr");
         }
+
+        // Temporarily update the movie to use the "Ultra-HD" profile
+        if (originalProfileId !== ultraHdProfile.id) {
+          await fetcher(`/api/v3/movie/${parsed.data.mediaId}`, {
+            method: "PUT",
+            body: JSON.stringify({
+              ...originalMovie,
+              qualityProfileId: ultraHdProfile.id
+            })
+          });
+        }
+      } catch (profileErr: any) {
+        throw new Error(`Failed to set Ultra-HD profile: ${profileErr.message}`);
       }
 
       try {
@@ -103,8 +101,8 @@ export async function POST(req: NextRequest) {
           body: JSON.stringify(buildGrabPayload(parsed.data))
         });
 
-        // Restore original profile if we changed it
-        if (parsed.data.forceGrab && originalMovie && originalProfileId) {
+        // Restore original profile
+        if (originalMovie && originalProfileId) {
           try {
             await fetcher(`/api/v3/movie/${parsed.data.mediaId}`, {
               method: "PUT",
@@ -118,10 +116,10 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        return NextResponse.json({ ok: true, message: "Radarr release queued" });
+        return NextResponse.json({ ok: true, message: "Release queued successfully" });
       } catch (grabErr: any) {
         // Restore original profile even if grab failed
-        if (parsed.data.forceGrab && originalMovie && originalProfileId) {
+        if (originalMovie && originalProfileId) {
           try {
             await fetcher(`/api/v3/movie/${parsed.data.mediaId}`, {
               method: "PUT",

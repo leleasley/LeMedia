@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { RefreshCcw, Search, Sparkles, ChevronDown, X, Loader2, Download } from "lucide-react";
+import { RefreshCcw, Search, Sparkles, ChevronDown, X, Loader2, Download, Cloud } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { csrfFetch } from "@/lib/csrf-client";
 import { useToast } from "@/components/Providers/ToastProvider";
@@ -79,7 +79,7 @@ type ReleaseRow = {
   title: string;
   indexer: string;
   protocol: string;
-  downloadUrl: string;
+  infoUrl: string;
   size: number | null;
   age: number | null;
   seeders: number | null;
@@ -87,7 +87,24 @@ type ReleaseRow = {
   quality: string;
   language: string;
   rejected: string[];
+  history?: Array<{ date: string | null; eventType: string | number | null; source: string | null }>;
 };
+type ReleaseFilter = "all" | "4k" | "1080p" | "720p" | "480p" | "telesync" | "cam";
+
+function matchesReleaseFilter(release: ReleaseRow, filter: ReleaseFilter) {
+  if (filter === "all") return true;
+  const title = release.title.toLowerCase();
+  const quality = release.quality.toLowerCase();
+  const combined = `${title} ${quality}`;
+  if (filter === "4k") return combined.includes("4k") || combined.includes("2160");
+  if (filter === "1080p") return combined.includes("1080");
+  if (filter === "720p") return combined.includes("720");
+  if (filter === "480p") return combined.includes("480");
+  if (filter === "telesync") return combined.includes("telesync") || /\bts\b/.test(combined);
+  if (filter === "cam") return combined.includes("cam") || /\bhdcam\b/.test(combined);
+  return true;
+}
+
 
 function formatBytes(bytes?: number) {
   if (!bytes || Number.isNaN(bytes)) return "—";
@@ -103,6 +120,27 @@ function formatAge(days?: number | null) {
   return `${Math.round(days)}d`;
 }
 
+function formatHistoryLabel(history?: Array<{ date: string | null; eventType: string | number | null; source: string | null }>) {
+  if (!history || history.length === 0) return "—";
+  const latest = history[0];
+  const raw = String(latest?.eventType ?? "");
+  const event = raw ? raw.replace(/([a-z])([A-Z])/g, "$1 $2") : "Activity";
+  const source = latest?.source ? ` • ${latest.source}` : "";
+  return `${event}${source}`;
+}
+
+function getHistoryDisplay(history?: Array<{ date: string | null; eventType: string | number | null; source: string | null }>) {
+  if (!history || history.length === 0) return { text: "—", isImport: false };
+  const latest = history[0];
+  const raw = String(latest?.eventType ?? "");
+  const lower = raw.toLowerCase();
+  const isImport = lower.includes("downloadfolder");
+  const base = raw ? raw.replace(/([a-z])([A-Z])/g, "$1 $2") : "Activity";
+  const label = isImport ? "Imported" : base;
+  const source = latest?.source ? ` • ${latest.source}` : "";
+  return { text: `${label}${source}`, isImport };
+}
+
 function itemKey(item: Pick<UpgradeFinderItem, "mediaType" | "id">) {
   return `${item.mediaType}:${item.id}`;
 }
@@ -112,15 +150,17 @@ function InteractiveSearchModal(props: {
   item: UpgradeFinderItem | null;
   releases: ReleaseRow[];
   isLoading: boolean;
-  filter: "all" | "4k";
-  onFilterChange: (value: "all" | "4k") => void;
+  filter: ReleaseFilter;
+  onFilterChange: (value: ReleaseFilter) => void;
   onClose: () => void;
   onRefresh: () => void;
-  onGrab: (release: ReleaseRow, forceGrab: boolean) => void;
+  onGrab: (release: ReleaseRow) => void;
   grabbingGuid: string | null;
+  onLoadMore: () => void;
+  total: number;
 }) {
-  const { open, item, releases, isLoading, filter, onFilterChange, onClose, onRefresh, onGrab, grabbingGuid } = props;
-  const [forceGrab, setForceGrab] = useState(false);
+  const { open, item, releases, isLoading, filter, onFilterChange, onClose, onRefresh, onGrab, grabbingGuid, onLoadMore, total } = props;
+  const [releaseSearch, setReleaseSearch] = useState("");
   useLockBodyScroll(open);
 
   useEffect(() => {
@@ -134,13 +174,12 @@ function InteractiveSearchModal(props: {
 
   if (!open || !item) return null;
 
-  const filtered = filter === "4k"
-    ? releases.filter(release => {
-        const title = release.title.toLowerCase();
-        const quality = release.quality.toLowerCase();
-        return title.includes("4k") || title.includes("2160") || quality.includes("4k") || quality.includes("2160");
-      })
-    : releases;
+  const query = releaseSearch.trim().toLowerCase();
+  const filtered = releases
+    .filter(release => matchesReleaseFilter(release, filter))
+    .filter(release => (query ? release.title.toLowerCase().includes(query) : true));
+  const isLoadingMore = isLoading && releases.length > 0;
+  const canLoadMore = query.length > 0;
 
   const modal = (
     <div
@@ -165,27 +204,39 @@ function InteractiveSearchModal(props: {
                 {item.title} {item.year ? `(${item.year})` : ""} • {item.mediaType === "movie" ? "Movie" : "Series"}
               </div>
               <div className="text-xs text-white/40 mt-1">
-                {filtered.length} result{filtered.length !== 1 ? 's' : ''} {filter === "4k" && `(filtered from ${releases.length})`}
+                {filtered.length} result{filtered.length !== 1 ? "s" : ""} loaded{total > 0 ? ` of ${total}` : ""}{filter !== "all" ? ` (filtered from ${releases.length} loaded)` : ""}
               </div>
-              {forceGrab && item.mediaType === "movie" && (
-                <div className="text-xs text-amber-300 mt-1 flex items-center gap-1">
-                  <span className="inline-block w-2 h-2 bg-amber-400 rounded-full animate-pulse"></span>
-                  Force Grab enabled - will use Ultra-HD profile
-                </div>
-              )}
+              <div className="text-xs text-violet-300 mt-1 flex items-center gap-1">
+                <span className="inline-block w-2 h-2 bg-violet-400 rounded-full"></span>
+                Using Ultra-HD profile - all qualities available
+              </div>
             </div>
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-shrink-0">
               <div className="flex items-center gap-2">
-                <div className="w-36">
-                  <Select value={filter} onValueChange={value => onFilterChange(value as "all" | "4k")}>
+                <div className="w-40">
+                  <Select value={filter} onValueChange={value => onFilterChange(value as ReleaseFilter)}>
                     <SelectTrigger className="h-9">
                       <SelectValue placeholder="Filter" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Results</SelectItem>
-                      <SelectItem value="4k">4K Only</SelectItem>
+                      <SelectItem value="4k">4K</SelectItem>
+                      <SelectItem value="1080p">1080p</SelectItem>
+                      <SelectItem value="720p">720p</SelectItem>
+                      <SelectItem value="480p">480p</SelectItem>
+                      <SelectItem value="telesync">Telesync</SelectItem>
+                      <SelectItem value="cam">CAM</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="relative w-48">
+                  <Search className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-white/40" />
+                  <input
+                    value={releaseSearch}
+                    onChange={(event) => setReleaseSearch(event.target.value)}
+                    placeholder="Search releases..."
+                    className="h-9 w-full rounded-lg border border-white/10 bg-white/5 py-2 pl-3 pr-8 text-xs text-white placeholder:text-white/40"
+                  />
                 </div>
                 <button
                   type="button"
@@ -205,66 +256,56 @@ function InteractiveSearchModal(props: {
                   <span className="hidden sm:inline">Close</span>
                 </button>
               </div>
-              {item.mediaType === "movie" && (
-                <div className="flex flex-col gap-1">
-                  <label
-                    className="flex items-center gap-2 px-3 py-2 rounded-lg border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 cursor-pointer transition-colors"
-                    title="Temporarily switch to Ultra-HD profile to bypass quality restrictions"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={forceGrab}
-                      onChange={(e) => setForceGrab(e.target.checked)}
-                      className="h-4 w-4 rounded border-amber-500/50 bg-amber-500/10 text-amber-500 focus:ring-2 focus:ring-amber-500/50"
-                    />
-                    <span className="text-xs font-semibold text-amber-200 whitespace-nowrap">Force Grab</span>
-                  </label>
-                  <div className="text-[10px] text-white/40 px-3 max-w-[200px]">
-                    Bypass quality profile restrictions
-                  </div>
-                </div>
-              )}
             </div>
+
           </div>
         </div>
 
         {/* Content - Scrollable */}
-        <div className="flex-1 overflow-auto p-4 sm:p-6">
+        <div
+          className="flex-1 overflow-auto p-3 sm:p-6"
+          onScroll={(event) => {
+            const target = event.currentTarget;
+            if (!canLoadMore) return;
+            if (target.scrollTop + target.clientHeight >= target.scrollHeight - 200) {
+              onLoadMore();
+            }
+          }}
+        >
           <div className="rounded-xl border border-white/10 bg-white/5 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
+            <div className="overflow-x-auto hidden md:block">
+              <table className="w-full table-fixed text-left text-xs">
                 <thead className="border-b border-white/10 bg-white/5 sticky top-0 z-10">
                   <tr className="text-[10px] sm:text-[11px] uppercase tracking-wide text-white/50">
-                    <th className="px-2 sm:px-3 py-2 whitespace-nowrap">Protocol</th>
-                    <th className="px-2 sm:px-3 py-2 whitespace-nowrap">Age</th>
-                    <th className="px-2 sm:px-3 py-2 min-w-[200px]">Title</th>
-                    <th className="px-2 sm:px-3 py-2 whitespace-nowrap">Indexer</th>
-                    <th className="px-2 sm:px-3 py-2 whitespace-nowrap">Size</th>
-                    <th className="px-2 sm:px-3 py-2 whitespace-nowrap">Peers</th>
-                    <th className="px-2 sm:px-3 py-2 whitespace-nowrap hidden lg:table-cell">Lang</th>
-                    <th className="px-2 sm:px-3 py-2 whitespace-nowrap">Quality</th>
-                    <th className="px-2 sm:px-3 py-2 text-right whitespace-nowrap sticky right-0 bg-white/5">Action</th>
+                    <th className="px-2 sm:px-3 py-2 whitespace-nowrap w-20">Protocol</th>
+                    <th className="px-2 sm:px-3 py-2 whitespace-nowrap w-14">Age</th>
+                    <th className="px-2 sm:px-3 py-2 w-[42%]">Title</th>
+                    <th className="px-2 sm:px-3 py-2 whitespace-nowrap w-36">Indexer</th>
+                    <th className="px-2 sm:px-3 py-2 whitespace-nowrap w-16">Size</th>
+                    <th className="px-2 sm:px-3 py-2 whitespace-nowrap w-16">Peers</th>
+                    <th className="px-2 sm:px-3 py-2 whitespace-nowrap hidden lg:table-cell w-20">Lang</th>
+                    <th className="px-2 sm:px-3 py-2 whitespace-nowrap w-24">Quality</th>
+                    <th className="px-2 sm:px-3 py-2 whitespace-nowrap w-24">History</th>
+                    <th className="px-2 sm:px-3 py-2 text-right whitespace-nowrap sticky right-0 bg-white/5 w-24">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
-                  {isLoading ? (
+                  {isLoading && releases.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="px-4 py-12 text-center text-sm text-white/50">
+                      <td colSpan={10} className="px-4 py-12 text-center text-sm text-white/50">
                         <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
                         <div>Loading releases...</div>
                       </td>
                     </tr>
                   ) : filtered.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="px-4 py-12 text-center text-sm text-white/50">
+                      <td colSpan={10} className="px-4 py-12 text-center text-sm text-white/50">
                         <div className="font-semibold">No releases found</div>
                         <div className="text-xs mt-1">Try adjusting your filter or refreshing</div>
                       </td>
                     </tr>
                   ) : (
                     filtered.map((release) => {
-                      const rejected = release.rejected.length > 0;
-                      const rowMuted = rejected ? "opacity-50" : "";
                       const rowKey = release.guid || `${release.indexerId ?? "x"}-${release.title}`;
                       const is4k = release.title.toLowerCase().includes("4k") ||
                                    release.title.toLowerCase().includes("2160") ||
@@ -272,7 +313,7 @@ function InteractiveSearchModal(props: {
                                    release.quality.toLowerCase().includes("2160");
 
                       return (
-                        <tr key={rowKey} className={cn("hover:bg-white/5 transition-colors", rowMuted)}>
+                        <tr key={rowKey} className="hover:bg-white/5 transition-colors">
                           <td className="px-2 sm:px-3 py-3">
                             <span className={cn(
                               "inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase",
@@ -287,20 +328,29 @@ function InteractiveSearchModal(props: {
                           <td className="px-2 sm:px-3 py-3">
                             <div className="flex items-start gap-2">
                               <div className="min-w-0 flex-1">
-                                <div className={cn("font-medium leading-tight", is4k ? "text-violet-200" : "text-white")}>
+                                <div
+                                  className={cn("font-medium leading-tight truncate", is4k ? "text-violet-200" : "text-white")}
+                                  title={release.title}
+                                >
                                   {release.title}
                                 </div>
-                                {rejected && (
-                                  <div className="text-[10px] text-rose-300 mt-1">
-                                    ⚠ {release.rejected.join(", ")}
-                                  </div>
-                                )}
                               </div>
                             </div>
                           </td>
                           <td className="px-2 sm:px-3 py-3 text-white/70 text-[11px]">
                             <div className="max-w-[100px] truncate" title={release.indexer}>
-                              {release.indexer || "—"}
+                              {release.infoUrl ? (
+                                <a
+                                  href={release.infoUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-sky-200 hover:text-sky-100"
+                                >
+                                  {release.indexer || "Indexer"}
+                                </a>
+                              ) : (
+                                release.indexer || "—"
+                              )}
                             </div>
                           </td>
                           <td className="px-2 sm:px-3 py-3 text-white/70 whitespace-nowrap font-medium">
@@ -326,11 +376,24 @@ function InteractiveSearchModal(props: {
                               {release.quality || "—"}
                             </span>
                           </td>
-                          <td className="px-2 sm:px-3 py-3 text-right sticky right-0 bg-slate-900/60 backdrop-blur-sm">
+                          <td className="px-2 sm:px-3 py-3 text-[11px] text-white/60">
+                            <div className="max-w-[120px] truncate" title={formatHistoryLabel(release.history)}>
+                              {(() => {
+                                const display = getHistoryDisplay(release.history);
+                                return (
+                                  <span className="inline-flex items-center gap-1">
+                                    {display.isImport && <Cloud className="h-3 w-3 text-sky-300" />}
+                                    <span>{display.text}</span>
+                                  </span>
+                                );
+                              })()}
+                            </div>
+                          </td>
+                          <td className="px-2 sm:px-3 py-3 text-right whitespace-nowrap sticky right-0 bg-slate-900/80 backdrop-blur-sm">
                             <button
                               type="button"
-                              disabled={grabbingGuid === release.guid || rejected}
-                              onClick={() => onGrab(release, forceGrab)}
+                              disabled={grabbingGuid === release.guid}
+                              onClick={() => onGrab(release)}
                               className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-[10px] sm:text-[11px] font-bold text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95"
                             >
                               {grabbingGuid === release.guid ? (
@@ -352,6 +415,97 @@ function InteractiveSearchModal(props: {
                   )}
                 </tbody>
               </table>
+            </div>
+            <div className="md:hidden divide-y divide-white/5">
+              {isLoading && releases.length === 0 ? (
+                <div className="px-4 py-10 text-center text-sm text-white/50">
+                  <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+                  <div>Loading releases...</div>
+                </div>
+              ) : filtered.length === 0 ? (
+                <div className="px-4 py-10 text-center text-sm text-white/50">
+                  <div className="font-semibold">No releases found</div>
+                  <div className="text-xs mt-1">Try adjusting your filter or refreshing</div>
+                </div>
+              ) : (
+                filtered.map((release) => {
+                  const rowKey = release.guid || `${release.indexerId ?? "x"}-${release.title}`;
+                  const is4k = release.title.toLowerCase().includes("4k") ||
+                               release.title.toLowerCase().includes("2160") ||
+                               release.quality.toLowerCase().includes("4k") ||
+                               release.quality.toLowerCase().includes("2160");
+
+                  return (
+                    <div key={rowKey} className="p-4 space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className={cn("text-sm font-semibold", is4k ? "text-violet-200" : "text-white")}>
+                            {release.title}
+                          </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-white/60">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded bg-white/5">
+                            {release.quality || "—"}
+                          </span>
+                          {release.infoUrl ? (
+                            <a
+                              href={release.infoUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-sky-200 hover:text-sky-100"
+                            >
+                              {release.indexer || "Indexer"}
+                            </a>
+                          ) : (
+                            <span>{release.indexer || "—"}</span>
+                          )}
+                          <span>{formatBytes(release.size ?? undefined)}</span>
+                        </div>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={grabbingGuid === release.guid}
+                          onClick={() => onGrab(release)}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[11px] font-bold text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                        >
+                          {grabbingGuid === release.guid ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                          Grab
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] text-white/50">
+                        <div className="inline-flex items-center gap-2">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded font-semibold bg-sky-500/20 text-sky-300">
+                            {release.protocol || "—"}
+                          </span>
+                          <span>{formatAge(release.age)}</span>
+                          <span>{release.language || "—"}</span>
+                        </div>
+                        <div className="text-[11px] text-white/60">
+                          {release.seeders ?? "—"}/{release.leechers ?? "—"}
+                        </div>
+                      </div>
+                      <div className="text-[11px] text-white/50 inline-flex items-center gap-1">
+                        {(() => {
+                          const display = getHistoryDisplay(release.history);
+                          return (
+                            <>
+                              {display.isImport && <Cloud className="h-3 w-3 text-sky-300" />}
+                              <span>History: {display.text}</span>
+                            </>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+            <div className="flex items-center justify-between border-t border-white/10 px-4 py-2 text-[11px] text-white/50">
+              <div>Showing {filtered.length} loaded{total > 0 ? ` of ${total}` : ""}</div>
+              {isLoadingMore ? (
+                <div className="text-white/60">Loading more...</div>
+              ) : total > 0 && releases.length < total ? (
+                <div className="text-white/60">{canLoadMore ? "Scroll to load more" : "Search to load more"}</div>
+              ) : null}
             </div>
           </div>
         </div>
@@ -375,8 +529,11 @@ export function UpgradeFinderClient({ initialItems }: { initialItems: UpgradeFin
   const [activeItem, setActiveItem] = useState<UpgradeFinderItem | null>(null);
   const [interactiveReleases, setInteractiveReleases] = useState<ReleaseRow[]>([]);
   const [isLoadingReleases, setIsLoadingReleases] = useState(false);
-  const [releaseFilter, setReleaseFilter] = useState<"all" | "4k">("all");
+  const [releaseFilter, setReleaseFilter] = useState<ReleaseFilter>("all");
+  const [releaseTotal, setReleaseTotal] = useState(0);
+  const [releaseOffset, setReleaseOffset] = useState(0);
   const [grabbingGuid, setGrabbingGuid] = useState<string | null>(null);
+  const releaseCacheRef = useRef<Record<string, { items: ReleaseRow[]; total: number }>>({});
 
   const filteredItems = useMemo(() => {
     const statusOrder: Record<UpgradeFinderItem["upgradeStatus"], number> = {
@@ -435,14 +592,53 @@ export function UpgradeFinderClient({ initialItems }: { initialItems: UpgradeFin
     });
   }, [items]);
 
-  const loadInteractiveReleases = async (item: UpgradeFinderItem) => {
+  const loadInteractiveReleases = async (item: UpgradeFinderItem, options?: { offset?: number; append?: boolean; force?: boolean }) => {
+    const offset = options?.offset ?? 0;
+    const append = options?.append ?? false;
+    const force = options?.force ?? false;
+    if (isLoadingReleases) return;
+    const cacheKey = `${item.mediaType}:${item.id}`;
+    const cached = releaseCacheRef.current[cacheKey];
+    if (!force && offset === 0 && cached) {
+      setInteractiveReleases(cached.items);
+      setReleaseTotal(cached.total);
+      setReleaseOffset(cached.items.length);
+      return;
+    }
     setIsLoadingReleases(true);
     try {
-      const params = new URLSearchParams({ mediaType: item.mediaType, id: String(item.id) });
+      const params = new URLSearchParams({
+        mediaType: item.mediaType,
+        id: String(item.id),
+        offset: String(offset),
+        limit: "50"
+      });
       const res = await fetch(`/api/v1/admin/upgrade-finder/releases?${params.toString()}`, { credentials: "include" });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body?.error || "Failed to load releases");
-      setInteractiveReleases(body?.items ?? []);
+      const items = Array.isArray(body?.items) ? body.items : [];
+      setInteractiveReleases((prev: ReleaseRow[]) => {
+        if (!append) return items;
+        const existing = new Set(prev.map((entry: ReleaseRow) => entry.guid || `${entry.indexerId ?? "x"}-${entry.title}`));
+        const merged = items.filter((entry: ReleaseRow) => {
+          const key = entry.guid || `${entry.indexerId ?? "x"}-${entry.title}`;
+          return !existing.has(key);
+        });
+        return [...prev, ...merged];
+      });
+      setReleaseTotal(Number(body?.total ?? 0));
+      setReleaseOffset(offset + items.length);
+      if (offset === 0 && !append) {
+        releaseCacheRef.current[cacheKey] = { items, total: Number(body?.total ?? 0) };
+      } else {
+        const updated = releaseCacheRef.current[cacheKey];
+        if (updated) {
+          releaseCacheRef.current[cacheKey] = {
+            items: append ? [...updated.items, ...items] : items,
+            total: Number(body?.total ?? 0)
+          };
+        }
+      }
     } catch (err: any) {
       toast.error(err?.message ?? "Failed to load releases");
     } finally {
@@ -454,16 +650,44 @@ export function UpgradeFinderClient({ initialItems }: { initialItems: UpgradeFin
     setActiveItem(item);
     setReleaseFilter("all");
     setInteractiveReleases([]);
-    await loadInteractiveReleases(item);
+    setReleaseTotal(0);
+    setReleaseOffset(0);
+    await loadInteractiveReleases(item, { offset: 0 });
   };
 
   const closeInteractiveSearch = () => {
     setActiveItem(null);
     setInteractiveReleases([]);
+    setReleaseTotal(0);
+    setReleaseOffset(0);
     setGrabbingGuid(null);
   };
 
-  const handleGrabRelease = async (release: ReleaseRow, forceGrab: boolean) => {
+  const handleLoadMore = () => {
+    if (!activeItem) return;
+    if (isLoadingReleases) return;
+    if (releaseTotal === 0 && interactiveReleases.length === 0) return;
+    if (releaseOffset >= releaseTotal && releaseTotal !== 0) return;
+    void loadInteractiveReleases(activeItem, { offset: releaseOffset, append: true });
+  };
+
+  const handleIgnoreUpgrade = async (item: UpgradeFinderItem, ignore: boolean) => {
+    try {
+      const res = await csrfFetch("/api/v1/admin/upgrade-finder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mediaType: item.mediaType, id: item.id, mode: "ignore", ignore4k: ignore })
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || "Failed to update ignore flag");
+      setItems(prev => prev.map(entry => (entry.id === item.id && entry.mediaType === item.mediaType ? { ...entry, ignore4k: ignore } : entry)));
+      toast.success(ignore ? "4K upgrade ignored" : "4K upgrade restored", { timeoutMs: 2500 });
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to update ignore flag");
+    }
+  };
+
+  const handleGrabRelease = async (release: ReleaseRow) => {
     if (!activeItem || grabbingGuid) return;
     setGrabbingGuid(release.guid);
     try {
@@ -475,10 +699,8 @@ export function UpgradeFinderClient({ initialItems }: { initialItems: UpgradeFin
           mediaId: activeItem.id,
           guid: release.guid,
           indexerId: release.indexerId ?? undefined,
-          downloadUrl: release.downloadUrl || undefined,
           title: release.title,
-          protocol: release.protocol,
-          forceGrab: forceGrab
+          protocol: release.protocol
         })
       });
       const body = await res.json().catch(() => ({}));
@@ -564,12 +786,12 @@ export function UpgradeFinderClient({ initialItems }: { initialItems: UpgradeFin
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-1 flex-wrap gap-3">
             <div className="relative flex-1 min-w-[220px]">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
+              <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
               <input
                 value={searchQuery}
                 onChange={event => setSearchQuery(event.target.value)}
                 placeholder="Search title..."
-                className="w-full rounded-lg border border-white/10 bg-white/5 py-2 pl-9 pr-3 text-sm text-white placeholder:text-white/40"
+                className="w-full rounded-lg border border-white/10 bg-white/5 py-2 pl-3 pr-9 text-sm text-white placeholder:text-white/40"
               />
             </div>
             <div className="w-full min-w-[180px] sm:w-44">
@@ -580,7 +802,6 @@ export function UpgradeFinderClient({ initialItems }: { initialItems: UpgradeFin
                 <SelectContent>
                   <SelectItem value="all">All Media</SelectItem>
                   <SelectItem value="movie">Movies</SelectItem>
-                  <SelectItem value="tv">Series</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -596,7 +817,6 @@ export function UpgradeFinderClient({ initialItems }: { initialItems: UpgradeFin
                   <SelectItem value="all">All Status</SelectItem>
                   <SelectItem value="upgrade">Upgrade Available</SelectItem>
                   <SelectItem value="missing">Missing</SelectItem>
-                  <SelectItem value="partial">Partial</SelectItem>
                   <SelectItem value="up-to-date">Up to Date</SelectItem>
                 </SelectContent>
               </Select>
@@ -635,11 +855,13 @@ export function UpgradeFinderClient({ initialItems }: { initialItems: UpgradeFin
                 </tr>
               ) : (
                 filteredItems.map(item => {
-                  const status = statusStyles[item.upgradeStatus];
                   const key = itemKey(item);
-                  const isRunning = runningIds.has(key);
                   const hintState = hintMap[key] ?? { status: "idle" as HintStatus };
-                  const hintStyle = hintStyles[hintState.status];
+                  const shouldShowUpgrade = hintState.status === "available" && !item.ignore4k;
+                  const status = statusStyles[shouldShowUpgrade ? "upgrade" : item.upgradeStatus];
+                  const isRunning = runningIds.has(key);
+                  const displayHintStatus = item.ignore4k && hintState.status === "available" ? "none" : hintState.status;
+                  const hintStyle = hintStyles[displayHintStatus];
                   return (
                     <tr key={`${item.mediaType}-${item.id}`} className="hover:bg-white/5">
                       <td className="px-4 py-4">
@@ -660,8 +882,11 @@ export function UpgradeFinderClient({ initialItems }: { initialItems: UpgradeFin
                       </td>
                       <td className="px-4 py-4">
                         <span className={cn("inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold", status.bg, status.text, status.border)}>
-                          {status.label}
+                          {shouldShowUpgrade ? "Upgrade Available" : status.label}
                         </span>
+                        {item.ignore4k && (
+                          <div className="mt-1 text-[11px] text-white/40">4K ignored</div>
+                        )}
                         <div className="mt-2 text-xs text-white/60">
                           Target: {item.targetQuality ?? "—"}
                         </div>
@@ -695,7 +920,10 @@ export function UpgradeFinderClient({ initialItems }: { initialItems: UpgradeFin
                               <ChevronDown className="h-3.5 w-3.5" />
                             </button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
+                          <DropdownMenuContent
+                            align="end"
+                            className="bg-slate-950/95 border border-white/10 shadow-xl backdrop-blur-none"
+                          >
                             <DropdownMenuItem onSelect={() => openInteractiveSearch(item)}>
                               Interactive Search
                             </DropdownMenuItem>
@@ -705,6 +933,11 @@ export function UpgradeFinderClient({ initialItems }: { initialItems: UpgradeFin
                             <DropdownMenuItem onSelect={() => handleCheckUpgrade(item)}>
                               Recheck 4K
                             </DropdownMenuItem>
+                            {hintState.status === "available" && (
+                              <DropdownMenuItem onSelect={() => handleIgnoreUpgrade(item, !item.ignore4k)}>
+                                {item.ignore4k ? "Restore 4K" : "Ignore 4K"}
+                              </DropdownMenuItem>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </td>
@@ -725,9 +958,11 @@ export function UpgradeFinderClient({ initialItems }: { initialItems: UpgradeFin
         filter={releaseFilter}
         onFilterChange={setReleaseFilter}
         onClose={closeInteractiveSearch}
-        onRefresh={() => (activeItem ? loadInteractiveReleases(activeItem) : undefined)}
+        onRefresh={() => (activeItem ? loadInteractiveReleases(activeItem, { offset: 0, force: true }) : undefined)}
         onGrab={handleGrabRelease}
         grabbingGuid={grabbingGuid}
+        onLoadMore={handleLoadMore}
+        total={releaseTotal}
       />
     </div>
   );
