@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/auth";
-import { listUserSessions, revokeSessionByJtiForUser } from "@/db";
+import { listUserSessions, revokeSessionByJtiForUser, deleteUserSessionByJtiForUser } from "@/db";
 import { verifySessionToken } from "@/lib/session";
 import { requireCsrf } from "@/lib/csrf";
 import { logAuditEvent } from "@/lib/audit-log";
@@ -32,7 +32,10 @@ export async function GET(req: NextRequest) {
       jti: session.jti,
       expiresAt: session.expiresAt,
       revokedAt: session.revokedAt,
-      lastSeenAt: session.lastSeenAt
+      lastSeenAt: session.lastSeenAt,
+      userAgent: session.userAgent,
+      deviceLabel: session.deviceLabel,
+      ipAddress: session.ipAddress
     }))
   });
 }
@@ -65,6 +68,44 @@ export async function DELETE(req: NextRequest) {
     action: "user.sessions_revoked",
     actor: user.username,
     metadata: { reason: "self_revoke_single" },
+    ip: getClientIp(req),
+  });
+
+  return NextResponse.json({ success: true });
+}
+
+export async function POST(req: NextRequest) {
+  const user = await requireUser();
+  if (user instanceof NextResponse) return user;
+  const csrf = requireCsrf(req);
+  if (csrf) return csrf;
+
+  let body: z.infer<typeof RevokeSchema>;
+  try {
+    body = RevokeSchema.parse(await req.json());
+  } catch (error) {
+    const message = error instanceof z.ZodError ? error.issues.map(e => e.message).join(", ") : "Invalid request body";
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
+
+  const sessions = await listUserSessions(user.id);
+  const target = sessions.find(session => session.jti === body.jti);
+  if (!target) {
+    return NextResponse.json({ error: "Session not found" }, { status: 404 });
+  }
+  if (!target.revokedAt) {
+    return NextResponse.json({ error: "Only revoked sessions can be deleted" }, { status: 400 });
+  }
+
+  const deleted = await deleteUserSessionByJtiForUser(user.id, body.jti);
+  if (!deleted) {
+    return NextResponse.json({ error: "Session not found" }, { status: 404 });
+  }
+
+  await logAuditEvent({
+    action: "user.sessions_revoked",
+    actor: user.username,
+    metadata: { reason: "self_delete_revoked" },
     ip: getClientIp(req),
   });
 

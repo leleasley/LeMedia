@@ -15,6 +15,7 @@ import { getCookieBase, getRequestContext } from "@/lib/proxy";
 import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp, checkRateLimit } from "@/lib/rate-limit";
 import { randomUUID } from "crypto";
+import { summarizeUserAgent } from "@/lib/device-info";
 
 export async function POST(req: NextRequest) {
   try {
@@ -101,7 +102,13 @@ export async function POST(req: NextRequest) {
 
       const jti = randomUUID();
       const token = await createSessionToken({ username: user.username, groups, maxAgeSeconds: sessionMaxAge, jti });
-      await createUserSession(user.id, jti, new Date(Date.now() + sessionMaxAge * 1000));
+      const userAgent = req.headers.get("user-agent");
+      const deviceLabel = summarizeUserAgent(userAgent);
+      await createUserSession(user.id, jti, new Date(Date.now() + sessionMaxAge * 1000), {
+        userAgent,
+        deviceLabel,
+        ipAddress: ip
+      });
       
       const res = NextResponse.json({ verified: true });
       const cookieOptions = getCookieBase(ctx, true);

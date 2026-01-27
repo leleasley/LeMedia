@@ -3,8 +3,8 @@ import { ProfileSettingsPageClient } from "@/components/Profile/ProfileSettingsP
 import { getUser } from "@/auth";
 import { getUserWithHash, listNotificationEndpoints, listUserNotificationEndpointIds } from "@/db";
 
-const tabs = ["general", "password", "linked", "notifications", "permissions"] as const;
-type ProfileTab = typeof tabs[number];
+const tabs = ["general", "security", "linked", "notifications", "permissions", "password"] as const;
+type ActiveTab = Exclude<(typeof tabs)[number], "password">;
 
 export const metadata = {
   title: "Profile Settings - LeMedia",
@@ -21,10 +21,14 @@ export default async function ProfileSettingsTabPage({
     redirect("/login");
   }
 
-  const requestedTab = resolvedParams.tab as ProfileTab;
-  if (!tabs.includes(requestedTab)) {
+  const requestedTab = String(resolvedParams.tab || "");
+  if (!tabs.includes(requestedTab as (typeof tabs)[number])) {
     redirect("/settings/profile/general");
   }
+  if (requestedTab === "password") {
+    redirect("/settings/profile/security");
+  }
+  const normalizedTab = (requestedTab === "password" ? "security" : requestedTab) as ActiveTab;
 
   const [dbUser, endpoints] = await Promise.all([
     getUserWithHash(user.username),
@@ -52,7 +56,7 @@ export default async function ProfileSettingsTabPage({
       isAdmin={isAdmin}
       mfaEnabled={mfaEnabled}
       assignedEndpoints={assignedEndpoints}
-      activeTab={requestedTab}
+      activeTab={normalizedTab}
     />
   );
 }

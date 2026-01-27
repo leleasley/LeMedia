@@ -19,7 +19,8 @@ import {
     ShieldCheckIcon,
     ClockIcon,
     ShareIcon,
-    ChevronDownIcon
+    ChevronDownIcon,
+    ComputerDesktopIcon
 } from "@heroicons/react/24/outline";
 
 type SettingsRoute = {
@@ -71,6 +72,7 @@ export function AdminSettingsNav() {
             icon: UserGroupIcon,
             routes: [
                 { id: "users", label: "Users", href: "/admin/settings/users", match: /^\/admin\/settings\/users/, icon: UserGroupIcon },
+                { id: "devices", label: "Devices", href: "/admin/settings/devices", match: /^\/admin\/settings\/devices/, icon: ComputerDesktopIcon },
                 { id: "oidc", label: "OIDC", href: "/admin/settings/oidc", match: /^\/admin\/settings\/oidc/, icon: KeyIcon },
             ]
         },

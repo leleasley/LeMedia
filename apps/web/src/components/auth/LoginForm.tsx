@@ -12,9 +12,17 @@ interface LoginFormProps {
     formId?: string;
     action?: string;
     submitLabel?: string;
+    onTurnstileTokenChange?: (token: string) => void;
 }
 
-export function LoginForm({ from, csrfToken, formId, action = "/api/v1/login", submitLabel = "Sign In" }: LoginFormProps) {
+export function LoginForm({
+    from,
+    csrfToken,
+    formId,
+    action = "/api/v1/login",
+    submitLabel = "Sign In",
+    onTurnstileTokenChange
+}: LoginFormProps) {
     const searchParams = useSearchParams();
     const toast = useToast();
     const [turnstileToken, setTurnstileToken] = useState<string>("");
@@ -36,15 +44,18 @@ export function LoginForm({ from, csrfToken, formId, action = "/api/v1/login", s
 
     const handleTurnstileSuccess = useCallback((token: string) => {
         setTurnstileToken(token);
-    }, []);
+        onTurnstileTokenChange?.(token);
+    }, [onTurnstileTokenChange]);
 
     const handleTurnstileError = useCallback(() => {
         setTurnstileToken("");
-    }, []);
+        onTurnstileTokenChange?.("");
+    }, [onTurnstileTokenChange]);
 
     const handleTurnstileExpire = useCallback(() => {
         setTurnstileToken("");
-    }, []);
+        onTurnstileTokenChange?.("");
+    }, [onTurnstileTokenChange]);
 
     return (
         <form id={formId} className="space-y-5" method="post" action={action}>

@@ -856,13 +856,17 @@ export type UserSessionSummary = {
   expiresAt: string;
   revokedAt: string | null;
   lastSeenAt: string | null;
+  userAgent: string | null;
+  deviceLabel: string | null;
+  ipAddress: string | null;
 };
 
 export async function listUserSessions(userId: number): Promise<UserSessionSummary[]> {
   const p = getPool();
   const res = await p.query(
     `
-    SELECT id, jti, expires_at as "expiresAt", revoked_at as "revokedAt", last_seen_at as "lastSeenAt"
+    SELECT id, jti, expires_at as "expiresAt", revoked_at as "revokedAt", last_seen_at as "lastSeenAt",
+           user_agent as "userAgent", device_label as "deviceLabel", ip_address as "ipAddress"
     FROM user_session
     WHERE user_id = $1
     ORDER BY last_seen_at DESC NULLS LAST, expires_at DESC
@@ -872,16 +876,29 @@ export async function listUserSessions(userId: number): Promise<UserSessionSumma
   return res.rows;
 }
 
-export async function createUserSession(userId: number, jti: string, expiresAt: Date): Promise<void> {
+export async function createUserSession(
+  userId: number,
+  jti: string,
+  expiresAt: Date,
+  meta?: { userAgent?: string | null; deviceLabel?: string | null; ipAddress?: string | null }
+): Promise<void> {
   await ensureUserSchema();
   const p = getPool();
   await p.query(
     `
-    INSERT INTO user_session (id, user_id, jti, expires_at)
-    VALUES ($1, $2, $3, $4)
+    INSERT INTO user_session (id, user_id, jti, expires_at, user_agent, device_label, ip_address)
+    VALUES ($1, $2, $3, $4, $5, $6, $7)
     ON CONFLICT (jti) DO NOTHING
     `,
-    [randomUUID(), userId, jti, expiresAt.toISOString()]
+    [
+      randomUUID(),
+      userId,
+      jti,
+      expiresAt.toISOString(),
+      meta?.userAgent ?? null,
+      meta?.deviceLabel ?? null,
+      meta?.ipAddress ?? null
+    ]
   );
 }
 
@@ -926,6 +943,56 @@ export async function revokeOtherSessionsForUser(userId: number, currentJti: str
     [userId, currentJti]
   );
   return Number(res.rowCount ?? 0);
+}
+
+export type AdminSessionSummary = {
+  userId: number;
+  username: string;
+  jti: string;
+  expiresAt: string;
+  revokedAt: string | null;
+  lastSeenAt: string | null;
+  userAgent: string | null;
+  deviceLabel: string | null;
+  ipAddress: string | null;
+};
+
+export async function listAllUserSessions(limit = 500): Promise<AdminSessionSummary[]> {
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT us.user_id as "userId",
+           u.username as "username",
+           us.jti as "jti",
+           us.expires_at as "expiresAt",
+           us.revoked_at as "revokedAt",
+           us.last_seen_at as "lastSeenAt",
+           us.user_agent as "userAgent",
+           us.device_label as "deviceLabel",
+           us.ip_address as "ipAddress"
+    FROM user_session us
+    JOIN app_user u ON us.user_id = u.id
+    ORDER BY us.last_seen_at DESC NULLS LAST, us.expires_at DESC
+    LIMIT $1
+    `,
+    [limit]
+  );
+  return res.rows;
+}
+
+export async function deleteUserSessionByJtiForUser(userId: number, jti: string): Promise<boolean> {
+  const p = getPool();
+  const res = await p.query(
+    `DELETE FROM user_session WHERE user_id = $1 AND jti = $2`,
+    [userId, jti]
+  );
+  return Number(res.rowCount ?? 0) > 0;
+}
+
+export async function deleteUserSessionByJti(jti: string): Promise<boolean> {
+  const p = getPool();
+  const res = await p.query(`DELETE FROM user_session WHERE jti = $1`, [jti]);
+  return Number(res.rowCount ?? 0) > 0;
 }
 
 export async function revokeAllSessionsForUser(userId: number): Promise<void> {
@@ -1539,6 +1606,10 @@ async function ensureUserSchema() {
       );
     `);
     await p.query(`CREATE INDEX IF NOT EXISTS idx_webauthn_challenge_expires_at ON webauthn_challenge(expires_at);`);
+
+    await p.query(`ALTER TABLE user_session ADD COLUMN IF NOT EXISTS user_agent TEXT;`);
+    await p.query(`ALTER TABLE user_session ADD COLUMN IF NOT EXISTS device_label TEXT;`);
+    await p.query(`ALTER TABLE user_session ADD COLUMN IF NOT EXISTS ip_address TEXT;`);
   })();
   return ensureUserSchemaPromise;
 }

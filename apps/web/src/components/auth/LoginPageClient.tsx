@@ -28,14 +28,24 @@ const loginFormId = "lemedia-login-form";
 export function LoginPageClient({ csrfToken, from, oidcEnabled, jellyfinEnabled }: LoginPageClientProps) {
   const router = useRouter();
   const [showJellyfinLogin, setShowJellyfinLogin] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const isTurnstileEnabled = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
   const { data: backdrops } = useSWR<string[]>("/api/v1/backdrops", fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false
   });
 
   const handlePasskeyLogin = async () => {
+    if (isTurnstileEnabled && !turnstileToken) {
+      alert("Complete the security check before signing in.");
+      return;
+    }
     try {
-      const optionsRes = await fetch("/api/auth/webauthn/login/options");
+      const optionsRes = await fetch("/api/auth/webauthn/login/options", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ turnstileToken })
+      });
       if (!optionsRes.ok) throw new Error("Failed to get login options");
       const options = await optionsRes.json();
 
@@ -102,6 +112,7 @@ export function LoginPageClient({ csrfToken, from, oidcEnabled, jellyfinEnabled 
                 csrfToken={csrfToken}
                 action="/api/v1/login/jellyfin"
                 submitLabel="Sign in with Jellyfin"
+                onTurnstileTokenChange={setTurnstileToken}
               />
             </>
           ) : (
@@ -111,7 +122,12 @@ export function LoginPageClient({ csrfToken, from, oidcEnabled, jellyfinEnabled 
                 <p className="mt-1 text-sm text-gray-400">Sign in to continue</p>
               </div>
 
-              <LoginForm from={from} csrfToken={csrfToken} formId={loginFormId} />
+              <LoginForm
+                from={from}
+                csrfToken={csrfToken}
+                formId={loginFormId}
+                onTurnstileTokenChange={setTurnstileToken}
+              />
 
               <div className="mt-6 flex items-center justify-center">
                 <DropdownMenu>
@@ -130,7 +146,8 @@ export function LoginPageClient({ csrfToken, from, oidcEnabled, jellyfinEnabled 
                   >
                     <DropdownMenuItem
                       onSelect={() => handlePasskeyLogin()}
-                      className="cursor-pointer gap-2 px-3 py-2 text-sm"
+                      disabled={isTurnstileEnabled && !turnstileToken}
+                      className={`cursor-pointer gap-2 px-3 py-2 text-sm ${isTurnstileEnabled && !turnstileToken ? "opacity-50" : ""}`}
                     >
                       <Fingerprint className="h-4 w-4 text-gray-200" />
                       Sign in with Passkey
@@ -138,9 +155,11 @@ export function LoginPageClient({ csrfToken, from, oidcEnabled, jellyfinEnabled 
                     {oidcEnabled ? (
                       <DropdownMenuItem
                         onSelect={() => {
-                          window.location.href = `/api/v1/auth/oidc/login?from=${encodeURIComponent(from)}`;
+                          if (isTurnstileEnabled && !turnstileToken) return;
+                          window.location.href = `/api/v1/auth/oidc/login?from=${encodeURIComponent(from)}&turnstile_token=${encodeURIComponent(turnstileToken)}`;
                         }}
-                        className="cursor-pointer gap-2 px-3 py-2 text-sm"
+                        disabled={isTurnstileEnabled && !turnstileToken}
+                        className={`cursor-pointer gap-2 px-3 py-2 text-sm ${isTurnstileEnabled && !turnstileToken ? "opacity-50" : ""}`}
                       >
                         <KeyRound className="h-4 w-4 text-gray-200" />
                         Sign in with SSO
@@ -148,8 +167,12 @@ export function LoginPageClient({ csrfToken, from, oidcEnabled, jellyfinEnabled 
                     ) : null}
                     {jellyfinEnabled ? (
                       <DropdownMenuItem
-                        onSelect={() => setShowJellyfinLogin(true)}
-                        className="cursor-pointer gap-2 px-3 py-2 text-sm"
+                        onSelect={() => {
+                          if (isTurnstileEnabled && !turnstileToken) return;
+                          setShowJellyfinLogin(true);
+                        }}
+                        disabled={isTurnstileEnabled && !turnstileToken}
+                        className={`cursor-pointer gap-2 px-3 py-2 text-sm ${isTurnstileEnabled && !turnstileToken ? "opacity-50" : ""}`}
                       >
                         <Image src="/images/jellyfin.svg" alt="Jellyfin" width={16} height={16} />
                         Sign in with Jellyfin

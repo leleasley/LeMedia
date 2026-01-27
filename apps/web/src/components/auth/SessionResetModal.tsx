@@ -36,7 +36,7 @@ export function SessionResetModal() {
 
   const onContinue = () => {
     COOKIE_NAMES.forEach(deleteCookie);
-    window.location.assign("/login");
+    window.location.assign("/logout");
   };
 
   return (

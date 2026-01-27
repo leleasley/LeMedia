@@ -10,6 +10,9 @@ type SessionRow = {
   expiresAt: string;
   revokedAt: string | null;
   lastSeenAt: string | null;
+  userAgent?: string | null;
+  deviceLabel?: string | null;
+  ipAddress?: string | null;
 };
 
 type SessionsResponse = {
@@ -31,6 +34,7 @@ export function UserSessionsPanel() {
   const { data, error, mutate, isValidating } = useSWR<SessionsResponse>("/api/profile/sessions", fetcher);
   const [revoking, setRevoking] = useState<string | null>(null);
   const [revokingAll, setRevokingAll] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const toast = useToast();
 
   const revokeSession = async (jti: string) => {
@@ -68,6 +72,33 @@ export function UserSessionsPanel() {
       toast.error(err?.message || "Failed to revoke sessions");
     } finally {
       setRevokingAll(false);
+    }
+  };
+
+  const deleteRevokedSession = async (jti: string) => {
+    setDeleting(jti);
+    try {
+      const res = await csrfFetch("/api/profile/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jti })
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload?.error || "Failed to delete session");
+      }
+      toast.success("Session deleted");
+      mutate(
+        (current) => ({
+          currentJti: current?.currentJti ?? null,
+          sessions: (current?.sessions ?? []).filter((session) => session.jti !== jti)
+        }),
+        false
+      );
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to delete session");
+    } finally {
+      setDeleting(null);
     }
   };
 
@@ -138,8 +169,16 @@ export function UserSessionsPanel() {
                       </span>
                     )}
                   </div>
+                  <div className="text-white/90">
+                    {session.deviceLabel || "Unknown device"}
+                  </div>
                   <div>Last seen: {formatWhen(session.lastSeenAt)}</div>
-                  <div>Expires: {formatWhen(session.expiresAt)}</div>
+                  {session.revokedAt ? (
+                    <div>Revoked: {formatWhen(session.revokedAt)}</div>
+                  ) : (
+                    <div>Expires: {formatWhen(session.expiresAt)}</div>
+                  )}
+                  {session.ipAddress ? <div>IP: {session.ipAddress}</div> : null}
                 </div>
                 <div className="flex items-center gap-2">
                   {!isCurrent && !session.revokedAt && (
@@ -150,6 +189,16 @@ export function UserSessionsPanel() {
                       className="rounded-lg bg-red-500/20 hover:bg-red-500/30 px-4 py-2 text-sm font-semibold text-red-200 transition-colors disabled:opacity-50"
                     >
                       {revoking === session.jti ? "Revoking..." : "Revoke"}
+                    </button>
+                  )}
+                  {session.revokedAt && (
+                    <button
+                      type="button"
+                      onClick={() => deleteRevokedSession(session.jti)}
+                      disabled={deleting === session.jti}
+                      className="rounded-lg bg-white/10 hover:bg-white/20 px-4 py-2 text-sm font-semibold text-white transition-colors disabled:opacity-50"
+                    >
+                      {deleting === session.jti ? "Deleting..." : "Delete"}
                     </button>
                   )}
                   {isValidating ? (

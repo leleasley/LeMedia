@@ -8,6 +8,7 @@ import { authenticator } from "otplib";
 import { checkRateLimit, checkLockout, clearFailures, getClientIp, recordFailure, rateLimitResponse } from "@/lib/rate-limit";
 import { logAuditEvent } from "@/lib/audit-log";
 import { randomUUID } from "crypto";
+import { summarizeUserAgent } from "@/lib/device-info";
 import { verifyTurnstileToken } from "@/lib/turnstile";
 
 type SeedConfig = {
@@ -39,6 +40,8 @@ export async function POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   const base = ctx.base;
   const ip = getClientIp(req);
+  const userAgent = req.headers.get("user-agent");
+  const deviceLabel = summarizeUserAgent(userAgent);
   const rate = checkRateLimit(`login:${ip}`, { windowMs: 60 * 1000, max: 10 });
 
   const redirectToLogin = (message: string) => {
@@ -147,7 +150,11 @@ export async function POST(req: NextRequest) {
 
   const jti = randomUUID();
   const token = await createSessionToken({ username: user.username, groups, maxAgeSeconds: sessionMaxAge, jti });
-  await createUserSession(user.id, jti, new Date(Date.now() + sessionMaxAge * 1000));
+  await createUserSession(user.id, jti, new Date(Date.now() + sessionMaxAge * 1000), {
+    userAgent,
+    deviceLabel,
+    ipAddress: ip
+  });
   const res = NextResponse.redirect(new URL(from || "/", base), { status: 303 });
   res.cookies.set("lemedia_session", token, { ...cookieBase, maxAge: sessionMaxAge });
     // Clear any old flash cookies first, then set the new one

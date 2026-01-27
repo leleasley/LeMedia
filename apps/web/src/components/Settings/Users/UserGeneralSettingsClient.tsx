@@ -37,15 +37,36 @@ type DefaultLimits = {
     series: { limit: number; days: number };
 };
 
+type UserSessionRow = {
+    jti: string;
+    expiresAt: string;
+    revokedAt: string | null;
+    lastSeenAt: string | null;
+    userAgent?: string | null;
+    deviceLabel?: string | null;
+    ipAddress?: string | null;
+};
+
+type UserSessionsResponse = {
+    userId: number;
+    sessions: UserSessionRow[];
+};
+
 export function UserGeneralSettingsClient() {
     const params = useParams();
     const userId = params?.id;
     const toast = useToast();
     const [saving, setSaving] = useState(false);
     const [resettingMfa, setResettingMfa] = useState(false);
+    const [revokingSession, setRevokingSession] = useState<string | null>(null);
+    const [deletingSession, setDeletingSession] = useState<string | null>(null);
+    const [revokingAll, setRevokingAll] = useState(false);
 
     const { data: user, error, mutate } = useSWR<User>(userId ? `/api/v1/admin/users/${userId}` : null);
     const { data: defaultLimits } = useSWR<DefaultLimits>("/api/v1/admin/settings/users");
+    const { data: sessionsData, mutate: mutateSessions } = useSWR<UserSessionsResponse>(
+        userId ? `/api/v1/admin/users/${userId}/sessions` : null
+    );
 
     const [formData, setFormData] = useState({
         displayName: "",
@@ -128,6 +149,83 @@ export function UserGeneralSettingsClient() {
             toast.error("Failed to save settings");
         } finally {
             setSaving(false);
+        }
+    };
+
+    const formatWhen = (value: string | null) => {
+        if (!value) return "Never";
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return "Unknown";
+        return date.toLocaleString();
+    };
+
+    const revokeSession = async (jti: string) => {
+        if (!userId) return;
+        setRevokingSession(jti);
+        try {
+            const res = await csrfFetch(`/api/v1/admin/users/${userId}/sessions`, {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ jti })
+            });
+            const payload = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(payload?.error || "Failed to revoke session");
+            }
+            toast.success("Session revoked");
+            mutateSessions();
+        } catch (err: any) {
+            toast.error(err?.message || "Failed to revoke session");
+        } finally {
+            setRevokingSession(null);
+        }
+    };
+
+    const revokeAllSessions = async () => {
+        if (!userId) return;
+        setRevokingAll(true);
+        try {
+            const res = await csrfFetch(`/api/v1/admin/users/${userId}/logout-sessions`, {
+                method: "POST",
+            });
+            const payload = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(payload?.error || "Failed to revoke sessions");
+            }
+            toast.success("All sessions revoked");
+            mutateSessions();
+        } catch (err: any) {
+            toast.error(err?.message || "Failed to revoke sessions");
+        } finally {
+            setRevokingAll(false);
+        }
+    };
+
+    const deleteRevokedSession = async (jti: string) => {
+        if (!userId) return;
+        setDeletingSession(jti);
+        try {
+            const res = await csrfFetch(`/api/v1/admin/users/${userId}/sessions`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ jti })
+            });
+            const payload = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(payload?.error || "Failed to delete session");
+            }
+            toast.success("Session deleted");
+            mutateSessions(
+                (current) => ({
+                    userId: current?.userId ?? Number(userId),
+                    sessions: (current?.sessions ?? []).filter((session) => session.jti !== jti)
+                }),
+                false
+            );
+        } catch (err: any) {
+            toast.error(err?.message || "Failed to delete session");
+        } finally {
+            setDeletingSession(null);
         }
     };
 
@@ -390,6 +488,90 @@ export function UserGeneralSettingsClient() {
                             onClose={() => setResettingMfa(false)} 
                         />
                     )}
+
+                    <div className="mt-6 rounded-xl border border-white/10 bg-white/5 p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                            <div>
+                                <div className="text-sm font-semibold text-white">User Sessions</div>
+                                <div className="text-xs text-gray-400">
+                                    Active and recent sessions for this user.
+                                </div>
+                            </div>
+                            <button
+                                onClick={revokeAllSessions}
+                                disabled={revokingAll}
+                                className="rounded-lg bg-red-500/20 px-3 py-2 text-xs font-semibold text-red-200 hover:bg-red-500/30 transition-colors disabled:opacity-50"
+                            >
+                                {revokingAll ? "Revoking..." : "Revoke all sessions"}
+                            </button>
+                        </div>
+
+                        {!sessionsData?.sessions?.length ? (
+                            <div className="rounded-lg border border-white/10 bg-black/30 px-4 py-3 text-xs text-gray-400">
+                                No sessions recorded.
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-xs text-left">
+                                    <thead className="text-[10px] uppercase tracking-[0.2em] text-gray-500">
+                                        <tr className="border-b border-white/10">
+                                            <th className="py-2">Device</th>
+                                            <th className="py-2">Last Seen</th>
+                                            <th className="py-2">Expires</th>
+                                            <th className="py-2">IP</th>
+                                            <th className="py-2">Status</th>
+                                            <th className="py-2">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-white/10">
+                                        {sessionsData.sessions.map(session => (
+                                            <tr key={session.jti}>
+                                                <td className="py-2 text-gray-300">
+                                                    {session.deviceLabel || "Unknown device"}
+                                                </td>
+                                                <td className="py-2 text-gray-300">{formatWhen(session.lastSeenAt)}</td>
+                                                <td className="py-2 text-gray-300">
+                                                    {session.revokedAt ? formatWhen(session.revokedAt) : formatWhen(session.expiresAt)}
+                                                </td>
+                                                <td className="py-2 text-gray-300">{session.ipAddress ?? "—"}</td>
+                                                <td className="py-2">
+                                                    {session.revokedAt ? (
+                                                        <span className="rounded-full bg-red-500/20 px-2 py-0.5 text-[10px] font-semibold text-red-200">
+                                                            revoked
+                                                        </span>
+                                                    ) : (
+                                                        <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-200">
+                                                            active
+                                                        </span>
+                                                    )}
+                                                </td>
+                                                <td className="py-2">
+                                                    {!session.revokedAt && (
+                                                        <button
+                                                            onClick={() => revokeSession(session.jti)}
+                                                            disabled={revokingSession === session.jti}
+                                                            className="rounded-lg bg-white/10 px-2.5 py-1 text-[10px] font-semibold text-white hover:bg-white/20 transition-colors disabled:opacity-50"
+                                                        >
+                                                            {revokingSession === session.jti ? "Revoking..." : "Revoke"}
+                                                        </button>
+                                                    )}
+                                                    {session.revokedAt && (
+                                                        <button
+                                                            onClick={() => deleteRevokedSession(session.jti)}
+                                                            disabled={deletingSession === session.jti}
+                                                            className="rounded-lg bg-white/10 px-2.5 py-1 text-[10px] font-semibold text-white hover:bg-white/20 transition-colors disabled:opacity-50"
+                                                        >
+                                                            {deletingSession === session.jti ? "Deleting..." : "Delete"}
+                                                        </button>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
                 </div>
 
                 {/* Save Button */}

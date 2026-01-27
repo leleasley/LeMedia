@@ -6,6 +6,7 @@ import { ensureCsrfCookie, getCookieBase, getRequestContext, sanitizeRelativePat
 import { isValidCsrfToken } from "@/lib/csrf";
 import { checkRateLimit, checkLockout, clearFailures, getClientIp, recordFailure, rateLimitResponse } from "@/lib/rate-limit";
 import { randomUUID } from "crypto";
+import { summarizeUserAgent } from "@/lib/device-info";
 
 function redirectToLogin(base: string, message: string) {
   const url = new URL("/login", base);
@@ -90,7 +91,13 @@ export async function POST(req: NextRequest) {
 
   const jti = randomUUID();
   const sessionToken = await createSessionToken({ username: user.username, groups, maxAgeSeconds: sessionMaxAge, jti });
-  await createUserSession(user.id, jti, new Date(Date.now() + sessionMaxAge * 1000));
+  const userAgent = req.headers.get("user-agent");
+  const deviceLabel = summarizeUserAgent(userAgent);
+  await createUserSession(user.id, jti, new Date(Date.now() + sessionMaxAge * 1000), {
+    userAgent,
+    deviceLabel,
+    ipAddress: ip
+  });
   const url = new URL(from, base);
   const res = NextResponse.redirect(url, { status: 303 });
   res.cookies.set("lemedia_session", sessionToken, { ...cookieOptions, maxAge: sessionMaxAge });

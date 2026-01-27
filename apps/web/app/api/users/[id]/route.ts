@@ -18,6 +18,7 @@ import { requireCsrf } from "@/lib/csrf";
 import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/rate-limit";
 import { randomUUID } from "crypto";
+import { summarizeUserAgent } from "@/lib/device-info";
 
 const updateSchema = z.object({
   username: z.string().trim().min(1).optional(),
@@ -116,7 +117,13 @@ export async function PUT(req: NextRequest, { params }: { params: ParamsInput })
     const groups = fresh.groups.length ? fresh.groups : ["users"];
     const jti = randomUUID();
     const sessionToken = await createSessionToken({ username: fresh.username, groups, maxAgeSeconds: sessionMaxAge, jti });
-    await createUserSession(fresh.id, jti, new Date(Date.now() + sessionMaxAge * 1000));
+    const userAgent = req.headers.get("user-agent");
+    const deviceLabel = summarizeUserAgent(userAgent);
+    await createUserSession(fresh.id, jti, new Date(Date.now() + sessionMaxAge * 1000), {
+      userAgent,
+      deviceLabel,
+      ipAddress: getClientIp(req)
+    });
     response.cookies.set("lemedia_session", sessionToken, { ...cookieBase, maxAge: sessionMaxAge });
     response.cookies.set("lemedia_session_reset", "", { ...cookieBase, httpOnly: false, maxAge: 0 });
   }

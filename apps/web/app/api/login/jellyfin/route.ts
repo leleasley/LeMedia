@@ -16,6 +16,8 @@ import { authenticator } from "otplib";
 import { checkLockout, checkRateLimit, clearFailures, getClientIp, recordFailure, rateLimitResponse } from "@/lib/rate-limit";
 import { logAuditEvent } from "@/lib/audit-log";
 import { randomUUID } from "crypto";
+import { summarizeUserAgent } from "@/lib/device-info";
+import { verifyTurnstileToken } from "@/lib/turnstile";
 
 function buildDeviceId(username: string) {
   return Buffer.from(`BOT_lemedia_${username}`).toString("base64");
@@ -31,6 +33,7 @@ export async function POST(req: NextRequest) {
   const usernameInput = (formData.get("username")?.toString().trim() || "");
   const password = formData.get("password")?.toString() || "";
   const csrfToken = formData.get("csrf_token")?.toString() || "";
+  const turnstileToken = formData.get("turnstile_token")?.toString() || "";
   const from = sanitizeRelativePath(formData.get("from")?.toString());
   const ctx = getRequestContext(req);
   const base = ctx.base;
@@ -64,6 +67,11 @@ export async function POST(req: NextRequest) {
 
   if (!isValidCsrfToken(req, csrfToken)) {
     return redirectToLogin("Invalid CSRF token");
+  }
+
+  const turnstileValid = await verifyTurnstileToken(turnstileToken, ip);
+  if (!turnstileValid) {
+    return redirectToLogin("Invalid security challenge. Please try again.");
   }
 
   if (!usernameInput || !password) {
@@ -154,7 +162,13 @@ export async function POST(req: NextRequest) {
 
   const jti = randomUUID();
   const token = await createSessionToken({ username: user.username, groups, maxAgeSeconds: sessionMaxAge, jti });
-  await createUserSession(user.id, jti, new Date(Date.now() + sessionMaxAge * 1000));
+  const userAgent = req.headers.get("user-agent");
+  const deviceLabel = summarizeUserAgent(userAgent);
+  await createUserSession(user.id, jti, new Date(Date.now() + sessionMaxAge * 1000), {
+    userAgent,
+    deviceLabel,
+    ipAddress: ip
+  });
   const res = NextResponse.redirect(new URL(from || "/", base), { status: 303 });
   res.cookies.set("lemedia_session", token, { ...cookieBase, maxAge: sessionMaxAge });
   res.cookies.set("lemedia_flash", "", { ...cookieBase, maxAge: 0 });

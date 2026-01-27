@@ -25,11 +25,12 @@ interface ProfileSettingsShellClientProps {
   children: ReactNode;
 }
 
-type SettingsTabKey = "general" | "password" | "linked" | "notifications" | "permissions";
+type SettingsTabKey = "general" | "security" | "linked" | "notifications" | "permissions";
+type LegacyTabKey = SettingsTabKey | "password";
 
 const tabOrder: Array<{ key: SettingsTabKey; label: string }> = [
   { key: "general", label: "General" },
-  { key: "password", label: "Password" },
+  { key: "security", label: "Security" },
   { key: "linked", label: "Linked Accounts" },
   { key: "notifications", label: "Notifications" },
   { key: "permissions", label: "Permissions" }
@@ -41,7 +42,8 @@ export function ProfileSettingsShellClient({ user, isAdmin, children }: ProfileS
 
   const activeTab = useMemo<SettingsTabKey>(() => {
     const lastSegment = pathname?.split("/").filter(Boolean).pop();
-    const match = tabOrder.find(tab => tab.key === lastSegment);
+    const normalized = (lastSegment === "password" ? "security" : lastSegment) as LegacyTabKey;
+    const match = tabOrder.find(tab => tab.key === normalized);
     return match?.key ?? "general";
   }, [pathname]);
 

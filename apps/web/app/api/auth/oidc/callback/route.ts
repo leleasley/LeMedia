@@ -16,6 +16,7 @@ import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { logger } from "@/lib/logger";
 import { logAuditEvent } from "@/lib/audit-log";
 import { randomUUID } from "crypto";
+import { summarizeUserAgent } from "@/lib/device-info";
 
 type OidcDiscovery = {
   authorization_endpoint: string;
@@ -286,7 +287,13 @@ export async function GET(req: NextRequest) {
 
   const jti = randomUUID();
   const token = await createSessionToken({ username: user.username, groups: sessionGroups, maxAgeSeconds: sessionMaxAge, jti });
-  await createUserSession(user.id, jti, new Date(Date.now() + sessionMaxAge * 1000));
+  const userAgent = req.headers.get("user-agent");
+  const deviceLabel = summarizeUserAgent(userAgent);
+  await createUserSession(user.id, jti, new Date(Date.now() + sessionMaxAge * 1000), {
+    userAgent,
+    deviceLabel,
+    ipAddress: ip
+  });
   const res = NextResponse.redirect(new URL(from, base));
   res.cookies.set("lemedia_session", token, { ...cookieBase, maxAge: sessionMaxAge });
   // Clear any stale flash state before setting success

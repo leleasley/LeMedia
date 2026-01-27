@@ -32,11 +32,11 @@ interface ProfileSettingsPageClientProps {
   activeTab?: SettingsTabKey;
 }
 
-type SettingsTabKey = "general" | "password" | "linked" | "notifications" | "permissions";
+type SettingsTabKey = "general" | "security" | "linked" | "notifications" | "permissions";
 
 const tabOrder: Array<{ key: SettingsTabKey; label: string }> = [
   { key: "general", label: "General" },
-  { key: "password", label: "Password" },
+  { key: "security", label: "Security" },
   { key: "linked", label: "Linked Accounts" },
   { key: "notifications", label: "Notifications" },
   { key: "permissions", label: "Permissions" }
@@ -49,7 +49,8 @@ export function ProfileSettingsPageClient({
   assignedEndpoints,
   activeTab: activeTabProp
 }: ProfileSettingsPageClientProps) {
-  const activeTab = tabOrder.some(tab => tab.key === activeTabProp) ? (activeTabProp as SettingsTabKey) : "general";
+  const normalizedTab = (activeTabProp as string | undefined) === "password" ? "security" : activeTabProp;
+  const activeTab = tabOrder.some(tab => tab.key === normalizedTab) ? (normalizedTab as SettingsTabKey) : "general";
 
   return (
     <div className="min-h-screen">
@@ -66,9 +67,9 @@ export function ProfileSettingsPageClient({
           <ProfileSettings section="linked" />
         )}
 
-        {activeTab === "password" && (
+        {activeTab === "security" && (
           <div className="space-y-8">
-            <ProfileSettings section="password" />
+            <ProfileSettings section="security" />
 
             <div className="rounded-2xl md:rounded-3xl glass-strong p-6 md:p-10 border border-white/10 shadow-xl">
               <div className="flex items-center gap-4 mb-6">

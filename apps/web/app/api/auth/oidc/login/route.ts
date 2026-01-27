@@ -3,6 +3,7 @@ import { randomBytes } from "crypto";
 import { getOidcConfig } from "@/db";
 import { getCookieBase, getRequestContext, sanitizeRelativePath } from "@/lib/proxy";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
+import { verifyTurnstileToken } from "@/lib/turnstile";
 
 type OidcDiscovery = {
   authorization_endpoint: string;
@@ -36,12 +37,20 @@ export async function GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   const base = ctx.base;
   const from = sanitizeRelativePath(req.nextUrl.searchParams.get("from"));
+  const turnstileToken = req.nextUrl.searchParams.get("turnstile_token") ?? "";
   const ip = getClientIp(req);
   const rate = checkRateLimit(`oidc_login:${ip}`, { windowMs: 60 * 1000, max: 20 });
 
   if (!rate.ok) {
     const url = new URL("/login", base);
     url.searchParams.set("error", "Too many SSO attempts. Please try again shortly.");
+    return NextResponse.redirect(url);
+  }
+
+  const turnstileValid = await verifyTurnstileToken(turnstileToken, ip);
+  if (!turnstileValid) {
+    const url = new URL("/login", base);
+    url.searchParams.set("error", "Invalid security challenge. Please try again.");
     return NextResponse.redirect(url);
   }
 
