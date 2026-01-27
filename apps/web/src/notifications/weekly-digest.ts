@@ -8,6 +8,7 @@ import { logger } from "@/lib/logger";
 const WEEK_DAYS = 7;
 const SOON_DAYS = 30;
 const MAX_ITEMS = 8;
+const MOVIE_PAGES = 3;
 
 type DigestItem = {
   id: number;
@@ -70,10 +71,10 @@ function mapTv(item: any): DigestItem | null {
   };
 }
 
-function buildSection(title: string, items: DigestItem[], baseUrl: string) {
+function buildSection(title: string, items: DigestItem[], baseUrl: string, emptyMessage: string) {
   if (!items.length) {
     return `
-      <div style="padding:12px 0;color:#94a3b8;font-size:14px;">No ${title.toLowerCase()} items this week.</div>
+      <div style="padding:12px 0;color:#94a3b8;font-size:14px;">${emptyMessage}</div>
     `;
   }
 
@@ -179,7 +180,7 @@ function buildEmailHtml(params: {
                   <tr>
                     <td style="padding:8px;">
                       <div style="font-size:20px;font-weight:700;color:#f8fafc;margin-bottom:16px;padding:0 8px;">🎬 Out This Week — Movies</div>
-                      ${buildSection("Out this week movies", params.weekMovies, params.baseUrl)}
+                      ${buildSection("Out this week movies", params.weekMovies, params.baseUrl, "No movies releasing in the next 7 days.")}
                     </td>
                   </tr>
 
@@ -190,7 +191,7 @@ function buildEmailHtml(params: {
                   <tr>
                     <td style="padding:8px;">
                       <div style="font-size:20px;font-weight:700;color:#f8fafc;margin-bottom:16px;padding:0 8px;">📺 Out This Week — TV</div>
-                      ${buildSection("Out this week tv", params.weekTv, params.baseUrl)}
+                      ${buildSection("Out this week tv", params.weekTv, params.baseUrl, "No TV releases in the next 7 days.")}
                     </td>
                   </tr>
 
@@ -201,7 +202,7 @@ function buildEmailHtml(params: {
                   <tr>
                     <td style="padding:8px;">
                       <div style="font-size:20px;font-weight:700;color:#f8fafc;margin-bottom:16px;padding:0 8px;">🍿 Coming Soon — Movies</div>
-                      ${buildSection("Coming soon movies", params.soonMovies, params.baseUrl)}
+                      ${buildSection("Coming soon movies", params.soonMovies, params.baseUrl, "No movies scheduled in the next 30 days.")}
                     </td>
                   </tr>
 
@@ -212,7 +213,7 @@ function buildEmailHtml(params: {
                   <tr>
                     <td style="padding:8px;">
                       <div style="font-size:20px;font-weight:700;color:#f8fafc;margin-bottom:16px;padding:0 8px;">📡 Coming Soon — TV</div>
-                      ${buildSection("Coming soon tv", params.soonTv, params.baseUrl)}
+                      ${buildSection("Coming soon tv", params.soonTv, params.baseUrl, "No TV releases scheduled in the next 30 days.")}
                     </td>
                   </tr>
                 </table>
@@ -274,12 +275,23 @@ function buildTextDigest(params: {
 }
 
 async function buildDigestContent() {
-  const [movieData, tvData] = await Promise.all([
-    getUpcomingMoviesAccurateCombined(1),
-    getUpcomingTvAccurate(1)
-  ]);
+  const moviePages = await Promise.all(
+    Array.from({ length: MOVIE_PAGES }, (_, index) => getUpcomingMoviesAccurateCombined(index + 1))
+  );
+  const movieSeen = new Set<number>();
+  const movieResults = moviePages
+    .flatMap((page) => page.results ?? [])
+    .filter((item: any) => {
+      if (!item?.id) return false;
+      if (movieSeen.has(item.id)) return false;
+      movieSeen.add(item.id);
+      return true;
+    })
+    .sort((a: any, b: any) => String(a.release_date).localeCompare(String(b.release_date)));
 
-  const movies = (movieData.results ?? [])
+  const tvData = await getUpcomingTvAccurate(1);
+
+  const movies = movieResults
     .map(mapMovie)
     .filter(Boolean) as DigestItem[];
   const tv = (tvData.results ?? [])
@@ -288,13 +300,14 @@ async function buildDigestContent() {
 
   const today = new Date();
   const weekEnd = daysFromNow(WEEK_DAYS);
+  const soonStart = daysFromNow(WEEK_DAYS + 1);
   const soonEnd = daysFromNow(SOON_DAYS);
 
   return {
     weekMovies: filterByWindow(movies, today, weekEnd).slice(0, MAX_ITEMS),
     weekTv: filterByWindow(tv, today, weekEnd).slice(0, MAX_ITEMS),
-    soonMovies: filterByWindow(movies, weekEnd, soonEnd).slice(0, MAX_ITEMS),
-    soonTv: filterByWindow(tv, weekEnd, soonEnd).slice(0, MAX_ITEMS)
+    soonMovies: filterByWindow(movies, soonStart, soonEnd).slice(0, MAX_ITEMS),
+    soonTv: filterByWindow(tv, soonStart, soonEnd).slice(0, MAX_ITEMS)
   };
 }
 

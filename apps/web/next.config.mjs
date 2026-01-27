@@ -63,12 +63,12 @@ const nextConfig = {
   headers: async () => {
     const csp = [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-      "style-src 'self' 'unsafe-inline'",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com https://*.cloudflare.com",
+      "style-src 'self' 'unsafe-inline' https://challenges.cloudflare.com",
       "img-src 'self' data: blob: https://image.tmdb.org https://artworks.thetvdb.com https://gravatar.com https://plex.tv",
       "font-src 'self' data:",
-      "connect-src 'self' https://api.themoviedb.org https://www.omdbapi.com",
-      "frame-src 'self' https://www.youtube-nocookie.com",
+      "connect-src 'self' https://api.themoviedb.org https://www.omdbapi.com https://challenges.cloudflare.com https://*.cloudflare.com",
+      "frame-src 'self' https://www.youtube-nocookie.com https://challenges.cloudflare.com https://*.cloudflare.com",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",

@@ -11,11 +11,12 @@ import { getMfaSessionById, getUserById } from "@/db";
 import { resolveTotpIssuer } from "@/lib/server-utils";
 import { authenticator } from "otplib";
 import { toDataURL } from "qrcode";
-import { CsrfTokenInput } from "@/components/Common/CsrfTokenInput";
+import { MfaSetupForm } from "@/components/auth/MfaSetupForm";
 
 export default async function MfaSetupPage() {
   const cookieStore = await cookies();
   const token = cookieStore.get("lemedia_mfa_token")?.value;
+  const csrfToken = cookieStore.get("lemedia_csrf")?.value;
   const flash = cookieStore.get("lemedia_flash")?.value;
   const flashError = cookieStore.get("lemedia_flash_error")?.value;
 
@@ -74,30 +75,7 @@ export default async function MfaSetupPage() {
           </div>
         </div>
 
-        <form className="space-y-6" method="post" action="/api/v1/mfa/setup">
-          <CsrfTokenInput />
-          <div className="space-y-2">
-            <label className="text-sm font-medium block" htmlFor="code">
-              Verification code
-            </label>
-            <input
-              className="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 backdrop-blur-md focus:border-white/40 focus:ring-4 focus:ring-white/20 outline-none transition-all"
-              id="code"
-              name="code"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              required
-              maxLength={6}
-              placeholder="123456"
-            />
-          </div>
-          <button
-            type="submit"
-            className="w-full btn-primary py-3 text-lg font-semibold rounded-xl shadow-lg hover:shadow-2xl transform hover:-translate-y-1 transition-all"
-          >
-            Activate MFA
-          </button>
-        </form>
+        <MfaSetupForm csrfToken={csrfToken} />
 
         <p className="text-xs text-center opacity-60">
           Once validated, you will be signed out and asked to sign in again using the new MFA configuration.

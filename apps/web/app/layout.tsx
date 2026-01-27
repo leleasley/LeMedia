@@ -5,6 +5,7 @@ import SWRProvider from "@/components/Providers/SWRProvider";
 import { ToastProvider, ToastInput } from "@/components/Providers/ToastProvider";
 import { ThemeProvider } from "next-themes";
 import { ServiceWorkerReset } from "@/components/Layout/ServiceWorkerReset";
+import { TurnstileScript } from "@/components/Common/TurnstileScript";
 
 // Removed force-dynamic to allow Next.js to optimize pages statically where possible
 // Individual routes can still use dynamic rendering if needed
@@ -99,6 +100,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <link rel="apple-touch-startup-image" href="/splash/apple-splash-1488-2266.png" media="(device-width: 744px) and (device-height: 1133px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" />
       </head>
       <body className="antialiased min-h-screen md:overflow-hidden">
+        <TurnstileScript />
         <ThemeProvider attribute="class" defaultTheme="dark" storageKey="lemedia-theme" enableSystem>
           <IntlProviderWrapper>
             <ToastProvider initialToasts={initialToasts}>

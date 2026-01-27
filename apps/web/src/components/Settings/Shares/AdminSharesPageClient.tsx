@@ -222,6 +222,7 @@ export function AdminSharesPageClient() {
                   <th className="pb-3 font-medium">Views</th>
                   <th className="pb-3 font-medium">Last Viewed</th>
                   <th className="pb-3 font-medium">Viewer</th>
+                  <th className="pb-3 font-medium">IP</th>
                   <th className="pb-3 font-medium">Referrer</th>
                   <th className="pb-3 font-medium">Link</th>
                   <th className="pb-3 font-medium">Actions</th>
@@ -287,6 +288,9 @@ export function AdminSharesPageClient() {
                       <td className="py-4 text-sm text-muted">
                         {share.lastViewedCountry ? share.lastViewedCountry.toUpperCase() : "Unknown"}
                         {share.lastViewedUaHash ? ` • ${share.lastViewedUaHash}` : ""}
+                      </td>
+                      <td className="py-4 text-sm text-muted">
+                        {share.lastViewedIp ?? "Unknown"}
                       </td>
                       <td className="py-4 text-sm text-muted">
                         {formatReferrer(share.lastViewedReferrer)}

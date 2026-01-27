@@ -850,6 +850,28 @@ export type UserSessionRecord = {
   revoked_at: string | null;
 };
 
+export type UserSessionSummary = {
+  id: string;
+  jti: string;
+  expiresAt: string;
+  revokedAt: string | null;
+  lastSeenAt: string | null;
+};
+
+export async function listUserSessions(userId: number): Promise<UserSessionSummary[]> {
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT id, jti, expires_at as "expiresAt", revoked_at as "revokedAt", last_seen_at as "lastSeenAt"
+    FROM user_session
+    WHERE user_id = $1
+    ORDER BY last_seen_at DESC NULLS LAST, expires_at DESC
+    `,
+    [userId]
+  );
+  return res.rows;
+}
+
 export async function createUserSession(userId: number, jti: string, expiresAt: Date): Promise<void> {
   await ensureUserSchema();
   const p = getPool();
@@ -882,6 +904,28 @@ export async function touchUserSession(jti: string): Promise<boolean> {
 export async function revokeSessionByJti(jti: string): Promise<void> {
   const p = getPool();
   await p.query(`UPDATE user_session SET revoked_at = NOW() WHERE jti = $1`, [jti]);
+}
+
+export async function revokeSessionByJtiForUser(userId: number, jti: string): Promise<boolean> {
+  const p = getPool();
+  const res = await p.query(
+    `UPDATE user_session
+     SET revoked_at = NOW()
+     WHERE user_id = $1 AND jti = $2`,
+    [userId, jti]
+  );
+  return Number(res.rowCount ?? 0) > 0;
+}
+
+export async function revokeOtherSessionsForUser(userId: number, currentJti: string): Promise<number> {
+  const p = getPool();
+  const res = await p.query(
+    `UPDATE user_session
+     SET revoked_at = NOW()
+     WHERE user_id = $1 AND jti <> $2`,
+    [userId, currentJti]
+  );
+  return Number(res.rowCount ?? 0);
 }
 
 export async function revokeAllSessionsForUser(userId: number): Promise<void> {
@@ -3807,6 +3851,9 @@ export type Job = {
   lastRun: string | null;
   nextRun: string | null;
   runOnStart: boolean;
+  failureCount: number;
+  lastError: string | null;
+  disabledReason: string | null;
 };
 
 export async function listJobs(): Promise<Job[]> {
@@ -3822,7 +3869,10 @@ export async function listJobs(): Promise<Job[]> {
     enabled: r.enabled,
     lastRun: r.last_run,
     nextRun: r.next_run,
-    runOnStart: r.run_on_start
+    runOnStart: r.run_on_start,
+    failureCount: r.failure_count ?? 0,
+    lastError: r.last_error ?? null,
+    disabledReason: r.disabled_reason ?? null
   }));
 }
 
@@ -3841,7 +3891,10 @@ export async function getJob(name: string): Promise<Job | null> {
     enabled: r.enabled,
     lastRun: r.last_run,
     nextRun: r.next_run,
-    runOnStart: r.run_on_start
+    runOnStart: r.run_on_start,
+    failureCount: r.failure_count ?? 0,
+    lastError: r.last_error ?? null,
+    disabledReason: r.disabled_reason ?? null
   };
 }
 
@@ -3875,6 +3928,30 @@ export async function updateJobRun(id: number, lastRun: Date, nextRun: Date) {
          last_error = NULL
      WHERE id = $3`,
     [lastRun, nextRun, id]
+  );
+}
+
+export async function updateJobEnabled(id: number, enabled: boolean, nextRun?: Date): Promise<void> {
+  const p = getPool();
+  if (enabled) {
+    await p.query(
+      `UPDATE jobs
+       SET enabled = TRUE,
+           disabled_reason = NULL,
+           failure_count = 0,
+           last_error = NULL,
+           next_run = COALESCE($2, next_run)
+       WHERE id = $1`,
+      [id, nextRun ?? null]
+    );
+    return;
+  }
+  await p.query(
+    `UPDATE jobs
+     SET enabled = FALSE,
+         disabled_reason = $2
+     WHERE id = $1`,
+    [id, "Disabled by admin"]
   );
 }
 

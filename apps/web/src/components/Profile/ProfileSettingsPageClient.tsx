@@ -6,6 +6,7 @@ import { NotificationsSettingsPage } from "@/components/Settings/NotificationsPa
 import { ProfileSettings } from "@/components/Profile/ProfileSettings";
 import { MFAResetModal } from "@/components/Profile/MFAResetModal";
 import { PasskeySettings } from "@/components/Profile/PasskeySettings";
+import { UserSessionsPanel } from "@/components/Profile/UserSessionsPanel";
 import { useToast } from "@/components/Providers/ToastProvider";
 
 interface AssignedEndpoint {
@@ -97,6 +98,8 @@ export function ProfileSettingsPageClient({
             </div>
 
             <PasskeySettings />
+
+            <UserSessionsPanel />
           </div>
         )}
 

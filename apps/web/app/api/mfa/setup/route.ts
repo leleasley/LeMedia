@@ -4,11 +4,13 @@ import { getMfaSessionById, deleteMfaSessionById, setUserMfaSecretById } from "@
 import { ensureCsrfCookie, getCookieBase, getRequestContext } from "@/lib/proxy";
 import { isValidCsrfToken } from "@/lib/csrf";
 import { checkRateLimit, checkLockout, clearFailures, getClientIp, recordFailure, rateLimitResponse } from "@/lib/rate-limit";
+import { verifyTurnstileToken } from "@/lib/turnstile";
 
 export async function POST(req: NextRequest) {
   const formData = await req.formData();
   const code = (formData.get("code")?.toString().trim() || "");
   const csrfToken = formData.get("csrf_token")?.toString() || "";
+  const turnstileToken = formData.get("turnstile_token")?.toString() || "";
   const ctx = getRequestContext(req);
   const base = ctx.base;
   const ip = getClientIp(req);
@@ -32,6 +34,12 @@ export async function POST(req: NextRequest) {
 
   if (!isValidCsrfToken(req, csrfToken)) {
     return redirectToLogin();
+  }
+
+  // Verify Turnstile token if enabled
+  const turnstileValid = await verifyTurnstileToken(turnstileToken, ip);
+  if (!turnstileValid) {
+    return redirectToSetup("Invalid security challenge. Please try again.");
   }
 
   const session = await getMfaSessionById(token);

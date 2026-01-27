@@ -8,6 +8,7 @@ import { authenticator } from "otplib";
 import { checkRateLimit, checkLockout, clearFailures, getClientIp, recordFailure, rateLimitResponse } from "@/lib/rate-limit";
 import { logAuditEvent } from "@/lib/audit-log";
 import { randomUUID } from "crypto";
+import { verifyTurnstileToken } from "@/lib/turnstile";
 
 type SeedConfig = {
   username: string;
@@ -33,6 +34,7 @@ export async function POST(req: NextRequest) {
   const usernameInput = (formData.get("username")?.toString().trim() || "").toLowerCase();
   const password = formData.get("password")?.toString() || "";
   const csrfToken = formData.get("csrf_token")?.toString() || "";
+  const turnstileToken = formData.get("turnstile_token")?.toString() || "";
   const from = sanitizeRelativePath(formData.get("from")?.toString());
   const ctx = getRequestContext(req);
   const base = ctx.base;
@@ -66,6 +68,12 @@ export async function POST(req: NextRequest) {
 
   if (!isValidCsrfToken(req, csrfToken)) {
     return redirectToLogin("Invalid CSRF token");
+  }
+
+  // Verify Turnstile token if enabled
+  const turnstileValid = await verifyTurnstileToken(turnstileToken, ip);
+  if (!turnstileValid) {
+    return redirectToLogin("Invalid security challenge. Please try again.");
   }
 
   if (!usernameInput || !password) {

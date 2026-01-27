@@ -1,9 +1,10 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { CsrfTokenInput } from "@/components/Common/CsrfTokenInput";
+import { TurnstileWidget } from "@/components/Common/TurnstileWidget";
 
 interface LoginFormProps {
     from: string;
@@ -16,8 +17,12 @@ interface LoginFormProps {
 export function LoginForm({ from, csrfToken, formId, action = "/api/v1/login", submitLabel = "Sign In" }: LoginFormProps) {
     const searchParams = useSearchParams();
     const toast = useToast();
+    const [turnstileToken, setTurnstileToken] = useState<string>("");
+    const [mounted, setMounted] = useState(false);
+    const isTurnstileEnabled = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
 
     useEffect(() => {
+        setMounted(true);
         const error = searchParams.get("error");
         const success = searchParams.get("success");
 
@@ -29,10 +34,25 @@ export function LoginForm({ from, csrfToken, formId, action = "/api/v1/login", s
         }
     }, [searchParams, toast]);
 
+    const handleTurnstileSuccess = useCallback((token: string) => {
+        setTurnstileToken(token);
+    }, []);
+
+    const handleTurnstileError = useCallback(() => {
+        setTurnstileToken("");
+    }, []);
+
+    const handleTurnstileExpire = useCallback(() => {
+        setTurnstileToken("");
+    }, []);
+
     return (
         <form id={formId} className="space-y-5" method="post" action={action}>
             <input type="hidden" name="from" value={from} />
             <CsrfTokenInput value={csrfToken} />
+            {mounted && isTurnstileEnabled && (
+                <input type="hidden" name="turnstile_token" value={turnstileToken} />
+            )}
             <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider ml-1" htmlFor="username">
                     Username
@@ -62,9 +82,20 @@ export function LoginForm({ from, csrfToken, formId, action = "/api/v1/login", s
                 />
             </div>
 
+            {mounted && isTurnstileEnabled && (
+                <div className="pt-2">
+                    <TurnstileWidget
+                        onSuccess={handleTurnstileSuccess}
+                        onError={handleTurnstileError}
+                        onExpire={handleTurnstileExpire}
+                    />
+                </div>
+            )}
+
             <button
                 type="submit"
-                className="w-full mt-2 bg-white text-black hover:bg-gray-100 py-3.5 text-sm font-bold uppercase tracking-wide rounded-lg shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200"
+                disabled={mounted && isTurnstileEnabled && !turnstileToken}
+                className="w-full mt-2 bg-white text-black hover:bg-gray-100 py-3.5 text-sm font-bold uppercase tracking-wide rounded-lg shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
             >
                 {submitLabel}
             </button>

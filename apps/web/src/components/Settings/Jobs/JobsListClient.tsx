@@ -24,6 +24,9 @@ type Job = {
   lastRun: string | null;
   nextRun: string | null;
   runOnStart: boolean;
+  failureCount: number;
+  lastError: string | null;
+  disabledReason: string | null;
 };
 
 const fetcher = (url: string) =>
@@ -159,6 +162,20 @@ export function JobsListClient() {
     }
   };
 
+  const enableJob = async (job: Job) => {
+    setRunning(job.id);
+    try {
+      const res = await csrfFetch(`/api/v1/admin/jobs/${job.id}/enable`, { method: "POST" });
+      if (!res.ok) throw new Error("Failed to enable job");
+      toast.success(`Job ${job.name} re-enabled`);
+      setTimeout(() => mutate(), 1000);
+    } catch (e) {
+      toast.error("Failed to re-enable job");
+    } finally {
+      setRunning(null);
+    }
+  };
+
   const saveJob = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editJob) return;
@@ -219,6 +236,16 @@ export function JobsListClient() {
               <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${job.type === 'system' ? 'bg-blue-500/20 text-blue-200' : 'bg-green-500/20 text-green-200'}`}>
                 {job.type}
               </span>
+              {!job.enabled && (
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-red-500/20 text-red-200">
+                  disabled
+                </span>
+              )}
+              {job.failureCount > 0 && job.enabled && (
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-500/20 text-amber-200">
+                  {job.failureCount} fail{job.failureCount === 1 ? "" : "s"}
+                </span>
+              )}
             </div>
             <div className="mt-1 text-sm text-gray-400 space-y-1">
               <div className="flex items-center gap-2">
@@ -227,6 +254,12 @@ export function JobsListClient() {
               </div>
               <div>Last Run: {job.lastRun ? new Date(job.lastRun).toLocaleString() : "Never"}</div>
               <div>Next Run: {job.nextRun ? new Date(job.nextRun).toLocaleString() : "Pending..."}</div>
+              {job.disabledReason ? (
+                <div className="text-xs text-red-200">Reason: {job.disabledReason}</div>
+              ) : null}
+              {job.lastError ? (
+                <div className="text-xs text-amber-200">Last error: {job.lastError}</div>
+              ) : null}
             </div>
           </div>
           <div className="flex w-full sm:w-auto gap-3">
@@ -244,6 +277,15 @@ export function JobsListClient() {
               <PlayIcon className="h-4 w-4" />
               <span>{running === job.id ? "Running..." : "Run Now"}</span>
             </button>
+            {!job.enabled && (
+              <button
+                onClick={() => enableJob(job)}
+                disabled={running === job.id}
+                className="flex-1 sm:flex-none justify-center px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold transition-colors disabled:opacity-50"
+              >
+                Re-enable
+              </button>
+            )}
           </div>
         </div>
       ))}

@@ -30,6 +30,7 @@ services:
         - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY}
         - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY}
         - VAPID_EMAIL=${VAPID_EMAIL}
+        - NEXT_PUBLIC_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_TURNSTILE_SITE_KEY}
     container_name: lemedia-web
     env_file:
       - /opt/LeMedia/.env

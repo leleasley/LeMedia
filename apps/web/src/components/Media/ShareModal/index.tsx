@@ -5,6 +5,7 @@ import { Dialog, Transition, Listbox } from "@headlessui/react";
 import { X, Share2, Copy, Check, Clock, ChevronDown } from "lucide-react";
 import { useToast } from "@/components/Providers/ToastProvider";
 import Image from "next/image";
+import { csrfFetch } from "@/lib/csrf-client";
 
 interface ShareModalProps {
   isOpen: boolean;
@@ -48,7 +49,7 @@ export function ShareModal({ isOpen, onClose, mediaType, tmdbId, title, backdrop
 
     setIsCreating(true);
     try {
-      const res = await fetch("/api/share/create", {
+      const res = await csrfFetch("/api/share/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -121,9 +122,9 @@ export function ShareModal({ isOpen, onClose, mediaType, tmdbId, title, backdrop
               leaveFrom="opacity-100 scale-100"
               leaveTo="opacity-0 scale-95"
             >
-              <Dialog.Panel className="w-full max-w-md transform overflow-hidden rounded-2xl bg-slate-900 border border-white/10 shadow-2xl transition-all">
+              <Dialog.Panel className="w-full max-w-sm transform overflow-hidden rounded-2xl bg-slate-900 border border-white/10 shadow-2xl transition-all">
                 {/* Header with Image */}
-                <div className="relative h-64 overflow-hidden">
+                <div className="relative h-40 overflow-hidden">
                   {imageUrl ? (
                     <>
                       <Image
@@ -138,7 +139,7 @@ export function ShareModal({ isOpen, onClose, mediaType, tmdbId, title, backdrop
                   ) : (
                     <div className="absolute inset-0 bg-gradient-to-br from-slate-800 to-slate-900" />
                   )}
-                  <div className="absolute inset-0 flex flex-col justify-between p-6">
+                  <div className="absolute inset-0 flex flex-col justify-between p-4">
                     <div className="flex justify-end">
                       <button
                         onClick={handleClose}
@@ -152,13 +153,13 @@ export function ShareModal({ isOpen, onClose, mediaType, tmdbId, title, backdrop
                         <Share2 className="h-5 w-5" />
                         <span className="text-sm font-medium">Share</span>
                       </div>
-                      <h3 className="text-2xl font-bold text-white drop-shadow-lg">{title}</h3>
+                      <h3 className="text-lg font-bold text-white drop-shadow-lg line-clamp-2">{title}</h3>
                     </div>
                   </div>
                 </div>
 
                 {/* Modal Content */}
-                <div className="p-6 space-y-4">
+                <div className="p-4 space-y-4">
                   {!shareUrl ? (
                     <>
                       <div>
