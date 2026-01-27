@@ -77,7 +77,11 @@ type ProfileSettingsProps = {
   roleLabel?: string | null;
 };
 
-export function ProfileSettings({ section = "all", accountTypeLabel, roleLabel }: ProfileSettingsProps) {
+export function ProfileSettings({
+  section = "all",
+  accountTypeLabel,
+  roleLabel
+}: ProfileSettingsProps) {
   const toast = useToast();
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -608,49 +612,26 @@ export function ProfileSettings({ section = "all", accountTypeLabel, roleLabel }
             </div>
           ) : null}
 
-          {/* Security Section */}
+          {/* Security Section - Password Management */}
           {showPassword ? (
-            <div className="rounded-2xl md:rounded-3xl glass-strong p-6 md:p-10 border border-white/10 shadow-2xl">
-              <div className="flex items-center gap-3 mb-6 md:mb-8">
-                <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 backdrop-blur-md">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-foreground">
+            <div className="rounded-2xl md:rounded-3xl border border-white/10 bg-white/[0.02] p-6 md:p-8">
+              <div className="flex items-center gap-4 mb-6">
+                <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 ring-1 ring-white/10">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-300">
                     <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
                     <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
                   </svg>
                 </div>
                 <div>
-                  <h2 className="text-2xl md:text-3xl font-bold text-foreground">Security</h2>
-                  <p className="text-sm text-foreground/60 mt-1">Keep your account secure with a strong password</p>
+                  <h3 className="text-xl font-bold text-white">Password</h3>
+                  <p className="text-sm text-gray-400 mt-1">Update your password to keep your account secure</p>
                 </div>
               </div>
-              <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+
+              <form className="space-y-5" onSubmit={handleSubmit}>
                 <div className="space-y-4">
-                  <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-purple-500/10 via-fuchsia-500/5 to-transparent p-5">
-                    <h3 className="text-lg font-semibold text-white">Password hygiene</h3>
-                    <p className="mt-2 text-sm text-white/70">
-                      Use a unique password you don&apos;t reuse elsewhere. Consider rotating it after any
-                      account access changes or shared device use.
-                    </p>
-                  </div>
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-                    <div className="text-xs uppercase tracking-[0.2em] text-white/50">Quick tips</div>
-                    <ul className="mt-3 space-y-2 text-sm text-white/70">
-                      <li>• Use 12+ characters with a mix of words and symbols.</li>
-                      <li>• Avoid reusing passwords across services.</li>
-                      <li>• Update after device loss or shared logins.</li>
-                    </ul>
-                  </div>
-                </div>
-
-                <form className="space-y-5 md:space-y-6" onSubmit={handleSubmit}>
-                  <div className="rounded-xl bg-blue-500/5 border border-blue-500/20 p-4">
-                    <p className="text-sm text-foreground/80">
-                      Change your password to keep your account secure. Leave all fields blank to keep your current password.
-                    </p>
-                  </div>
-
                   <div className="space-y-2">
-                    <label className="text-sm font-semibold text-foreground" htmlFor="profile-current-password">
+                    <label className="text-sm font-medium text-white/80" htmlFor="profile-current-password">
                       Current Password
                     </label>
                     <input
@@ -658,14 +639,14 @@ export function ProfileSettings({ section = "all", accountTypeLabel, roleLabel }
                       type="password"
                       value={form.currentPassword}
                       onChange={e => updateField("currentPassword", e.target.value)}
-                      className="w-full rounded-xl border border-white/20 bg-white/5 px-4 py-3 md:py-4 text-foreground placeholder:text-foreground/30 outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 transition-all text-sm backdrop-blur-sm"
-                      placeholder="Enter current password"
+                      className="w-full rounded-lg border border-white/10 bg-black/30 px-4 py-3 text-white placeholder:text-white/30 outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 transition-all text-sm"
+                      placeholder="Enter your current password"
                     />
                   </div>
 
-                  <div className="grid md:grid-cols-2 gap-4 md:gap-5">
+                  <div className="grid sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <label className="text-sm font-semibold text-foreground" htmlFor="profile-new-password">
+                      <label className="text-sm font-medium text-white/80" htmlFor="profile-new-password">
                         New Password
                       </label>
                       <input
@@ -673,56 +654,67 @@ export function ProfileSettings({ section = "all", accountTypeLabel, roleLabel }
                         type="password"
                         value={form.newPassword}
                         onChange={e => updateField("newPassword", e.target.value)}
-                        className="w-full rounded-xl border border-white/20 bg-white/5 px-4 py-3 md:py-4 text-foreground placeholder:text-foreground/30 outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 transition-all text-sm backdrop-blur-sm"
+                        className="w-full rounded-lg border border-white/10 bg-black/30 px-4 py-3 text-white placeholder:text-white/30 outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 transition-all text-sm"
                         placeholder="New password"
                       />
                     </div>
 
                     <div className="space-y-2">
-                      <label className="text-sm font-semibold text-foreground" htmlFor="profile-confirm-password">
-                        Confirm New Password
+                      <label className="text-sm font-medium text-white/80" htmlFor="profile-confirm-password">
+                        Confirm Password
                       </label>
                       <input
                         id="profile-confirm-password"
                         type="password"
                         value={form.confirmPassword}
                         onChange={e => updateField("confirmPassword", e.target.value)}
-                        className="w-full rounded-xl border border-white/20 bg-white/5 px-4 py-3 md:py-4 text-foreground placeholder:text-foreground/30 outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 transition-all text-sm backdrop-blur-sm"
+                        className="w-full rounded-lg border border-white/10 bg-black/30 px-4 py-3 text-white placeholder:text-white/30 outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 transition-all text-sm"
                         placeholder="Confirm new password"
                       />
                     </div>
                   </div>
+                </div>
 
-                  <div className="flex justify-end gap-3 pt-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => {
-                        updateField("currentPassword", "");
-                        updateField("newPassword", "");
-                        updateField("confirmPassword", "");
-                      }}
-                      className="px-5 py-3 rounded-xl font-semibold"
-                    >
-                      Clear
-                    </Button>
-                    <Button
-                      type="submit"
-                      disabled={saving}
-                      className="btn-primary px-6 py-3 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all"
-                    >
-                      {saving ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Saving...
-                        </>
-                      ) : (
-                        "Update Password"
-                      )}
-                    </Button>
+                {/* Password Tips */}
+                <div className="rounded-lg bg-white/5 border border-white/5 p-4">
+                  <div className="flex items-start gap-3">
+                    <span className="text-white/40">💡</span>
+                    <div className="text-xs text-white/50 space-y-1">
+                      <p>Use 12+ characters with a mix of letters, numbers, and symbols</p>
+                      <p>Don&apos;t reuse passwords from other accounts</p>
+                    </div>
                   </div>
-                </form>
-              </div>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      updateField("currentPassword", "");
+                      updateField("newPassword", "");
+                      updateField("confirmPassword", "");
+                    }}
+                    className="px-4 py-2 rounded-lg text-sm font-medium border-white/10 hover:bg-white/5"
+                  >
+                    Clear
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={saving || (!form.currentPassword && !form.newPassword && !form.confirmPassword)}
+                    className="px-5 py-2 rounded-lg text-sm font-medium bg-purple-600 hover:bg-purple-500 text-white transition-colors disabled:opacity-50"
+                  >
+                    {saving ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Updating...
+                      </>
+                    ) : (
+                      "Update Password"
+                    )}
+                  </Button>
+                </div>
+              </form>
             </div>
           ) : null}
 

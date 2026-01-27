@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import useSWR from "swr";
 import { UserPermissionsClient } from "@/components/Settings/Users/UserPermissionsClient";
 import { NotificationsSettingsPage } from "@/components/Settings/NotificationsPage";
 import { ProfileSettings } from "@/components/Profile/ProfileSettings";
@@ -34,6 +35,32 @@ interface ProfileSettingsPageClientProps {
 
 type SettingsTabKey = "general" | "security" | "linked" | "notifications" | "permissions";
 
+type Credential = {
+  id: string;
+  name?: string | null;
+  deviceType: string;
+  created_at: string;
+};
+
+type SessionRow = {
+  jti: string;
+  expiresAt: string;
+  revokedAt: string | null;
+  lastSeenAt: string | null;
+};
+
+type SessionsResponse = {
+  currentJti: string | null;
+  sessions: SessionRow[];
+};
+
+const securityFetcher = (url: string) =>
+  fetch(url, { cache: "no-store" }).then((res) => res.json());
+
+type PushPreference = {
+  enabled: boolean;
+};
+
 const tabOrder: Array<{ key: SettingsTabKey; label: string }> = [
   { key: "general", label: "General" },
   { key: "security", label: "Security" },
@@ -51,6 +78,17 @@ export function ProfileSettingsPageClient({
 }: ProfileSettingsPageClientProps) {
   const normalizedTab = (activeTabProp as string | undefined) === "password" ? "security" : activeTabProp;
   const activeTab = tabOrder.some(tab => tab.key === normalizedTab) ? (normalizedTab as SettingsTabKey) : "general";
+  const { data: passkeysData } = useSWR<Credential[]>("/api/auth/webauthn/credentials", securityFetcher);
+  const { data: sessionsData } = useSWR<SessionsResponse>("/api/profile/sessions", securityFetcher);
+
+  const passkeyCount = passkeysData ? passkeysData.length : null;
+  const activeSessions = sessionsData ? sessionsData.sessions.filter(session => !session.revokedAt).length : null;
+  const showAllClear = mfaEnabled && passkeyCount !== null && passkeyCount > 0 && activeSessions !== null && activeSessions <= 2;
+  const showLoading = passkeyCount === null || activeSessions === null;
+
+  // Notifications data
+  const { data: pushData } = useSWR<PushPreference>("/api/push/preference", securityFetcher);
+  const pushEnabled = pushData?.enabled ?? null;
 
   return (
     <div className="min-h-screen">
@@ -69,91 +107,260 @@ export function ProfileSettingsPageClient({
 
         {activeTab === "security" && (
           <div className="space-y-8">
-            <ProfileSettings section="security" />
-
-            <div className="rounded-2xl md:rounded-3xl glass-strong p-6 md:p-10 border border-white/10 shadow-xl">
-              <div className="flex items-center gap-4 mb-6">
-                <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-white/5 ring-1 ring-white/10">
-                  <span className="text-xl">🔐</span>
-                </div>
-                <div>
-                  <h2 className="text-2xl font-bold text-white">Authenticator App (OTP)</h2>
-                  <p className="text-sm text-gray-400 mt-1">Add an extra layer of security using Google Authenticator or Authy</p>
-                </div>
-              </div>
-              <div className="flex flex-col gap-4">
-                {mfaEnabled ? (
-                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4 text-emerald-200">
-                    MFA is currently enabled for your account.
+            {/* Security Header */}
+            <div className="relative overflow-hidden rounded-2xl md:rounded-3xl border border-white/10 bg-gradient-to-br from-purple-500/10 via-indigo-500/5 to-transparent p-6 md:p-8">
+              <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iMC4wMyI+PGNpcmNsZSBjeD0iMzAiIGN5PSIzMCIgcj0iMiIvPjwvZz48L2c+PC9zdmc+')] opacity-50" />
+              <div className="relative">
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500/20 to-indigo-500/20 ring-1 ring-white/10">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-300">
+                      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                    </svg>
                   </div>
-                ) : (
-                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-amber-200">
-                    MFA is not configured yet. You can reset to re-enroll now.
+                  <div>
+                    <h1 className="text-2xl md:text-3xl font-bold text-white">Security Center</h1>
+                    <p className="text-sm text-white/60 mt-1">Manage your account security settings</p>
+                  </div>
+                </div>
+
+                {/* Security Status Cards */}
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="flex items-center gap-3 rounded-xl bg-black/20 border border-white/5 p-4">
+                    <div className={`flex items-center justify-center w-10 h-10 rounded-full ${mfaEnabled ? 'bg-emerald-500/20' : 'bg-amber-500/20'}`}>
+                      <span className="text-lg">{mfaEnabled ? '✓' : '!'}</span>
+                    </div>
+                    <div>
+                      <div className="text-xs text-white/50 uppercase tracking-wider">MFA</div>
+                      <div className={`font-semibold ${mfaEnabled ? 'text-emerald-300' : 'text-amber-300'}`}>
+                        {mfaEnabled ? 'Enabled' : 'Disabled'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 rounded-xl bg-black/20 border border-white/5 p-4">
+                    <div className={`flex items-center justify-center w-10 h-10 rounded-full ${passkeyCount && passkeyCount > 0 ? 'bg-emerald-500/20' : 'bg-white/10'}`}>
+                      <span className="text-lg">{passkeyCount && passkeyCount > 0 ? '🔑' : '○'}</span>
+                    </div>
+                    <div>
+                      <div className="text-xs text-white/50 uppercase tracking-wider">Passkeys</div>
+                      <div className={`font-semibold ${passkeyCount && passkeyCount > 0 ? 'text-emerald-300' : 'text-white/70'}`}>
+                        {passkeyCount === null ? 'Loading...' : passkeyCount > 0 ? `${passkeyCount} saved` : 'None'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 rounded-xl bg-black/20 border border-white/5 p-4">
+                    <div className="flex items-center justify-center w-10 h-10 rounded-full bg-white/10">
+                      <span className="text-lg">💻</span>
+                    </div>
+                    <div>
+                      <div className="text-xs text-white/50 uppercase tracking-wider">Sessions</div>
+                      <div className="font-semibold text-white/90">
+                        {activeSessions === null ? 'Loading...' : `${activeSessions} active`}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Risk Alerts */}
+                {(!showAllClear && !showLoading) && (
+                  <div className="mt-4 space-y-2">
+                    {!mfaEnabled && (
+                      <div className="flex items-center gap-3 rounded-lg bg-amber-500/10 border border-amber-500/20 px-4 py-3 text-sm text-amber-200">
+                        <span>⚠️</span>
+                        <span>Enable MFA to protect your account from unauthorized access</span>
+                      </div>
+                    )}
+                    {passkeyCount === 0 && (
+                      <div className="flex items-center gap-3 rounded-lg bg-amber-500/10 border border-amber-500/20 px-4 py-3 text-sm text-amber-200">
+                        <span>⚠️</span>
+                        <span>Add a passkey for faster, phishing-resistant logins</span>
+                      </div>
+                    )}
+                    {activeSessions !== null && activeSessions > 2 && (
+                      <div className="flex items-center gap-3 rounded-lg bg-amber-500/10 border border-amber-500/20 px-4 py-3 text-sm text-amber-200">
+                        <span>⚠️</span>
+                        <span>{activeSessions} active sessions - review and revoke any you don&apos;t recognize</span>
+                      </div>
+                    )}
                   </div>
                 )}
-                <div className="flex items-center justify-between">
-                  <div className="text-sm text-gray-300">Reset will sign you out to complete re-enrollment.</div>
-                  <MFAResetModal />
-                </div>
+                {showAllClear && (
+                  <div className="mt-4 flex items-center gap-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-4 py-3 text-sm text-emerald-200">
+                    <span>✅</span>
+                    <span>Your account security looks great!</span>
+                  </div>
+                )}
               </div>
             </div>
 
+            {/* Password Section */}
+            <ProfileSettings section="security" />
+
+            {/* MFA Section */}
+            <div className="rounded-2xl md:rounded-3xl border border-white/10 bg-white/[0.02] p-6 md:p-8">
+              <div className="flex items-center gap-4 mb-6">
+                <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 ring-1 ring-white/10">
+                  <span className="text-xl">🔐</span>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-xl font-bold text-white">Two-Factor Authentication</h3>
+                  <p className="text-sm text-gray-400 mt-1">Add an extra layer of security using an authenticator app</p>
+                </div>
+                <div className={`rounded-full px-3 py-1 text-xs font-semibold ${mfaEnabled ? 'bg-emerald-500/20 text-emerald-200' : 'bg-amber-500/20 text-amber-200'}`}>
+                  {mfaEnabled ? 'Active' : 'Inactive'}
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-black/20 border border-white/5">
+                <div className="text-sm text-gray-300">
+                  {mfaEnabled
+                    ? 'Your account is protected with two-factor authentication.'
+                    : 'Protect your account by requiring a verification code when signing in.'}
+                </div>
+                <MFAResetModal />
+              </div>
+            </div>
+
+            {/* Passkeys Section */}
             <PasskeySettings />
 
+            {/* Sessions Section */}
             <UserSessionsPanel />
           </div>
         )}
 
         {activeTab === "notifications" && (
-          <div className="space-y-6">
-            <NotificationsSettingsPage />
+          <div className="space-y-8">
+            {/* Notifications Header */}
+            <div className="relative overflow-hidden rounded-2xl md:rounded-3xl border border-white/10 bg-gradient-to-br from-blue-500/10 via-indigo-500/5 to-transparent p-6 md:p-8">
+              <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iMC4wMyI+PGNpcmNsZSBjeD0iMzAiIGN5PSIzMCIgcj0iMiIvPjwvZz48L2c+PC9zdmc+')] opacity-50" />
+              <div className="relative">
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500/20 to-indigo-500/20 ring-1 ring-white/10">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-300">
+                      <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path>
+                      <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path>
+                    </svg>
+                  </div>
+                  <div>
+                    <h1 className="text-2xl md:text-3xl font-bold text-white">Notification Center</h1>
+                    <p className="text-sm text-white/60 mt-1">Manage how and when you receive notifications</p>
+                  </div>
+                </div>
 
+                {/* Status Cards */}
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="flex items-center gap-3 rounded-xl bg-black/20 border border-white/5 p-4">
+                    <div className={`flex items-center justify-center w-10 h-10 rounded-full ${pushEnabled ? 'bg-emerald-500/20' : 'bg-white/10'}`}>
+                      <span className="text-lg">{pushEnabled ? '🔔' : '🔕'}</span>
+                    </div>
+                    <div>
+                      <div className="text-xs text-white/50 uppercase tracking-wider">Push</div>
+                      <div className={`font-semibold ${pushEnabled ? 'text-emerald-300' : 'text-white/70'}`}>
+                        {pushEnabled === null ? 'Loading...' : pushEnabled ? 'Enabled' : 'Disabled'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 rounded-xl bg-black/20 border border-white/5 p-4">
+                    <div className={`flex items-center justify-center w-10 h-10 rounded-full ${user.weeklyDigestOptIn ? 'bg-emerald-500/20' : 'bg-white/10'}`}>
+                      <span className="text-lg">📬</span>
+                    </div>
+                    <div>
+                      <div className="text-xs text-white/50 uppercase tracking-wider">Digest</div>
+                      <div className={`font-semibold ${user.weeklyDigestOptIn ? 'text-emerald-300' : 'text-white/70'}`}>
+                        {user.weeklyDigestOptIn ? 'Weekly' : 'Disabled'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 rounded-xl bg-black/20 border border-white/5 p-4">
+                    <div className={`flex items-center justify-center w-10 h-10 rounded-full ${assignedEndpoints.length > 0 ? 'bg-emerald-500/20' : 'bg-amber-500/20'}`}>
+                      <span className="text-lg">{assignedEndpoints.length > 0 ? '📡' : '⚠️'}</span>
+                    </div>
+                    <div>
+                      <div className="text-xs text-white/50 uppercase tracking-wider">Channels</div>
+                      <div className={`font-semibold ${assignedEndpoints.length > 0 ? 'text-emerald-300' : 'text-amber-300'}`}>
+                        {assignedEndpoints.length > 0 ? `${assignedEndpoints.length} active` : 'None'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Status message */}
+                {assignedEndpoints.length === 0 && (
+                  <div className="mt-4 flex items-center gap-3 rounded-lg bg-amber-500/10 border border-amber-500/20 px-4 py-3 text-sm text-amber-200">
+                    <span>⚠️</span>
+                    <span>No admin channels assigned - ask an administrator to enable notifications for your account</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Web Push Notifications */}
+            <NotificationsSettingsPage initialEnabled={pushEnabled} />
+
+            {/* Weekly Digest */}
             <WeeklyDigestSettings
               initialEnabled={!!user.weeklyDigestOptIn}
               email={user.email ?? null}
             />
 
-            <div className="rounded-2xl md:rounded-3xl glass-strong p-6 md:p-10 border border-white/10 shadow-xl">
-              <div className="flex items-center gap-4 mb-8">
-                <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-white/5 ring-1 ring-white/10">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/80">
-                    <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path>
-                    <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path>
+            {/* Admin-assigned Channels */}
+            <div className="rounded-2xl md:rounded-3xl border border-white/10 bg-white/[0.02] p-6 md:p-8">
+              <div className="flex items-center gap-4 mb-6">
+                <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-slate-500/20 to-gray-500/20 ring-1 ring-white/10">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-300">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                    <path d="M9 12l2 2 4-4"/>
                   </svg>
                 </div>
-                <div>
-                  <h2 className="text-2xl font-bold text-white">Admin-assigned channels</h2>
-                  <p className="text-sm text-gray-400 mt-1">These are managed by administrators and cannot be changed here.</p>
+                <div className="flex-1">
+                  <h3 className="text-xl font-bold text-white">Admin Channels</h3>
+                  <p className="text-sm text-gray-400 mt-1">Notification channels managed by administrators</p>
                 </div>
-              </div>
-
-              <div className="space-y-4">
-                <div className="p-4 rounded-lg bg-white/5 border border-white/10 text-sm text-gray-300">
-                  Notification channels can only be configured by admins. Ask an administrator if you need to change how you&apos;re notified.
-                </div>
-
-                {assignedEndpoints.length ? (
-                  <div className="mt-4 divide-y divide-white/10 rounded-xl border border-white/10 bg-black/20">
-                    {assignedEndpoints.map(endpoint => (
-                      <div key={endpoint.id} className="flex items-center justify-between px-4 py-3">
-                        <div>
-                          <div className="font-semibold text-white">{endpoint.name}</div>
-                          <div className="text-xs text-gray-500 mt-1 font-mono">{String(endpoint.type).toUpperCase()}</div>
-                        </div>
-                        <div className="flex items-center gap-2 text-xs text-emerald-200">
-                          <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-                          Active
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-6 py-4 text-amber-200/90 text-sm flex items-center gap-3">
-                    <span className="text-lg">⚠️</span>
-                    No notification channels have been assigned to your account yet. Requests will remain blocked until an admin applies them.
+                {assignedEndpoints.length > 0 && (
+                  <div className="rounded-full px-3 py-1 text-xs font-semibold bg-emerald-500/20 text-emerald-200">
+                    {assignedEndpoints.length} Active
                   </div>
                 )}
               </div>
+
+              {assignedEndpoints.length > 0 ? (
+                <div className="divide-y divide-white/10 rounded-xl border border-white/10 bg-black/20 overflow-hidden">
+                  {assignedEndpoints.map(endpoint => (
+                    <div key={endpoint.id} className="flex items-center justify-between px-5 py-4 hover:bg-white/5 transition-colors">
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-white/5">
+                          <span className="text-base">
+                            {endpoint.type === 'discord' && '💬'}
+                            {endpoint.type === 'email' && '📧'}
+                            {endpoint.type === 'telegram' && '✈️'}
+                            {endpoint.type === 'slack' && '💼'}
+                            {endpoint.type === 'webhook' && '🔗'}
+                            {!['discord', 'email', 'telegram', 'slack', 'webhook'].includes(endpoint.type) && '📡'}
+                          </span>
+                        </div>
+                        <div>
+                          <div className="font-medium text-white">{endpoint.name}</div>
+                          <div className="text-xs text-gray-500 uppercase tracking-wider">{endpoint.type}</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                        <span className="text-xs text-emerald-200 font-medium">Active</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 rounded-xl border border-dashed border-white/10 bg-white/[0.02]">
+                  <div className="text-3xl mb-3 opacity-30">📡</div>
+                  <p className="text-gray-400 text-sm">No channels assigned</p>
+                  <p className="text-gray-500 text-xs mt-1">Contact an admin to set up notification channels</p>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -234,70 +441,78 @@ function WeeklyDigestSettings({
   };
 
   return (
-    <div className="rounded-2xl md:rounded-3xl glass-strong p-6 md:p-10 border border-white/10 shadow-xl">
+    <div className="rounded-2xl md:rounded-3xl border border-white/10 bg-white/[0.02] p-6 md:p-8">
       <div className="flex items-center gap-4 mb-6">
-        <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-white/5 ring-1 ring-white/10">
+        <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 ring-1 ring-white/10">
           <span className="text-xl">📬</span>
         </div>
-        <div>
-          <h2 className="text-2xl font-bold text-white">Weekly Coming Soon Digest</h2>
-          <p className="text-sm text-gray-400 mt-1">
-            Get a weekly email with upcoming movie and TV releases.
-          </p>
+        <div className="flex-1">
+          <h3 className="text-xl font-bold text-white">Weekly Digest</h3>
+          <p className="text-sm text-gray-400 mt-1">Get upcoming releases delivered to your inbox</p>
+        </div>
+        <div className={`rounded-full px-3 py-1 text-xs font-semibold ${
+          enabled ? 'bg-emerald-500/20 text-emerald-200' : 'bg-white/10 text-gray-300'
+        }`}>
+          {enabled ? 'Active' : 'Inactive'}
         </div>
       </div>
 
-      {!email ? (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-amber-200 text-sm mb-4">
-          Add an email address in your profile to enable and test the digest.
-        </div>
-      ) : null}
-
-      <div className="grid gap-6 md:grid-cols-[1.3fr_0.7fr]">
-        <div className="rounded-xl border border-white/10 bg-black/30 p-4">
-          <div className="grid gap-3 text-sm text-gray-300">
-            <div className="flex items-center justify-between">
-              <span className="text-xs uppercase tracking-[0.2em] text-gray-500">Status</span>
-              <span
-                className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                  enabled ? "bg-emerald-500/20 text-emerald-200" : "bg-white/5 text-gray-300"
-                }`}
-              >
-                {enabled ? "Enabled" : "Disabled"}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs uppercase tracking-[0.2em] text-gray-500">Delivery</span>
-              <span className="text-gray-200">{email ?? "No email set"}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs uppercase tracking-[0.2em] text-gray-500">Schedule</span>
-              <span className="text-gray-200">Weekly (Mondays)</span>
-            </div>
+      {/* Main toggle area */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-black/20 border border-white/5 mb-5">
+        <div>
+          <div className="text-sm text-white font-medium mb-1">
+            {enabled ? 'Weekly digest is enabled' : 'Weekly digest is disabled'}
+          </div>
+          <div className="text-xs text-gray-400">
+            {enabled
+              ? `Sent every Monday to ${email || 'your email'}`
+              : 'Enable to receive a curated list of upcoming releases'}
           </div>
         </div>
-
-        <div className="flex flex-col gap-3">
+        <div className="flex gap-2">
+          {enabled && email && (
+            <button
+              onClick={handleTest}
+              disabled={testing}
+              className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white hover:bg-white/10 transition-colors disabled:opacity-50"
+            >
+              {testing ? 'Sending...' : 'Send test'}
+            </button>
+          )}
           <button
             onClick={handleToggle}
             disabled={loading || (!email && !enabled)}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 transition-colors disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+            className={`inline-flex items-center gap-2 rounded-lg px-5 py-2 text-sm font-medium transition-colors disabled:opacity-50 ${
+              enabled
+                ? 'bg-red-500/20 text-red-200 hover:bg-red-500/30'
+                : 'bg-emerald-600 text-white hover:bg-emerald-500'
+            }`}
           >
-            {loading ? "Saving..." : enabled ? "Disable digest" : "Enable digest"}
+            {loading ? 'Saving...' : enabled ? 'Disable' : 'Enable'}
           </button>
-          <button
-            type="button"
-            onClick={handleTest}
-            disabled={testing || !email}
-            className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10 transition-colors disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60"
-          >
-            {testing ? "Sending test..." : "Send test email"}
-          </button>
-          <p className="text-xs text-gray-400">
-            Sends a one-time preview to your saved email address.
-          </p>
         </div>
       </div>
+
+      {/* No email warning */}
+      {!email && (
+        <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-200 flex items-center gap-3">
+          <span>⚠️</span>
+          <span>Add an email address in your profile to enable the weekly digest</span>
+        </div>
+      )}
+
+      {/* Info when enabled */}
+      {email && (
+        <div className="rounded-lg bg-white/5 border border-white/5 p-4">
+          <div className="flex items-start gap-3">
+            <span className="text-white/40">📅</span>
+            <div className="text-xs text-gray-400 space-y-1">
+              <p>Includes movies and TV shows releasing in the upcoming week</p>
+              <p>Delivered every Monday morning to {email}</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

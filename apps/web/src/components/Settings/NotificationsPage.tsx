@@ -1,41 +1,33 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Bell, Loader, Check, AlertCircle } from 'lucide-react';
+import { Bell, Loader2, Check, AlertCircle, Smartphone } from 'lucide-react';
 import { useToast } from '@/components/Providers/ToastProvider';
 import { isIOSSafari } from '@/lib/ios-detect';
 
-export function NotificationsSettingsPage() {
-  const [isEnabled, setIsEnabled] = useState<boolean | null>(null);
+interface NotificationsSettingsPageProps {
+  initialEnabled?: boolean | null;
+}
+
+export function NotificationsSettingsPage({ initialEnabled }: NotificationsSettingsPageProps) {
+  const [isEnabled, setIsEnabled] = useState<boolean | null>(initialEnabled ?? null);
   const [isTesting, setIsTesting] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
   const toast = useToast();
 
-  // Load current preference
+  // Sync with initialEnabled prop
   useEffect(() => {
-    const loadPreference = async () => {
-      try {
-        // Check if iOS
-        if (isIOSSafari()) {
-          setIsIOS(true);
-          setIsLoading(false);
-          return;
-        }
+    if (initialEnabled !== undefined && initialEnabled !== null) {
+      setIsEnabled(initialEnabled);
+    }
+  }, [initialEnabled]);
 
-        const res = await fetch('/api/push/preference');
-        if (!res.ok) throw new Error('Failed to load preference');
-        const data = await res.json();
-        setIsEnabled(data.enabled ?? false);
-      } catch (error) {
-        console.error('Error loading preference:', error);
-        setIsEnabled(false);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadPreference();
+  // Check for iOS on mount
+  useEffect(() => {
+    if (isIOSSafari()) {
+      setIsIOS(true);
+    }
   }, []);
 
   const handleToggle = async () => {
@@ -164,39 +156,40 @@ export function NotificationsSettingsPage() {
     }
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader className="h-6 w-6 animate-spin text-indigo-400" />
-      </div>
-    );
-  }
-
-  // iOS not supported message
+  // iOS not supported - show within card
   if (isIOS) {
     return (
-      <div className="space-y-6">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-100 flex items-center gap-3 mb-2">
-            <Bell className="h-6 w-6 text-blue-400" />
-            Web Push Notifications
-          </h2>
-          <p className="text-slate-400">
-            Manage browser push notifications for requests, approvals, and updates
-          </p>
+      <div className="rounded-2xl md:rounded-3xl border border-white/10 bg-white/[0.02] p-6 md:p-8">
+        <div className="flex items-center gap-4 mb-6">
+          <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 ring-1 ring-white/10">
+            <Bell className="w-6 h-6 text-blue-300" />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-xl font-bold text-white">Web Push Notifications</h3>
+            <p className="text-sm text-gray-400 mt-1">Receive instant updates in your browser</p>
+          </div>
+          <div className="rounded-full px-3 py-1 text-xs font-semibold bg-amber-500/20 text-amber-200">
+            Unavailable
+          </div>
         </div>
 
-        <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-6 py-4 flex items-start gap-4">
-          <AlertCircle className="h-5 w-5 text-amber-400 flex-shrink-0 mt-0.5" />
-          <div className="text-sm text-amber-200/90">
-            <p className="font-semibold mb-2">Web Push Notifications Not Available on iOS</p>
-            <p className="text-amber-200/70">
-              Unfortunately, iOS Safari does not support the standard Web Push Protocol. Push notifications are only available on:
-            </p>
-            <ul className="list-disc list-inside text-amber-200/70 mt-2 space-y-1">
-              <li>Desktop browsers (Chrome, Firefox, Edge)</li>
-              <li>Android devices (Chrome, Firefox)</li>
-            </ul>
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-5">
+          <div className="flex items-start gap-4">
+            <Smartphone className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold text-amber-200 mb-2">Not available on iOS Safari</p>
+              <p className="text-sm text-amber-200/70 mb-3">
+                iOS Safari doesn&apos;t support the Web Push Protocol. Push notifications are available on:
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-black/20 px-3 py-1 text-xs text-amber-200/80">
+                  <span>💻</span> Desktop browsers
+                </span>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-black/20 px-3 py-1 text-xs text-amber-200/80">
+                  <span>📱</span> Android devices
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -204,91 +197,91 @@ export function NotificationsSettingsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h2 className="text-2xl font-bold text-slate-100 flex items-center gap-3 mb-2">
-          <Bell className="h-6 w-6 text-blue-400" />
-          Web Push Notifications
-        </h2>
-        <p className="text-slate-400">
-          Manage browser push notifications for requests, approvals, and updates
-        </p>
-      </div>
-
-      {/* Enable/Disable Toggle */}
-      <div className="glass-strong rounded-xl p-6 border border-slate-700/50">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-lg font-semibold text-slate-100 mb-2">Push Notifications</h3>
-            <p className="text-sm text-slate-400">
-              {isEnabled ? 'Enabled on this device' : 'Not enabled on this device'}
-            </p>
-          </div>
-
-          <div className="flex gap-3">
-            {isEnabled && (
-              <button
-                onClick={handleTestNotification}
-                disabled={isTesting}
-                className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition-colors disabled:opacity-50 flex items-center gap-2"
-              >
-                {isTesting ? (
-                  <>
-                    <Loader className="h-4 w-4 animate-spin" />
-                    Sending...
-                  </>
-                ) : (
-                  <>
-                    <Bell className="h-4 w-4" />
-                    Test
-                  </>
-                )}
-              </button>
-            )}
-
-            <button
-              onClick={handleToggle}
-              disabled={isLoading}
-              className={`px-6 py-2 rounded-lg text-white text-sm font-semibold transition-colors disabled:opacity-50 flex items-center gap-2 ${
-                isEnabled
-                  ? 'bg-red-600 hover:bg-red-700'
-                  : 'bg-green-600 hover:bg-green-700'
-              }`}
-            >
-              {isLoading ? (
-                <>
-                  <Loader className="h-4 w-4 animate-spin" />
-                  Loading...
-                </>
-              ) : isEnabled ? (
-                <>
-                  <Check className="h-4 w-4" />
-                  Disable
-                </>
-              ) : (
-                <>
-                  <Check className="h-4 w-4" />
-                  Enable
-                </>
-              )}
-            </button>
-          </div>
+    <div className="rounded-2xl md:rounded-3xl border border-white/10 bg-white/[0.02] p-6 md:p-8">
+      <div className="flex items-center gap-4 mb-6">
+        <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 ring-1 ring-white/10">
+          <Bell className="w-6 h-6 text-blue-300" />
+        </div>
+        <div className="flex-1">
+          <h3 className="text-xl font-bold text-white">Web Push Notifications</h3>
+          <p className="text-sm text-gray-400 mt-1">Receive instant updates in your browser</p>
+        </div>
+        <div className={`rounded-full px-3 py-1 text-xs font-semibold ${
+          isEnabled === null
+            ? 'bg-white/10 text-gray-300'
+            : isEnabled
+              ? 'bg-emerald-500/20 text-emerald-200'
+              : 'bg-white/10 text-gray-300'
+        }`}>
+          {isEnabled === null ? 'Loading...' : isEnabled ? 'Active' : 'Inactive'}
         </div>
       </div>
 
-      {/* Info */}
-      <div className="glass-strong rounded-xl p-6 border border-slate-700/50">
-        <div className="flex gap-3">
-          <AlertCircle className="h-5 w-5 text-blue-400 flex-shrink-0 mt-0.5" />
-          <div className="text-sm text-slate-300">
-            <p className="font-semibold mb-2">About Web Push Notifications</p>
-            <ul className="list-disc list-inside space-y-1 text-slate-400">
-              <li>Notifications work even when the app is closed</li>
-              <li>Your browser must support Service Workers</li>
-              <li>You can disable notifications at any time</li>
-              <li>Each device needs to be enabled separately</li>
-            </ul>
+      {/* Main toggle area */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-black/20 border border-white/5 mb-5">
+        <div>
+          <div className="text-sm text-white font-medium mb-1">
+            {isEnabled ? 'Push notifications are enabled' : 'Push notifications are disabled'}
+          </div>
+          <div className="text-xs text-gray-400">
+            {isEnabled
+              ? 'You\'ll receive notifications even when the app is closed'
+              : 'Enable to get instant alerts for requests and updates'}
+          </div>
+        </div>
+        <div className="flex gap-2">
+          {isEnabled && (
+            <button
+              onClick={handleTestNotification}
+              disabled={isTesting}
+              className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white hover:bg-white/10 transition-colors disabled:opacity-50"
+            >
+              {isTesting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <Bell className="w-4 h-4" />
+                  Test
+                </>
+              )}
+            </button>
+          )}
+          <button
+            onClick={handleToggle}
+            disabled={isLoading}
+            className={`inline-flex items-center gap-2 rounded-lg px-5 py-2 text-sm font-medium transition-colors disabled:opacity-50 ${
+              isEnabled
+                ? 'bg-red-500/20 text-red-200 hover:bg-red-500/30'
+                : 'bg-emerald-600 text-white hover:bg-emerald-500'
+            }`}
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                {isEnabled ? 'Disabling...' : 'Enabling...'}
+              </>
+            ) : isEnabled ? (
+              'Disable'
+            ) : (
+              <>
+                <Check className="w-4 h-4" />
+                Enable
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Info section */}
+      <div className="rounded-lg bg-white/5 border border-white/5 p-4">
+        <div className="flex items-start gap-3">
+          <AlertCircle className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
+          <div className="text-xs text-gray-400 space-y-1">
+            <p>Push notifications work across all your devices - each needs to be enabled separately</p>
+            <p>Your browser must support Service Workers for notifications to work</p>
           </div>
         </div>
       </div>
