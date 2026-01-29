@@ -163,6 +163,7 @@ export function statusToMediaStatus(status: string | null | undefined): MediaSta
     case "downloading":
       return MediaStatus.DOWNLOADING;
     case "pending":
+    case "queued":
       return MediaStatus.PENDING;
     case "submitted":
     case "processing":
@@ -176,6 +177,19 @@ export function statusToMediaStatus(status: string | null | undefined): MediaSta
     default:
       return undefined;
   }
+}
+
+/**
+ * Resolves a media status from request + availability signals.
+ * Prefer availability when available/partial; otherwise fall back to request status.
+ */
+export function resolveMediaStatus(input: {
+  availabilityStatus?: AvailabilityStatus | string | null;
+  requestStatus?: string | null;
+}): MediaStatus | undefined {
+  const availability = availabilityToMediaStatus(input.availabilityStatus);
+  if (availability) return availability;
+  return statusToMediaStatus(input.requestStatus ?? undefined);
 }
 
 /**

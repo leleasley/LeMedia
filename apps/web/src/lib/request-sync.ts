@@ -167,8 +167,8 @@ import { getMovieByTmdbId } from "@/lib/radarr";
 import { getSeriesByTmdbId, getSeriesByTvdbId } from "@/lib/sonarr";
 import { logger } from "@/lib/logger";
 
-export async function syncWatchlists() {
-  const users = await listUsersWithWatchlistSync();
+export async function syncWatchlists(options?: { userId?: number }) {
+  const users = await listUsersWithWatchlistSync(options?.userId);
   let createdCount = 0;
   let errors = 0;
 

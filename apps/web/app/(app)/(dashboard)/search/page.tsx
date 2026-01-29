@@ -3,7 +3,8 @@ import { PersonCard } from "@/components/Media/PersonCard";
 import type { ReadonlyURLSearchParams } from "next/navigation";
 import { searchMulti, tmdbImageUrl } from "@/lib/tmdb";
 import { getAvailabilityStatusByTmdbIds } from "@/lib/library-availability";
-import { availabilityToMediaStatus } from "@/lib/media-status";
+import { resolveMediaStatus } from "@/lib/media-status";
+import { findActiveRequestsByTmdbIds } from "@/db";
 import { z } from "zod";
 import { getImageProxyEnabled } from "@/lib/app-settings";
 import { EnhancedSearchFilters } from "@/components/Search/EnhancedSearchClient";
@@ -115,10 +116,24 @@ export default async function SearchPage({ searchParams }: { searchParams?: Sear
   }
   const movieIds = filteredResults.filter((r: any) => r?.media_type === "movie").map((r: any) => r.id);
   const tvIds = filteredResults.filter((r: any) => r?.media_type === "tv").map((r: any) => r.id);
-  const [movieAvailability, tvAvailability]: [Record<number, any>, Record<number, any>] = await Promise.all([
+  const [movieAvailability, tvAvailability, movieRequests, tvRequests]: [
+    Record<number, any>,
+    Record<number, any>,
+    Array<{ tmdb_id: number; status: string }>,
+    Array<{ tmdb_id: number; status: string }>
+  ] = await Promise.all([
     movieIds.length ? getAvailabilityStatusByTmdbIds("movie", movieIds) : Promise.resolve({} as Record<number, any>),
-    tvIds.length ? getAvailabilityStatusByTmdbIds("tv", tvIds) : Promise.resolve({} as Record<number, any>)
+    tvIds.length ? getAvailabilityStatusByTmdbIds("tv", tvIds) : Promise.resolve({} as Record<number, any>),
+    movieIds.length
+      ? findActiveRequestsByTmdbIds({ requestType: "movie", tmdbIds: movieIds }).catch(() => [])
+      : Promise.resolve([]),
+    tvIds.length
+      ? findActiveRequestsByTmdbIds({ requestType: "episode", tmdbIds: tvIds }).catch(() => [])
+      : Promise.resolve([])
   ]);
+
+  const movieRequestByTmdb = new Map(movieRequests.map((req) => [req.tmdb_id, req.status]));
+  const tvRequestByTmdb = new Map(tvRequests.map((req) => [req.tmdb_id, req.status]));
 
   return (
     <div className="space-y-4 md:space-y-8 px-3 md:px-8 pb-4 md:pb-8">
@@ -160,7 +175,10 @@ export default async function SearchPage({ searchParams }: { searchParams?: Sear
             const availabilityStatus = mediaType === "movie"
               ? movieAvailability[r.id]
               : tvAvailability[r.id];
-            const mediaStatus = availabilityToMediaStatus(availabilityStatus);
+            const requestStatus = mediaType === "movie"
+              ? movieRequestByTmdb.get(r.id)
+              : tvRequestByTmdb.get(r.id);
+            const mediaStatus = resolveMediaStatus({ availabilityStatus, requestStatus });
 
             return (
               <HoverMediaCard

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUser } from "@/auth";
+import { requireUser } from "@/auth";
 import { getPool } from "@/db";
 import { requireCsrf } from "@/lib/csrf";
 import { jsonResponseWithETag } from "@/lib/api-optimization";
@@ -12,7 +12,8 @@ export async function GET(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const currentUser = await getUser();
+        const currentUser = await requireUser();
+        if (currentUser instanceof NextResponse) return currentUser;
         const db = getPool();
         const { id } = await params;
         const userId = parseInt(id);
@@ -70,8 +71,9 @@ export async function PATCH(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const currentUser = await getUser();
-        if (!currentUser?.isAdmin) {
+        const currentUser = await requireUser();
+        if (currentUser instanceof NextResponse) return currentUser;
+        if (!currentUser.isAdmin) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
         const csrf = requireCsrf(request);
@@ -164,8 +166,9 @@ export async function DELETE(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const currentUser = await getUser();
-        if (!currentUser?.isAdmin) {
+        const currentUser = await requireUser();
+        if (currentUser instanceof NextResponse) return currentUser;
+        if (!currentUser.isAdmin) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
         const csrf = requireCsrf(request);

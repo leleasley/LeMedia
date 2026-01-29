@@ -1972,16 +1972,25 @@ export async function getUserMediaListStatus(input: {
   };
 }
 
-export async function listUsersWithWatchlistSync() {
+export async function listUsersWithWatchlistSync(userId?: number) {
   await ensureUserSchema();
   const p = getPool();
+  const whereClauses = [
+    "jellyfin_user_id IS NOT NULL",
+    "(watchlist_sync_movies = TRUE OR watchlist_sync_tv = TRUE)"
+  ];
+  const values: Array<number> = [];
+  if (typeof userId === "number") {
+    values.push(userId);
+    whereClauses.push(`id = $${values.length}`);
+  }
   const res = await p.query(
     `
     SELECT id, username, jellyfin_user_id, watchlist_sync_movies, watchlist_sync_tv, groups
     FROM app_user
-    WHERE jellyfin_user_id IS NOT NULL
-      AND (watchlist_sync_movies = TRUE OR watchlist_sync_tv = TRUE)
-    `
+    WHERE ${whereClauses.join(" AND ")}
+    `,
+    values
   );
   return res.rows.map(row => ({
     id: Number(row.id),
