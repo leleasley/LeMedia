@@ -9,6 +9,7 @@ import { MFAResetModal } from "@/components/Profile/MFAResetModal";
 import { PasskeySettings } from "@/components/Profile/PasskeySettings";
 import { UserSessionsPanel } from "@/components/Profile/UserSessionsPanel";
 import { useToast } from "@/components/Providers/ToastProvider";
+import { LinkedAccountsPanel } from "@/components/LinkedAccounts/LinkedAccountsPanel";
 
 interface AssignedEndpoint {
   id: number;
@@ -102,7 +103,7 @@ export function ProfileSettingsPageClient({
         )}
 
         {activeTab === "linked" && (
-          <ProfileSettings section="linked" />
+          <LinkedAccountsPanel mode="self" />
         )}
 
         {activeTab === "security" && (
