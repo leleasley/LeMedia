@@ -28,6 +28,7 @@ import { verifyExternalApiKey } from "@/lib/external-api";
 import { rejectIfMaintenance } from "@/lib/maintenance";
 import { randomUUID } from "crypto";
 import asyncLock from "@/lib/async-lock";
+import { isAdminGroup } from "@/lib/groups";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
 
 function extractApiKey(req: NextRequest) {
@@ -229,8 +230,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 
-  const adminGroup = (process.env.AUTH_ADMIN_GROUP ?? "admins").toLowerCase();
-  const isAdmin = user.groups.map(g => g.toLowerCase()).includes(adminGroup);
+  const isAdmin = isAdminGroup(user.groups);
   const hasNotifications = await hasAssignedNotificationEndpoints(user.id);
   if (!hasNotifications) {
     return NextResponse.json(

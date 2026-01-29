@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getUser } from "@/auth";
 import { getUserWithHash, listNotificationEndpoints, listUserNotificationEndpointIds } from "@/db";
 import { ProfilePageClient } from "@/components/Profile/ProfilePageClient";
+import { isAdminGroup, normalizeGroupList } from "@/lib/groups";
 
 export const metadata = {
   title: "Profile - LeMedia",
@@ -27,8 +28,8 @@ export default async function ProfilePage() {
   const assignedEndpoints = enabledEndpoints.filter(endpoint => selectedIds.includes(endpoint.id));
 
   const mfaEnabled = !!dbUser.mfa_secret;
-  const groups = dbUser.groups ?? [];
-  const isAdmin = groups.includes("admin") || user.isAdmin;
+  const groups = normalizeGroupList(dbUser.groups ?? []);
+  const isAdmin = user.isAdmin || isAdminGroup(groups);
 
   return (
     <ProfilePageClient

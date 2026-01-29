@@ -3,6 +3,7 @@ import { requireAdmin } from "@/auth";
 import { getPool } from "@/db";
 import { jsonResponseWithETag } from "@/lib/api-optimization";
 import { logger } from "@/lib/logger";
+import { isAdminGroup, normalizeGroupList } from "@/lib/groups";
 
 export async function GET(request: Request) {
     try {
@@ -81,7 +82,8 @@ export async function GET(request: Request) {
                 id: row.id,
                 email: row.email,
                 displayName: row.username,
-                isAdmin: row.groups?.toLowerCase().includes('admins') || row.groups?.toLowerCase().includes('admin') || false,
+                groups: normalizeGroupList(row.groups as string),
+                isAdmin: isAdminGroup(row.groups as string),
                 banned: !!row.banned,
                 weeklyDigestOptIn: !!row.weekly_digest_opt_in,
                 createdAt: row.created_at,

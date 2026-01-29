@@ -6,6 +6,7 @@ import { requireCsrf } from "@/lib/csrf";
 import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/rate-limit";
 import { logger } from "@/lib/logger";
+import { serializeGroups } from "@/lib/groups";
 
 export async function POST(request: NextRequest) {
     try {
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest) {
             `INSERT INTO app_user (username, email, password_hash, groups, created_at, last_seen_at)
        VALUES ($1, $2, $3, $4, NOW(), NOW())
        RETURNING id`,
-            [username, email, passwordHash, ""]
+            [username, email, passwordHash, serializeGroups(["users"])]
         );
 
         await logAuditEvent({

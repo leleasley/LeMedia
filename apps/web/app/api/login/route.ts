@@ -10,6 +10,7 @@ import { logAuditEvent } from "@/lib/audit-log";
 import { randomUUID } from "crypto";
 import { summarizeUserAgent } from "@/lib/device-info";
 import { verifyTurnstileToken } from "@/lib/turnstile";
+import { normalizeGroupList } from "@/lib/groups";
 
 type SeedConfig = {
   username: string;
@@ -20,7 +21,7 @@ type SeedConfig = {
 function getSeedUser(): SeedConfig | null {
   const username = process.env.APP_SEED_USER?.trim();
   const password = process.env.APP_SEED_PASSWORD ?? "";
-  const groups = (process.env.APP_SEED_GROUPS ?? "admins").split(",").map(g => g.trim()).filter(Boolean);
+  const groups = normalizeGroupList(process.env.APP_SEED_GROUPS ?? "administrators");
   if (!username || !password) return null;
   return { username, password, groups };
 }
@@ -146,7 +147,7 @@ export async function POST(req: NextRequest) {
   // If OTP is disabled or user passed checks (but here if OTP disabled, we just log them in)
   const defaultSession = Number(process.env.SESSION_MAX_AGE) || 60 * 60 * 24 * 30;
   const sessionMaxAge = await getSettingInt("session_max_age", defaultSession);
-  const groups = user.groups.length ? user.groups : ["users"];
+  const groups = normalizeGroupList(user.groups);
 
   const jti = randomUUID();
   const token = await createSessionToken({ username: user.username, groups, maxAgeSeconds: sessionMaxAge, jti });

@@ -16,6 +16,7 @@ import { randomUUID } from "crypto";
 import { requireCsrf } from "@/lib/csrf";
 import { getActiveMediaService, getMediaServiceByIdWithKey } from "@/lib/media-services";
 import asyncLock from "@/lib/async-lock";
+import { isAdminGroup } from "@/lib/groups";
 
 const Body = z.object({
   tmdbId: z.coerce.number().int(),
@@ -69,7 +70,6 @@ export async function POST(req: NextRequest) {
   let targetUserId = body.userId;
   let targetUsername = user.username;
   let targetIsAdmin = user.isAdmin;
-  const adminGroup = (process.env.AUTH_ADMIN_GROUP ?? "admins").toLowerCase();
 
   if (targetUserId !== undefined && targetUserId !== null) {
     if (!user.isAdmin) {
@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "user_not_found", message: "Target user not found" }, { status: 404 });
     }
     targetUsername = targetUser.username;
-    targetIsAdmin = targetUser.groups.map(g => g.toLowerCase()).includes(adminGroup);
+    targetIsAdmin = isAdminGroup(targetUser.groups);
   } else {
     const dbUser = await upsertUser(user.username, user.groups);
     targetUserId = dbUser.id;

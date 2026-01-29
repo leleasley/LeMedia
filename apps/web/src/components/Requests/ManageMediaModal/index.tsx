@@ -1,11 +1,10 @@
 "use client";
 
-import { createPortal } from "react-dom";
 import { useEffect, useState } from "react";
 import { csrfFetch } from "@/lib/csrf-client";
 import { ExternalLink, Trash2, Eraser, Eye } from "lucide-react";
-import { useLockBodyScroll } from "@/hooks/useLockBodyScroll";
 import { ReleaseSearchModal } from "@/components/Media/ReleaseSearchModal";
+import { Modal } from "@/components/Common/Modal";
 
 export function ManageMediaModal(props: {
   open: boolean;
@@ -47,9 +46,6 @@ export function ManageMediaModal(props: {
   } | null>(null);
   const [currentInfoLoading, setCurrentInfoLoading] = useState(false);
   const [currentInfoError, setCurrentInfoError] = useState<string | null>(null);
-
-  // Lock body scroll when modal is open
-  useLockBodyScroll(open);
 
   useEffect(() => {
     if (!open) setRawOpen(false);
@@ -137,25 +133,16 @@ export function ManageMediaModal(props: {
 
   if (!open) return null;
 
-  const content = (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md overflow-hidden rounded-2xl border border-white/10 bg-[#1a2234] shadow-2xl">
-        <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
-          <div>
-            <div className="text-xl font-semibold text-violet-300">Manage {mediaType === "movie" ? "Movie" : "TV Show"}</div>
-            <div className="text-sm text-white/80">{title}</div>
-          </div>
-          <button
-            type="button"
-            className="text-white/60 hover:text-white"
-            onClick={onClose}
-            aria-label="Close"
-          >
-            ✕
-          </button>
-        </div>
-
-        <div className="space-y-6 px-6 py-5">
+  return (
+    <>
+      <Modal
+        open={open}
+        title={`Manage ${mediaType === "movie" ? "Movie" : "TV Show"}`}
+        onClose={onClose}
+        backgroundImage={backdropUrl ?? undefined}
+      >
+        <div className="text-sm text-white/80 mb-4">{title}</div>
+        <div className="space-y-6">
           <div className="space-y-2">
             <div className="text-sm font-semibold text-white">Media</div>
             <a
@@ -235,14 +222,7 @@ export function ManageMediaModal(props: {
             </div>
           ) : null}
         </div>
-      </div>
-    </div>
-  );
-
-  if (typeof document === "undefined") return content;
-  return createPortal(
-    <>
-      {content}
+      </Modal>
       {prowlarrEnabled ? (
         <ReleaseSearchModal
           open={rawOpen}
@@ -258,7 +238,6 @@ export function ManageMediaModal(props: {
           preferProwlarr={prowlarrEnabled}
         />
       ) : null}
-    </>,
-    document.body
+    </>
   );
 }

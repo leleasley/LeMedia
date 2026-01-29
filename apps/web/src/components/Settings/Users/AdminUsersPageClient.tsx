@@ -21,6 +21,7 @@ import { CreateLocalUserModal } from "@/components/Settings/Users/CreateLocalUse
 import { JellyfinImportModal } from "@/components/Settings/Jellyfin/JellyfinImportModal";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { getAvatarAlt, getAvatarSrc, shouldBypassNextImage } from "@/lib/avatar";
+import { Modal } from "@/components/Common/Modal";
 import {
   Select,
   SelectContent,
@@ -29,6 +30,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { csrfFetch } from "@/lib/csrf-client";
+import { GROUP_DEFINITIONS, formatGroupLabel, normalizeGroupList } from "@/lib/groups";
 
 function useDebounce<T>(value: T, delay: number): T {
   const [debouncedValue, setDebouncedValue] = useState<T>(value);
@@ -51,6 +53,7 @@ interface User {
   email: string;
   displayName: string;
   isAdmin: boolean;
+  groups: string[];
   banned: boolean;
   createdAt: string;
   jellyfinUserId: string | null;
@@ -82,6 +85,9 @@ export function AdminUsersPageClient() {
   const [currentPageSize, setCurrentPageSize] = useState(10);
   const [currentSort, setCurrentSort] = useState<typeof SORT_OPTIONS[number]["id"]>("displayname");
   const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; user?: User }>({ isOpen: false });
+  const [groupModal, setGroupModal] = useState<{ open: boolean; user?: User }>({ open: false });
+  const [groupSelection, setGroupSelection] = useState<string[]>([]);
+  const [groupSaving, setGroupSaving] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -218,6 +224,50 @@ export function AdminUsersPageClient() {
       }
     } catch (error) {
       console.error("Error deleting user:", error);
+    }
+  };
+
+  const openGroupModal = (user: User) => {
+    setGroupSelection(normalizeGroupList(user.groups));
+    setGroupModal({ open: true, user });
+  };
+
+  const closeGroupModal = () => {
+    if (groupSaving) return;
+    setGroupModal({ open: false });
+    setGroupSelection([]);
+  };
+
+  const toggleGroup = (groupId: string) => {
+    setGroupSelection((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return Array.from(next);
+    });
+  };
+
+  const saveGroups = async () => {
+    if (!groupModal.user) return;
+    setGroupSaving(true);
+    try {
+      const groups = normalizeGroupList(groupSelection);
+      const res = await csrfFetch(`/api/v1/admin/users/${groupModal.user.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ groups })
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload?.error || "Failed to update groups");
+      }
+      setGroupModal({ open: false });
+      mutate();
+      toast.success("Groups updated");
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to update groups");
+    } finally {
+      setGroupSaving(false);
     }
   };
 
@@ -421,7 +471,7 @@ export function AdminUsersPageClient() {
                 </div>
                 <div className="truncate text-sm text-gray-400">{user.email}</div>
                 
-                <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-gray-500">
+            <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-gray-500">
                   <span className="flex items-center gap-1">
                      <span className="font-medium text-gray-300">{user.requestCount ?? 0}</span> Requests
                   </span>
@@ -429,6 +479,17 @@ export function AdminUsersPageClient() {
                   <span>Joined {new Date(user.createdAt).toLocaleDateString()}</span>
                 </div>
               </div>
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              {(user.groups?.length ? user.groups : ["users"]).map((group) => (
+                <span
+                  key={group}
+                  className="rounded-full border border-gray-700 bg-gray-800 px-2 py-0.5 text-[0.65rem] font-semibold text-gray-300"
+                >
+                  {formatGroupLabel(group)}
+                </span>
+              ))}
             </div>
 
             <div className="mt-4 grid grid-cols-4 gap-3 border-t border-gray-800 pt-3">
@@ -453,6 +514,13 @@ export function AdminUsersPageClient() {
                 <PencilIcon className="h-4 w-4" />
                 Edit
               </PrefetchLink>
+              <button
+                onClick={() => openGroupModal(user)}
+                className="flex items-center justify-center gap-2 rounded-lg bg-indigo-500/10 text-indigo-200 hover:bg-indigo-500/20 px-3 py-2 text-sm font-medium transition"
+              >
+                <Bars3BottomLeftIcon className="h-4 w-4" />
+                Groups
+              </button>
               <button
                 onClick={() => setDeleteModal({ isOpen: true, user })}
                 className={`flex items-center justify-center gap-2 rounded-lg border border-transparent px-3 py-2 text-sm font-medium transition ${user.id === 1
@@ -496,7 +564,7 @@ export function AdminUsersPageClient() {
                 />
               </th>
               <th className="px-6 py-4">User</th>
-              <th className="px-6 py-4">Role</th>
+              <th className="px-6 py-4">Groups</th>
               <th className="px-6 py-4">Digest</th>
               <th className="px-6 py-4 text-center">Requests</th>
               <th className="px-6 py-4">Joined</th>
@@ -541,13 +609,21 @@ export function AdminUsersPageClient() {
                   </div>
                 </td>
                 <td className="px-6 py-4 text-sm">
-                  <div className="flex gap-2">
-                    <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium border ${user.isAdmin
-                          ? "bg-purple-500/10 text-purple-400 border-purple-500/20"
-                          : "bg-gray-800 text-gray-400 border-gray-700"
-                      }`}>
-                      {user.isAdmin ? "Admin" : "User"}
-                    </span>
+                  <div className="flex flex-wrap gap-2">
+                    {(user.groups?.length ? user.groups : ["users"]).map((group) => (
+                      <span
+                        key={group}
+                        className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium border ${
+                          group === "administrators"
+                            ? "bg-purple-500/10 text-purple-400 border-purple-500/20"
+                            : group === "moderators"
+                              ? "bg-amber-500/10 text-amber-300 border-amber-500/20"
+                              : "bg-gray-800 text-gray-400 border-gray-700"
+                        }`}
+                      >
+                        {formatGroupLabel(group)}
+                      </span>
+                    ))}
                     {user.banned && (
                       <span className="inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium border bg-red-500/10 text-red-400 border-red-500/20">
                         Banned
@@ -618,6 +694,13 @@ export function AdminUsersPageClient() {
                       <PencilIcon className="h-4 w-4" />
                     </PrefetchLink>
                     <button
+                      onClick={() => openGroupModal(user)}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-700 bg-gray-800 text-indigo-300 transition hover:border-indigo-500/50 hover:bg-indigo-500/10 hover:text-indigo-100"
+                      title="Edit Groups"
+                    >
+                      <Bars3BottomLeftIcon className="h-4 w-4" />
+                    </button>
+                    <button
                       onClick={() => setDeleteModal({ isOpen: true, user })}
                       className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-700 bg-gray-800 text-gray-400 transition hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-400"
                       disabled={user.id === 1}
@@ -687,6 +770,52 @@ export function AdminUsersPageClient() {
           </div>
         </div>
       )}
+
+      <Modal open={groupModal.open} title="Edit Groups" onClose={closeGroupModal}>
+        {groupModal.user ? (
+          <div className="space-y-4">
+            <div className="text-sm text-gray-400">
+              Update groups for <span className="font-semibold text-white">{groupModal.user.displayName}</span>.
+            </div>
+            <div className="space-y-2">
+              {GROUP_DEFINITIONS.map((group) => (
+                <label
+                  key={group.id}
+                  className="flex items-center justify-between rounded-lg border border-white/10 bg-slate-900/60 px-3 py-2 text-sm"
+                >
+                  <div>
+                    <div className="font-semibold text-white">{group.label}</div>
+                    <div className="text-xs text-gray-400">{group.id}</div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={groupSelection.includes(group.id)}
+                    onChange={() => toggleGroup(group.id)}
+                  />
+                </label>
+              ))}
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={closeGroupModal}
+                className="btn bg-surface hover:bg-surface-strong text-muted text-xs"
+                disabled={groupSaving}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={saveGroups}
+                className="btn btn-primary text-xs"
+                disabled={groupSaving}
+              >
+                {groupSaving ? "Saving..." : "Save Groups"}
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
 
       {/* Modals */}
       <CreateLocalUserModal open={createModalOpen} onClose={() => setCreateModalOpen(false)} onComplete={() => mutate()} />

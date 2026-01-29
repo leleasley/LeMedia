@@ -99,6 +99,7 @@ export function MediaActionMenu(props: {
         mediaType={mediaType}
         tmdbId={tmdbId}
         tvdbId={tvdbId ?? undefined}
+        backdropUrl={backdropUrl ?? null}
         serviceItemId={manageItemId ?? null}
         serviceSlug={manageSlug ?? null}
         serviceBaseUrl={manageBaseUrl ?? null}

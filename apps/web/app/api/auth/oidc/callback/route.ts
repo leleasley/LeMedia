@@ -17,6 +17,7 @@ import { logger } from "@/lib/logger";
 import { logAuditEvent } from "@/lib/audit-log";
 import { randomUUID } from "crypto";
 import { summarizeUserAgent } from "@/lib/device-info";
+import { normalizeGroupList } from "@/lib/groups";
 
 type OidcDiscovery = {
   authorization_endpoint: string;
@@ -215,11 +216,8 @@ export async function GET(req: NextRequest) {
   const rawUsername = getClaimValue(claims, config.usernameClaim);
   const username = rawUsername ? rawUsername.toLowerCase() : "";
   const groupsFromClaims = config.syncGroups ? parseGroupClaim(claims, config.groupsClaim) : [];
-  const adminGroup = (process.env.AUTH_ADMIN_GROUP ?? "admins").toLowerCase();
-  const safeGroups = groupsFromClaims
-    .map(g => g.trim())
-    .filter(Boolean)
-    .filter(g => g.toLowerCase() !== adminGroup);
+  const safeGroups = normalizeGroupList(groupsFromClaims, { fallbackToDefault: false })
+    .filter(group => group !== "administrators");
 
   let user = await getUserByOidcSub(sub);
   if (!user && config.matchByEmail && email) {
@@ -276,7 +274,7 @@ export async function GET(req: NextRequest) {
 
   const defaultSession = Number(process.env.SESSION_MAX_AGE) || 60 * 60 * 24 * 30;
   const sessionMaxAge = await getSettingInt("session_max_age", defaultSession);
-  const sessionGroups = user.groups.length ? user.groups : ["users"];
+  const sessionGroups = normalizeGroupList(user.groups);
 
   await logAuditEvent({
     action: "user.login",

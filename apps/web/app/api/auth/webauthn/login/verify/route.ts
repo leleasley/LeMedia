@@ -16,6 +16,7 @@ import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp, checkRateLimit } from "@/lib/rate-limit";
 import { randomUUID } from "crypto";
 import { summarizeUserAgent } from "@/lib/device-info";
+import { normalizeGroupList } from "@/lib/groups";
 
 export async function POST(req: NextRequest) {
   try {
@@ -98,7 +99,7 @@ export async function POST(req: NextRequest) {
 
       const defaultSession = Number(process.env.SESSION_MAX_AGE) || 60 * 60 * 24 * 30;
       const sessionMaxAge = await getSettingInt("session_max_age", defaultSession);
-      const groups = user.groups.length ? user.groups : ["users"];
+      const groups = normalizeGroupList(user.groups);
 
       const jti = randomUUID();
       const token = await createSessionToken({ username: user.username, groups, maxAgeSeconds: sessionMaxAge, jti });

@@ -4,6 +4,7 @@ import { verifySessionToken } from "@/lib/session";
 import { getUserWithHash, isSessionActive, touchUserSession } from "@/db";
 import { withCache } from "@/lib/local-cache";
 import { logger } from "@/lib/logger";
+import { isAdminGroup, normalizeGroupList } from "@/lib/groups";
 
 // Warn if debug mode is enabled in production
 if (process.env.NODE_ENV === "production" && process.env.AUTH_DEBUG === "1") {
@@ -17,27 +18,17 @@ export type AppUser = {
   isAdmin: boolean;
 };
 
-function splitGroups(raw: string | null | undefined): string[] {
-  if (!raw) return [];
-  return raw
-    .split(/[;,]/g)
-    .map(s => s.trim())
-    .filter(Boolean);
-}
-
 export async function getUser(): Promise<AppUser> {
   const devUser = process.env.DEV_USER?.trim();
   const devGroups = process.env.DEV_GROUPS?.trim();
   const allowDevBypass = process.env.ALLOW_DEV_BYPASS === "1";
 
-  const adminGroup = (process.env.AUTH_ADMIN_GROUP ?? "admins").toLowerCase();
-
   if (devUser) {
     if (process.env.NODE_ENV === "production" && !allowDevBypass) {
       throw new Error("DEV_USER is disabled in production. Unset DEV_USER or set ALLOW_DEV_BYPASS=1 to override.");
     }
-    const groups = splitGroups(devGroups);
-    return { id: 0, username: devUser, groups, isAdmin: groups.map(g => g.toLowerCase()).includes(adminGroup) };
+    const groups = normalizeGroupList(devGroups);
+    return { id: 0, username: devUser, groups, isAdmin: isAdminGroup(groups) };
   }
 
   const cookieStore = await cookies();
@@ -68,8 +59,8 @@ export async function getUser(): Promise<AppUser> {
     return {
       id: u.id,
       username: u.username,
-      groups: u.groups,
-      isAdmin: u.groups.map(g => g.toLowerCase()).includes(adminGroup),
+      groups: normalizeGroupList(u.groups),
+      isAdmin: isAdminGroup(u.groups),
       banned: !!u.banned
     };
   });

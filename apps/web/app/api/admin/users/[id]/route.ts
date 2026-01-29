@@ -6,6 +6,7 @@ import { jsonResponseWithETag } from "@/lib/api-optimization";
 import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/rate-limit";
 import { logger } from "@/lib/logger";
+import { isAdminGroup, normalizeGroupList, serializeGroups } from "@/lib/groups";
 
 export async function GET(
     request: NextRequest,
@@ -48,8 +49,8 @@ export async function GET(
             id: user.id,
             email: user.email,
             displayName: user.username,
-            groups: user.groups || "",
-            isAdmin: user.groups?.toLowerCase().includes('admins') || user.groups?.toLowerCase().includes('admin') || false,
+            groups: normalizeGroupList(user.groups as string),
+            isAdmin: isAdminGroup(user.groups as string),
             banned: !!user.banned,
             createdAt: user.created_at,
             discordUserId: user.discord_user_id ?? null,
@@ -104,8 +105,9 @@ export async function PATCH(
         }
 
         if (body.groups !== undefined) {
+            const normalized = normalizeGroupList(body.groups);
             updates.push(`groups = $${paramIndex++}`);
-            values.push(body.groups);
+            values.push(serializeGroups(normalized));
         }
 
         if (body.discordUserId !== undefined) {

@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getUser } from "@/auth";
 import { getUserWithHash } from "@/db";
 import { ProfileSettingsShellClient } from "@/components/Profile/ProfileSettingsShellClient";
+import { isAdminGroup, normalizeGroupList } from "@/lib/groups";
 
 export default async function ProfileSettingsLayout({ children }: { children: React.ReactNode }) {
   const user = await getUser().catch(() => null);
@@ -14,8 +15,8 @@ export default async function ProfileSettingsLayout({ children }: { children: Re
     redirect("/login");
   }
 
-  const groups = dbUser.groups ?? [];
-  const isAdmin = groups.includes("admin") || user.isAdmin;
+  const groups = normalizeGroupList(dbUser.groups ?? []);
+  const isAdmin = user.isAdmin || isAdminGroup(groups);
 
   return (
     <ProfileSettingsShellClient

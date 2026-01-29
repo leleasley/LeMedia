@@ -19,6 +19,7 @@ import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/rate-limit";
 import { randomUUID } from "crypto";
 import { summarizeUserAgent } from "@/lib/device-info";
+import { normalizeGroupList } from "@/lib/groups";
 
 const updateSchema = z.object({
   username: z.string().trim().min(1).optional(),
@@ -63,7 +64,7 @@ export async function PUT(req: NextRequest, { params }: { params: ParamsInput })
   const profile = await updateUserProfile(id, {
     username: payload.username?.toLowerCase(),
     email: payload.email === "" ? null : payload.email,
-    groups: payload.groups?.map(g => g.trim()).filter(Boolean)
+    groups: payload.groups ? normalizeGroupList(payload.groups) : undefined
   });
 
   if (!profile) return NextResponse.json({ error: "User not found" }, { status: 404 });
@@ -114,7 +115,7 @@ export async function PUT(req: NextRequest, { params }: { params: ParamsInput })
     const sessionMaxAge = await getSettingInt("session_max_age", defaultSession);
     const ctx = getRequestContext(req);
     const cookieBase = getCookieBase(ctx, true);
-    const groups = fresh.groups.length ? fresh.groups : ["users"];
+    const groups = normalizeGroupList(fresh.groups);
     const jti = randomUUID();
     const sessionToken = await createSessionToken({ username: fresh.username, groups, maxAgeSeconds: sessionMaxAge, jti });
     const userAgent = req.headers.get("user-agent");

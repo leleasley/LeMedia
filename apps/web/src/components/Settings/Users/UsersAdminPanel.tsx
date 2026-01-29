@@ -4,6 +4,7 @@ import { FormEvent, useState, useCallback } from "react";
 import { Modal } from "@/components/Common/Modal";
 import { JellyfinImportModal } from "@/components/Settings/Jellyfin/JellyfinImportModal";
 import { useToast } from "@/components/Providers/ToastProvider";
+import { normalizeGroupList } from "@/lib/groups";
 import { csrfFetch } from "@/lib/csrf-client";
 import { formatDate } from "@/lib/dateFormat";
 
@@ -30,10 +31,7 @@ type FormState = {
 };
 
 function parseGroups(value: string) {
-  return value
-    .split(/[;,]/g)
-    .map(group => group.trim())
-    .filter(Boolean);
+  return normalizeGroupList(value);
 }
 
 type Endpoint = {
@@ -441,8 +439,9 @@ export function UsersAdminPanel({ initialUsers, initialEndpoints }: { initialUse
                 onChange={event => setFormState(prev => ({ ...prev, groups: event.target.value }))}
               >
                 <option value="users">users</option>
-                <option value="admins">admins</option>
-                <option value="admins, users">admins, users</option>
+                <option value="moderators">moderators</option>
+                <option value="administrators">administrators</option>
+                <option value="administrators, users">administrators, users</option>
               </select>
               <p className="text-xs text-muted">Choose the groups for this user.</p>
             </div>

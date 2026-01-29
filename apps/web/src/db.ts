@@ -6,6 +6,7 @@ import cacheManager from "@/lib/cache-manager";
 import { defaultDashboardSliders, type DashboardSlider } from "@/lib/dashboard-sliders";
 import { logger } from "@/lib/logger";
 import { validateEnv } from "@/lib/env-validation";
+import { normalizeGroupList } from "@/lib/groups";
 
 const DatabaseUrlSchema = z.string().min(1);
 let cachedDatabaseUrl: string | null = null;
@@ -1038,7 +1039,7 @@ export async function getUserWithHash(username: string): Promise<DbUserWithHash 
   return {
     id: Number(row.id),
     username: row.username,
-    groups: (row.groups as string)?.split(",").filter(Boolean) ?? [],
+    groups: normalizeGroupList(row.groups as string),
     password_hash: row.password_hash,
     email: row.email ?? null,
     oidc_sub: row.oidc_sub ?? null,
@@ -1106,7 +1107,7 @@ export async function getUserById(id: number) {
     username: row.username,
     email: row.email,
     discordUserId: row.discord_user_id ?? null,
-    groups: (row.groups as string)?.split(",").filter(Boolean) ?? [],
+    groups: normalizeGroupList(row.groups as string),
     created_at: row.created_at,
     last_seen_at: row.last_seen_at,
     mfa_enabled: !!row.mfa_secret,
@@ -1143,7 +1144,7 @@ export async function setUserPassword(username: string, groups: string[], passwo
   return {
     id: Number(row.id),
     username: row.username,
-    groups: (row.groups as string)?.split(",").filter(Boolean) ?? [],
+    groups: normalizeGroupList(row.groups as string),
     password_hash: row.password_hash,
     email: row.email ?? null,
     oidc_sub: row.oidc_sub ?? null,
@@ -1259,7 +1260,7 @@ export async function listUsers(): Promise<DbUser[]> {
     avatarUrl: row.avatar_url ?? null,
     avatarVersion: row.avatar_version ?? null,
     email: row.email,
-    groups: (row.groups as string)?.split(",").filter(Boolean) ?? [],
+    groups: normalizeGroupList(row.groups as string),
     created_at: row.created_at,
     last_seen_at: row.last_seen_at,
     mfa_enabled: !!row.mfa_secret,
@@ -1352,7 +1353,7 @@ export async function getUserByJellyfinUserId(jellyfinUserId: string): Promise<D
   return {
     id: Number(row.id),
     username: row.username,
-    groups: (row.groups as string)?.split(",").filter(Boolean) ?? [],
+    groups: normalizeGroupList(row.groups as string),
     password_hash: row.password_hash,
     email: row.email ?? null,
     oidc_sub: row.oidc_sub ?? null,
@@ -1396,7 +1397,7 @@ export async function getUserByEmailOrUsername(email: string | null, username: s
   return {
     id: Number(row.id),
     username: row.username,
-    groups: (row.groups as string)?.split(",").filter(Boolean) ?? [],
+    groups: normalizeGroupList(row.groups as string),
     password_hash: row.password_hash,
     email: row.email ?? null,
     oidc_sub: row.oidc_sub ?? null,
@@ -1506,7 +1507,7 @@ export async function createJellyfinUser(input: {
   return {
     id: Number(row.id),
     username: row.username,
-    groups: (row.groups as string)?.split(",").filter(Boolean) ?? [],
+    groups: normalizeGroupList(row.groups as string),
     password_hash: row.password_hash,
     email: row.email ?? null,
     oidc_sub: row.oidc_sub ?? null,
@@ -1769,7 +1770,7 @@ export async function getUserByOidcSub(oidcSub: string): Promise<DbUserWithHash 
   return {
     id: Number(row.id),
     username: row.username,
-    groups: (row.groups as string)?.split(",").filter(Boolean) ?? [],
+    groups: normalizeGroupList(row.groups as string),
     password_hash: row.password_hash,
     email: row.email ?? null,
     oidc_sub: row.oidc_sub ?? null,
@@ -1813,7 +1814,7 @@ export async function getUserByEmail(email: string): Promise<DbUserWithHash | nu
   return {
     id: Number(row.id),
     username: row.username,
-    groups: (row.groups as string)?.split(",").filter(Boolean) ?? [],
+    groups: normalizeGroupList(row.groups as string),
     password_hash: row.password_hash,
     email: row.email ?? null,
     oidc_sub: row.oidc_sub ?? null,
@@ -1857,7 +1858,7 @@ export async function getUserByUsername(username: string): Promise<DbUserWithHas
   return {
     id: Number(row.id),
     username: row.username,
-    groups: (row.groups as string)?.split(",").filter(Boolean) ?? [],
+    groups: normalizeGroupList(row.groups as string),
     password_hash: row.password_hash,
     email: row.email ?? null,
     oidc_sub: row.oidc_sub ?? null,
@@ -1998,7 +1999,7 @@ export async function listUsersWithWatchlistSync(userId?: number) {
     jellyfinUserId: row.jellyfin_user_id as string,
     syncMovies: !!row.watchlist_sync_movies,
     syncTv: !!row.watchlist_sync_tv,
-    isAdmin: (row.groups as string)?.includes("admin") || (row.groups as string)?.includes("owner")
+    isAdmin: normalizeGroupList(row.groups as string).includes("administrators")
   }));
 }
 
@@ -2022,7 +2023,7 @@ export async function createOidcUser(input: {
   return {
     id: Number(row.id),
     username: row.username,
-    groups: (row.groups as string)?.split(",").filter(Boolean) ?? [],
+    groups: normalizeGroupList(row.groups as string),
     password_hash: row.password_hash,
     email: row.email ?? null,
     oidc_sub: row.oidc_sub ?? null,
@@ -2857,6 +2858,52 @@ export async function getSettingInt(key: string, fallback: number): Promise<numb
   return v;
 }
 
+// ============================================================================
+// Setup Wizard Functions
+// ============================================================================
+
+/**
+ * Get the total number of users in the database
+ */
+export async function getUserCount(): Promise<number> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(`SELECT COUNT(*)::int AS count FROM app_user`);
+  return res.rows[0]?.count ?? 0;
+}
+
+/**
+ * Check if the initial setup has been completed.
+ * Returns true if:
+ * - The setup_completed setting is "1" or "true", OR
+ * - Users already exist in the database (backwards compatibility for existing installations)
+ */
+export async function isSetupComplete(): Promise<boolean> {
+  // First check the explicit setting
+  const value = await getSetting("setup_completed");
+  if (value === "1" || value === "true") {
+    return true;
+  }
+
+  // Fallback: if users already exist, consider setup complete
+  // This handles existing installations that didn't go through setup wizard
+  const userCount = await getUserCount();
+  if (userCount > 0) {
+    // Auto-mark as complete for existing installations
+    await setSetting("setup_completed", "1");
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Mark the initial setup as complete
+ */
+export async function markSetupComplete(): Promise<void> {
+  await setSetting("setup_completed", "1");
+}
+
 type RequestLimitSettings = {
   limit: number;
   days: number;
@@ -3478,7 +3525,7 @@ export async function getRequestComments(requestId: string) {
       id: r.user_id as number,
       username: r.username as string,
       avatarUrl: r.avatar_url as string | null,
-      groups: (r.groups as string).split(",").filter(Boolean),
+      groups: normalizeGroupList(r.groups as string),
     },
   }));
 }

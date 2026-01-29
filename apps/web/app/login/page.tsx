@@ -5,7 +5,7 @@ import { LoginPageClient } from "@/components/auth/LoginPageClient";
 export const metadata = {
   title: "Login - LeMedia",
 };
-import { getJellyfinConfig, getOidcConfig, getSetting } from "@/db";
+import { getJellyfinConfig, getOidcConfig, getSetting, isSetupComplete } from "@/db";
 import { verifySessionToken } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +18,11 @@ function sanitizeFrom(value: string | undefined | null): string {
 }
 
 export default async function LoginPage() {
+  // Check if setup is required - redirect to setup wizard if not complete
+  const setupComplete = await isSetupComplete();
+  if (!setupComplete) {
+    redirect("/setup");
+  }
   const cookieStore = await cookies();
   const csrfToken = cookieStore.get("lemedia_csrf")?.value;
   const sessionToken = cookieStore.get("lemedia_session")?.value ?? "";

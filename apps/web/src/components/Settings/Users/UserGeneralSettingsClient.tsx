@@ -19,7 +19,6 @@ interface User {
     id: number;
     email: string;
     displayName: string;
-    groups: string;
     isAdmin: boolean;
     createdAt: string;
     discordUserId: string | null;
@@ -72,7 +71,6 @@ export function UserGeneralSettingsClient() {
         displayName: "",
         email: "",
         discordUserId: "",
-        groups: "",
         isJellyfinUser: false,
     });
     const [limitsInitialized, setLimitsInitialized] = useState(false);
@@ -92,7 +90,6 @@ export function UserGeneralSettingsClient() {
                 displayName: user.displayName || "",
                 email: user.email || "",
                 discordUserId: user.discordUserId || "",
-                groups: user.groups || "",
                 isJellyfinUser: !!user.jellyfinUserId,
             });
         }
@@ -130,7 +127,6 @@ export function UserGeneralSettingsClient() {
                     displayName: formData.displayName,
                     email: formData.email,
                     discordUserId: formData.discordUserId,
-                    groups: formData.groups,
                     requestLimitMovie: requestLimits.movieOverride ? requestLimits.movieLimit : null,
                     requestLimitMovieDays: requestLimits.movieOverride ? requestLimits.movieDays : null,
                     requestLimitSeries: requestLimits.seriesOverride ? requestLimits.seriesLimit : null,
@@ -327,21 +323,6 @@ export function UserGeneralSettingsClient() {
                     </p>
                 </div>
 
-                {/* Groups */}
-                <div>
-                    <label className="block text-sm font-medium text-white mb-2">Groups</label>
-                    <input
-                        type="text"
-                        value={formData.groups}
-                        onChange={(e) => setFormData({ ...formData, groups: e.target.value })}
-                        className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        placeholder="e.g., admins, users (comma-separated)"
-                    />
-                    <p className="mt-1 text-xs text-gray-400">
-                        Comma-separated list of groups. Add &quot;admins&quot; to grant admin privileges.
-                    </p>
-                </div>
-
                 {/* Account Type */}
                 <div>
                     <label className="block text-sm font-medium text-white mb-2">Account Type</label>
@@ -368,9 +349,9 @@ export function UserGeneralSettingsClient() {
                 {/* Role */}
                 <div>
                     <label className="block text-sm font-medium text-white mb-2">Role</label>
-                    <div className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-gray-400">
-                        {user.id === 1 ? "Owner" : user.isAdmin ? "Admin" : "User"}
-                    </div>
+                <div className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-gray-400">
+                        {user.id === 1 ? "Owner" : user.isAdmin ? "Administrator" : "User"}
+                </div>
                 </div>
 
                 {/* Request Limits */}

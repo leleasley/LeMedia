@@ -7,8 +7,7 @@ import { requireCsrf } from "@/lib/csrf";
 import { jsonResponseWithETag } from "@/lib/api-optimization";
 import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/rate-limit";
-
-const DEFAULT_GROUPS = ["users"];
+import { normalizeGroupList } from "@/lib/groups";
 
 const createSchema = z.object({
   username: z.string().trim().min(1).transform(u => u.toLowerCase()),
@@ -17,12 +16,6 @@ const createSchema = z.object({
   groups: z.array(z.string()).optional(),
   notificationEndpointIds: z.array(z.coerce.number().int().positive()).optional()
 });
-
-function normalizeGroups(groups?: string[]) {
-  if (!groups?.length) return DEFAULT_GROUPS;
-  const cleaned = groups.map(g => g.trim()).filter(Boolean);
-  return cleaned.length ? cleaned : DEFAULT_GROUPS;
-}
 
 function normalizeEmail(raw?: string) {
   if (!raw) return null;
@@ -60,7 +53,7 @@ export async function POST(req: NextRequest) {
     return validationError(error);
   }
 
-  const groups = normalizeGroups(payload.groups);
+  const groups = normalizeGroupList(payload.groups);
   const email = normalizeEmail(payload.email);
   const passwordHash = hashPassword(payload.password);
 
