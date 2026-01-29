@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { getUser } from "@/auth";
+import { requireUser } from "@/auth";
 import { createMediaIssue, countMediaIssuesByTmdb, getUserWithHash } from "@/db";
 import { notifyIssueEvent } from "@/notifications/issue-events";
 import { requireCsrf } from "@/lib/csrf";
@@ -20,7 +20,8 @@ const LIMITS: Record<"movie" | "tv", number> = {
 
 export async function POST(req: NextRequest) {
   try {
-    const user = await getUser();
+    const user = await requireUser();
+    if (user instanceof NextResponse) return user;
     const csrf = requireCsrf(req);
     if (csrf) return csrf;
     const body = BodySchema.parse(await req.json());

@@ -16,7 +16,8 @@ type RequestItem = {
 
 interface DownloadProgress {
   id: number;
-  tmdbId: number;
+  tmdbId: number | null;
+  tvdbId?: number | null;
   type: "movie" | "tv";
   title: string;
   status: string;

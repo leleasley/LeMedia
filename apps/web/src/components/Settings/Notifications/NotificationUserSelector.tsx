@@ -36,18 +36,31 @@ export function NotificationUserSelector({
         "/api/v1/admin/users?limit=200&sort=displayname"
     );
     const users = useMemo(() => data?.results ?? [], [data?.results]);
+    const normalizedDiscordUserId = useMemo(() => {
+        if (!selectedDiscordUserId) return null;
+        const trimmed = selectedDiscordUserId.trim();
+        if (!trimmed) return null;
+        const match = trimmed.match(/\d{5,}/);
+        return match?.[0] ?? trimmed;
+    }, [selectedDiscordUserId]);
+    const allowStoredSelection = !normalizedDiscordUserId;
     const [userSelectedId, setUserSelectedId] = useState<number | null>(() => {
         if (typeof window === "undefined") return null;
-        const stored = window.localStorage.getItem(storageKey);
-        if (!stored) return null;
-        const parsed = Number(stored);
-        return Number.isFinite(parsed) ? parsed : null;
+        if (!allowStoredSelection) return null;
+        try {
+            const stored = window.localStorage.getItem(storageKey);
+            if (!stored) return null;
+            const parsed = Number(stored);
+            return Number.isFinite(parsed) ? parsed : null;
+        } catch {
+            return null;
+        }
     });
 
     const desiredId = useMemo(() => {
         if (!users.length) return null;
-        if (selectedDiscordUserId) {
-            const match = users.find((user) => user.discordUserId === selectedDiscordUserId);
+        if (normalizedDiscordUserId) {
+            const match = users.find((user) => user.discordUserId === normalizedDiscordUserId);
             return match?.id ?? null;
         }
         if (initialSelectedUserId != null) {
@@ -64,36 +77,46 @@ export function NotificationUserSelector({
     }, [selectedId, users]);
 
     useEffect(() => {
-        onUserSelected?.(selectedUser ?? null);
-    }, [selectedUser, onUserSelected]);
-
-    useEffect(() => {
         if (typeof window === "undefined") return;
-        if (userSelectedId == null) {
-            window.localStorage.removeItem(storageKey);
+        if (!allowStoredSelection) return;
+        try {
+            if (userSelectedId == null) {
+                window.localStorage.removeItem(storageKey);
+                return;
+            }
+            window.localStorage.setItem(storageKey, String(userSelectedId));
+        } catch {
             return;
         }
-        window.localStorage.setItem(storageKey, String(userSelectedId));
-    }, [userSelectedId, storageKey]);
+    }, [userSelectedId, storageKey, allowStoredSelection]);
 
-    const handleSelect = (user: NotificationUser | null) => {
-        if (!user) {
+    useEffect(() => {
+        if (desiredId == null) return;
+        setUserSelectedId(desiredId);
+    }, [desiredId]);
+
+    const handleSelect = (userId: number | null) => {
+        if (userId == null) {
             setUserSelectedId(null);
             onUserSelected?.(null);
             return;
         }
-        setUserSelectedId(user.id);
+        const user = users.find((item) => item.id === userId) ?? null;
+        setUserSelectedId(userId);
         onUserSelected?.(user);
     };
 
     return (
         <div className="rounded-lg border border-white/10 bg-slate-900/60 p-4">
             <label className="block text-sm font-medium text-white mb-2">{label}</label>
-            <Listbox value={selectedUser} onChange={handleSelect}>
+            <Listbox value={selectedId} onChange={handleSelect}>
                 {({ open }) => (
                     <>
                         <div className="relative">
-                            <Listbox.Button className="relative w-full cursor-default rounded border border-gray-700 bg-gray-900/70 px-3 py-2 text-left text-sm text-white focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                            <Listbox.Button
+                                type="button"
+                                className="relative w-full cursor-default rounded border border-gray-700 bg-gray-900/70 px-3 py-2 text-left text-sm text-white focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            >
                                 {selectedUser ? (
                                     <span className="flex items-center gap-3">
                                         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -127,10 +150,10 @@ export function NotificationUserSelector({
                                 leaveTo="opacity-0"
                             >
                                 <Listbox.Options className="absolute z-20 mt-1 max-h-60 w-full overflow-auto rounded-xl border border-white/10 bg-slate-900/90 py-1 text-sm">
-                                    <Listbox.Option key="none" value={null}>
-                                        {({ active, selected }) => (
-                                            <div
-                                                className={`flex items-center gap-3 px-3 py-2 ${active ? "bg-white/10" : ""}`}
+                                <Listbox.Option key="none" value={null}>
+                                    {({ active, selected }) => (
+                                        <div
+                                            className={`flex items-center gap-3 px-3 py-2 ${active ? "bg-white/10" : ""}`}
                                             >
                                                 <span className={`text-sm ${selected ? "font-semibold" : ""}`}>
                                                     No user selected
@@ -142,7 +165,7 @@ export function NotificationUserSelector({
                                         )}
                                     </Listbox.Option>
                                     {users.map((user) => (
-                                        <Listbox.Option key={user.id} value={user}>
+                                        <Listbox.Option key={user.id} value={user.id}>
                                             {({ active, selected }) => (
                                                 <div
                                                     className={`flex items-center gap-3 px-3 py-2 ${active ? "bg-white/10" : ""}`}

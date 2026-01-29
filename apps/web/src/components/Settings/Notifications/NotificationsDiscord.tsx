@@ -71,15 +71,28 @@ export default function NotificationsDiscord({
                     throw new Error("Failed to load Discord notification settings");
                 }
                 const data = await res.json();
+                let config: any = data.config ?? {};
+                if (typeof config === "string") {
+                    try {
+                        config = JSON.parse(config);
+                    } catch {
+                        config = {};
+                    }
+                }
+                const rawDiscordUserId =
+                    config?.discordUserId ??
+                    config?.discord_user_id ??
+                    config?.userId ??
+                    "";
                 setForm({
                     name: data.name ?? "",
                     enabled: data.enabled ?? false,
                     types: data.types ?? 0,
-                    botUsername: data.config?.botUsername ?? "",
-                    botAvatarUrl: data.config?.botAvatarUrl ?? "",
-                    webhookUrl: data.config?.webhookUrl ?? "",
-                    discordUserId: data.config?.discordUserId ?? "",
-                    enableMentions: data.config?.enableMentions ?? false,
+                    botUsername: config?.botUsername ?? "",
+                    botAvatarUrl: config?.botAvatarUrl ?? "",
+                    webhookUrl: config?.webhookUrl ?? "",
+                    discordUserId: String(rawDiscordUserId ?? ""),
+                    enableMentions: config?.enableMentions ?? false,
                 });
             })
             .catch(() => {

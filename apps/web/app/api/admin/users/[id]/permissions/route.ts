@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUser } from "@/auth";
+import { requireAdmin, requireUser } from "@/auth";
 import { getPool } from "@/db";
 import { requireCsrf } from "@/lib/csrf";
 import { jsonResponseWithETag } from "@/lib/api-optimization";
@@ -12,7 +12,8 @@ export async function GET(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const currentUser = await getUser();
+        const currentUser = await requireUser();
+        if (currentUser instanceof NextResponse) return currentUser;
 
         const db = getPool();
         const { id } = await params;
@@ -50,10 +51,8 @@ export async function POST(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const currentUser = await getUser();
-        if (!currentUser?.isAdmin) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-        }
+        const currentUser = await requireAdmin();
+        if (currentUser instanceof NextResponse) return currentUser;
         const csrf = requireCsrf(request);
         if (csrf) return csrf;
 
@@ -64,11 +63,6 @@ export async function POST(
 
         const targetRes = await db.query("SELECT username FROM app_user WHERE id = $1", [userId]);
         const targetUsername = targetRes.rows[0]?.username as string | undefined;
-
-        // Ensure permissions column exists
-        await db.query(
-            "ALTER TABLE app_user ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{}'::jsonb"
-        );
 
         // Save permissions
         await db.query(

@@ -1,15 +1,13 @@
 import { NextResponse } from "next/server";
-import { getUser } from "@/auth";
+import { requireAdmin } from "@/auth";
 import { getPool } from "@/db";
 import { jsonResponseWithETag } from "@/lib/api-optimization";
 import { logger } from "@/lib/logger";
 
 export async function GET(request: Request) {
     try {
-        const user = await getUser();
-        if (!user?.isAdmin) {
-            return jsonResponseWithETag(request, { error: "Unauthorized" }, { status: 401 });
-        }
+        const user = await requireAdmin();
+        if (user instanceof NextResponse) return user;
 
         const { searchParams } = new URL(request.url);
         const pageRaw = Number(searchParams.get("page") ?? 1);

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUser } from "@/auth";
+import { requireAdmin } from "@/auth";
 import { getPool } from "@/db";
 import { hashPassword } from "@/lib/auth-utils";
 import { requireCsrf } from "@/lib/csrf";
@@ -9,10 +9,8 @@ import { logger } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
     try {
-        const currentUser = await getUser();
-        if (!currentUser?.isAdmin) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-        }
+        const currentUser = await requireAdmin();
+        if (currentUser instanceof NextResponse) return currentUser;
         const csrf = requireCsrf(request);
         if (csrf) return csrf;
 

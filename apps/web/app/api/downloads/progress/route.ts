@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUser } from "@/auth";
+import { requireUser } from "@/auth";
 import { radarrQueue } from "@/lib/radarr";
 import { sonarrQueue } from "@/lib/sonarr";
 
 export interface DownloadProgress {
   id: number;
-  tmdbId: number;
+  tmdbId: number | null;
+  tvdbId?: number | null;
   type: "movie" | "tv";
   title: string;
   status: string;
@@ -15,10 +16,10 @@ export interface DownloadProgress {
   estimatedCompletionTime: string | null;
   percentComplete: number;
   downloadId: string;
-  protocol: string;
-  downloadClient: string;
-  indexer: string;
-  outputPath: string;
+  protocol?: string;
+  downloadClient?: string;
+  indexer?: string;
+  outputPath?: string;
   errorMessage?: string;
   isImporting?: boolean;
 }
@@ -38,7 +39,7 @@ async function getRadarrDownloads(): Promise<DownloadProgress[]> {
         
         return {
           id: item.id,
-          tmdbId: item.movie?.tmdbId || 0,
+          tmdbId: item.movie?.tmdbId ?? null,
           type: "movie" as const,
           title: item.movie?.title || item.title || "Unknown",
           status: item.status || "downloading",
@@ -75,9 +76,12 @@ async function getSonarrDownloads(): Promise<DownloadProgress[]> {
         const percentComplete = size > 0 ? ((size - sizeleft) / size) * 100 : 0;
         const isImporting = item.status === "importing" || item.status === "completed";
         
+        const tvdbId = item.series?.tvdbId ?? null;
+        const tmdbId = item.series?.tmdbId ?? null;
         return {
           id: item.id,
-          tmdbId: item.series?.tvdbId || 0,
+          tmdbId,
+          tvdbId,
           type: "tv" as const,
           title: item.series?.title || item.title || "Unknown",
           status: item.status || "downloading",
@@ -103,7 +107,8 @@ async function getSonarrDownloads(): Promise<DownloadProgress[]> {
 
 export async function GET(req: NextRequest) {
   try {
-    await getUser();
+    const user = await requireUser();
+    if (user instanceof NextResponse) return user;
     
     const searchParams = req.nextUrl.searchParams;
     const type = searchParams.get("type");
@@ -136,7 +141,18 @@ export async function GET(req: NextRequest) {
       downloads = downloads.filter(d => d.tmdbId === id);
     }
     
-    return NextResponse.json({ downloads });
+    const redactedDownloads = user.isAdmin
+      ? downloads
+      : downloads.map(download => ({
+          ...download,
+          protocol: undefined,
+          downloadClient: undefined,
+          indexer: undefined,
+          outputPath: undefined,
+          errorMessage: download.errorMessage ? "Download error" : undefined
+        }));
+
+    return NextResponse.json({ downloads: redactedDownloads });
   } catch (error) {
     console.error("[Download Progress] Error:", error);
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
