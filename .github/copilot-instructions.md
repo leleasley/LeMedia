@@ -143,4 +143,5 @@ Required for build:
 Optional but recommended:
 - `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` - Web push notifications (generate via `node apps/web/generate-vapid-keys.js`)
 - `SMTP_*` - Email notifications
-- `APP_SEED_USER`, `APP_SEED_PASSWORD` - First admin user creation
+
+First-time setup: On fresh installs, users are guided through a setup wizard at `/setup` to create the first admin account.

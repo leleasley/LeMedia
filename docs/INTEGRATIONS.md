@@ -200,11 +200,6 @@ Authentication:
 - `AUTH_ADMIN_GROUP` - Admin group name (default: "admins")
 - `ALLOW_DEV_BYPASS` - Enable dev user bypass (0=disabled, must be 0 in production)
 
-User Seeding:
-- `APP_SEED_USER` - Initial user username (optional)
-- `APP_SEED_PASSWORD` - Initial user password (optional)
-- `APP_SEED_GROUPS` - Initial user groups (default: "admins")
-
 Media Services:
 - `TMDB_API_KEY` - TMDB v3 API key (required)
 - `OMDB_API_KEY` - OMDB API key (optional)

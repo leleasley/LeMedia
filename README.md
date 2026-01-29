@@ -10,12 +10,29 @@ A comprehensive media request management platform for your homelab. LeMedia prov
 - Request specific episodes or entire seasons (Sonarr integration)
 - Request movies with custom quality profiles (Radarr integration)
 - Track request status and history
+- Report media issues (quality, subtitles, audio problems)
+- Favorites and watchlist functionality
+- Recently viewed tracking
+- Calendar view with upcoming releases and iCal feed support
+
+### Authentication & Security
+- **First-time setup wizard** - Guided admin account creation on fresh installs
+- **Local database authentication** - Username/password login with secure session management
+- **Multi-factor authentication (MFA)** - TOTP/authenticator app support
+- **WebAuthn/Passkeys** - Passwordless login with FIDO2 security keys
+- **OIDC/SSO integration** - Connect with your existing identity provider
+- **Jellyfin authentication** - Login with Jellyfin credentials
+- **Header-based auth** - Authelia/Authentik/Caddy forward_auth support
+- **Cloudflare Turnstile** - Bot protection for login forms
+- **Rate limiting** - Protection against brute force attacks
+- **Session management** - View and revoke active sessions
+- **Account suspension** - Ban problematic users
 
 ### User Management
-- Multi-user support with role-based access control
-- Header-based authentication (Authelia/Authentik/Caddy forward_auth)
-- Admin and user groups with granular permissions
-- Approval workflows for user requests
+- Multi-user support with role-based access control (admin/moderator/user)
+- Per-user request limits with configurable time windows
+- Auto-approval rules engine
+- User permissions and preferences
 
 ### Notifications
 Comprehensive notification support for keeping users informed:
@@ -33,9 +50,10 @@ Comprehensive notification support for keeping users informed:
 ### Integrations
 - **Sonarr**: Automatic TV show downloads and monitoring
 - **Radarr**: Automatic movie downloads and monitoring
-- **Jellyfin**: Media library integration
+- **Jellyfin**: Media library integration and availability tracking
 - **TMDB**: Rich metadata and artwork
 - **OMDB**: Additional metadata support
+- **Prowlarr**: Indexer management (optional)
 
 ### Jellyfin Availability
 LeMedia uses a local Jellyfin availability cache so TV seasons/episodes can load fast and accurately.
@@ -46,13 +64,12 @@ See `docs/JELLYFIN_AVAILABILITY.md` for setup, how the cache works, and troubles
 - Settings management for all services
 - User and permission management
 - Request approval workflows
-- Activity logs and analytics
+- Activity/audit logs and analytics
 - Job scheduling and monitoring
 - Share management for collaborative requests
-
-## Why Header-Based Auth?
-
-LeMedia uses header-based authentication because it integrates seamlessly with modern reverse proxy SSO solutions like Authelia, Authentik, or Caddy's forward_auth. This means you get enterprise-grade authentication without reinventing the wheel - just use your existing homelab auth stack.
+- Upgrade finder for quality improvements
+- Maintenance mode for planned downtime
+- Dashboard slider customization
 
 ## Requirements
 
@@ -63,13 +80,17 @@ LeMedia uses header-based authentication because it integrates seamlessly with m
 - Sonarr instance with API key
 - Radarr instance with API key
 - Jellyfin server (optional, for library integration)
-- Reverse proxy with authentication (Caddy + Authelia/Authentik recommended)
+- Reverse proxy (recommended for production)
 
 ## Quick Start
 
 ### Installation
 
-1. Clone or download this project to `/opt/LeMedia`
+1. Clone or download this project:
+   ```bash
+   git clone https://github.com/your-repo/LeMedia.git /opt/LeMedia
+   cd /opt/LeMedia
+   ```
 
 2. Copy the environment template and configure your services:
    ```bash
@@ -85,16 +106,25 @@ LeMedia uses header-based authentication because it integrates seamlessly with m
    - `SONARR_URL` and `SONARR_API_KEY`: Your Sonarr instance details
    - `RADARR_URL` and `RADARR_API_KEY`: Your Radarr instance details
    - `DATABASE_URL`: PostgreSQL connection string (or use the provided defaults)
-   - SMTP settings for email notifications (if using email notifications)
 
 3. Start the application:
    ```bash
    docker compose up -d --build
    ```
 
-4. Configure your reverse proxy with authentication (see example below)
+4. Access LeMedia at your configured URL (default: `http://localhost:3010`)
 
-5. Access LeMedia at your configured URL and log in with your SSO provider
+5. **First-time setup**: On first launch, you'll be guided through a setup wizard to create your administrator account
+
+### First-Time Setup
+
+When you first start LeMedia with a fresh database, you'll be automatically redirected to the setup wizard at `/setup`. This wizard will:
+
+1. Welcome you with an overview of LeMedia's features
+2. Guide you through creating your first administrator account
+3. Redirect you to the login page once complete
+
+The setup wizard only appears once - after your admin account is created, it's disabled permanently.
 
 ### Faster rebuilds / less disk usage
 
@@ -103,17 +133,17 @@ LeMedia uses header-based authentication because it integrates seamlessly with m
 - Only use `--build` when you changed code or dependencies:
   - `docker compose up -d --build`
 
-If disk usage grows over time, it’s usually Docker build cache:
+If disk usage grows over time, it's usually Docker build cache:
 - `docker builder prune -af` (build cache)
 - `docker image prune -af` (unused images)
 
-### Caddy Configuration Example
+### Reverse Proxy Configuration (Optional)
 
-LeMedia requires the following headers to be passed from your authentication layer:
+For production deployments, you can use a reverse proxy with SSO. LeMedia supports these headers from your authentication layer:
 - `Remote-User`: The authenticated username
-- `Remote-Groups`: Comma-separated list of groups (must include your admin group for admin access)
+- `Remote-Groups`: Comma-separated list of groups
 
-#### With Authelia
+#### Caddy with Authelia Example
 
 ```caddyfile
 lemedia.yourdomain.com {
@@ -127,11 +157,10 @@ lemedia.yourdomain.com {
 
 #### Manual Header Configuration
 
-If you're using a different auth provider, ensure these headers are set:
+If you're using a different auth provider:
 
 ```caddyfile
 lemedia.yourdomain.com {
-  # Your auth middleware here
   forward_auth your-auth-provider:port {
     uri /verify
     copy_headers Remote-User Remote-Groups
@@ -156,6 +185,7 @@ For local development without a reverse proxy:
 
 2. Run the development server:
    ```bash
+   cd apps/web
    npm run dev
    ```
 
@@ -200,16 +230,23 @@ To enable PWA push notifications:
    VAPID_EMAIL=noreply@yourdomain.com
    ```
 
-### First User Setup
+### Cloudflare Turnstile (Bot Protection)
 
-You can seed an initial admin user by setting:
-```
-APP_SEED_USER=admin
-APP_SEED_PASSWORD=changeme
-APP_SEED_GROUPS=admins
-```
+To enable Turnstile on login forms:
 
-This user will be created on first startup if it doesn't exist.
+1. Create a Turnstile widget at [Cloudflare Dashboard](https://dash.cloudflare.com/?to=/:account/turnstile)
+2. Add to your `.env`:
+   ```
+   NEXT_PUBLIC_TURNSTILE_SITE_KEY=your-site-key
+   TURNSTILE_SECRET_KEY=your-secret-key
+   ```
+
+### Multi-Factor Authentication
+
+MFA can be enabled globally in Admin Settings > General. When enabled:
+- New users will be prompted to set up TOTP on first login
+- Existing users can manage MFA in their profile settings
+- Admins can enforce MFA for all users or just administrators
 
 ## Technical Details
 
@@ -222,10 +259,16 @@ LeMedia supports requesting specific episodes from TV shows. This works by:
 
 ### Authentication Flow
 
-1. User authenticates with your SSO provider (Authelia/Authentik)
-2. Reverse proxy validates and sets `Remote-User` and `Remote-Groups` headers
-3. LeMedia reads headers to identify user and permissions
-4. Session is maintained via secure cookies
+LeMedia supports multiple authentication methods:
+
+1. **Local Auth**: Username/password stored in database with bcrypt hashing
+2. **MFA**: Optional TOTP verification after password
+3. **WebAuthn**: Passwordless login with security keys/passkeys
+4. **OIDC/SSO**: Redirect to external identity provider
+5. **Jellyfin**: Authenticate against your Jellyfin server
+6. **Header-based**: Trust headers from reverse proxy (Authelia/Authentik)
+
+Session is maintained via secure HTTP-only cookies with configurable expiry.
 
 ### Database
 
@@ -234,16 +277,31 @@ LeMedia uses PostgreSQL for data persistence:
 - Request history and status
 - Notification configurations
 - Approval workflows
-- Analytics and logs
+- Analytics and audit logs
+- Session management
+- MFA secrets and WebAuthn credentials
+
+Migrations run automatically on startup.
 
 ## Architecture
 
-- **Frontend**: Next.js 14+ with App Router
+- **Frontend**: Next.js 16 with App Router and React 19
 - **Backend**: Next.js API routes
-- **Database**: PostgreSQL
-- **Authentication**: Header-based (reverse proxy SSO)
+- **Database**: PostgreSQL with automatic migrations
+- **Authentication**: Multi-method (local, MFA, WebAuthn, OIDC, Jellyfin, headers)
 - **Deployment**: Docker + Docker Compose
 - **Media Services**: Sonarr, Radarr, Jellyfin APIs
+
+## API
+
+LeMedia exposes a REST API at `/api/v1/*` for integration with other services. Authentication is required via session cookie or API token.
+
+Key endpoints:
+- `GET /api/v1/requests` - List requests
+- `POST /api/v1/request/movie` - Request a movie
+- `POST /api/v1/request/episode` - Request TV episodes
+- `GET /api/v1/calendar` - Get calendar events
+- `GET /api/health` - Health check endpoint
 
 ## Support
 
@@ -251,4 +309,4 @@ For issues, feature requests, or contributions, please use the issue tracker on 
 
 ## License
 
-See LICENSE file for details. 
+See LICENSE file for details.

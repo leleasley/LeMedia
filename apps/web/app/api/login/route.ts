@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUserWithHash, setUserPassword, createMfaSession, deleteMfaSessionsForUser, getSetting, getSettingInt, createUserSession } from "@/db";
-import { hashPassword, verifyPassword } from "@/lib/auth-utils";
+import { getUserWithHash, createMfaSession, deleteMfaSessionsForUser, getSetting, getSettingInt, createUserSession } from "@/db";
+import { verifyPassword } from "@/lib/auth-utils";
 import { createSessionToken } from "@/lib/session";
 import { ensureCsrfCookie, getCookieBase, getRequestContext, isSameOriginRequest, sanitizeRelativePath } from "@/lib/proxy";
 import { isValidCsrfToken } from "@/lib/csrf";
@@ -11,20 +11,6 @@ import { randomUUID } from "crypto";
 import { summarizeUserAgent } from "@/lib/device-info";
 import { verifyTurnstileToken } from "@/lib/turnstile";
 import { normalizeGroupList } from "@/lib/groups";
-
-type SeedConfig = {
-  username: string;
-  password: string;
-  groups: string[];
-};
-
-function getSeedUser(): SeedConfig | null {
-  const username = process.env.APP_SEED_USER?.trim();
-  const password = process.env.APP_SEED_PASSWORD ?? "";
-  const groups = normalizeGroupList(process.env.APP_SEED_GROUPS ?? "administrators");
-  if (!username || !password) return null;
-  return { username, password, groups };
-}
 
 function formatRetry(retryAfterSec: number) {
   const minutes = Math.max(1, Math.ceil(retryAfterSec / 60));
@@ -82,15 +68,6 @@ export async function POST(req: NextRequest) {
 
   if (!usernameInput || !password) {
     return redirectToLogin("Enter a username and password");
-  }
-
-  // Seed a first user if configured and missing
-  const seed = getSeedUser();
-  if (seed && seed.username.toLowerCase() === usernameInput) {
-    const existing = await getUserWithHash(seed.username);
-    if (!existing || !existing.password_hash) {
-      await setUserPassword(seed.username, seed.groups, hashPassword(seed.password));
-    }
   }
 
   const user = await getUserWithHash(usernameInput);
