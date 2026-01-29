@@ -160,7 +160,7 @@ async function syncEpisodeRequest(request: RequestForSync, queueMap: Map<number,
   return null;
 }
 
-import { listUsersWithWatchlistSync, createRequest, findActiveRequestByTmdb } from "@/db";
+import { listUsersWithWatchlistSync, createRequestWithItemsTransaction, findActiveRequestByTmdb } from "@/db";
 import { getJellyfinWatchlist } from "@/lib/jellyfin";
 import { getMovie as getTmdbMovie, getTv as getTmdbTv } from "@/lib/tmdb";
 import { getMovieByTmdbId } from "@/lib/radarr";
@@ -254,10 +254,11 @@ export async function syncWatchlists(options?: { userId?: number }) {
         // Per user request: "if they're not an admin it will have to be approved... and if an admin it does obvs"
         // This implies auto-approve for admins.
         
-        const status = user.isAdmin ? "submitted" : "pending";
+        const requestStatus = user.isAdmin ? "queued" : "pending";
+        const finalStatus = user.isAdmin ? "submitted" : undefined;
 
-        await createRequest({
-          requestType: isMovie ? "movie" : "episode", // 'episode' is used for TV shows in this schema apparently? or 'tv'?
+        await createRequestWithItemsTransaction({
+          requestType: isMovie ? "movie" : "episode",
           // Wait, createRequest schema says: request_type CHECK (request_type IN ('movie','episode'))
           // But usually Series requests are type 'tv'?
           // Let's check db.ts createRequest input type.
@@ -274,10 +275,18 @@ export async function syncWatchlists(options?: { userId?: number }) {
           tmdbId,
           title,
           userId: user.id,
-          status,
+          requestStatus,
+          finalStatus,
           posterPath,
           backdropPath,
-          releaseYear
+          releaseYear,
+          items: [
+            {
+              provider: isMovie ? "radarr" : "sonarr",
+              providerId: null,
+              status: finalStatus ?? requestStatus
+            }
+          ]
         });
         createdCount++;
       }

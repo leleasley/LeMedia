@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUser } from "@/auth";
+import { requireUser } from "@/auth";
 import { createMediaShare, countRecentSharesByUser, upsertUser } from "@/db";
 import { z } from "zod";
 import crypto from "crypto";
@@ -22,7 +22,8 @@ const RATE_LIMIT_WINDOW = 60; // minutes
 
 export async function POST(req: NextRequest) {
   try {
-    const user = await getUser();
+    const user = await requireUser();
+    if (user instanceof NextResponse) return user;
     const { id: userId } = await upsertUser(user.username, user.groups);
     const csrf = requireCsrf(req);
     if (csrf) return csrf;

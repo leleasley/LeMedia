@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUser } from "@/auth";
+import { requireUser } from "@/auth";
 import { markNotificationAsRead, upsertUser } from "@/db";
 import { requireCsrf } from "@/lib/csrf";
 
@@ -7,34 +7,24 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
-  try {
-    const user = await getUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const csrf = requireCsrf(request);
-    if (csrf) return csrf;
+  const user = await requireUser();
+  if (user instanceof NextResponse) return user;
+  const csrf = requireCsrf(request);
+  if (csrf) return csrf;
 
-    const { id: userId } = await upsertUser(user.username, user.groups);
-    const resolvedParams = await Promise.resolve(params);
-    const notificationId = parseInt(resolvedParams.id);
-    
-    if (isNaN(notificationId)) {
-      return NextResponse.json({ error: "Invalid notification ID" }, { status: 400 });
-    }
+  const { id: userId } = await upsertUser(user.username, user.groups);
+  const resolvedParams = await Promise.resolve(params);
+  const notificationId = parseInt(resolvedParams.id);
 
-    const success = await markNotificationAsRead(notificationId, userId);
-    
-    if (!success) {
-      return NextResponse.json({ error: "Notification not found" }, { status: 404 });
-    }
-
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error("Error marking notification as read:", error);
-    return NextResponse.json(
-      { error: "Failed to mark notification as read" },
-      { status: 500 }
-    );
+  if (isNaN(notificationId)) {
+    return NextResponse.json({ error: "Invalid notification ID" }, { status: 400 });
   }
+
+  const success = await markNotificationAsRead(notificationId, userId);
+
+  if (!success) {
+    return NextResponse.json({ error: "Notification not found" }, { status: 404 });
+  }
+
+  return NextResponse.json({ success: true });
 }

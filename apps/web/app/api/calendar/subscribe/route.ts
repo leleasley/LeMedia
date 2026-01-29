@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { getUser } from "@/auth";
+import { requireUser } from "@/auth";
 import { addCalendarSubscription, removeCalendarSubscription, listCalendarSubscriptions } from "@/db";
 import { requireCsrf } from "@/lib/csrf";
 
@@ -19,31 +19,25 @@ const UnsubscribeSchema = z.object({
  * GET /api/calendar/subscribe - List user's subscriptions
  */
 export async function GET(req: NextRequest) {
-  try {
-    const user = await getUser();
-    const subscriptions = await listCalendarSubscriptions(user.id);
+  const user = await requireUser();
+  if (user instanceof NextResponse) return user;
+  const subscriptions = await listCalendarSubscriptions(user.id);
 
-    return NextResponse.json({ subscriptions });
-  } catch (error) {
-    console.error("[Calendar Subscribe] GET Error:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch subscriptions" },
-      { status: 500 }
-    );
-  }
+  return NextResponse.json({ subscriptions });
 }
 
 /**
  * POST /api/calendar/subscribe - Subscribe to "notify when available"
  */
 export async function POST(req: NextRequest) {
+  const user = await requireUser();
+  if (user instanceof NextResponse) return user;
+
+  // CSRF protection
+  const csrfError = requireCsrf(req);
+  if (csrfError) return csrfError;
+
   try {
-    const user = await getUser();
-
-    // CSRF protection
-    const csrfError = requireCsrf(req);
-    if (csrfError) return csrfError;
-
     const body = await req.json();
     const data = SubscribeSchema.parse(body);
 
@@ -95,13 +89,14 @@ export async function POST(req: NextRequest) {
  * DELETE /api/calendar/subscribe - Unsubscribe from notifications
  */
 export async function DELETE(req: NextRequest) {
+  const user = await requireUser();
+  if (user instanceof NextResponse) return user;
+
+  // CSRF protection
+  const csrfError = requireCsrf(req);
+  if (csrfError) return csrfError;
+
   try {
-    const user = await getUser();
-
-    // CSRF protection
-    const csrfError = requireCsrf(req);
-    if (csrfError) return csrfError;
-
     const body = await req.json();
     const data = UnsubscribeSchema.parse(body);
 
