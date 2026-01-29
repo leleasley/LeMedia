@@ -39,6 +39,20 @@ export async function GET(
                 { status: 404 }
             );
         }
+        if (endpoint.type !== parsedType.data) {
+            return jsonResponseWithETag(request, 
+                { error: "Notification endpoint not found" },
+                { status: 404 }
+            );
+        }
+
+        if (parsedType.data === "email" && endpoint.config && typeof endpoint.config === "object") {
+            const hasAuthPass = Boolean((endpoint.config as any)?.authPass);
+            return jsonResponseWithETag(request, {
+                ...endpoint,
+                config: { ...endpoint.config, authPass: "", hasAuthPass }
+            });
+        }
 
         return jsonResponseWithETag(request, endpoint);
     } catch (error) {
@@ -81,12 +95,29 @@ export async function PUT(
             );
         }
 
+        const existing = await getNotificationEndpointById(endpointId);
+        if (!existing) {
+            return NextResponse.json({ error: "Notification endpoint not found" }, { status: 404 });
+        }
+        if (existing.type !== parsedType.data) {
+            return NextResponse.json({ error: "Notification endpoint not found" }, { status: 404 });
+        }
+
+        let nextConfig = config ?? {};
+        if (parsedType.data === "email") {
+            const prior = (existing.config && typeof existing.config === "object") ? existing.config : {};
+            if (!nextConfig || typeof nextConfig !== "object") nextConfig = {};
+            if (!nextConfig.authPass || String(nextConfig.authPass).trim() === "") {
+                nextConfig = { ...prior, ...nextConfig, authPass: prior.authPass ?? "" };
+            }
+        }
+
         const endpoint = await updateNotificationEndpointById(
             endpointId,
             name,
             enabled ?? true,
             types ?? 0,
-            config ?? {}
+            nextConfig
         );
 
         await logAuditEvent({
@@ -126,6 +157,11 @@ export async function DELETE(
         const endpointId = parseInt(id, 10);
         if (isNaN(endpointId)) {
             return NextResponse.json({ error: "Invalid endpoint ID" }, { status: 400 });
+        }
+
+        const existing = await getNotificationEndpointById(endpointId);
+        if (!existing || existing.type !== parsedType.data) {
+            return NextResponse.json({ error: "Notification endpoint not found" }, { status: 404 });
         }
 
         await deleteNotificationEndpoint(endpointId);

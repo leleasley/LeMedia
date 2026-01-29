@@ -27,6 +27,7 @@ type EmailNotificationSettings = {
     authPass: string;
     allowSelfSigned: boolean;
     senderName: string;
+    hasAuthPass?: boolean;
 };
 
 const initialState: EmailNotificationSettings = {
@@ -42,6 +43,7 @@ const initialState: EmailNotificationSettings = {
     authPass: "",
     allowSelfSigned: false,
     senderName: "",
+    hasAuthPass: false,
 };
 
 interface NotificationsEmailProps {
@@ -56,6 +58,7 @@ export default function NotificationsEmail({
     const router = useRouter();
     const toast = useToast();
     const [form, setForm] = useState<EmailNotificationSettings>(initialState);
+    const [smtpConfigured, setSmtpConfigured] = useState(false);
     const [loading, setLoading] = useState(mode === "edit");
     const [saving, setSaving] = useState(false);
     const [testing, setTesting] = useState(false);
@@ -104,6 +107,7 @@ export default function NotificationsEmail({
                     authPass: "",
                     allowSelfSigned: data.config?.allowSelfSigned ?? false,
                     senderName: data.config?.senderName ?? "",
+                    hasAuthPass: data.config?.hasAuthPass ?? false,
                 });
             })
             .catch(() => {
@@ -118,6 +122,12 @@ export default function NotificationsEmail({
     const updateForm = (patch: Partial<EmailNotificationSettings>) => {
         setForm((prev) => ({ ...prev, ...patch }));
     };
+
+    useEffect(() => {
+        const hasPassword = Boolean(form.authPass?.trim() || form.hasAuthPass);
+        const ready = Boolean(form.smtpHost?.trim() && form.smtpPort && form.emailFrom?.trim() && hasPassword);
+        setSmtpConfigured(ready);
+    }, [form.smtpHost, form.smtpPort, form.emailFrom, form.authPass, form.hasAuthPass]);
 
     const handleSave = async (event: React.FormEvent) => {
         event.preventDefault();
@@ -190,6 +200,9 @@ export default function NotificationsEmail({
                     ? "Email notification created successfully!"
                     : "Email notification settings saved successfully!"
             );
+            if (form.authPass.trim()) {
+                updateForm({ authPass: "", hasAuthPass: true });
+            }
             router.push("/admin/settings/notifications/email");
         } catch (error: any) {
             toast.error(error.message || "Failed to save email notification settings");
@@ -249,6 +262,12 @@ export default function NotificationsEmail({
                     {mode === "create" ? "Create Email Notification" : "Edit Email Notification"}
                 </h2>
                 <p className="text-gray-400">Configure email notifications via SMTP</p>
+                <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-white/10 bg-slate-900/60 px-3 py-1 text-xs">
+                    <span className={`h-2 w-2 rounded-full ${smtpConfigured ? "bg-emerald-400" : "bg-amber-400"}`} />
+                    <span className="text-gray-300">
+                        SMTP {smtpConfigured ? "configured" : "incomplete"}
+                    </span>
+                </div>
             </div>
 
             <form onSubmit={handleSave} className="space-y-6">
@@ -416,7 +435,11 @@ export default function NotificationsEmail({
                         onChange={(e) => updateForm({ authPass: e.target.value })}
                         className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         autoComplete="new-password"
+                        placeholder={form.hasAuthPass ? "Password already set" : ""}
                     />
+                    {form.hasAuthPass ? (
+                        <p className="text-xs text-gray-400 mt-1">Password already set. Leave blank to keep it.</p>
+                    ) : null}
                 </div>
 
                 {/* Allow Self-Signed Certificates */}

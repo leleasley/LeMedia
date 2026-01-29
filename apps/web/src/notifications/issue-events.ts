@@ -2,6 +2,7 @@ import {
   listGlobalNotificationEndpointsFull,
   listNotificationEndpointsForUser,
   NotificationEndpointFull,
+  getUserById,
   type DiscordConfig,
   type TelegramConfig,
   type EmailConfig,
@@ -109,6 +110,9 @@ export async function notifyIssueEvent(event: IssueNotificationEvent, ctx: Issue
   const endpoints = dedupe([...globalEndpoints, ...userEndpoints]).filter(e => shouldSend(e, event));
   if (endpoints.length === 0) return;
 
+  const userEmail =
+    ctx.userId && Number.isFinite(ctx.userId) ? (await getUserById(ctx.userId))?.email ?? null : null;
+
   const headline = event === "issue_resolved" ? `Issue resolved: ${ctx.title}` : `Issue reported: ${ctx.title}`;
   const meta = `${ctx.mediaType.toUpperCase()} • TMDB ${ctx.tmdbId}`;
   const plain = [
@@ -156,8 +160,11 @@ export async function notifyIssueEvent(event: IssueNotificationEvent, ctx: Issue
         }
         if (endpoint.type === "email") {
           const config = endpoint.config as EmailConfig;
-          const to = String(config?.to ?? "");
-          await sendEmail({ to, subject: "[LeMedia] Issue reported", text: plain });
+          const configuredTo = String(config?.to ?? "").trim();
+          if (!configuredTo && config?.userEmailRequired && !userEmail) return;
+          const to = configuredTo || String(userEmail ?? "").trim();
+          if (!to) return;
+          await sendEmail({ to, subject: "[LeMedia] Issue reported", text: plain, smtp: config });
           return;
         }
         if (endpoint.type === "webhook") {

@@ -142,9 +142,11 @@ async function sendCalendarNotification(subscription: any) {
           await sendTelegramNotification(botToken, chatId, title);
         } else if (endpoint.type === "email") {
           const config = endpoint.config as EmailConfig;
-          const to = String(config?.to ?? "");
+          const configuredTo = String(config?.to ?? "").trim();
+          if (!configuredTo && config?.userEmailRequired && !user.email) continue;
+          const to = configuredTo || String(user.email ?? "").trim();
           if (!to) continue;
-          await sendEmailNotification(to, user.username, title);
+          await sendEmailNotification(to, user.username, title, config);
         } else if (endpoint.type === "webhook") {
           const config = endpoint.config as WebhookConfig;
           const url = String(config?.url ?? "");
@@ -220,7 +222,12 @@ async function sendTelegramNotification(botToken: string, chatId: string, title:
   });
 }
 
-async function sendEmailNotification(email: string, username: string, title: string) {
+async function sendEmailNotification(
+  email: string,
+  username: string,
+  title: string,
+  smtpConfig?: EmailConfig
+) {
   await sendEmail({
     to: email,
     subject: `[LeMedia] ${title} is now available`,
@@ -231,6 +238,7 @@ async function sendEmailNotification(email: string, username: string, title: str
       <p>Enjoy!</p>
       <p>- LeMedia</p>
     `,
+    smtp: smtpConfig
   });
 }
 

@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
             smtpPort: endpoint?.config.smtpPort || 587,
             encryption: endpoint?.config.encryption || "starttls",
             authUser: endpoint?.config.authUser || "",
-            authPass: endpoint?.config.authPass || "",
+            authPass: "",
             allowSelfSigned: endpoint?.config.allowSelfSigned || false,
             pgpPrivateKey: endpoint?.config.pgpPrivateKey || "",
             pgpPassword: endpoint?.config.pgpPassword || "",
@@ -66,6 +66,11 @@ export async function PUT(req: NextRequest) {
         const validated = EmailSettingsSchema.parse(body);
 
         const { enabled, types, ...config } = validated;
+        const existing = await getNotificationEndpointByType("email");
+        const existingPass = existing?.config?.authPass || "";
+        if (!config.authPass?.trim()) {
+            config.authPass = existingPass;
+        }
         await updateNotificationEndpoint("email", enabled, types, config);
 
         return NextResponse.json({ settings: validated, success: true });

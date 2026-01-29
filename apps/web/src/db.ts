@@ -2734,7 +2734,20 @@ export type DiscordConfig = {
 };
 
 export type EmailConfig = {
-  to: string;
+  to?: string;
+  userEmailRequired?: boolean;
+  emailFrom?: string;
+  smtpHost?: string;
+  smtpPort?: number;
+  secure?: boolean;
+  ignoreTls?: boolean;
+  requireTls?: boolean;
+  authUser?: string;
+  authPass?: string;
+  allowSelfSigned?: boolean;
+  senderName?: string;
+  senderAddress?: string;
+  encryption?: "none" | "starttls" | "tls" | "default" | "opportunistic" | "implicit";
 };
 
 export type WebhookConfig = {

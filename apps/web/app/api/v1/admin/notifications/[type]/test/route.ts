@@ -3,6 +3,7 @@ import { requireAdmin } from "@/auth";
 import { requireCsrf } from "@/lib/csrf";
 import { notificationTypeSchema } from "@/lib/notification-types";
 import { logger } from "@/lib/logger";
+import { sendEmail } from "@/notifications/email";
 
 export async function POST(
     request: NextRequest,
@@ -114,13 +115,24 @@ async function testDiscord(config: any) {
 }
 
 async function testEmail(config: any) {
-    if (!config.emailFrom || !config.smtpHost) {
-        throw new Error("Email and SMTP host are required");
+    const sender = String(config.emailFrom ?? config.senderAddress ?? "").trim();
+    if (!sender || !config.smtpHost) {
+        throw new Error("Email sender and SMTP host are required");
     }
 
-    // For email test, we'd typically use the server's email service
-    // This is a placeholder - actual implementation would need nodemailer or similar
-    return NextResponse.json({ success: true, message: "Email test notification would be sent" });
+    await sendEmail({
+        to: sender,
+        subject: "[LeMedia] Test notification",
+        text: "This is a test notification from LeMedia. If you received this, your email notifications are working correctly!",
+        html: `
+          <h2>LeMedia Test Notification</h2>
+          <p>This is a test notification from LeMedia.</p>
+          <p>If you received this, your email notifications are working correctly!</p>
+        `,
+        smtp: config,
+    });
+
+    return NextResponse.json({ success: true, message: "Test notification sent to email" });
 }
 
 async function testTelegram(config: any) {

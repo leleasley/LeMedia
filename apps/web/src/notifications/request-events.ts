@@ -259,8 +259,10 @@ export async function notifyRequestEvent(event: RequestNotificationEvent, ctx: R
     sent_at: new Date().toISOString()
   };
   const discordEmbed = buildRequestDiscordEmbed(event, ctx, href);
-  const discordUserId =
-    ctx.userId && Number.isFinite(ctx.userId) ? (await getUserById(ctx.userId ?? 0))?.discordUserId ?? null : null;
+  const userRecord =
+    ctx.userId && Number.isFinite(ctx.userId) ? await getUserById(ctx.userId ?? 0) : null;
+  const discordUserId = userRecord?.discordUserId ?? null;
+  const userEmail = userRecord?.email ?? null;
   const discordContent = discordUserId
     ? `<@${discordUserId}> ${status}: ${title} - ${href}`
     : `${status}: ${title} - ${href}`;
@@ -301,8 +303,11 @@ export async function notifyRequestEvent(event: RequestNotificationEvent, ctx: R
         }
         if (endpoint.type === "email") {
           const config = endpoint.config as EmailConfig;
-          const to = String(config?.to ?? "");
-          await sendEmail({ to, subject: emailSubject, text: plain });
+          const configuredTo = String(config?.to ?? "").trim();
+          if (!configuredTo && config?.userEmailRequired && !userEmail) return;
+          const to = configuredTo || String(userEmail ?? "").trim();
+          if (!to) return;
+          await sendEmail({ to, subject: emailSubject, text: plain, smtp: config });
           return;
         }
         if (endpoint.type === "webhook") {
