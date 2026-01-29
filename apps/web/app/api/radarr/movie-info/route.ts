@@ -4,6 +4,7 @@ import { requireUser } from "@/auth";
 import { getUserWithHash } from "@/db";
 import { hasAssignedNotificationEndpoints } from "@/lib/notifications";
 import { listRadarrQualityProfiles, getMovieByTmdbId } from "@/lib/radarr";
+import { hasActiveMediaService } from "@/lib/media-services";
 import { jsonResponseWithETag } from "@/lib/api-optimization";
 
 const Query = z.object({ tmdbId: z.coerce.number().int() });
@@ -34,6 +35,7 @@ export async function GET(req: NextRequest) {
   const defaultQualityProfileId = Number(process.env.RADARR_QUALITY_PROFILE_ID ?? qualityProfiles[0]?.id ?? 0);
 
   let requestsBlocked = true;
+  let isAdmin = false;
   try {
     const currentUser = await requireUser();
     if (currentUser instanceof NextResponse) {
@@ -42,16 +44,21 @@ export async function GET(req: NextRequest) {
     const dbUser = await getUserWithHash(currentUser.username);
     const hasNotifications = dbUser ? await hasAssignedNotificationEndpoints(dbUser.id) : false;
     requestsBlocked = !hasNotifications;
+    isAdmin = Boolean(currentUser?.isAdmin);
     }
   } catch {
     requestsBlocked = true;
   }
+
+  const prowlarrEnabled = await hasActiveMediaService("prowlarr").catch(() => false);
 
   return jsonResponseWithETag(req, {
     qualityProfiles,
     radarrMovie,
     radarrError,
     defaultQualityProfileId,
-    requestsBlocked
+    requestsBlocked,
+    isAdmin,
+    prowlarrEnabled
   });
 }

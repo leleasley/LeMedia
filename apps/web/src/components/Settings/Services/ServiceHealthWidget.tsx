@@ -69,6 +69,12 @@ export function ServiceHealthWidget({ services }: { services: any[] }) {
     const { data, isLoading, mutate } = useSWR<HealthResponse>("/api/admin/status/health", fetcher, {
         refreshInterval: 30000
     });
+    const hasProwlarr = useMemo(() => services.some((svc) => svc.type === "prowlarr"), [services]);
+    const { data: indexerData } = useSWR<{ indexers: Array<{ enable?: boolean }> }>(
+        hasProwlarr ? "/api/v1/admin/prowlarr/indexers" : null,
+        (url: string) => fetch(url, { credentials: "include" }).then(r => r.json()),
+        { refreshInterval: 30000 }
+    );
     const [retryingId, setRetryingId] = useState<number | null>(null);
 
     const mediaDetails: ServiceHealthDetail[] = useMemo(() => {
@@ -144,14 +150,21 @@ export function ServiceHealthWidget({ services }: { services: any[] }) {
                                     </div>
                                     <span className="text-[11px] uppercase tracking-wide text-white/50">{detail.statusText ?? ""}</span>
                                 </div>
-                                <div className="flex flex-wrap items-center gap-3 text-xs text-gray-300">
-                                    <span className="rounded-full bg-white/10 px-2 py-1">Queue: {detail.queueSize}</span>
-                                    <span className={`rounded-full px-2 py-1 ${detail.failedCount > 0 ? "bg-red-500/20 text-red-300" : "bg-emerald-500/15 text-emerald-300"}`}>
-                                        Failed imports: {detail.failedCount}
-                                    </span>
-                                    {detail.disk && (
-                                        <span className="rounded-full bg-white/10 px-2 py-1">
-                                            Disk: {detail.disk.path ? `${detail.disk.path} • ` : ""}
+                                    <div className="flex flex-wrap items-center gap-3 text-xs text-gray-300">
+                                        <span className="rounded-full bg-white/10 px-2 py-1">Queue: {detail.queueSize}</span>
+                                        <span className={`rounded-full px-2 py-1 ${detail.failedCount > 0 ? "bg-red-500/20 text-red-300" : "bg-emerald-500/15 text-emerald-300"}`}>
+                                            Failed imports: {detail.failedCount}
+                                        </span>
+                                        {detail.type === "prowlarr" && (
+                                            <span className="rounded-full bg-white/10 px-2 py-1">
+                                                Active Indexers: {typeof indexerData?.indexers?.length === "number"
+                                                    ? indexerData.indexers.filter(indexer => indexer.enable).length
+                                                    : "—"}
+                                            </span>
+                                        )}
+                                        {detail.disk && (
+                                            <span className="rounded-full bg-white/10 px-2 py-1">
+                                                Disk: {detail.disk.path ? `${detail.disk.path} • ` : ""}
                                             {formatBytes(detail.disk.freeBytes)} free
                                             {detail.disk.totalBytes ? ` / ${formatBytes(detail.disk.totalBytes)}` : ""}
                                         </span>

@@ -4,7 +4,7 @@ import { requireUser } from "@/auth";
 import { getUserWithHash } from "@/db";
 import { hasAssignedNotificationEndpoints } from "@/lib/notifications";
 import { listSonarrQualityProfiles, getSeriesByTmdbId, getSeriesByTvdbId } from "@/lib/sonarr";
-import { getActiveMediaService } from "@/lib/media-services";
+import { getActiveMediaService, hasActiveMediaService } from "@/lib/media-services";
 import { isAvailableByExternalIds } from "@/lib/jellyfin";
 import { jsonResponseWithETag } from "@/lib/api-optimization";
 
@@ -52,6 +52,7 @@ export async function GET(req: NextRequest) {
   );
 
   let requestsBlocked = true;
+  let isAdmin = false;
   try {
     const currentUser = await requireUser();
     if (currentUser instanceof NextResponse) {
@@ -60,6 +61,7 @@ export async function GET(req: NextRequest) {
     const dbUser = await getUserWithHash(currentUser.username);
     const hasNotifications = dbUser ? await hasAssignedNotificationEndpoints(dbUser.id) : false;
     requestsBlocked = !hasNotifications;
+    isAdmin = Boolean(currentUser?.isAdmin);
     }
   } catch {
     requestsBlocked = true;
@@ -72,12 +74,16 @@ export async function GET(req: NextRequest) {
     availableInJellyfin = null;
   }
 
+  const prowlarrEnabled = await hasActiveMediaService("prowlarr").catch(() => false);
+
   return jsonResponseWithETag(req, {
     qualityProfiles,
     existingSeries,
     sonarrError,
     defaultQualityProfileId,
     requestsBlocked,
-    availableInJellyfin
+    availableInJellyfin,
+    isAdmin,
+    prowlarrEnabled
   });
 }

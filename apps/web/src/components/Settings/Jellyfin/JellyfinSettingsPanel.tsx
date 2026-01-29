@@ -200,10 +200,10 @@ export function JellyfinSettingsPanel() {
     const libraries: JellyfinLibrary[] = Array.isArray(data?.libraries) ? data.libraries : [];
 
     return (
-        <div className="rounded-lg border border-white/10 bg-slate-900/60 p-6 shadow-lg shadow-black/10 space-y-10">
+        <div className="glass-strong rounded-3xl overflow-hidden border border-white/10 shadow-2xl p-6 space-y-6">
             <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-muted">Jellyfin</p>
-                <h3 className="text-xl font-semibold text-white">Jellyfin settings</h3>
+                <p className="text-xs uppercase tracking-[0.2em] text-muted">Server</p>
+                <h3 className="text-xl font-semibold text-white">Server Connection</h3>
                 <p className="text-sm text-muted">Configure your Jellyfin server connection and settings.</p>
             </div>
 
@@ -227,18 +227,21 @@ export function JellyfinSettingsPanel() {
                 </div>
             ) : (
                 <div className="space-y-4">
-                    <div className="rounded-lg border border-white/10 bg-white/5 p-4">
-                        <div className="flex items-center justify-between">
+                    <div className="rounded-md border border-white/10 bg-white/5 px-4 py-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <div>
-                                <p className="text-sm font-semibold text-white">Connection Status</p>
-                                <p className="text-xs text-muted mt-1">
+                                <div className="flex items-center gap-2">
+                                    <div className={`w-2 h-2 rounded-full ${form.hasApiKey ? 'bg-green-400' : 'bg-gray-500'}`} />
+                                    <p className="text-sm font-semibold text-white">Connection Status</p>
+                                </div>
+                                <p className="text-sm text-muted mt-1">
                                     {form.hasApiKey
                                         ? `Connected to ${form.name || "Jellyfin server"}`
                                         : "Not configured"}
                                 </p>
                                 {form.serverId && (
-                                    <p className="text-xs text-muted mt-1">
-                                        Server ID: {form.serverId}
+                                    <p className="text-xs text-muted mt-1 font-mono">
+                                        ID: {form.serverId}
                                     </p>
                                 )}
                             </div>
@@ -253,16 +256,16 @@ export function JellyfinSettingsPanel() {
                     </div>
 
                     {form.hasApiKey && (
-                        <div className="text-sm text-muted bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
-                            <p className="font-semibold text-blue-400 mb-1">Authentication Method</p>
-                            <p>Jellyfin is configured using secure credential-based authentication. Click "Reconfigure" above to update your connection settings.</p>
+                        <div className="rounded-md bg-sky-500/10 border border-sky-500/20 p-4">
+                            <p className="font-semibold text-sky-300 text-sm">Secure Authentication</p>
+                            <p className="text-sm text-muted mt-1">Jellyfin is configured using secure credential-based authentication. Click "Reconfigure" above to update your connection settings.</p>
                         </div>
                     )}
                 </div>
             )}
 
             {form.hasApiKey && !showSetup && (
-                <form onSubmit={handleSave} className="space-y-6">
+                <form onSubmit={handleSave} className="space-y-4 border-t border-white/10 pt-6">
                     <div>
                         <p className="text-xs uppercase tracking-[0.2em] text-muted">Optional Settings</p>
                         <h4 className="text-lg font-semibold text-white">Additional Configuration</h4>
@@ -291,27 +294,38 @@ export function JellyfinSettingsPanel() {
                 </form>
             )}
 
-            <div className="space-y-4">
-                <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-muted">Libraries</p>
-                    <h4 className="text-lg font-semibold text-white">Jellyfin libraries</h4>
-                    <p className="text-sm text-muted">Select the libraries used for availability checks.</p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                    <button className="btn" type="button" onClick={handleSyncLibraries} disabled={syncing || isLoading}>
-                        {syncing ? "Syncing…" : "Sync libraries"}
+            <div className="space-y-4 border-t border-white/10 pt-6">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted">Libraries</p>
+                        <h4 className="text-lg font-semibold text-white">Library Settings</h4>
+                        <p className="text-sm text-muted">Select the libraries used for availability checks.</p>
+                    </div>
+                    <button
+                        className="btn"
+                        type="button"
+                        onClick={handleSyncLibraries}
+                        disabled={syncing || isLoading}
+                    >
+                        {syncing ? "Syncing…" : "Sync Libraries"}
                     </button>
                 </div>
                 <div className="space-y-2">
                     {libraries.map((library) => (
-                        <label key={library.id} className="flex items-center justify-between rounded-md border border-white/10 bg-white/5 px-4 py-3 text-sm">
-                            <div>
-                                <p className="font-semibold text-white">{library.name}</p>
-                                <p className="text-xs text-muted">{library.type === "movie" ? "Movies" : "TV Shows"}</p>
+                        <label
+                            key={library.id}
+                            className="flex items-center justify-between rounded-md border border-white/10 bg-white/5 px-4 py-3 text-sm cursor-pointer hover:bg-white/10 transition-colors"
+                        >
+                            <div className="flex items-center gap-3">
+                                <span className="text-lg">{library.type === "movie" ? "🎬" : "📺"}</span>
+                                <div>
+                                    <p className="font-semibold text-white">{library.name}</p>
+                                    <p className="text-xs text-muted">{library.type === "movie" ? "Movies" : "TV Shows"}</p>
+                                </div>
                             </div>
                             <input
                                 type="checkbox"
-                                className="h-4 w-4"
+                                className="h-5 w-5 rounded border-white/20 bg-white/5 text-indigo-500 focus:ring-indigo-500/30"
                                 checked={Boolean(library.enabled)}
                                 onChange={(event) => toggleLibrary(library.id, event.target.checked)}
                                 disabled={isLoading}
@@ -319,12 +333,14 @@ export function JellyfinSettingsPanel() {
                         </label>
                     ))}
                     {!isLoading && libraries.length === 0 && (
-                        <p className="text-sm text-muted">No libraries synced yet.</p>
+                        <div className="rounded-md border border-white/10 bg-white/5 p-8 text-center">
+                            <p className="text-sm text-muted">No libraries synced yet. Click "Sync Libraries" to get started.</p>
+                        </div>
                     )}
                 </div>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-4 border-t border-white/10 pt-6">
                 <div>
                     <p className="text-xs uppercase tracking-[0.2em] text-muted">Manual Scan</p>
                     <h4 className="text-lg font-semibold text-white">Manual library scan</h4>

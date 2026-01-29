@@ -20,6 +20,7 @@ export function MediaActionMenu(props: {
   manageItemId?: number | null;
   manageSlug?: string | null;
   manageBaseUrl?: string | null;
+  prowlarrEnabled?: boolean;
 }) {
   const {
     title,
@@ -33,10 +34,12 @@ export function MediaActionMenu(props: {
     showReport,
     manageItemId,
     manageSlug,
-    manageBaseUrl
+    manageBaseUrl,
+    prowlarrEnabled = false
   } = props;
   const [reportOpen, setReportOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
+  const canManage = isAdmin;
 
   const links: PlayButtonLink[] = [];
   if (playUrl) {
@@ -69,7 +72,7 @@ export function MediaActionMenu(props: {
         </Button>
       ) : null}
 
-      {isAdmin && manageItemId ? (
+      {canManage ? (
         <Button
           buttonType="ghost"
           onClick={() => setManageOpen(true)}
@@ -99,6 +102,7 @@ export function MediaActionMenu(props: {
         serviceItemId={manageItemId ?? null}
         serviceSlug={manageSlug ?? null}
         serviceBaseUrl={manageBaseUrl ?? null}
+        prowlarrEnabled={prowlarrEnabled}
       />
     </>
   );

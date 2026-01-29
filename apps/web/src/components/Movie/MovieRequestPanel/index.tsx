@@ -17,7 +17,8 @@ type MovieInfo = {
   radarrError: string | null;
   defaultQualityProfileId: number;
   requestsBlocked: boolean;
-  isAdmin: boolean;
+  isAdmin?: boolean;
+  prowlarrEnabled?: boolean;
 };
 
 export function MovieRequestPanel({
@@ -130,6 +131,9 @@ export function MovieRequestPanel({
           title={title}
           posterUrl={posterUrl}
           backdropUrl={backdropUrl}
+          isAdmin={Boolean(info.isAdmin)}
+          prowlarrEnabled={Boolean(info.prowlarrEnabled)}
+          serviceItemId={info.radarrMovie?.id ?? null}
         />
       )}
     </>

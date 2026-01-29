@@ -104,16 +104,33 @@ export default function AdminSettingsUsersPage() {
 
     return (
         <section className="space-y-6">
-            <div>
-                <h2 className="text-2xl font-semibold text-white">User Settings</h2>
-                <p className="text-sm text-muted">Configure global and default user settings.</p>
+            {/* Header Section */}
+            <div className="relative overflow-hidden rounded-2xl md:rounded-3xl border border-white/10 bg-gradient-to-br from-blue-500/10 via-indigo-500/5 to-transparent p-6 md:p-8">
+                <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iMC4wMyI+PGNpcmNsZSBjeD0iMzAiIGN5PSIzMCIgcj0iMiIvPjwvZz48L2c+PC9zdmc+')] opacity-50" />
+                <div className="relative">
+                    <div className="flex items-center gap-4 mb-4">
+                        <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500/20 to-indigo-500/20 ring-1 ring-white/10">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-300">
+                                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                                <circle cx="9" cy="7" r="4"/>
+                                <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+                                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <h1 className="text-2xl md:text-3xl font-bold text-white">Users</h1>
+                            <p className="text-sm text-white/60 mt-1">Configure global and default user settings</p>
+                        </div>
+                    </div>
+                </div>
             </div>
 
-            <div className="rounded-lg border border-white/10 bg-slate-900/60 p-6 space-y-8">
+            <div className="rounded-2xl md:rounded-3xl border border-white/10 bg-white/[0.02] p-6 space-y-6">
                 {/* Login Methods */}
                 <div>
-                    <h3 className="text-lg font-semibold text-white mb-1">Login Methods</h3>
-                    <p className="text-sm text-gray-400 mb-4">Configure login methods for users.</p>
+                    <p className="text-xs uppercase tracking-[0.2em] text-muted">Authentication</p>
+                    <h3 className="text-lg font-semibold text-white">Login Methods</h3>
+                    <p className="text-sm text-muted mb-4">Configure login methods for users.</p>
 
                     <div className="space-y-1">
                         <AnimatedCheckbox
@@ -144,8 +161,9 @@ export default function AdminSettingsUsersPage() {
 
                 {/* Request Limits */}
                 <div className="border-t border-white/10 pt-6">
-                    <h3 className="text-lg font-semibold text-white mb-1">Global Request Limits</h3>
-                    <p className="text-sm text-gray-400 mb-4">Set default request limits for all users.</p>
+                    <p className="text-xs uppercase tracking-[0.2em] text-muted">Limits</p>
+                    <h3 className="text-lg font-semibold text-white">Global Request Limits</h3>
+                    <p className="text-sm text-muted mb-4">Set default request limits for all users.</p>
 
                     <div className="space-y-4">
                         <div>
@@ -176,8 +194,9 @@ export default function AdminSettingsUsersPage() {
 
                 {/* Default Permissions */}
                 <div className="border-t border-white/10 pt-6">
-                    <h3 className="text-lg font-semibold text-white mb-1">Default Permissions</h3>
-                    <p className="text-sm text-gray-400 mb-4">Initial permissions assigned to new users</p>
+                    <p className="text-xs uppercase tracking-[0.2em] text-muted">Permissions</p>
+                    <h3 className="text-lg font-semibold text-white">Default Permissions</h3>
+                    <p className="text-sm text-muted mb-4">Initial permissions assigned to new users</p>
 
                     <div className="space-y-6">
                         {/* Admin */}
@@ -211,7 +230,7 @@ export default function AdminSettingsUsersPage() {
                                 checked={permManageRequests}
                                 onChange={(e) => setPermManageRequests(e.target.checked)}
                             />
-                            <div className="ml-8 space-y-1 border-l-2 border-gray-700 pl-4">
+                            <div className="ml-8 space-y-1 border-l-2 border-white/10 pl-4">
                                 <AnimatedCheckbox
                                     id="perm-advanced-requests"
                                     label="Advanced Requests"
@@ -245,7 +264,7 @@ export default function AdminSettingsUsersPage() {
                                 checked={permRequest}
                                 onChange={(e) => setPermRequest(e.target.checked)}
                             />
-                            <div className="ml-8 space-y-1 border-l-2 border-gray-700 pl-4">
+                            <div className="ml-8 space-y-1 border-l-2 border-white/10 pl-4">
                                 <AnimatedCheckbox
                                     id="perm-request-movies"
                                     label="Request Movies"
@@ -272,7 +291,7 @@ export default function AdminSettingsUsersPage() {
                                 checked={permAutoapprove}
                                 onChange={(e) => setPermAutoapprove(e.target.checked)}
                             />
-                            <div className="ml-8 space-y-1 border-l-2 border-gray-700 pl-4">
+                            <div className="ml-8 space-y-1 border-l-2 border-white/10 pl-4">
                                 <AnimatedCheckbox
                                     id="perm-autoapprove-movies"
                                     label="Auto-Approve Movies"
@@ -299,7 +318,7 @@ export default function AdminSettingsUsersPage() {
                                 checked={permRequest4k}
                                 onChange={(e) => setPermRequest4k(e.target.checked)}
                             />
-                            <div className="ml-8 space-y-1 border-l-2 border-gray-700 pl-4">
+                            <div className="ml-8 space-y-1 border-l-2 border-white/10 pl-4">
                                 <AnimatedCheckbox
                                     id="perm-request-4k-movies"
                                     label="Request 4K Movies"
@@ -326,7 +345,7 @@ export default function AdminSettingsUsersPage() {
                                 checked={permAutoapprove4k}
                                 onChange={(e) => setPermAutoapprove4k(e.target.checked)}
                             />
-                            <div className="ml-8 space-y-1 border-l-2 border-gray-700 pl-4">
+                            <div className="ml-8 space-y-1 border-l-2 border-white/10 pl-4">
                                 <AnimatedCheckbox
                                     id="perm-autoapprove-4k-movies"
                                     label="Auto-Approve 4K Movies"
@@ -353,7 +372,7 @@ export default function AdminSettingsUsersPage() {
                                 checked={permManageIssues}
                                 onChange={(e) => setPermManageIssues(e.target.checked)}
                             />
-                            <div className="ml-8 space-y-1 border-l-2 border-gray-700 pl-4">
+                            <div className="ml-8 space-y-1 border-l-2 border-white/10 pl-4">
                                 <AnimatedCheckbox
                                     id="perm-report-issues"
                                     label="Report Issues"
@@ -378,7 +397,7 @@ export default function AdminSettingsUsersPage() {
                     <button
                         onClick={handleSave}
                         disabled={saving}
-                        className="px-6 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium shadow-lg shadow-indigo-600/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="btn btn-primary"
                     >
                         {saving ? "Saving..." : "Save Changes"}
                     </button>

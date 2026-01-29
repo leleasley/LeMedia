@@ -236,7 +236,7 @@ export function AdminSettingsPanel() {
     }
 
     return (
-        <div className="rounded-lg border border-white/10 bg-slate-900/60 p-6 shadow-lg shadow-black/10 space-y-4">
+        <div className="glass-strong rounded-3xl overflow-hidden border border-white/10 shadow-2xl p-6 space-y-4">
             <div className="flex items-center justify-between">
                 <div>
                     <p className="text-xs uppercase tracking-[0.2em] text-muted">General</p>

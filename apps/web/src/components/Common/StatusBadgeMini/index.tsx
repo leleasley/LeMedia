@@ -5,7 +5,7 @@ import {
   EyeSlashIcon,
   MinusSmallIcon,
   TrashIcon,
-  ArrowDownTrayIcon
+  ArrowPathIcon
 } from "@heroicons/react/24/solid";
 import { Loader2 } from "lucide-react";
 import { MediaStatus } from "@/lib/media-status";
@@ -37,7 +37,7 @@ export function StatusBadgeMini({
       badgeStyle.push(
         'bg-blue-500 border-blue-400 ring-blue-400 text-blue-100'
       );
-      indicatorIcon = <ArrowDownTrayIcon />;
+      indicatorIcon = <ArrowPathIcon />;
       break;
     case MediaStatus.PROCESSING:
       badgeStyle.push(

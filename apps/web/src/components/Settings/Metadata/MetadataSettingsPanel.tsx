@@ -31,27 +31,31 @@ export function MetadataSettingsPanel() {
     ];
 
     return (
-        <div className="rounded-lg border border-white/10 bg-slate-900/60 p-6 shadow-lg shadow-black/10 space-y-4">
+        <div className="glass-strong rounded-3xl overflow-hidden border border-white/10 shadow-2xl p-6 space-y-4">
             <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-muted">Metadata</p>
-                <h2 className="text-xl font-semibold text-white">Metadata providers</h2>
+                <p className="text-xs uppercase tracking-[0.2em] text-muted">Providers</p>
+                <h2 className="text-xl font-semibold text-white">Metadata Providers</h2>
                 <p className="text-sm text-muted">
                     Control how metadata and imagery are sourced for discovery, requests, and search.
                 </p>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
                 {items.map(item => (
-                    <div key={item.label} className="rounded-lg border border-white/10 bg-slate-950/50 p-4">
-                        <div className="text-xs uppercase tracking-wider text-muted">{item.label}</div>
-                        <div className="mt-2 text-sm font-semibold text-white break-words">{item.value}</div>
-                        <p className="mt-2 text-xs text-muted">{item.help}</p>
+                    <div key={item.label} className="rounded-md border border-white/10 bg-white/5 p-4 hover:bg-white/10 transition-colors">
+                        <div className="text-xs uppercase tracking-wider text-muted font-semibold">{item.label}</div>
+                        <div className="mt-1 text-sm font-semibold text-white break-words">{item.value}</div>
+                        <p className="mt-1 text-xs text-muted">{item.help}</p>
                     </div>
                 ))}
             </div>
-            <div className="rounded-lg border border-white/10 bg-slate-950/50 p-4">
-                <div className="text-xs uppercase tracking-wider text-muted">Calendar Feed</div>
-                <div className="mt-2 text-sm font-semibold text-white break-words">
-                    {feedData?.webcalUrl || "Loading..."}
+            <div className="border-t border-white/10 pt-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-muted">Calendar</p>
+                <h3 className="text-lg font-semibold text-white">Calendar Feed</h3>
+                <p className="text-sm text-muted mb-3">Your personal calendar feed URL for upcoming releases.</p>
+                <div className="rounded-md border border-white/10 bg-white/5 p-3">
+                    <code className="text-sm text-white break-all">
+                        {feedData?.webcalUrl || "Loading..."}
+                    </code>
                 </div>
                 <p className="mt-2 text-xs text-muted">
                     Rotate the per-user calendar feed link if it has been shared externally.
@@ -67,7 +71,7 @@ export function MetadataSettingsPanel() {
                                 toast.error("Failed to copy calendar feed link");
                             }
                         }}
-                        className="rounded-lg border border-white/10 bg-gray-900 px-3 py-1.5 text-xs font-medium text-gray-200 hover:bg-white/5 transition"
+                        className="btn"
                     >
                         Copy Link
                     </button>
@@ -85,7 +89,7 @@ export function MetadataSettingsPanel() {
                                 toast.error("Failed to rotate feed link");
                             }
                         }}
-                        className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-200 hover:bg-amber-500/20 transition"
+                        className="btn"
                     >
                         Rotate Link
                     </button>

@@ -79,7 +79,10 @@ export function TitleCard({
       qualityProfiles: { id: number; name: string }[];
       defaultQualityProfileId: number;
       requestsBlocked: boolean;
-      isAdmin: boolean;
+      isAdmin?: boolean;
+      prowlarrEnabled?: boolean;
+      radarrMovie?: { id?: number | null } | null;
+      existingSeries?: { id?: number | null } | null;
   }>(
       shouldFetchProfiles 
           ? `/api/v1/${mediaType === "movie" ? "radarr/movie-info" : "sonarr/tv-info"}?tmdbId=${id}`
@@ -279,6 +282,9 @@ export function TitleCard({
               posterUrl={finalImage}
               backdropUrl={finalImage}
               isLoading={profilesLoading}
+              isAdmin={Boolean(profileData?.isAdmin)}
+              prowlarrEnabled={Boolean(profileData?.prowlarrEnabled)}
+              serviceItemId={profileData?.existingSeries?.id ?? null}
           />
       )}
       {requestModalOpen && mediaType === "movie" && (
@@ -294,6 +300,9 @@ export function TitleCard({
               posterUrl={finalImage}
               backdropUrl={finalImage}
               isLoading={profilesLoading}
+              isAdmin={Boolean(profileData?.isAdmin)}
+              prowlarrEnabled={Boolean(profileData?.prowlarrEnabled)}
+              serviceItemId={profileData?.radarrMovie?.id ?? null}
           />
       )}
     </div>

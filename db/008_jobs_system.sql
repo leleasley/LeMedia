@@ -14,5 +14,6 @@ CREATE TABLE IF NOT EXISTS jobs (
 INSERT INTO jobs (name, schedule, interval_seconds, type, run_on_start)
 VALUES 
     ('request-sync', '*/5 * * * *', 300, 'system', TRUE), -- Sync requests every 5 mins
-    ('watchlist-sync', '0 * * * *', 3600, 'system', FALSE) -- Sync watchlist every hour
+    ('watchlist-sync', '0 * * * *', 3600, 'system', FALSE), -- Sync watchlist every hour
+    ('prowlarr-indexer-sync', '*/5 * * * *', 300, 'system', TRUE) -- Sync Prowlarr indexers every 5 mins
 ON CONFLICT (name) DO NOTHING;

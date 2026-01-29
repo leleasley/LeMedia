@@ -13,6 +13,7 @@ interface TvSeasonItemProps {
     episodes: Episode[];
     checkedEpisodes: Set<number>;
     availabilityCounts?: { available: number; total: number };
+    requestCounts?: { requested: number };
     onToggleSeason: (seasonNumber: number) => void;
     onToggleAllInSeason: (seasonNumber: number) => void;
     onToggleEpisode: (seasonNumber: number, episodeNumber: number, episode: Episode) => void;
@@ -33,6 +34,7 @@ export const TvSeasonItem = memo(({
     episodes,
     checkedEpisodes,
     availabilityCounts,
+    requestCounts,
     onToggleSeason,
     onToggleAllInSeason,
     onToggleEpisode,
@@ -53,6 +55,8 @@ export const TvSeasonItem = memo(({
     const seasonTotalCount = availabilityCounts?.total ?? season.episode_count;
     const isSeasonFullyAvailable = seasonAvailableCount > 0 && seasonAvailableCount >= seasonTotalCount;
     const isSeasonPartiallyAvailable = seasonAvailableCount > 0 && seasonAvailableCount < seasonTotalCount;
+    const requestedCount = requestCounts?.requested ?? 0;
+    const isSeasonRequested = requestedCount > 0 && !isSeasonFullyAvailable;
 
     return (
         <div className="overflow-hidden rounded-xl border border-white/10 bg-black/20 backdrop-blur-sm transition-all hover:bg-black/30">
@@ -82,6 +86,12 @@ export const TvSeasonItem = memo(({
                                     Partial
                                 </span>
                             )}
+                            {isSeasonRequested && (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-sky-500/20 border border-sky-500/40 px-2.5 py-0.5 text-xs font-semibold text-sky-200">
+                                    <CheckCircle className="h-3 w-3" />
+                                    Submitted
+                                </span>
+                            )}
                         </div>
                         <div className="text-sm text-gray-400 mt-1 flex items-center gap-2 flex-wrap">
                             <span>{season.episode_count} Episodes</span>
@@ -91,6 +101,11 @@ export const TvSeasonItem = memo(({
                                         : "text-purple-400 bg-purple-400/10"
                                     }`}>
                                     {seasonAvailableCount}/{seasonTotalCount} Available
+                                </span>
+                            )}
+                            {requestedCount > 0 && (
+                                <span className="font-medium px-2 py-0.5 rounded text-xs text-sky-300 bg-sky-400/10">
+                                    {requestedCount}/{seasonTotalCount} Requested
                                 </span>
                             )}
                             {checkedCount > 0 && (

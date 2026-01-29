@@ -7,8 +7,9 @@ import { readJson } from "@/lib/fetch-utils";
 import { csrfFetch } from "@/lib/csrf-client";
 import { useToast } from "@/components/Providers/ToastProvider";
 import AdvancedRequester, { RequestOverrides } from "@/components/Requests/AdvancedRequester";
-import { Check, X, Loader2 } from "lucide-react";
+import { Check, X, Loader2, Eye } from "lucide-react";
 import { AdaptiveSelect } from "@/components/ui/adaptive-select";
+import { ReleaseSearchModal } from "@/components/Media/ReleaseSearchModal";
 
 type QualityProfile = { id: number; name: string };
 
@@ -21,11 +22,15 @@ export function RequestMediaModal({
   defaultQualityProfileId,
   requestsBlocked = false,
   title = "",
+  year,
   posterUrl,
   backdropUrl,
   onRequestPlaced,
   isLoading = false,
-  monitor = true
+  monitor = true,
+  isAdmin = false,
+  prowlarrEnabled = false,
+  serviceItemId = null
 }: {
   open: boolean;
   onClose: () => void;
@@ -35,21 +40,27 @@ export function RequestMediaModal({
   defaultQualityProfileId: number;
   requestsBlocked?: boolean;
   title?: string;
+  year?: string | number | null;
   posterUrl?: string | null;
   backdropUrl?: string | null;
   onRequestPlaced?: () => void;
   isLoading?: boolean;
   monitor?: boolean;
+  isAdmin?: boolean;
+  prowlarrEnabled?: boolean;
+  serviceItemId?: number | null;
 }) {
   const [selectedQualityProfileId, setSelectedQualityProfileId] = useState<number>(defaultQualityProfileId);
   const [overrides, setOverrides] = useState<RequestOverrides>({});
   const [errorModal, setErrorModal] = useState<{ title: string; message: string } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitState, setSubmitState] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [rawOpen, setRawOpen] = useState(false);
   const router = useRouter();
   const toast = useToast();
 
   const blockedMessage = "Requesting blocked until notifications are applied";
+  const canOpenRaw = Boolean(isAdmin && prowlarrEnabled);
 
   async function submit() {
     if (isSubmitting) return;
@@ -136,6 +147,7 @@ export function RequestMediaModal({
     if (!isSubmitting) {
       setOverrides({});
       setSubmitState("idle");
+      setRawOpen(false);
       onClose();
     }
   };
@@ -198,6 +210,19 @@ export function RequestMediaModal({
 
             {/* Actions */}
             <div className="flex gap-3 pt-2">
+              {isAdmin ? (
+                <button
+                  onClick={() => {
+                    if (canOpenRaw) setRawOpen(true);
+                  }}
+                  disabled={!canOpenRaw}
+                  title={canOpenRaw ? "View Raw releases" : "Set up Prowlarr in services"}
+                  className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  <Eye className="h-4 w-4" />
+                  {canOpenRaw ? "View Raw" : "Set up Prowlarr in services"}
+                </button>
+              ) : null}
               <button
                 onClick={handleClose}
                 disabled={isSubmitting}
@@ -233,6 +258,21 @@ export function RequestMediaModal({
           </div>
         )}
       </Modal>
+      {canOpenRaw ? (
+        <ReleaseSearchModal
+          open={rawOpen}
+          onClose={() => setRawOpen(false)}
+          mediaType={mediaType}
+          mediaId={serviceItemId}
+          tmdbId={tmdbId}
+          tvdbId={null}
+          title={requestTitle}
+          year={year ?? null}
+          posterUrl={posterUrl ?? null}
+          backdropUrl={backdropUrl ?? null}
+          preferProwlarr={prowlarrEnabled}
+        />
+      ) : null}
     </>
   );
 }

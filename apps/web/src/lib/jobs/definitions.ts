@@ -5,6 +5,7 @@ import { purgeExpiredSessions } from "@/db";
 import { checkCalendarSubscriptions } from "@/lib/calendar-notifications";
 import { syncJellyfinAvailability } from "@/lib/jellyfin-availability-sync";
 import { refreshUpgradeHintsForAll } from "@/lib/upgrade-finder";
+import { syncProwlarrIndexers } from "@/lib/prowlarr-sync";
 
 export type JobHandler = () => Promise<void>;
 
@@ -44,5 +45,10 @@ export const jobHandlers: Record<string, JobHandler> = {
     logger.info("[Job] Starting upgrade-finder-4k");
     const result = await refreshUpgradeHintsForAll();
     logger.info(`[Job] upgrade-finder-4k completed: ${result.processed} processed, ${result.available} available, ${result.errored} errors`);
+  },
+  "prowlarr-indexer-sync": async () => {
+    logger.info("[Job] Starting prowlarr-indexer-sync");
+    const result = await syncProwlarrIndexers();
+    logger.info(`[Job] prowlarr-indexer-sync completed: created=${result.created} updated=${result.updated} synced=${result.synced}`);
   },
 };

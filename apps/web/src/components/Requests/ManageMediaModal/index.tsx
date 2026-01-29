@@ -1,28 +1,96 @@
 "use client";
 
 import { createPortal } from "react-dom";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { csrfFetch } from "@/lib/csrf-client";
-import { ExternalLink, Trash2, Eraser } from "lucide-react";
+import { ExternalLink, Trash2, Eraser, Eye } from "lucide-react";
 import { useLockBodyScroll } from "@/hooks/useLockBodyScroll";
+import { ReleaseSearchModal } from "@/components/Media/ReleaseSearchModal";
 
 export function ManageMediaModal(props: {
   open: boolean;
   onClose: () => void;
   title: string;
+  year?: string | number | null;
   mediaType: "movie" | "tv";
   tmdbId: number;
   tvdbId?: number | null;
   serviceItemId?: number | null;
   serviceSlug?: string | null;
   serviceBaseUrl?: string | null;
+  posterUrl?: string | null;
+  backdropUrl?: string | null;
+  prowlarrEnabled?: boolean;
 }) {
-  const { open, onClose, title, mediaType, tmdbId, tvdbId, serviceItemId, serviceSlug, serviceBaseUrl } = props;
+  const {
+    open,
+    onClose,
+    title,
+    year,
+    mediaType,
+    tmdbId,
+    tvdbId,
+    serviceItemId,
+    serviceSlug,
+    serviceBaseUrl,
+    posterUrl,
+    backdropUrl,
+    prowlarrEnabled = false
+  } = props;
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [rawOpen, setRawOpen] = useState(false);
+  const [currentInfo, setCurrentInfo] = useState<{
+    quality?: string | null;
+    sizeBytes?: number | null;
+    episodeFileCount?: number | null;
+  } | null>(null);
+  const [currentInfoLoading, setCurrentInfoLoading] = useState(false);
+  const [currentInfoError, setCurrentInfoError] = useState<string | null>(null);
 
   // Lock body scroll when modal is open
   useLockBodyScroll(open);
+
+  useEffect(() => {
+    if (!open) setRawOpen(false);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !serviceItemId) {
+      setCurrentInfo(null);
+      setCurrentInfoError(null);
+      setCurrentInfoLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setCurrentInfoLoading(true);
+    setCurrentInfoError(null);
+    fetch(`/api/v1/admin/media/info?mediaType=${mediaType}&id=${serviceItemId}`, { credentials: "include" })
+      .then(async (res) => {
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body?.error || "Unable to load current version");
+        return body;
+      })
+      .then((data) => {
+        if (cancelled) return;
+        setCurrentInfo({
+          quality: data?.quality ?? null,
+          sizeBytes: data?.sizeBytes ?? null,
+          episodeFileCount: data?.episodeFileCount ?? null
+        });
+      })
+      .catch((err: any) => {
+        if (cancelled) return;
+        setCurrentInfoError(err?.message ?? "Unable to load current version");
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setCurrentInfoLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, mediaType, serviceItemId]);
 
   // Construct URL like Jellyseerr does: baseUrl/movie/titleSlug or baseUrl/series/titleSlug
   // If slug is not available, fall back to using the ID
@@ -59,6 +127,14 @@ export function ManageMediaModal(props: {
     }
   };
 
+  const formatBytes = (bytes?: number | null) => {
+    if (!bytes || Number.isNaN(bytes)) return "-";
+    const units = ["B", "KB", "MB", "GB", "TB", "PB"];
+    const i = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
+    const value = bytes / Math.pow(1024, i);
+    return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[i]}`;
+  };
+
   if (!open) return null;
 
   const content = (
@@ -91,6 +167,26 @@ export function ManageMediaModal(props: {
               <ExternalLink className="h-4 w-4" />
               Open in {mediaType === "movie" ? "Radarr" : "Sonarr"}
             </a>
+            {serviceItemId ? (
+              <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/80">
+                <div className="text-[10px] uppercase tracking-wider text-white/50">Current Version</div>
+                {currentInfoLoading ? (
+                  <div className="mt-1 text-white/60">Loading...</div>
+                ) : currentInfoError ? (
+                  <div className="mt-1 text-red-300">Error: {currentInfoError}</div>
+                ) : (
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <span className="font-semibold text-white">{currentInfo?.quality || "Unknown"}</span>
+                    {currentInfo?.sizeBytes ? (
+                      <span className="text-white/50">| {formatBytes(currentInfo.sizeBytes)}</span>
+                    ) : null}
+                    {mediaType === "tv" && typeof currentInfo?.episodeFileCount === "number" ? (
+                      <span className="text-white/50">| Episodes: {currentInfo.episodeFileCount}</span>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            ) : null}
             <button
               type="button"
               onClick={() => runAction("remove")}
@@ -107,6 +203,18 @@ export function ManageMediaModal(props: {
 
           <div className="space-y-2">
             <div className="text-sm font-semibold text-white">Advanced</div>
+            <button
+              type="button"
+              onClick={() => {
+                if (prowlarrEnabled) setRawOpen(true);
+              }}
+              disabled={!prowlarrEnabled}
+              title={prowlarrEnabled ? "View Raw releases" : "Set up Prowlarr in services"}
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Eye className="h-4 w-4" />
+              {prowlarrEnabled ? "View Raw Releases" : "Set up Prowlarr in services"}
+            </button>
             <button
               type="button"
               onClick={() => runAction("clear")}
@@ -132,5 +240,25 @@ export function ManageMediaModal(props: {
   );
 
   if (typeof document === "undefined") return content;
-  return createPortal(content, document.body);
+  return createPortal(
+    <>
+      {content}
+      {prowlarrEnabled ? (
+        <ReleaseSearchModal
+          open={rawOpen}
+          onClose={() => setRawOpen(false)}
+          mediaType={mediaType}
+          mediaId={serviceItemId ?? null}
+          tmdbId={tmdbId}
+          tvdbId={tvdbId ?? null}
+          title={title}
+          year={year ?? null}
+          posterUrl={posterUrl ?? null}
+          backdropUrl={backdropUrl ?? null}
+          preferProwlarr={prowlarrEnabled}
+        />
+      ) : null}
+    </>,
+    document.body
+  );
 }

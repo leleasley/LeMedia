@@ -5,8 +5,6 @@ import { CheckCircle } from "lucide-react";
 import { MediaActionMenu } from "@/components/Media/MediaActionMenu";
 import { MediaListButtons } from "@/components/Media/MediaListButtons";
 import { MovieRequestPanel } from "@/components/Movie/MovieRequestPanel";
-import { PlayButton } from "@/components/Media/PlayButton";
-import { FilmIcon } from "@heroicons/react/24/outline";
 import { useTrackView } from "@/hooks/useTrackView";
 import { ShareButton } from "@/components/Media/ShareButton";
 
@@ -22,6 +20,7 @@ type MovieAggregate = {
   isAdmin: boolean;
   availableInLibrary: boolean;
   playUrl: string | null;
+  request?: { id: string; status: string; createdAt: string } | null;
   manage?: {
     itemId: number | null;
     slug: string | null;
@@ -33,6 +32,7 @@ type MovieAggregate = {
     radarrError: string | null;
     defaultQualityProfileId: number;
     requestsBlocked: boolean;
+    prowlarrEnabled?: boolean;
   };
 };
 
@@ -61,13 +61,37 @@ export function MovieAvailabilityBadge({
 }) {
   const { data } = useMovieAggregate(tmdbId, title, prefetched);
 
-  if (!data?.availableInLibrary) return null;
+  if (!data) return null;
+  if (!data.availableInLibrary && !data.request?.status) return null;
+
+  const requestStatus = data.request?.status ?? null;
+  const requestLabel =
+    requestStatus === "queued"
+      ? "Queued"
+      : requestStatus === "pending"
+        ? "Pending"
+        : requestStatus === "submitted"
+          ? "Submitted"
+          : null;
+  const requestBadgeClasses =
+    requestStatus === "submitted"
+      ? "border-blue-500/50 bg-blue-500 text-blue-100"
+      : requestStatus === "pending"
+        ? "border-sky-500/50 bg-sky-500 text-sky-100"
+        : "border-amber-500/50 bg-amber-500 text-amber-100";
 
   return (
-    <div className="inline-flex h-7 items-center gap-1.5 rounded-full border border-emerald-400 bg-emerald-500 px-3 text-xs font-semibold text-white shadow-sm">
-      <CheckCircle className="h-4 w-4" />
-      Available
-    </div>
+    data.availableInLibrary ? (
+      <div className="inline-flex h-7 items-center gap-1.5 rounded-full border border-emerald-400 bg-emerald-500 px-3 text-xs font-semibold text-white shadow-sm">
+        <CheckCircle className="h-4 w-4" />
+        Available
+      </div>
+    ) : requestLabel ? (
+      <div className={`inline-flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold text-white shadow-sm ${requestBadgeClasses}`}>
+        <CheckCircle className="h-4 w-4" />
+        {requestLabel}
+      </div>
+    ) : null
   );
 }
 
@@ -91,6 +115,22 @@ export function MovieActionButtons({
   const isAdmin = Boolean(data?.isAdmin);
   const manage = data?.manage;
   const radarr = data?.radarr ?? null;
+  const actionMenu = (
+    <MediaActionMenu
+      title={title}
+      mediaType="movie"
+      tmdbId={tmdbId}
+      playUrl={data?.playUrl ?? undefined}
+      trailerUrl={trailerUrl ?? undefined}
+      backdropUrl={backdropUrl ?? undefined}
+      isAdmin={isAdmin}
+      showReport
+      manageItemId={manage?.itemId ?? null}
+      manageSlug={manage?.slug ?? null}
+      manageBaseUrl={manage?.baseUrl ?? null}
+      prowlarrEnabled={Boolean(radarr?.prowlarrEnabled)}
+    />
+  );
 
   // Track view
   useTrackView({
@@ -112,19 +152,7 @@ export function MovieActionButtons({
             backdropPath={backdropUrl ?? null}
             posterUrl={posterUrl ?? null}
           />
-          <MediaActionMenu
-            title={title}
-            mediaType="movie"
-            tmdbId={tmdbId}
-            playUrl={data?.playUrl ?? undefined}
-            trailerUrl={trailerUrl ?? undefined}
-            backdropUrl={backdropUrl ?? undefined}
-            isAdmin={isAdmin}
-            showReport
-            manageItemId={manage?.itemId ?? null}
-            manageSlug={manage?.slug ?? null}
-            manageBaseUrl={manage?.baseUrl ?? null}
-          />
+          {actionMenu}
         </>
       ) : (
         <>
@@ -136,17 +164,7 @@ export function MovieActionButtons({
             backdropPath={backdropUrl ?? null}
             posterUrl={posterUrl ?? null}
           />
-          {trailerUrl ? (
-            <PlayButton
-              links={[
-                {
-                  text: "Watch Trailer",
-                  url: trailerUrl,
-                  svg: <FilmIcon />,
-                },
-              ]}
-            />
-          ) : null}
+          {actionMenu}
           <MovieRequestPanel
             tmdbId={tmdbId}
             prefetched={radarr ? { ...radarr, isAdmin } : undefined}

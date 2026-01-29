@@ -21,6 +21,8 @@ export type UpgradeFinderItem = {
   hintText?: string | null;
   checkedAt?: string | null;
   ignore4k?: boolean;
+  posterUrl?: string | null;
+  backdropUrl?: string | null;
 };
 
 function resolveProfileCutoffName(profileId: number | null | undefined, profiles: any[]) {
@@ -50,6 +52,13 @@ export async function listUpgradeFinderItems(): Promise<UpgradeFinderItem[]> {
       ? "upgrade"
       : "up-to-date";
 
+    // Extract images from Radarr movie data
+    const images = Array.isArray(movie?.images) ? movie.images : [];
+    const posterImage = images.find((img: any) => img?.coverType === "poster");
+    const backdropImage = images.find((img: any) => img?.coverType === "fanart");
+    const posterUrl = posterImage?.remoteUrl ?? posterImage?.url ?? null;
+    const backdropUrl = backdropImage?.remoteUrl ?? backdropImage?.url ?? null;
+
     return {
       id: movie?.id,
       mediaType: "movie",
@@ -58,7 +67,9 @@ export async function listUpgradeFinderItems(): Promise<UpgradeFinderItem[]> {
       currentQuality: qualityName,
       currentSizeBytes: file?.size ?? file?.sizeBytes,
       targetQuality: resolveProfileCutoffName(movie?.qualityProfileId, radarrProfiles as any[]),
-      upgradeStatus
+      upgradeStatus,
+      posterUrl,
+      backdropUrl
     };
   });
 
@@ -159,6 +170,7 @@ export function mapReleaseToRow(release: any) {
   const history = Array.isArray(release?.history) ? release.history : [];
   return {
     guid: release?.guid ?? release?.downloadUrl ?? "",
+    downloadUrl: release?.downloadUrl ?? release?.downloadUri ?? null,
     indexerId: release?.indexerId ?? null,
     title: extractReleaseTitle(release),
     indexer: release?.indexer ?? release?.indexerName ?? "",

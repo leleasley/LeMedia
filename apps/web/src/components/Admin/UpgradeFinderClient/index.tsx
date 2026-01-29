@@ -49,15 +49,15 @@ const hintStyles: Record<HintStatus, { label: string; bg: string; text: string; 
   },
   available: {
     label: "4K available",
-    bg: "bg-violet-500/15",
-    text: "text-violet-200",
-    border: "border-violet-500/40"
+    bg: "bg-orange-500/15",
+    text: "text-orange-200",
+    border: "border-orange-500/40"
   },
   none: {
     label: "No 4K found",
-    bg: "bg-slate-500/10",
-    text: "text-slate-300",
-    border: "border-slate-500/30"
+    bg: "bg-white/5",
+    text: "text-white/60",
+    border: "border-white/10"
   },
   error: {
     label: "Check failed",
@@ -197,7 +197,7 @@ function InteractiveSearchModal(props: {
 
   const modal = (
     <div
-      className="fixed inset-0 z-[1000] flex items-end sm:items-center justify-center bg-black/80 animate-in fade-in duration-200"
+      className="fixed inset-0 z-[1000] flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200"
       role="dialog"
       aria-modal="true"
       aria-label="Interactive Search"
@@ -206,82 +206,131 @@ function InteractiveSearchModal(props: {
       }}
     >
       <div
-        className="w-full sm:max-w-5xl h-[92vh] sm:h-[85vh] flex flex-col bg-slate-950 sm:rounded-xl border-t sm:border border-white/10 shadow-2xl animate-in slide-in-from-bottom-4 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-300 overflow-hidden"
+        className="w-full sm:max-w-6xl h-[92vh] sm:h-[90vh] flex flex-col bg-slate-950 rounded-t-3xl sm:rounded-3xl border-t sm:border border-white/10 shadow-2xl animate-in fade-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200 overflow-hidden"
         onClick={(event) => event.stopPropagation()}
       >
-        {/* Header */}
-        <div className="flex-shrink-0 p-4 border-b border-white/10 bg-slate-900/70">
-          {/* Mobile handle */}
-          <div className="sm:hidden flex justify-center mb-3">
-            <div className="w-10 h-1 rounded-full bg-white/20" />
-          </div>
-
-          {/* Title row */}
-          <div className="flex items-center justify-between gap-3 mb-3">
-            <div className="min-w-0 flex-1">
-              <h2 className="text-base sm:text-lg font-semibold text-white truncate">{item.title}</h2>
-              <div className="text-xs text-white/50">{item.year || "Unknown"} • {item.mediaType}</div>
-            </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <button
-                type="button"
-                onClick={onRefresh}
-                disabled={isLoading}
-                className="p-2 rounded-lg bg-white/5 text-white/70 hover:bg-white/10 hover:text-white disabled:opacity-50"
-              >
-                <RefreshCcw className={cn("w-4 h-4", isLoading && "animate-spin")} />
-              </button>
-              <button
-                type="button"
-                onClick={onClose}
-                className="p-2 rounded-lg bg-white/5 text-white/70 hover:bg-white/10 hover:text-white"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          {/* Stats */}
-          <div className="flex items-center gap-2 text-xs mb-3">
-            <span className="text-white/50">{releases.length} results</span>
-            {count4k > 0 && <span className="text-violet-400">• {count4k} 4K</span>}
-            {count1080p > 0 && <span className="text-sky-400">• {count1080p} 1080p</span>}
-          </div>
-
-          {/* Search and filters */}
-          <div className="flex flex-col sm:flex-row gap-2">
-            <div className="relative flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
-              <input
-                value={releaseSearch}
-                onChange={(event) => setReleaseSearch(event.target.value)}
-                placeholder="Search releases..."
-                className="w-full h-9 rounded-lg border border-white/10 bg-black/30 py-2 pl-9 pr-3 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-white/20"
+        {/* Header with backdrop */}
+        <div className="flex-shrink-0 relative overflow-hidden">
+          {/* Backdrop image */}
+          {item.backdropUrl && (
+            <div className="absolute inset-0">
+              <img
+                src={item.backdropUrl}
+                alt=""
+                className="w-full h-full object-cover object-top"
               />
+              <div className="absolute inset-0 bg-gradient-to-b from-slate-950/60 via-slate-950/80 to-slate-950" />
+              <div className="absolute inset-0 bg-gradient-to-r from-slate-950/90 via-transparent to-slate-950/90" />
             </div>
-            <div className="flex flex-wrap items-center gap-1">
-              {filterButtons.map((btn) => (
+          )}
+          {!item.backdropUrl && (
+            <div className="absolute inset-0 bg-gradient-to-br from-orange-500/10 via-amber-500/5 to-slate-950" />
+          )}
+
+          <div className="relative p-5 sm:p-6">
+            {/* Mobile handle */}
+            <div className="sm:hidden flex justify-center mb-4">
+              <div className="w-12 h-1.5 rounded-full bg-white/30" />
+            </div>
+
+            {/* Title row */}
+            <div className="flex items-start justify-between gap-4 mb-4">
+              <div className="flex items-start gap-4 min-w-0 flex-1">
+                {/* Poster thumbnail */}
+                {item.posterUrl && (
+                  <div className="hidden sm:block flex-shrink-0 w-16 h-24 rounded-xl overflow-hidden ring-2 ring-white/20 shadow-xl">
+                    <img
+                      src={item.posterUrl}
+                      alt={item.title}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs text-orange-400 font-semibold uppercase tracking-widest mb-1">Interactive Search</p>
+                  <h2 className="text-xl sm:text-2xl font-bold text-white truncate drop-shadow-lg">{item.title}</h2>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <span className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-indigo-500/30 text-indigo-200 border border-indigo-500/40 backdrop-blur-sm">
+                      {item.mediaType === "movie" ? "🎬" : "📺"} {item.mediaType}
+                    </span>
+                    {item.year && <span className="text-sm text-white/70 font-medium">{item.year}</span>}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
                 <button
-                  key={btn.value}
                   type="button"
-                  onClick={() => onFilterChange(btn.value)}
-                  className={cn(
-                    "flex-shrink-0 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors",
-                    filter === btn.value
-                      ? "bg-white/10 text-white"
-                      : "text-white/50 hover:text-white hover:bg-white/5"
-                  )}
+                  onClick={onRefresh}
+                  disabled={isLoading}
+                  className="p-2.5 rounded-xl bg-white/10 backdrop-blur-sm border border-white/20 text-white/80 hover:bg-white/20 hover:text-white disabled:opacity-50 transition-all duration-300"
                 >
-                  {btn.shortLabel || btn.label}
+                  <RefreshCcw className={cn("w-4 h-4", isLoading && "animate-spin")} />
                 </button>
-              ))}
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="p-2.5 rounded-xl bg-white/10 backdrop-blur-sm border border-white/20 text-white/80 hover:bg-white/20 hover:text-white transition-all duration-300"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Stats pills */}
+            <div className="flex flex-wrap gap-2 mb-4">
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-sm border border-white/20">
+                <span className="text-white/80 text-sm">Results</span>
+                <span className="font-bold text-white">{releases.length}</span>
+              </div>
+              {count4k > 0 && (
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-orange-500/20 backdrop-blur-sm border border-orange-500/30">
+                  <span className="text-orange-200/80 text-sm">4K</span>
+                  <span className="font-bold text-orange-200">{count4k}</span>
+                </div>
+              )}
+              {count1080p > 0 && (
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-sky-500/20 backdrop-blur-sm border border-sky-500/30">
+                  <span className="text-sky-200/80 text-sm">1080p</span>
+                  <span className="font-bold text-sky-200">{count1080p}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Search and filters */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-white/50" />
+                <input
+                  value={releaseSearch}
+                  onChange={(event) => setReleaseSearch(event.target.value)}
+                  placeholder="Search releases..."
+                  className="w-full h-11 rounded-xl border border-white/20 bg-white/10 backdrop-blur-sm py-2 pl-10 pr-4 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-orange-500/40 focus:border-orange-500/40 transition-all"
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {filterButtons.map((btn) => (
+                  <button
+                    key={btn.value}
+                    type="button"
+                    onClick={() => onFilterChange(btn.value)}
+                    className={cn(
+                      "flex-shrink-0 px-3 py-2 rounded-lg text-xs font-semibold transition-all duration-300 backdrop-blur-sm",
+                      filter === btn.value
+                        ? "bg-orange-500/30 text-orange-100 border border-orange-500/40"
+                        : "bg-white/10 text-white/60 border border-white/20 hover:text-white hover:bg-white/20"
+                    )}
+                  >
+                    {btn.shortLabel || btn.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
 
         {/* Content */}
         <div
-          className="flex-1 overflow-y-auto overflow-x-hidden"
+          className="flex-1 overflow-y-auto overflow-x-auto"
           onScroll={(event) => {
             const target = event.currentTarget;
             if (!canLoadMore) return;
@@ -293,22 +342,20 @@ function InteractiveSearchModal(props: {
           {/* Loading state */}
           {isLoading && releases.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 px-4">
-              <div className="relative">
-                <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center">
-                  <Loader2 className="w-8 h-8 text-white/50 animate-spin" />
-                </div>
+              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-orange-500/20 to-amber-500/20 flex items-center justify-center mb-6 border border-white/10">
+                <Loader2 className="w-8 h-8 text-orange-300 animate-spin" />
               </div>
-              <p className="mt-4 text-sm font-medium text-white">Searching releases...</p>
-              <p className="mt-1 text-xs text-white/50">This may take a moment</p>
+              <p className="text-lg font-bold text-white mb-1">Searching releases...</p>
+              <p className="text-sm text-white/50">This may take a moment</p>
             </div>
           ) : filtered.length === 0 ? (
             /* Empty state */
             <div className="flex flex-col items-center justify-center py-20 px-4">
-              <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center mb-4">
-                <Search className="w-8 h-8 text-white/20" />
+              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-white/5 to-white/10 flex items-center justify-center mb-6 border border-white/10">
+                <Search className="w-8 h-8 text-white/30" />
               </div>
-              <p className="text-sm font-medium text-white">No releases found</p>
-              <p className="mt-1 text-xs text-white/50 text-center max-w-xs">
+              <p className="text-lg font-bold text-white mb-1">No releases found</p>
+              <p className="text-sm text-white/50 text-center max-w-xs">
                 {filter !== "all"
                   ? "Try selecting a different quality filter"
                   : "Try refreshing or check back later"}
@@ -318,18 +365,17 @@ function InteractiveSearchModal(props: {
             <>
               {/* Desktop table view */}
               <div className="hidden md:block">
-                <table className="w-full table-fixed text-left text-xs">
-                  <thead className="border-b border-white/10 bg-slate-900/80 sticky top-0 z-10">
-                    <tr className="text-[10px] uppercase tracking-wider text-white/40">
-                      <th className="px-4 py-3 font-semibold">Release</th>
-                      <th className="px-3 py-3 font-semibold text-center w-16">Size</th>
-                      <th className="px-3 py-3 font-semibold text-center w-14">Age</th>
-                      <th className="px-3 py-3 font-semibold text-center w-16">Peers</th>
-                      <th className="px-4 py-3 font-semibold text-right w-20"></th>
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-white/10 bg-white/[0.02]">
+                      <th className="p-4 pl-6 text-left text-xs font-bold text-white/50 uppercase tracking-wider">Release</th>
+                      <th className="p-4 text-center text-xs font-bold text-white/50 uppercase tracking-wider w-20">Size</th>
+                      <th className="p-4 text-center text-xs font-bold text-white/50 uppercase tracking-wider w-16">Age</th>
+                      <th className="p-4 pr-6 text-right text-xs font-bold text-white/50 uppercase tracking-wider w-24"></th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-white/5">
-                    {filtered.map((release) => {
+                  <tbody>
+                    {filtered.map((release, index) => {
                       const rowKey = release.guid || `${release.indexerId ?? "x"}-${release.title}`;
                       const is4k = release.title.toLowerCase().includes("4k") ||
                                    release.title.toLowerCase().includes("2160") ||
@@ -338,43 +384,47 @@ function InteractiveSearchModal(props: {
                       const historyDisplay = getHistoryDisplay(release.history);
 
                       return (
-                        <tr key={rowKey} className="group hover:bg-white/[0.02] transition-colors">
-                          <td className="px-4 py-3">
+                        <tr
+                          key={rowKey}
+                          className="group border-b border-white/5 last:border-b-0 hover:bg-gradient-to-r hover:from-orange-500/5 hover:to-amber-500/5 transition-all duration-300"
+                          style={{ animationDelay: `${index * 20}ms` }}
+                        >
+                          <td className="p-4 pl-6">
                             <div className="flex items-center gap-3">
                               <div className={cn(
-                                "flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center text-[10px] font-bold uppercase",
+                                "flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-[10px] font-bold uppercase shadow-lg group-hover:shadow-xl transition-all duration-300",
                                 release.protocol === "torrent"
-                                  ? "bg-violet-500/15 text-violet-300 ring-1 ring-violet-500/30"
-                                  : "bg-sky-500/15 text-sky-300 ring-1 ring-sky-500/30"
+                                  ? "bg-gradient-to-br from-orange-500/20 to-orange-600/20 text-orange-300 ring-1 ring-orange-500/30 group-hover:ring-orange-500/50"
+                                  : "bg-gradient-to-br from-sky-500/20 to-sky-600/20 text-sky-300 ring-1 ring-sky-500/30 group-hover:ring-sky-500/50"
                               )}>
                                 {release.protocol === "torrent" ? "TOR" : "NZB"}
                               </div>
                               <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-2 mb-0.5">
+                                <div className="flex items-center gap-2 mb-1">
                                   <span className={cn(
-                                    "inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold",
+                                    "inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold border",
                                     is4k
-                                      ? "bg-violet-500/25 text-violet-200"
-                                      : "bg-white/10 text-white/60"
+                                      ? "bg-orange-500/20 text-orange-200 border-orange-500/30"
+                                      : "bg-white/10 text-white/60 border-white/10"
                                   )}>
                                     {release.quality || "—"}
                                   </span>
                                   {historyDisplay.isImport && (
-                                    <span title="Previously imported">
-                                      <Cloud className="h-3.5 w-3.5 text-sky-400" />
+                                    <span title="Previously imported" className="flex items-center gap-1 text-[10px] text-sky-400">
+                                      <Cloud className="h-3.5 w-3.5" />
                                     </span>
                                   )}
                                 </div>
                                 <div
                                   className={cn(
-                                    "font-medium text-sm leading-tight line-clamp-1",
-                                    is4k ? "text-violet-200" : "text-white"
+                                    "font-semibold text-sm leading-tight line-clamp-1 group-hover:text-orange-100 transition-colors",
+                                    is4k ? "text-orange-200" : "text-white"
                                   )}
                                   title={release.title}
                                 >
                                   {release.title}
                                 </div>
-                                <div className="flex items-center gap-2 mt-0.5 text-[10px] text-white/40">
+                                <div className="flex items-center gap-2 mt-0.5 text-xs text-white/40">
                                   {release.infoUrl ? (
                                     <a
                                       href={release.infoUrl}
@@ -397,37 +447,30 @@ function InteractiveSearchModal(props: {
                               </div>
                             </div>
                           </td>
-                          <td className="px-3 py-3 text-center">
-                            <span className="text-white/70 font-medium text-xs">
+                          <td className="p-4 text-center">
+                            <span className="text-white/70 font-semibold text-sm">
                               {formatBytes(release.size ?? undefined)}
                             </span>
                           </td>
-                          <td className="px-3 py-3 text-center text-white/60 text-xs">
+                          <td className="p-4 text-center text-white/60 text-sm">
                             {formatAge(release.age)}
                           </td>
-                          <td className="px-3 py-3 text-center">
-                            <div className="inline-flex items-center gap-1 text-xs">
-                              <span className="text-emerald-400 font-semibold">{release.seeders ?? "—"}</span>
-                              <span className="text-white/30">/</span>
-                              <span className="text-rose-400">{release.leechers ?? "—"}</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-right">
+                          <td className="p-4 pr-6 text-right">
                             <button
                               type="button"
                               disabled={grabbingGuid === release.guid}
                               onClick={() => onGrab(release)}
                               className={cn(
-                                "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all",
+                                "inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-all duration-300",
                                 grabbingGuid === release.guid
                                   ? "bg-white/10 text-white/50 cursor-not-allowed"
-                                  : "bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 ring-1 ring-emerald-500/30 active:scale-95"
+                                  : "bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 ring-1 ring-emerald-500/30 hover:ring-emerald-500/50 hover:scale-105 active:scale-95"
                               )}
                             >
                               {grabbingGuid === release.guid ? (
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                <Loader2 className="h-4 w-4 animate-spin" />
                               ) : (
-                                <Download className="h-3.5 w-3.5" />
+                                <Download className="h-4 w-4" />
                               )}
                               <span>{grabbingGuid === release.guid ? "..." : "Grab"}</span>
                             </button>
@@ -440,8 +483,8 @@ function InteractiveSearchModal(props: {
               </div>
 
               {/* Mobile card view */}
-              <div className="md:hidden divide-y divide-white/5">
-                {filtered.map((release) => {
+              <div className="md:hidden p-4 space-y-3">
+                {filtered.map((release, index) => {
                   const rowKey = release.guid || `${release.indexerId ?? "x"}-${release.title}`;
                   const is4k = release.title.toLowerCase().includes("4k") ||
                                release.title.toLowerCase().includes("2160") ||
@@ -450,89 +493,93 @@ function InteractiveSearchModal(props: {
                   const historyDisplay = getHistoryDisplay(release.history);
 
                   return (
-                    <div key={rowKey} className="p-4 active:bg-white/5 transition-colors">
-                      {/* Header row with protocol badge and quality */}
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className={cn(
-                          "px-2 py-0.5 rounded text-[10px] font-bold uppercase",
-                          release.protocol === "torrent"
-                            ? "bg-violet-500/20 text-violet-300"
-                            : "bg-sky-500/20 text-sky-300"
+                    <div
+                      key={rowKey}
+                      className="group relative overflow-hidden rounded-2xl bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 hover:border-white/20 transition-all duration-300 hover:shadow-xl hover:shadow-orange-500/10"
+                      style={{ animationDelay: `${index * 50}ms` }}
+                    >
+                      {/* Gradient accent on hover */}
+                      <div className="absolute inset-0 bg-gradient-to-br from-orange-500/0 to-amber-500/0 group-hover:from-orange-500/5 group-hover:to-amber-500/5 transition-all duration-500" />
+
+                      <div className="relative p-4">
+                        {/* Header row with protocol badge and quality */}
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className={cn(
+                            "px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase border",
+                            release.protocol === "torrent"
+                              ? "bg-orange-500/20 text-orange-300 border-orange-500/30"
+                              : "bg-sky-500/20 text-sky-300 border-sky-500/30"
+                          )}>
+                            {release.protocol === "torrent" ? "TOR" : "NZB"}
+                          </span>
+                          <span className={cn(
+                            "px-2.5 py-1 rounded-lg text-[10px] font-bold border",
+                            is4k
+                              ? "bg-orange-500/20 text-orange-200 border-orange-500/30"
+                              : "bg-white/10 text-white/60 border-white/10"
+                          )}>
+                            {release.quality || "—"}
+                          </span>
+                          {historyDisplay.isImport && (
+                            <Cloud className="h-4 w-4 text-sky-400" />
+                          )}
+                        </div>
+
+                        {/* Title */}
+                        <div className={cn(
+                          "font-semibold text-base leading-snug mb-3 group-hover:text-orange-100 transition-colors",
+                          is4k ? "text-orange-200" : "text-white"
                         )}>
-                          {release.protocol === "torrent" ? "TOR" : "NZB"}
-                        </span>
-                        <span className={cn(
-                          "px-2 py-0.5 rounded text-[10px] font-bold",
-                          is4k
-                            ? "bg-violet-500/25 text-violet-200"
-                            : "bg-white/10 text-white/60"
-                        )}>
-                          {release.quality || "—"}
-                        </span>
-                        {historyDisplay.isImport && (
-                          <Cloud className="h-4 w-4 text-sky-400" />
-                        )}
-                      </div>
+                          {release.title}
+                        </div>
 
-                      {/* Title */}
-                      <div className={cn(
-                        "font-medium text-sm leading-snug mb-3",
-                        is4k ? "text-violet-200" : "text-white"
-                      )}>
-                        {release.title}
-                      </div>
+                        {/* Stats row */}
+                        <div className="flex items-center gap-4 mb-4 text-sm">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-white/40">Size:</span>
+                            <span className="font-semibold text-white/80">{formatBytes(release.size ?? undefined)}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-white/40">Age:</span>
+                            <span className="font-medium text-white/80">{formatAge(release.age)}</span>
+                          </div>
+                        </div>
 
-                      {/* Stats row */}
-                      <div className="flex items-center gap-4 mb-3 text-xs">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-white/40">Size:</span>
-                          <span className="font-medium text-white/80">{formatBytes(release.size ?? undefined)}</span>
+                        {/* Footer with indexer and grab */}
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-sm text-white/50 truncate">
+                            {release.infoUrl ? (
+                              <a
+                                href={release.infoUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-sky-300/70 hover:text-sky-300"
+                              >
+                                {release.indexer || "Indexer"}
+                              </a>
+                            ) : (
+                              release.indexer || "—"
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            disabled={grabbingGuid === release.guid}
+                            onClick={() => onGrab(release)}
+                            className={cn(
+                              "flex-shrink-0 inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-300",
+                              grabbingGuid === release.guid
+                                ? "bg-white/10 text-white/50 cursor-not-allowed"
+                                : "bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-500/30 hover:ring-emerald-500/50 active:scale-95"
+                            )}
+                          >
+                            {grabbingGuid === release.guid ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Download className="h-4 w-4" />
+                            )}
+                            <span>{grabbingGuid === release.guid ? "..." : "Grab"}</span>
+                          </button>
                         </div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-white/40">Age:</span>
-                          <span className="font-medium text-white/80">{formatAge(release.age)}</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <span className="text-emerald-400 font-semibold">{release.seeders ?? "—"}</span>
-                          <span className="text-white/30">/</span>
-                          <span className="text-rose-400">{release.leechers ?? "—"}</span>
-                        </div>
-                      </div>
-
-                      {/* Footer with indexer and grab */}
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="text-xs text-white/50 truncate">
-                          {release.infoUrl ? (
-                            <a
-                              href={release.infoUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-sky-300/70 hover:text-sky-300"
-                            >
-                              {release.indexer || "Indexer"}
-                            </a>
-                          ) : (
-                            release.indexer || "—"
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          disabled={grabbingGuid === release.guid}
-                          onClick={() => onGrab(release)}
-                          className={cn(
-                            "flex-shrink-0 inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-all",
-                            grabbingGuid === release.guid
-                              ? "bg-white/10 text-white/50 cursor-not-allowed"
-                              : "bg-emerald-500/20 text-emerald-200 ring-1 ring-emerald-500/30 active:scale-95"
-                          )}
-                        >
-                          {grabbingGuid === release.guid ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Download className="h-4 w-4" />
-                          )}
-                          <span>{grabbingGuid === release.guid ? "..." : "Grab"}</span>
-                        </button>
                       </div>
                     </div>
                   );
@@ -543,14 +590,14 @@ function InteractiveSearchModal(props: {
         </div>
 
         {/* Footer */}
-        <div className="flex-shrink-0 flex items-center justify-between border-t border-white/10 bg-slate-900/50 px-4 py-3 text-xs">
+        <div className="flex-shrink-0 flex items-center justify-between border-t border-white/10 bg-white/[0.02] px-5 py-4 text-sm">
           <div className="text-white/50">
             {filtered.length} of {releases.length} shown
-            {filter !== "all" && <span className="text-white/30"> • {filter} filter active</span>}
+            {filter !== "all" && <span className="text-white/30"> • {filter} filter</span>}
           </div>
           {isLoadingMore ? (
-            <div className="flex items-center gap-2 text-indigo-300">
-              <Loader2 className="h-3 w-3 animate-spin" />
+            <div className="flex items-center gap-2 text-orange-300 font-medium">
+              <Loader2 className="h-4 w-4 animate-spin" />
               Loading more...
             </div>
           ) : total > 0 && releases.length < total ? (
@@ -852,76 +899,63 @@ export function UpgradeFinderClient({ initialItems }: { initialItems: UpgradeFin
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-slate-900/60 p-6">
-        <div className="relative">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-white/5 ring-1 ring-white/10">
-                <Sparkles className="w-6 h-6 text-white/60" />
-              </div>
-              <div>
-                <h1 className="text-xl sm:text-2xl font-bold text-white">Upgrade Finder</h1>
-                <p className="text-sm text-white/50">Find quality upgrades for your library</p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={handleRefresh}
-              disabled={isRefreshing}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/10 transition-colors disabled:opacity-50"
-            >
-              <RefreshCcw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
-              Refresh
-            </button>
-          </div>
-
-          {/* Stats cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="rounded-xl bg-black/20 border border-white/10 p-3 text-center">
-              <div className="text-2xl font-bold text-white">{items.length}</div>
-              <div className="text-[10px] text-white/40 uppercase tracking-wider">Total</div>
-            </div>
-            <div className="rounded-xl bg-black/20 border border-white/10 p-3 text-center">
-              <div className="text-2xl font-bold text-white">{upgradeCount}</div>
-              <div className="text-[10px] text-white/40 uppercase tracking-wider">Upgrades</div>
-            </div>
-            <div className="rounded-xl bg-black/20 border border-white/10 p-3 text-center">
-              <div className="text-2xl font-bold text-white">{missingCount}</div>
-              <div className="text-[10px] text-white/40 uppercase tracking-wider">Missing</div>
-            </div>
-            <div className="rounded-xl bg-black/20 border border-white/10 p-3 text-center">
-              <div className="text-2xl font-bold text-white">{upToDateCount}</div>
-              <div className="text-[10px] text-white/40 uppercase tracking-wider">Complete</div>
-            </div>
-          </div>
+      {/* Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="rounded-xl border border-white/10 bg-gradient-to-br from-slate-900/60 to-slate-900/40 p-4 shadow-lg">
+          <div className="text-xs font-medium text-white/60 uppercase tracking-wider">Total</div>
+          <div className="text-2xl font-bold text-white mt-1">{items.length}</div>
         </div>
+        <div className="rounded-xl border border-amber-500/20 bg-gradient-to-br from-amber-500/10 to-amber-500/5 p-4 shadow-lg">
+          <div className="text-xs font-medium text-amber-400 uppercase tracking-wider">Upgrades</div>
+          <div className="text-2xl font-bold text-white mt-1">{upgradeCount}</div>
+        </div>
+        <div className="rounded-xl border border-slate-500/20 bg-gradient-to-br from-slate-500/10 to-slate-500/5 p-4 shadow-lg">
+          <div className="text-xs font-medium text-slate-400 uppercase tracking-wider">Missing</div>
+          <div className="text-2xl font-bold text-white mt-1">{missingCount}</div>
+        </div>
+        <div className="rounded-xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 p-4 shadow-lg">
+          <div className="text-xs font-medium text-emerald-400 uppercase tracking-wider">Complete</div>
+          <div className="text-2xl font-bold text-white mt-1">{upToDateCount}</div>
+        </div>
+      </div>
+
+      {/* Refresh Button */}
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={handleRefresh}
+          disabled={isRefreshing}
+          className="btn btn-primary"
+        >
+          <RefreshCcw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
+          Refresh
+        </button>
       </div>
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3">
         {/* Search */}
         <div className="relative flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
+          <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
           <input
             value={searchQuery}
             onChange={event => setSearchQuery(event.target.value)}
             placeholder="Search movies..."
-            className="w-full h-10 rounded-xl border border-white/10 bg-slate-900/60 py-2 pl-10 pr-4 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-white/20"
+            className="w-full h-10 rounded-lg border border-white/10 bg-slate-900/60 py-2 pl-4 pr-10 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-indigo-400/40"
           />
         </div>
 
         {/* Status filter pills */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+        <div className="flex flex-wrap items-center gap-1.5 pb-1 sm:pb-0 sm:justify-end">
           {statusFilterButtons.map((btn) => (
             <button
               key={btn.value}
               type="button"
               onClick={() => setStatusFilter(btn.value)}
               className={cn(
-                "flex-shrink-0 inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition-all",
+                "flex-shrink-0 inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition-colors",
                 statusFilter === btn.value
-                  ? "bg-white/10 text-white border border-white/20"
+                  ? "bg-indigo-600 text-white"
                   : "bg-slate-900/60 text-white/60 hover:bg-slate-800 hover:text-white border border-white/10"
               )}
             >
@@ -940,15 +974,15 @@ export function UpgradeFinderClient({ initialItems }: { initialItems: UpgradeFin
       </div>
 
       {/* Desktop Table */}
-      <div className="hidden md:block rounded-2xl border border-white/10 bg-slate-900/60 overflow-hidden">
-        <table className="w-full text-left text-sm">
-          <thead className="border-b border-white/10 bg-black/20">
-            <tr className="text-[10px] uppercase tracking-wider text-white/40">
-              <th className="px-5 py-3.5 font-semibold">Media</th>
-              <th className="px-4 py-3.5 font-semibold w-28">Quality</th>
-              <th className="px-4 py-3.5 font-semibold w-32">Status</th>
-              <th className="px-4 py-3.5 font-semibold w-28">4K Hint</th>
-              <th className="px-5 py-3.5 font-semibold w-28 text-right"></th>
+      <div className="hidden md:block rounded-lg border border-white/10 bg-slate-900/60 overflow-hidden shadow-lg shadow-black/10">
+        <table className="w-full text-sm">
+          <thead className="border-b border-white/10">
+            <tr className="bg-white/5">
+              <th className="p-4 pl-6 text-left font-semibold">Media</th>
+              <th className="p-4 text-left font-semibold w-28">Quality</th>
+              <th className="p-4 text-left font-semibold w-32">Status</th>
+              <th className="p-4 text-left font-semibold w-28">4K Hint</th>
+              <th className="p-4 pr-6 text-right font-semibold w-28"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
@@ -970,46 +1004,55 @@ export function UpgradeFinderClient({ initialItems }: { initialItems: UpgradeFin
                 const displayHintStatus = item.ignore4k && hintState.status === "available" ? "none" : hintState.status;
                 const hintStyle = hintStyles[displayHintStatus];
                 return (
-                  <tr key={`${item.mediaType}-${item.id}`} className="group hover:bg-white/[0.02] transition-colors">
-                    <td className="px-5 py-4">
+                  <tr key={`${item.mediaType}-${item.id}`} className="hover:bg-white/5 transition-colors group">
+                    <td className="p-3 pl-6">
                       <div className="flex items-center gap-3">
-                        <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center text-lg">
-                          🎬
+                        <div className="relative w-10 h-14 rounded overflow-hidden bg-black/20 shadow-sm border border-white/5 flex items-center justify-center">
+                          {item.posterUrl ? (
+                            <img
+                              src={item.posterUrl}
+                              alt={item.title}
+                              className="h-full w-full object-cover"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <span className="text-lg">🎬</span>
+                          )}
                         </div>
                         <div className="min-w-0">
-                          <div className="font-semibold text-white truncate">{item.title}</div>
-                          <div className="text-xs text-white/40">
+                          <div className="font-medium text-white truncate">{item.title}</div>
+                          <div className="text-xs text-muted">
                             {item.mediaType === "movie" ? "Movie" : "Series"}
                             {item.year ? ` • ${item.year}` : ""}
                           </div>
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-4">
+                    <td className="p-4">
                       <div className="text-sm font-semibold text-white/90">{item.currentQuality || "—"}</div>
-                      <div className="text-xs text-white/40">{formatBytes(item.currentSizeBytes)}</div>
+                      <div className="text-xs text-muted">{formatBytes(item.currentSizeBytes)}</div>
                     </td>
-                    <td className="px-4 py-4">
-                      <span className={cn("inline-flex items-center rounded-lg px-2.5 py-1 text-[11px] font-semibold", status.bg, status.text, "ring-1", status.border.replace("border-", "ring-"))}>
+                    <td className="p-4">
+                      <span className={cn("inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold", status.bg, status.text, "ring-1", status.border.replace("border-", "ring-"))}>
                         {shouldShowUpgrade ? "Upgrade" : status.label}
                       </span>
                       {item.ignore4k && (
                         <div className="mt-1 text-[10px] text-white/30">4K ignored</div>
                       )}
                     </td>
-                    <td className="px-4 py-4">
-                      <span className={cn("inline-flex items-center rounded-lg px-2.5 py-1 text-[11px] font-semibold", hintStyle.bg, hintStyle.text, "ring-1", hintStyle.border.replace("border-", "ring-"))}>
+                    <td className="p-4">
+                      <span className={cn("inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold", hintStyle.bg, hintStyle.text, "ring-1", hintStyle.border.replace("border-", "ring-"))}>
                         {hintStyle.label}
                       </span>
                     </td>
-                    <td className="px-5 py-4 text-right">
+                    <td className="p-4 pr-6 text-right">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <button
                             type="button"
                             disabled={isRunning}
                             className={cn(
-                              "inline-flex items-center gap-2 rounded-lg bg-white/5 ring-1 ring-white/10 px-3 py-2 text-xs font-semibold text-white/70 hover:bg-white/10 transition-all",
+                              "inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 transition-colors",
                               isRunning && "opacity-70"
                             )}
                           >
@@ -1048,9 +1091,9 @@ export function UpgradeFinderClient({ initialItems }: { initialItems: UpgradeFin
         </div>
 
       {/* Mobile Card View */}
-      <div className="md:hidden space-y-3">
+      <div className="md:hidden space-y-4">
         {filteredItems.length === 0 ? (
-          <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-8 text-center">
+          <div className="rounded-lg border border-white/10 bg-slate-900/60 p-8 text-center">
             <div className="text-white/20 text-4xl mb-3">🎬</div>
             <div className="text-sm text-white/50">No movies found</div>
             <div className="text-xs text-white/30 mt-1">Try adjusting your filters</div>
@@ -1068,16 +1111,25 @@ export function UpgradeFinderClient({ initialItems }: { initialItems: UpgradeFin
             return (
               <div
                 key={`mobile-${item.mediaType}-${item.id}`}
-                className="rounded-2xl border border-white/10 bg-slate-900/60 p-4 active:bg-slate-900/80 transition-colors"
+                className="rounded-lg border border-white/10 bg-slate-900/60 p-4 space-y-3"
               >
                 {/* Header with title and status badges */}
-                <div className="flex items-start gap-3 mb-3">
-                    <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center text-xl">
-                      🎬
-                    </div>
+                <div className="flex items-start gap-3">
+                  <div className="flex-shrink-0 w-12 h-16 rounded overflow-hidden bg-black/20 shadow-sm border border-white/5 flex items-center justify-center">
+                    {item.posterUrl ? (
+                      <img
+                        src={item.posterUrl}
+                        alt={item.title}
+                        className="h-full w-full object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <span className="text-xl">🎬</span>
+                    )}
+                  </div>
                   <div className="min-w-0 flex-1">
                     <div className="font-semibold text-white leading-tight">{item.title}</div>
-                    <div className="text-xs text-white/40 mt-0.5">
+                    <div className="text-xs text-muted mt-0.5">
                       {item.mediaType === "movie" ? "Movie" : "Series"}
                       {item.year ? ` • ${item.year}` : ""}
                     </div>
@@ -1085,11 +1137,11 @@ export function UpgradeFinderClient({ initialItems }: { initialItems: UpgradeFin
                 </div>
 
                 {/* Status badges row */}
-                <div className="flex flex-wrap items-center gap-2 mb-3">
-                  <span className={cn("inline-flex items-center rounded-lg px-2 py-1 text-[10px] font-semibold", status.bg, status.text, "ring-1", status.border.replace("border-", "ring-"))}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={cn("inline-flex items-center rounded-full px-2 py-1 text-[10px] font-semibold", status.bg, status.text, "ring-1", status.border.replace("border-", "ring-"))}>
                     {shouldShowUpgrade ? "Upgrade" : status.label}
                   </span>
-                  <span className={cn("inline-flex items-center rounded-lg px-2 py-1 text-[10px] font-semibold", hintStyle.bg, hintStyle.text, "ring-1", hintStyle.border.replace("border-", "ring-"))}>
+                  <span className={cn("inline-flex items-center rounded-full px-2 py-1 text-[10px] font-semibold", hintStyle.bg, hintStyle.text, "ring-1", hintStyle.border.replace("border-", "ring-"))}>
                     {hintStyle.label}
                   </span>
                   {item.ignore4k && (
@@ -1098,13 +1150,13 @@ export function UpgradeFinderClient({ initialItems }: { initialItems: UpgradeFin
                 </div>
 
                 {/* Quality info */}
-                <div className="flex items-center gap-4 mb-4 text-xs">
+                <div className="flex items-center gap-4 text-xs">
                   <div className="flex items-center gap-1.5">
-                    <span className="text-white/40">Current:</span>
+                    <span className="text-muted">Current:</span>
                     <span className="font-semibold text-white/80">{item.currentQuality || "—"}</span>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-white/40">Size:</span>
+                    <span className="text-muted">Size:</span>
                     <span className="font-medium text-white/70">{formatBytes(item.currentSizeBytes)}</span>
                   </div>
                 </div>
@@ -1115,10 +1167,10 @@ export function UpgradeFinderClient({ initialItems }: { initialItems: UpgradeFin
                     <button
                       type="button"
                       disabled={isRunning}
-                    className={cn(
-                      "w-full inline-flex items-center justify-center gap-2 rounded-xl bg-white/5 ring-1 ring-white/10 px-4 py-3 text-sm font-semibold text-white/70 hover:bg-white/10 transition-all",
-                      isRunning && "opacity-70"
-                    )}
+                      className={cn(
+                        "w-full inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 transition-colors",
+                        isRunning && "opacity-70"
+                      )}
                     >
                       {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                       Search for Upgrades

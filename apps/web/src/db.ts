@@ -2322,7 +2322,8 @@ async function ensureSchema() {
           ('session-cleanup', '0 * * * *', 3600, 'system', TRUE),
           ('calendar-notifications', '0 */6 * * *', 21600, 'system', FALSE),
           ('jellyfin-availability-sync', '0 */4 * * *', 14400, 'system', FALSE),
-          ('upgrade-finder-4k', '0 3 * * *', 86400, 'system', FALSE)
+          ('upgrade-finder-4k', '0 3 * * *', 86400, 'system', FALSE),
+          ('prowlarr-indexer-sync', '*/5 * * * *', 300, 'system', TRUE)
       ON CONFLICT (name) DO NOTHING;
     `);
   })();

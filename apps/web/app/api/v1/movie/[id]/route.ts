@@ -1,10 +1,10 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { getUser } from "@/auth";
-import { getUserWithHash } from "@/db";
+import { findActiveRequestByTmdb, getUserWithHash } from "@/db";
 import { hasAssignedNotificationEndpoints } from "@/lib/notifications";
 import { listRadarrQualityProfiles, getMovieByTmdbId } from "@/lib/radarr";
-import { getActiveMediaService } from "@/lib/media-services";
+import { getActiveMediaService, hasActiveMediaService } from "@/lib/media-services";
 import { getJellyfinItemId, isAvailableByExternalIds } from "@/lib/jellyfin";
 import { getJellyfinPlayUrl } from "@/lib/jellyfin-links";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
@@ -107,6 +107,16 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
   }
 
   const details = includeDetails ? await getMovieDetailAggregate(tmdbId) : null;
+  const request = await withCache(
+    `agg:requests:movie:${tmdbId}`,
+    30 * 1000,
+    () => findActiveRequestByTmdb({ requestType: "movie", tmdbId }).catch(() => null)
+  );
+  const prowlarrEnabled = await withCache(
+    "agg:prowlarr:enabled",
+    60 * 1000,
+    () => hasActiveMediaService("prowlarr").catch(() => false)
+  );
 
   return cacheableJsonResponseWithETag(req,
     {
@@ -114,6 +124,9 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
       isAdmin,
       availableInLibrary: jellyfinAvailable || Boolean(radarrMovieSummary?.hasFile),
       playUrl,
+      request: request
+        ? { id: request.id, status: request.status, createdAt: request.created_at }
+        : null,
       manage: {
         itemId: isAdmin ? radarrMovieSummary?.id ?? null : null,
         slug: isAdmin ? radarrMovieSummary?.titleSlug ?? null : null,
@@ -124,7 +137,8 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
         radarrMovie: radarrMovieSummary,
         radarrError,
         defaultQualityProfileId,
-        requestsBlocked
+        requestsBlocked,
+        prowlarrEnabled
       },
       details
     },

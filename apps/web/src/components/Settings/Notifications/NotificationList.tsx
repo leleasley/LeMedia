@@ -38,7 +38,7 @@ export default function NotificationList({
     const router = useRouter();
 
     const { data: endpoints, mutate, isLoading } = useSWR<NotificationEndpoint[]>(
-        `/api/v1/admin/notifications/${type}/list`, 
+        `/api/v1/admin/notifications/${type}/list`,
         fetcher
     );
 
@@ -71,9 +71,6 @@ export default function NotificationList({
         if (!endpoint) return;
 
         try {
-            // Optimistic update (optional but good for UX)
-            // mutate(endpoints?.map(e => e.id === id ? { ...e, enabled: !currentEnabled } : e), false);
-
             const response = await csrfFetch(`/api/v1/admin/notifications/${type}/${id}`, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
@@ -90,7 +87,7 @@ export default function NotificationList({
             }
         } catch (error) {
             console.error("Error toggling endpoint:", error);
-            mutate(); // Revert on error
+            mutate();
         }
     }
 
@@ -107,32 +104,33 @@ export default function NotificationList({
     return (
         <div className="space-y-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <h2 className="text-2xl font-bold text-white">{typeName} Notifications</h2>
+                <h2 className="text-lg font-semibold text-white">{typeName} Notifications</h2>
                 <button
                     onClick={() => router.push(`/admin/settings/notifications/${type}/new`)}
-                    className="w-full rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-gray-900 sm:w-auto shadow-lg shadow-indigo-600/20"
+                    className="btn btn-primary"
                 >
                     Add New {typeName}
                 </button>
             </div>
 
             {!hasEndpoints ? (
-                <div className="rounded-lg border border-white/10 bg-slate-900/60 p-12 text-center">
+                <div className="glass-strong rounded-3xl overflow-hidden border border-white/10 shadow-2xl p-12 text-center">
                     <p className="text-gray-400">
                         No {typeName.toLowerCase()} notification endpoints configured yet.
                     </p>
                     <button
                         onClick={() => router.push(`/admin/settings/notifications/${type}/new`)}
-                        className="mt-4 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 shadow-lg shadow-indigo-600/20"
+                        className="mt-4 btn btn-primary"
                     >
                         Create Your First {typeName} Endpoint
                     </button>
                 </div>
             ) : (
-                <div className="space-y-4">
-                    <div className="space-y-4 md:hidden">
+                <>
+                    {/* Mobile card view */}
+                    <div className="md:hidden space-y-4">
                         {endpoints!.map((endpoint) => (
-                            <div key={endpoint.id} className="rounded-lg border border-white/10 bg-slate-900/60 p-4 shadow-sm">
+                            <div key={endpoint.id} className="glass-strong rounded-2xl overflow-hidden border border-white/10 shadow-xl p-4 space-y-3">
                                 <div className="flex items-start justify-between gap-3">
                                     <div>
                                         <div className="text-sm font-semibold text-white">{endpoint.name}</div>
@@ -158,19 +156,19 @@ export default function NotificationList({
                                         {endpoint.enabled ? "Enabled" : "Disabled"}
                                     </button>
                                 </div>
-                                <div className="mt-3 flex items-center gap-3">
+                                <div className="flex items-center gap-2 pt-2 border-t border-white/5">
                                     <button
                                         onClick={() => router.push(`/admin/settings/notifications/${type}/${endpoint.id}`)}
-                                        className="rounded-md border border-indigo-500/40 bg-indigo-500/10 px-3 py-1.5 text-xs font-semibold text-indigo-200 hover:bg-indigo-500/20"
+                                        className="btn btn-primary text-xs"
                                     >
                                         Edit
                                     </button>
                                     <button
                                         onClick={() => handleDelete(endpoint.id)}
                                         disabled={deleting === endpoint.id || endpoint.is_global}
-                                        className={`rounded-md border px-3 py-1.5 text-xs font-semibold ${endpoint.is_global
-                                                ? "cursor-not-allowed border-gray-700 text-gray-500 bg-gray-800/50"
-                                                : "border-red-500/40 text-red-300 hover:text-red-200 hover:bg-red-500/10"
+                                        className={`btn text-xs ${endpoint.is_global
+                                                ? "cursor-not-allowed opacity-50"
+                                                : "btn-error"
                                             }`}
                                         title={
                                             endpoint.is_global
@@ -185,21 +183,22 @@ export default function NotificationList({
                         ))}
                     </div>
 
+                    {/* Desktop table view */}
                     <div className="hidden md:block">
-                        <div className="overflow-hidden rounded-lg border border-white/10 bg-slate-900/60 shadow-lg shadow-black/10">
-                            <table className="min-w-full divide-y divide-white/5">
-                                <thead className="bg-white/5">
-                                    <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
+                        <div className="glass-strong rounded-3xl overflow-hidden border border-white/10 shadow-2xl">
+                            <table className="min-w-full">
+                                <thead className="border-b border-white/10">
+                                    <tr className="bg-white/5">
+                                        <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-white/60">
                                             Name
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
+                                        <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-white/60">
                                             Type
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
+                                        <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-white/60">
                                             Status
                                         </th>
-                                        <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-400">
+                                        <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-wider text-white/60">
                                             Actions
                                         </th>
                                     </tr>
@@ -263,7 +262,7 @@ export default function NotificationList({
                             </table>
                         </div>
                     </div>
-                </div>
+                </>
             )}
         </div>
     );

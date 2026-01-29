@@ -26,6 +26,19 @@ type MediaService = {
     updated_at: string;
 };
 
+type ProwlarrIndexer = {
+    id: number;
+    name?: string;
+    implementation?: string;
+    implementationName?: string;
+    protocol?: string;
+    enable?: boolean;
+    supportsRss?: boolean;
+    supportsSearch?: boolean;
+    priority?: number;
+    tags?: number[];
+};
+
 type ModalState = { mode: "create" } | { mode: "edit"; service: MediaService };
 
 type FormState = {
@@ -90,7 +103,14 @@ const cloneInitialForm = (): FormState => ({ ...initialForm });
 
 const toStringValue = (value?: unknown) => (value == null ? "" : String(value));
 
-const fetcher = (url: string) => fetch(url, { credentials: "include" }).then(res => res.json());
+const fetcher = async (url: string) => {
+    const res = await fetch(url, { credentials: "include" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        throw new Error(data?.error || "Request failed");
+    }
+    return data;
+};
 
 export function ServicesAdminPanel({ initialServices }: { initialServices: MediaService[] }) {
     const toast = useToast();
@@ -100,6 +120,12 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
     });
 
     const services = useMemo(() => data?.services ?? [], [data]);
+    const prowlarrEnabled = services.some(service => service.type === "prowlarr");
+    const { data: indexerData, mutate: mutateIndexers, error: indexerError } = useSWR<{ indexers: ProwlarrIndexer[] }>(
+        prowlarrEnabled ? "/api/v1/admin/prowlarr/indexers" : null,
+        fetcher,
+        { revalidateOnFocus: false }
+    );
     
     const [modal, setModal] = useState<ModalState | null>(null);
     const [form, setForm] = useState<FormState>(cloneInitialForm);
@@ -108,6 +134,14 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
     const [testing, setTesting] = useState(false);
     const [testMessage, setTestMessage] = useState<string | null>(null);
     const [statusMap, setStatusMap] = useState<Record<number, { state: "idle" | "checking" | "ok" | "error"; message?: string }>>({});
+    const [showIndexerPanel, setShowIndexerPanel] = useState(false);
+    const [editIndexer, setEditIndexer] = useState<ProwlarrIndexer | null>(null);
+    const [indexerForm, setIndexerForm] = useState({
+        enable: false,
+        priority: 1
+    });
+    const [savingIndexer, setSavingIndexer] = useState(false);
+    const [bulkIndexerSaving, setBulkIndexerSaving] = useState(false);
 
     const buildBaseUrl = useCallback((f: FormState) => {
         const trimmedHost = f.hostname.trim();
@@ -337,9 +371,92 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
         }
     }, []);
 
+    const openIndexerEdit = useCallback((indexer: ProwlarrIndexer) => {
+        setEditIndexer(indexer);
+        setIndexerForm({
+            enable: Boolean(indexer.enable),
+            priority: Number.isFinite(Number(indexer.priority)) ? Number(indexer.priority) : 1
+        });
+    }, []);
+
+    const saveIndexer = useCallback(async (event: FormEvent) => {
+        event.preventDefault();
+        if (!editIndexer) return;
+        if (savingIndexer) return;
+        setSavingIndexer(true);
+        try {
+            const res = await csrfFetch("/api/v1/admin/prowlarr/indexers", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    id: editIndexer.id,
+                    enable: indexerForm.enable,
+                    priority: indexerForm.priority
+                })
+            });
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(body?.error || "Failed to update indexer");
+            toast.success("Indexer updated");
+            setEditIndexer(null);
+            mutateIndexers?.();
+        } catch (err: any) {
+            toast.error(err?.message ?? "Failed to update indexer");
+        } finally {
+            setSavingIndexer(false);
+        }
+    }, [editIndexer, indexerForm, savingIndexer, toast, mutateIndexers]);
+
+    const enableAllIndexers = useCallback(async () => {
+        if (!indexerData?.indexers?.length || bulkIndexerSaving) return;
+        setBulkIndexerSaving(true);
+        try {
+            const results = await Promise.allSettled(indexerData.indexers.map(async (indexer) => {
+                const res = await csrfFetch("/api/v1/admin/prowlarr/indexers", {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        id: indexer.id,
+                        enable: true
+                    })
+                });
+                const body = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    throw new Error(body?.error || `Failed to update ${indexer.name ?? "indexer"}`);
+                }
+                return true;
+            }));
+            const failures = results.filter(result => result.status === "rejected");
+            if (failures.length) {
+                toast.error(`Enabled with ${failures.length} failure(s). Check individual indexers.`);
+            } else {
+                toast.success("All indexers enabled");
+            }
+            mutateIndexers?.();
+        } catch (err: any) {
+            toast.error(err?.message ?? "Failed to enable indexers");
+        } finally {
+            setBulkIndexerSaving(false);
+        }
+    }, [indexerData, bulkIndexerSaving, toast, mutateIndexers]);
+
     useEffect(() => {
         services.forEach(s => { if (!statusMap[s.id]) pingService(s); });
     }, [services, statusMap, pingService]);
+
+    const renderIndexerFlag = (value: boolean | undefined) => {
+        if (value === undefined || value === null) {
+            return (
+                <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold bg-white/10 text-white/60">
+                    —
+                </span>
+            );
+        }
+        return (
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${value ? "bg-emerald-500" : "bg-rose-500"} text-white`}>
+                {value ? "Yes" : "No"}
+            </span>
+        );
+    };
 
     const radarrServices = services.filter(s => s.type === "radarr");
     const sonarrServices = services.filter(s => s.type === "sonarr");
@@ -462,6 +579,84 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
                     ) : (
                         prowlarrServices.map(renderServiceCard)
                     )}
+                </div>
+                <div className="mt-4 border-t border-white/10 pt-4">
+                    <button
+                        type="button"
+                        onClick={() => setShowIndexerPanel(prev => !prev)}
+                        className="w-full flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-white hover:bg-white/10 transition-colors"
+                    >
+                        <span>Prowlarr Indexers</span>
+                        <span className="text-xs text-white/60">{showIndexerPanel ? "Hide" : "Show"}</span>
+                    </button>
+                    {showIndexerPanel ? (
+                        <div className="mt-3 rounded-lg border border-white/10 bg-white/5">
+                            {!prowlarrEnabled ? (
+                                <div className="px-4 py-6 text-center text-xs text-muted">Configure Prowlarr to view indexers.</div>
+                            ) : indexerError ? (
+                                <div className="px-4 py-6 text-center text-xs text-muted">Failed to load indexers. Check Prowlarr service settings.</div>
+                            ) : !indexerData?.indexers?.length ? (
+                                <div className="px-4 py-6 text-center text-xs text-muted">No indexers found in Prowlarr.</div>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <div className="flex items-center justify-end px-3 pt-3">
+                                        <button
+                                            type="button"
+                                            onClick={enableAllIndexers}
+                                            disabled={bulkIndexerSaving}
+                                            className="rounded-md border border-white/10 bg-white/10 px-2.5 py-1 text-[10px] font-semibold text-white hover:bg-white/20 disabled:opacity-50"
+                                        >
+                                            {bulkIndexerSaving ? "Enabling..." : "Enable All"}
+                                        </button>
+                                    </div>
+                                    <table className="w-full text-xs">
+                                        <thead className="text-left text-muted">
+                                            <tr>
+                                                <th className="p-3">Name</th>
+                                                <th className="p-3">Implementation</th>
+                                                <th className="p-3">Protocol</th>
+                                                <th className="p-3">Enabled</th>
+                                                <th className="p-3">Capabilities</th>
+                                                <th className="p-3">Priority</th>
+                                                <th className="p-3">Tags</th>
+                                                <th className="p-3 text-right">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {indexerData.indexers.map((indexer) => (
+                                                <tr key={indexer.id} className="border-t border-white/10">
+                                                    <td className="p-3 font-semibold text-white">{indexer.name ?? "—"}</td>
+                                                    <td className="p-3 text-white/70">{indexer.implementationName ?? indexer.implementation ?? "—"}</td>
+                                                    <td className="p-3 text-white/70">{indexer.protocol ?? "—"}</td>
+                                                    <td className="p-3">
+                                                        {renderIndexerFlag(indexer.enable)}
+                                                    </td>
+                                                    <td className="p-3">
+                                                        <span className="text-[10px] text-white/70">
+                                                            {indexer.supportsRss ? "RSS" : "No RSS"}
+                                                            {" · "}
+                                                            {indexer.supportsSearch ? "Search" : "No Search"}
+                                                        </span>
+                                                    </td>
+                                                    <td className="p-3 text-white/70">{toStringValue(indexer.priority) || "—"}</td>
+                                                    <td className="p-3 text-white/50">{Array.isArray(indexer.tags) && indexer.tags.length ? indexer.tags.join(", ") : "—"}</td>
+                                                    <td className="p-3 text-right">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => openIndexerEdit(indexer)}
+                                                            className="rounded-md border border-white/10 bg-white/10 px-2 py-1 text-[10px] font-semibold text-white hover:bg-white/20"
+                                                        >
+                                                            Edit
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    ) : null}
                 </div>
             </div>
 
@@ -622,6 +817,36 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
                         <button type="button" onClick={handleClose} className="px-4 py-2 text-xs font-bold text-white/60 hover:text-white">Cancel</button>
                         <button type="submit" disabled={submitting} className="px-6 py-2 rounded-lg bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-600/20">
                             {submitting ? "Saving..." : modal?.mode === "edit" ? "Save Changes" : "Add Service"}
+                        </button>
+                    </div>
+                </form>
+            </Modal>
+            <Modal open={!!editIndexer} title={`Edit Indexer: ${editIndexer?.name ?? ""}`} onClose={() => setEditIndexer(null)}>
+                <form className="space-y-4" onSubmit={saveIndexer}>
+                    <div className="space-y-3">
+                        <label className="flex items-center gap-2 text-sm text-white/80">
+                            <input
+                                type="checkbox"
+                                checked={indexerForm.enable}
+                                onChange={e => setIndexerForm(prev => ({ ...prev, enable: e.target.checked }))}
+                            />
+                            Enable Indexer
+                        </label>
+                        <div className="space-y-1">
+                            <label className="text-sm font-semibold text-white/80">Priority</label>
+                            <input
+                                type="number"
+                                min={0}
+                                value={indexerForm.priority}
+                                onChange={e => setIndexerForm(prev => ({ ...prev, priority: Number(e.target.value) }))}
+                                className="input"
+                            />
+                        </div>
+                    </div>
+                    <div className="flex justify-end gap-3 pt-2 border-t border-white/5">
+                        <button type="button" onClick={() => setEditIndexer(null)} className="px-4 py-2 text-xs font-bold text-white/60 hover:text-white">Cancel</button>
+                        <button type="submit" disabled={savingIndexer} className="px-6 py-2 rounded-lg bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-600/20">
+                            {savingIndexer ? "Saving..." : "Save"}
                         </button>
                     </div>
                 </form>

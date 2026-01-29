@@ -147,11 +147,11 @@ export function OidcSettingsPanel() {
     }
 
     return (
-        <div className="rounded-lg border border-white/10 bg-slate-900/60 p-6 shadow-lg shadow-black/10 space-y-4">
+        <div className="glass-strong rounded-3xl overflow-hidden border border-white/10 shadow-2xl p-6 space-y-4">
             <div className="flex items-center justify-between">
                 <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-muted">OIDC</p>
-                    <h2 className="text-xl font-semibold text-white">OIDC / Pocket ID</h2>
+                    <p className="text-xs uppercase tracking-[0.2em] text-muted">Configuration</p>
+                    <h2 className="text-xl font-semibold text-white">OIDC Settings</h2>
                     <p className="text-sm text-muted">
                         Configure SSO for Pocket ID. Save first, then use the login button on the sign-in page.
                     </p>
@@ -168,7 +168,7 @@ export function OidcSettingsPanel() {
 
                 <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-1 text-sm">
-                        <label className="font-semibold">Issuer URL</label>
+                        <label className="font-semibold text-white">Issuer URL</label>
                         <input
                             className="w-full input"
                             placeholder="https://pocket-id.example.com"
@@ -178,7 +178,7 @@ export function OidcSettingsPanel() {
                         <p className="text-xs text-muted">Base URL for your Pocket ID issuer.</p>
                     </div>
                     <div className="space-y-1 text-sm">
-                        <label className="font-semibold">Client ID</label>
+                        <label className="font-semibold text-white">Client ID</label>
                         <input
                             className="w-full input"
                             value={config.clientId}
@@ -189,7 +189,7 @@ export function OidcSettingsPanel() {
 
                 <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-1 text-sm">
-                        <label className="font-semibold">Client Secret</label>
+                        <label className="font-semibold text-white">Client Secret</label>
                         <input
                             className="w-full input"
                             type="password"
@@ -199,7 +199,7 @@ export function OidcSettingsPanel() {
                         <p className="text-xs text-muted">Leave blank to keep the current secret.</p>
                     </div>
                     <div className="space-y-1 text-sm">
-                        <label className="font-semibold">Redirect URI (optional)</label>
+                        <label className="font-semibold text-white">Redirect URI (optional)</label>
                         <input
                             className="w-full input"
                             placeholder="https://your-app/api/auth/oidc/callback"
@@ -207,7 +207,7 @@ export function OidcSettingsPanel() {
                             onChange={e => setConfig({ ...config, redirectUri: e.target.value })}
                         />
                         <p className="text-xs text-muted">
-                            Leave blank to use the app base URL + <code>/api/auth/oidc/callback</code>.
+                            Leave blank to use the app base URL + <code className="text-indigo-300">/api/auth/oidc/callback</code>.
                         </p>
                     </div>
                 </div>
@@ -301,35 +301,41 @@ export function OidcSettingsPanel() {
                     </div>
                 </div>
 
-                <div className="grid gap-3 md:grid-cols-2">
-                    <AnimatedCheckbox
-                        id={matchEmailId}
-                        label="Match existing users by email"
-                        checked={config.matchByEmail}
-                        onChange={e => setConfig({ ...config, matchByEmail: e.target.checked })}
-                    />
-                    <AnimatedCheckbox
-                        id={matchUsernameId}
-                        label="Match existing users by username"
-                        checked={config.matchByUsername}
-                        onChange={e => setConfig({ ...config, matchByUsername: e.target.checked })}
-                    />
-                    <AnimatedCheckbox
-                        id={autoCreateId}
-                        label="Auto-create users when no match is found"
-                        checked={config.allowAutoCreate}
-                        onChange={e => setConfig({ ...config, allowAutoCreate: e.target.checked })}
-                    />
-                    <AnimatedCheckbox
-                        id={syncGroupsId}
-                        label="Sync groups from OIDC claim"
-                        checked={config.syncGroups}
-                        onChange={e => setConfig({ ...config, syncGroups: e.target.checked })}
-                    />
+                <div className="border-t border-white/10 pt-4 space-y-3">
+                    <h4 className="text-sm font-semibold text-white">User Matching Options</h4>
+                    <div className="grid gap-3 md:grid-cols-2">
+                        <AnimatedCheckbox
+                            id={matchEmailId}
+                            label="Match existing users by email"
+                            checked={config.matchByEmail}
+                            onChange={e => setConfig({ ...config, matchByEmail: e.target.checked })}
+                        />
+                        <AnimatedCheckbox
+                            id={matchUsernameId}
+                            label="Match existing users by username"
+                            checked={config.matchByUsername}
+                            onChange={e => setConfig({ ...config, matchByUsername: e.target.checked })}
+                        />
+                        <AnimatedCheckbox
+                            id={autoCreateId}
+                            label="Auto-create users when no match is found"
+                            checked={config.allowAutoCreate}
+                            onChange={e => setConfig({ ...config, allowAutoCreate: e.target.checked })}
+                        />
+                        <AnimatedCheckbox
+                            id={syncGroupsId}
+                            label="Sync groups from OIDC claim"
+                            checked={config.syncGroups}
+                            onChange={e => setConfig({ ...config, syncGroups: e.target.checked })}
+                        />
+                    </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                    <button className="btn" disabled={saving || loading}>
+                <div className="flex items-center gap-2 pt-4 border-t border-white/10">
+                    <button
+                        className="btn btn-primary"
+                        disabled={saving || loading}
+                    >
                         {saving ? "Saving…" : "Save OIDC settings"}
                     </button>
                 </div>

@@ -13,9 +13,8 @@ import { MediaInfoBox } from "@/components/Media/MediaInfoBox";
 import { MediaActionMenu } from "@/components/Media/MediaActionMenu";
 import { MediaListButtons } from "@/components/Media/MediaListButtons";
 import { SeriesRequestModal } from "@/components/Requests/SeriesRequestModal";
-import { PlayButton } from "@/components/Media/PlayButton";
 import ButtonWithDropdown from "@/components/Common/ButtonWithDropdown";
-import { ArrowDownTrayIcon, FilmIcon } from "@heroicons/react/24/outline";
+import { ArrowDownTrayIcon } from "@heroicons/react/24/outline";
 import { useTrackView } from "@/hooks/useTrackView";
 import { ShareButton } from "@/components/Media/ShareButton";
 import { useToast } from "@/components/Providers/ToastProvider";
@@ -77,6 +76,7 @@ type Creator = {
 
 type SonarrSeries = {
     monitored?: boolean | null;
+    id?: number | null;
 };
 
 type StreamingProvider = {
@@ -95,11 +95,14 @@ type TvAggregateResponse = {
         availableInJellyfin?: boolean | null;
         availableSeasons?: number[];
         defaultQualityProfileId?: number;
+        prowlarrEnabled?: boolean;
     };
     availableInLibrary?: boolean;
     availableSeasons?: number[];
     isAdmin?: boolean;
     playUrl?: string | null;
+    request?: { id: string; status: string; createdAt: string } | null;
+    requestedSeasons?: Record<number, { requested: number }>;
     manage?: { itemId?: number | string | null; slug?: string | null; baseUrl?: string | null };
 };
 
@@ -242,6 +245,9 @@ export function TvDetailClientNew({
     const [availableSeasonsState, setAvailableSeasonsState] = useState<number[]>(availableSeasons);
     const [seasonAvailabilityCounts, setSeasonAvailabilityCounts] = useState<Record<number, { available: number; total: number }>>({});
     const [loadingSeasonCounts, setLoadingSeasonCounts] = useState(false);
+    const [requestStatusState, setRequestStatusState] = useState<string | null>(null);
+    const [requestedSeasonsState, setRequestedSeasonsState] = useState<Record<number, { requested: number }>>({});
+    const [prowlarrEnabledState, setProwlarrEnabledState] = useState<boolean>(false);
 
     const aggregateParams = new URLSearchParams();
     if (tvdbId) aggregateParams.set("tvdbId", String(tvdbId));
@@ -292,6 +298,9 @@ export function TvDetailClientNew({
             const defaultQualityProfileId = sonarr.defaultQualityProfileId;
             setSelectedQualityProfileId(prev => (prev > 0 ? prev : defaultQualityProfileId));
         }
+        if (typeof sonarr.prowlarrEnabled === "boolean") {
+            setProwlarrEnabledState(sonarr.prowlarrEnabled);
+        }
 
         if (typeof aggregate.availableInLibrary === "boolean") {
             setAvailableInLibraryState(aggregate.availableInLibrary);
@@ -304,6 +313,12 @@ export function TvDetailClientNew({
         }
         if (aggregate.playUrl !== undefined) {
             setPlayUrlState(aggregate.playUrl);
+        }
+        if (aggregate.request !== undefined) {
+            setRequestStatusState(aggregate.request?.status ?? null);
+        }
+        if (aggregate.requestedSeasons && typeof aggregate.requestedSeasons === "object") {
+            setRequestedSeasonsState(aggregate.requestedSeasons);
         }
         if (aggregate.manage) {
             const rawItemId = aggregate.manage.itemId;
@@ -336,7 +351,32 @@ export function TvDetailClientNew({
         [availableSeasonsCount, hasAvailableEpisodes, availableInJellyfinState, availableInLibraryState]);
     const isFullyAvailable = useMemo(() => availableSeasonsCount > 0 && availableSeasonsCount >= totalSeasons, [availableSeasonsCount, totalSeasons]);
     const isPartiallyAvailable = useMemo(() => hasAnyAvailable && !isFullyAvailable, [hasAnyAvailable, isFullyAvailable]);
-    const showManageButton = useMemo(() => (isPartiallyAvailable || isFullyAvailable) && isAdminState && manageItemIdState, [isPartiallyAvailable, isFullyAvailable, isAdminState, manageItemIdState]);
+    const requestLabel = useMemo(() => {
+        if (!requestStatusState) return null;
+        if (requestStatusState === "queued") return "Queued";
+        if (requestStatusState === "pending") return "Pending";
+        if (requestStatusState === "submitted") return "Submitted";
+        return null;
+    }, [requestStatusState]);
+    const showRequestBadge = Boolean(!hasAnyAvailable && requestLabel);
+
+    const actionMenu = (
+        <MediaActionMenu
+            title={tv.name ?? tv.title ?? "Unknown"}
+            mediaType="tv"
+            tmdbId={tv.id}
+            tvdbId={tvdbId ?? undefined}
+            playUrl={playUrlState ?? undefined}
+            trailerUrl={trailerUrl ?? undefined}
+            backdropUrl={backdrop ?? undefined}
+            isAdmin={isAdminState}
+            showReport
+            manageItemId={manageItemIdState ?? null}
+            manageSlug={manageSlugState ?? null}
+            manageBaseUrl={manageBaseUrlState ?? null}
+            prowlarrEnabled={prowlarrEnabledState}
+        />
+    );
 
     const toggleSeason = useCallback(async (seasonNumber: number) => {
         const isExpanded = expandedSeasons.has(seasonNumber);
@@ -918,6 +958,12 @@ export function TvDetailClientNew({
                                 Not monitored
                             </div>
                         )}
+                        {showRequestBadge && requestLabel && (
+                            <div className="inline-flex h-7 items-center gap-1.5 rounded-full border border-sky-400 bg-sky-500 px-3 text-xs font-semibold text-white shadow-sm">
+                                <CheckCircle className="h-4 w-4" />
+                                {requestLabel}
+                            </div>
+                        )}
                     </div>
                     <h1>
                         {tv.name}{" "}
@@ -950,20 +996,7 @@ export function TvDetailClientNew({
                                     backdropPath={backdrop ?? null}
                                     posterUrl={poster ?? null}
                                 />
-                                <MediaActionMenu
-                                    title={tv.name ?? tv.title ?? "Unknown"}
-                                    mediaType="tv"
-                                    tmdbId={tv.id}
-                                    tvdbId={tvdbId ?? undefined}
-                                    playUrl={playUrlState ?? undefined}
-                                    trailerUrl={trailerUrl ?? undefined}
-                                    backdropUrl={backdrop ?? undefined}
-                                    isAdmin={isAdminState}
-                                    showReport
-                                    manageItemId={showManageButton ? manageItemIdState ?? null : null}
-                                    manageSlug={showManageButton ? manageSlugState ?? null : null}
-                                    manageBaseUrl={showManageButton ? manageBaseUrlState ?? null : null}
-                                />
+                                {actionMenu}
                                 {isPartiallyAvailable && canRequestSeries && (
                                     <>
                                         <ButtonWithDropdown
@@ -979,6 +1012,7 @@ export function TvDetailClientNew({
                                             open={requestModalOpen}
                                             onClose={() => setRequestModalOpen(false)}
                                             tmdbId={tv.id}
+                                            tvdbId={tvdbId ?? undefined}
                                             qualityProfiles={qualityProfilesState}
                                             defaultQualityProfileId={selectedQualityProfileId}
                                             requestsBlocked={requestsBlockedState}
@@ -986,6 +1020,9 @@ export function TvDetailClientNew({
                                             posterUrl={poster}
                                             backdropUrl={backdrop}
                                             isLoading={!requestInfoLoaded}
+                                            isAdmin={isAdminState}
+                                            prowlarrEnabled={prowlarrEnabledState}
+                                            serviceItemId={existingSeriesState?.id ?? null}
                                             onRequestPlaced={() => {
                                                 setRequestModalOpen(false);
                                                 router.refresh();
@@ -1004,17 +1041,7 @@ export function TvDetailClientNew({
                                     backdropPath={backdrop ?? null}
                                     posterUrl={poster ?? null}
                                 />
-                                {trailerUrl ? (
-                                    <PlayButton
-                                        links={[
-                                            {
-                                                text: "Watch Trailer",
-                                                url: trailerUrl,
-                                                svg: <FilmIcon />
-                                            }
-                                        ]}
-                                    />
-                                ) : null}
+                                {actionMenu}
                                 {canRequestSeries && (
                                     <>
                                         <ButtonWithDropdown
@@ -1030,6 +1057,7 @@ export function TvDetailClientNew({
                                             open={requestModalOpen}
                                             onClose={() => setRequestModalOpen(false)}
                                             tmdbId={tv.id}
+                                            tvdbId={tvdbId ?? undefined}
                                             qualityProfiles={qualityProfilesState}
                                             defaultQualityProfileId={selectedQualityProfileId}
                                             requestsBlocked={requestsBlockedState}
@@ -1037,6 +1065,9 @@ export function TvDetailClientNew({
                                             posterUrl={poster}
                                             backdropUrl={backdrop}
                                             isLoading={!requestInfoLoaded}
+                                            isAdmin={isAdminState}
+                                            prowlarrEnabled={prowlarrEnabledState}
+                                            serviceItemId={existingSeriesState?.id ?? null}
                                             onRequestPlaced={() => {
                                                 setRequestModalOpen(false);
                                                 router.refresh();
@@ -1127,6 +1158,7 @@ export function TvDetailClientNew({
                                     episodes={seasonEpisodes[season.season_number] || []}
                                     checkedEpisodes={checkedEpisodes[season.season_number] ?? new Set()}
                                     availabilityCounts={seasonAvailabilityCounts[season.season_number]}
+                                    requestCounts={requestedSeasonsState[season.season_number]}
                                     onToggleSeason={toggleSeason}
                                     onToggleAllInSeason={toggleAllInSeason}
                                     onToggleEpisode={toggleEpisode}

@@ -1,10 +1,17 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { getUser } from "@/auth";
-import { getUserWithHash, getCachedJellyfinSeriesItemId, hasCachedEpisodeAvailability, getAvailableSeasons } from "@/db";
+import {
+  getUserWithHash,
+  getCachedJellyfinSeriesItemId,
+  hasCachedEpisodeAvailability,
+  getAvailableSeasons,
+  findActiveRequestByTmdb,
+  listActiveEpisodeRequestItemsByTmdb
+} from "@/db";
 import { hasAssignedNotificationEndpoints } from "@/lib/notifications";
 import { listSonarrQualityProfiles, getSeriesByTmdbId, getSeriesByTvdbId } from "@/lib/sonarr";
-import { getActiveMediaService } from "@/lib/media-services";
+import { getActiveMediaService, hasActiveMediaService } from "@/lib/media-services";
 import { getJellyfinItemId } from "@/lib/jellyfin";
 import { getJellyfinPlayUrl } from "@/lib/jellyfin-links";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
@@ -134,6 +141,31 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
   }
 
   const details = includeDetails ? await getTvDetailAggregate(tmdbId) : null;
+  const request = await withCache(
+    `agg:requests:tv:${tmdbId}`,
+    30 * 1000,
+    () => findActiveRequestByTmdb({ requestType: "episode", tmdbId }).catch(() => null)
+  );
+  const requestedSeasons = await withCache(
+    `agg:requests:tv:seasons:${tmdbId}`,
+    30 * 1000,
+    async () => {
+      const items = await listActiveEpisodeRequestItemsByTmdb(tmdbId).catch(() => []);
+      const counts: Record<number, { requested: number }> = {};
+      for (const item of items) {
+        const seasonNumber = Number(item.season);
+        if (!Number.isFinite(seasonNumber) || seasonNumber <= 0) continue;
+        if (!counts[seasonNumber]) counts[seasonNumber] = { requested: 0 };
+        counts[seasonNumber].requested += 1;
+      }
+      return counts;
+    }
+  );
+  const prowlarrEnabled = await withCache(
+    "agg:prowlarr:enabled",
+    60 * 1000,
+    () => hasActiveMediaService("prowlarr").catch(() => false)
+  );
 
   return cacheableJsonResponseWithETag(req,
     {
@@ -143,6 +175,10 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
       availableInLibrary: availableInJellyfin === true || sonarrHasFiles,
       availableSeasons,
       playUrl,
+      request: request
+        ? { id: request.id, status: request.status, createdAt: request.created_at }
+        : null,
+      requestedSeasons,
       manage: {
         itemId: isAdmin ? existingSeriesSummary?.id ?? null : null,
         slug: isAdmin ? existingSeriesSummary?.titleSlug ?? null : null,
@@ -155,7 +191,8 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
         defaultQualityProfileId,
         requestsBlocked,
         availableInJellyfin,
-        availableSeasons
+        availableSeasons,
+        prowlarrEnabled
       },
       details
     },

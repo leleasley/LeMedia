@@ -116,13 +116,12 @@ export function NotificationsTabs() {
     const pathname = usePathname();
 
     return (
-        <div className="mb-6">
+        <div className="rounded-lg border border-white/10 bg-slate-900/60 p-2">
             <div
-                className=""
                 role="tablist"
                 aria-label="Notification agents"
             >
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:flex md:flex-wrap">
+                <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:flex md:flex-wrap">
                 {notificationTypes.map((type) => {
                     const isActive = pathname?.includes(type.path);
                     const Icon = type.icon;
@@ -132,10 +131,10 @@ export function NotificationsTabs() {
                             key={type.id}
                             href={type.path}
                             className={cn(
-                                "flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all",
+                                "flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                                 isActive
-                                    ? "bg-indigo-500/20 text-indigo-300 ring-1 ring-indigo-500/50"
-                                    : "bg-white/5 text-muted hover:bg-white/10 hover:text-white"
+                                    ? "bg-indigo-600 text-white"
+                                    : "text-white/60 hover:bg-white/5 hover:text-white"
                             )}
                             aria-current={isActive ? "page" : undefined}
                             role="tab"
