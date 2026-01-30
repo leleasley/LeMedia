@@ -78,11 +78,17 @@ export async function searchProwlarr(
 export function mapProwlarrResultToRow(release: any) {
   const title = String(release?.title ?? release?.releaseTitle ?? "");
   const quality = String(release?.quality?.quality?.name ?? release?.quality?.name ?? "");
+  const rawYear = release?.year ?? release?.movieYear ?? release?.movie?.year ?? null;
+  const inferredYear = rawYear ? Number(rawYear) : (() => {
+    const match = title.match(/\b(19|20)\d{2}\b/);
+    return match ? Number(match[0]) : null;
+  })();
   return {
     guid: release?.guid ?? release?.downloadUrl ?? "",
     downloadUrl: release?.downloadUrl ?? release?.downloadUri ?? null,
     indexerId: release?.indexerId ?? null,
     title,
+    year: inferredYear,
     indexer: release?.indexer ?? release?.indexerName ?? "",
     protocol: String(release?.protocol ?? release?.downloadProtocol ?? ""),
     infoUrl: release?.infoUrl ?? release?.indexerUrl ?? "",

@@ -8,23 +8,26 @@ export function useIsApple(): boolean | null {
   const [isApple, setIsApple] = useState<boolean | null>(null);
 
   useEffect(() => {
-    if (typeof window === 'undefined' || typeof navigator === 'undefined') {
-      setIsApple(false);
-      return;
-    }
+    const id = window.requestAnimationFrame(() => {
+      if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+        setIsApple(false);
+        return;
+      }
 
-    const userAgent = navigator.userAgent || navigator.vendor || '';
-    const platform = navigator.platform || '';
+      const userAgent = navigator.userAgent || navigator.vendor || '';
+      const platform = navigator.platform || '';
 
-    // Check for iOS devices (iPhone, iPad, iPod)
-    const isIOS = /iPad|iPhone|iPod/.test(userAgent) ||
-      // iPad on iOS 13+ reports as MacIntel but has touch
-      (platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      // Check for iOS devices (iPhone, iPad, iPod)
+      const isIOS = /iPad|iPhone|iPod/.test(userAgent) ||
+        // iPad on iOS 13+ reports as MacIntel but has touch
+        (platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
-    // Check for macOS (for consistency, though native selects work well there too)
-    const isMacOS = /Mac/.test(platform) && !isIOS;
+      // Check for macOS (for consistency, though native selects work well there too)
+      const isMacOS = /Mac/.test(platform) && !isIOS;
 
-    setIsApple(isIOS || isMacOS);
+      setIsApple(isIOS || isMacOS);
+    });
+    return () => window.cancelAnimationFrame(id);
   }, []);
 
   return isApple;
@@ -38,20 +41,23 @@ export function useIsIOS(): boolean | null {
   const [isIOS, setIsIOS] = useState<boolean | null>(null);
 
   useEffect(() => {
-    if (typeof window === 'undefined' || typeof navigator === 'undefined') {
-      setIsIOS(false);
-      return;
-    }
+    const id = window.requestAnimationFrame(() => {
+      if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+        setIsIOS(false);
+        return;
+      }
 
-    const userAgent = navigator.userAgent || navigator.vendor || '';
-    const platform = navigator.platform || '';
+      const userAgent = navigator.userAgent || navigator.vendor || '';
+      const platform = navigator.platform || '';
 
-    // Check for iOS devices (iPhone, iPad, iPod)
-    const iOS = /iPad|iPhone|iPod/.test(userAgent) ||
-      // iPad on iOS 13+ reports as MacIntel but has touch
-      (platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      // Check for iOS devices (iPhone, iPad, iPod)
+      const iOS = /iPad|iPhone|iPod/.test(userAgent) ||
+        // iPad on iOS 13+ reports as MacIntel but has touch
+        (platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
-    setIsIOS(iOS);
+      setIsIOS(iOS);
+    });
+    return () => window.cancelAnimationFrame(id);
   }, []);
 
   return isIOS;
@@ -64,15 +70,18 @@ export function useIsTouchDevice(): boolean | null {
   const [isTouch, setIsTouch] = useState<boolean | null>(null);
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      setIsTouch(false);
-      return;
-    }
+    const id = window.requestAnimationFrame(() => {
+      if (typeof window === 'undefined') {
+        setIsTouch(false);
+        return;
+      }
 
-    const hasTouch = 'ontouchstart' in window ||
-      navigator.maxTouchPoints > 0;
+      const hasTouch = 'ontouchstart' in window ||
+        navigator.maxTouchPoints > 0;
 
-    setIsTouch(hasTouch);
+      setIsTouch(hasTouch);
+    });
+    return () => window.cancelAnimationFrame(id);
   }, []);
 
   return isTouch;

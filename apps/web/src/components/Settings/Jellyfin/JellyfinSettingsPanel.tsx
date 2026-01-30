@@ -258,7 +258,7 @@ export function JellyfinSettingsPanel() {
                     {form.hasApiKey && (
                         <div className="rounded-md bg-sky-500/10 border border-sky-500/20 p-4">
                             <p className="font-semibold text-sky-300 text-sm">Secure Authentication</p>
-                            <p className="text-sm text-muted mt-1">Jellyfin is configured using secure credential-based authentication. Click "Reconfigure" above to update your connection settings.</p>
+                            <p className="text-sm text-muted mt-1">Jellyfin is configured using secure credential-based authentication. Click &quot;Reconfigure&quot; above to update your connection settings.</p>
                         </div>
                     )}
                 </div>
@@ -334,7 +334,7 @@ export function JellyfinSettingsPanel() {
                     ))}
                     {!isLoading && libraries.length === 0 && (
                         <div className="rounded-md border border-white/10 bg-white/5 p-8 text-center">
-                            <p className="text-sm text-muted">No libraries synced yet. Click "Sync Libraries" to get started.</p>
+                            <p className="text-sm text-muted">No libraries synced yet. Click &quot;Sync Libraries&quot; to get started.</p>
                         </div>
                     )}
                 </div>
@@ -358,7 +358,7 @@ export function JellyfinSettingsPanel() {
                     </button>
                 </div>
                 <p className="text-xs text-muted">
-                    "Start scan" detects new content. "Sync Availability Cache" updates episode availability for TV show pages (runs hourly automatically).
+                    &quot;Start scan&quot; detects new content. &quot;Sync Availability Cache&quot; updates episode availability for TV show pages (runs hourly automatically).
                 </p>
                 <div className="rounded-md border border-white/10 bg-white/5 px-4 py-3 text-sm space-y-2">
                     <div className="flex items-center justify-between">

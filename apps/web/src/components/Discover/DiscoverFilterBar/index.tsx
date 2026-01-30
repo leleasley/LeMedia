@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import Image from "next/image";
 import { useLockBodyScroll } from "@/hooks/useLockBodyScroll";
 import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 import { logger } from "@/lib/logger";
@@ -128,22 +129,20 @@ export function DiscoverFilterBar({
     return count;
   }, [filters, defaultRegion]);
 
-  // Stage changes locally while the panel is open; reset draft on open
-  useEffect(() => {
-    if (panelOpen) {
-      setDraftFilters(filters);
-      setStudioQuery(filters.studio?.name ?? "");
-    }
-  }, [panelOpen, filters]);
+  const openPanel = () => {
+    setDraftFilters(filters);
+    setStudioQuery(filters.studio?.name ?? "");
+    setPanelOpen(true);
+  };
 
   useEffect(() => {
     if (!panelOpen) return;
     if (genres.length > 0 && languages.length > 0 && providers.length > 0) return; // Already loaded
 
     let cancelled = false;
-    setIsLoading(true);
 
     async function load() {
+      setIsLoading(true);
       try {
         const region = providerRegion || defaultRegion;
         const [genreRes, langRes, providerRes] = await Promise.all([
@@ -159,17 +158,15 @@ export function DiscoverFilterBar({
           providerRes.json(),
         ]);
 
-        if (!cancelled) {
-          setGenres(genreData.genres ?? []);
-          setLanguages((langData.languages ?? []).filter((l: Language) => l.iso_639_1));
-          setProviders(providerData.results ?? []);
-          setIsLoading(false);
-        }
+        if (cancelled) return;
+        setGenres(genreData.genres ?? []);
+        setLanguages((langData.languages ?? []).filter((l: Language) => l.iso_639_1));
+        setProviders(providerData.results ?? []);
       } catch (error) {
-        if (!cancelled) {
-          logger.error("Failed to load filter data", error);
-          setIsLoading(false);
-        }
+        if (cancelled) return;
+        logger.error("Failed to load filter data", error);
+      } finally {
+        if (!cancelled) setIsLoading(false);
       }
     }
     void load();
@@ -249,11 +246,11 @@ export function DiscoverFilterBar({
       <div className="sm:hidden">
         <div className="flex items-center justify-between mb-3">
           <h1 className="text-xl font-bold text-white">{title}</h1>
-          <button
-            type="button"
-            className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/90 hover:bg-white/10 active:scale-95 transition-all"
-            onClick={() => setPanelOpen(true)}
-          >
+            <button
+              type="button"
+              className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/90 hover:bg-white/10 active:scale-95 transition-all"
+              onClick={openPanel}
+            >
             <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none" aria-hidden="true">
               <path d="M3 5H17L11.5 11V15L8.5 16.5V11L3 5Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
             </svg>
@@ -289,7 +286,7 @@ export function DiscoverFilterBar({
           <button
             type="button"
             className="flex items-center gap-2 rounded border border-gray-700 bg-gray-800/90 px-3 py-2 text-sm text-white hover:border-gray-600 hover:bg-gray-700/90"
-            onClick={() => setPanelOpen(true)}
+            onClick={openPanel}
           >
             <svg className="h-4 w-4" viewBox="0 0 20 20" fill="none" aria-hidden="true">
               <path d="M3 5H17L11.5 11V15L8.5 16.5V11L3 5Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
@@ -472,9 +469,11 @@ export function DiscoverFilterBar({
                                 onClick={() => toggleProvider(provider.provider_id)}
                               >
                                 {provider.logo_path ? (
-                                  <img
+                                  <Image
                                     src={`https://image.tmdb.org/t/p/w45${provider.logo_path}`}
                                     alt={provider.provider_name}
+                                    width={20}
+                                    height={20}
                                     className="h-5 w-5 rounded bg-gray-800 object-contain"
                                   />
                                 ) : (

@@ -96,17 +96,32 @@ export async function GET(req: NextRequest) {
     let releases: any[] = [];
     let usedProwlarr = false;
     let resolvedId: number | null = typeof id === "number" && Number.isFinite(id) ? id : null;
+    const yearNumber = year ? Number.parseInt(year, 10) : null;
 
-    if (preferProwlarr) {
+    const radarrService = mediaType === "movie"
+      ? await getActiveMediaService("radarr").catch(() => null)
+      : null;
+    const sonarrService = mediaType === "tv"
+      ? await getActiveMediaService("sonarr").catch(() => null)
+      : null;
+
+    if (mediaType === "movie" && !resolvedId && tmdbId && radarrService) {
+      const movie = await getMovieByTmdbId(tmdbId).catch(() => null);
+      resolvedId = movie?.id ?? null;
+    }
+    if (mediaType === "tv" && !resolvedId && (tvdbId || tmdbId) && sonarrService) {
+      const byTvdb = tvdbId ? await getSeriesByTvdbId(tvdbId).catch(() => null) : null;
+      const byTmdb = !byTvdb && tmdbId ? await getSeriesByTmdbId(tmdbId).catch(() => null) : null;
+      resolvedId = (byTvdb ?? byTmdb)?.id ?? null;
+    }
+
+    const shouldUseProwlarr = Boolean(preferProwlarr && !resolvedId);
+
+    if (shouldUseProwlarr) {
       const prowlarrService = await getActiveMediaService("prowlarr").catch(() => null);
       if (!prowlarrService) return NextResponse.json({ error: "No Prowlarr service configured" }, { status: 400 });
 
       if (mediaType === "movie") {
-        const radarrService = await getActiveMediaService("radarr").catch(() => null);
-        if (!resolvedId && tmdbId && radarrService) {
-          const movie = await getMovieByTmdbId(tmdbId).catch(() => null);
-          resolvedId = movie?.id ?? null;
-        }
         const imdbId = tmdbId
           ? await getMovieExternalIds(tmdbId).then(res => res?.imdb_id ?? null).catch(() => null)
           : null;
@@ -115,34 +130,40 @@ export async function GET(req: NextRequest) {
           tmdbId ? `tmdb:${tmdbId}` : "",
           title ? (year ? `${title} ${year}` : title) : ""
         ].filter(Boolean);
+        let usedTitleSearch = false;
         for (const query of searchQueries) {
           releases = await searchProwlarr(query, prowlarrService, releaseTimeout, {
             type: "movie",
             limit: 100
           }).catch(() => []);
-          if (releases.length) break;
+          if (releases.length) {
+            usedTitleSearch = !query.startsWith("imdb:") && !query.startsWith("tmdb:");
+            break;
+          }
         }
-        releases = filterProwlarrByIds(releases, { imdbId, tmdbId });
+        if (usedTitleSearch) {
+          releases = filterProwlarrByIds(releases, { imdbId, tmdbId });
+        }
       } else {
-        const sonarrService = await getActiveMediaService("sonarr").catch(() => null);
-        if (!resolvedId && (tvdbId || tmdbId) && sonarrService) {
-          const byTvdb = tvdbId ? await getSeriesByTvdbId(tvdbId).catch(() => null) : null;
-          const byTmdb = !byTvdb && tmdbId ? await getSeriesByTmdbId(tmdbId).catch(() => null) : null;
-          resolvedId = (byTvdb ?? byTmdb)?.id ?? null;
-        }
         const searchQueries = [
           tvdbId ? `tvdb:${tvdbId}` : "",
           tmdbId ? `tmdb:${tmdbId}` : "",
           title ? title : ""
         ].filter(Boolean);
+        let usedTitleSearch = false;
         for (const query of searchQueries) {
           releases = await searchProwlarr(query, prowlarrService, releaseTimeout, {
             type: "tv",
             limit: 100
           }).catch(() => []);
-          if (releases.length) break;
+          if (releases.length) {
+            usedTitleSearch = !query.startsWith("tvdb:") && !query.startsWith("tmdb:");
+            break;
+          }
         }
-        releases = filterProwlarrByIds(releases, { tmdbId, tvdbId });
+        if (usedTitleSearch) {
+          releases = filterProwlarrByIds(releases, { tmdbId, tvdbId });
+        }
       }
 
       if (!releases.length && title) {
@@ -155,7 +176,7 @@ export async function GET(req: NextRequest) {
 
       usedProwlarr = true;
     } else if (mediaType === "movie") {
-      const service = await getActiveMediaService("radarr").catch(() => null);
+      const service = radarrService;
 
       if (service) {
         const fetcher = createRadarrFetcher(service.base_url, service.apiKey, releaseTimeout);
@@ -229,7 +250,7 @@ export async function GET(req: NextRequest) {
         }
       }
     } else {
-      const service = await getActiveMediaService("sonarr").catch(() => null);
+      const service = sonarrService;
 
       if (service) {
         const fetcher = createSonarrFetcher(service.base_url, service.apiKey, releaseTimeout);
@@ -273,6 +294,16 @@ export async function GET(req: NextRequest) {
         }).catch(() => []);
         usedProwlarr = Array.isArray(releases) && releases.length > 0;
       }
+    }
+
+    if (yearNumber && Number.isFinite(yearNumber) && usedProwlarr) {
+      const yearPattern = new RegExp(`\\b${yearNumber}\\b`);
+      releases = releases.filter((release) => {
+        const rawYear = release?.year ?? release?.movieYear ?? release?.movie?.year ?? null;
+        if (rawYear && Number(rawYear) === yearNumber) return true;
+        const releaseTitle = String(release?.title ?? release?.releaseTitle ?? "");
+        return yearPattern.test(releaseTitle);
+      });
     }
 
     const items = usedProwlarr ? releases.map(mapProwlarrResultToRow) : releases.map(mapReleaseToRow);

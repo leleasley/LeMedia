@@ -5,41 +5,26 @@ import { MediaGrid } from "@/components/Media/MediaGrid";
 import { buildDiscoverSearchParams, parseDiscoverFilters } from "@/lib/discover-filters";
 import { createTmdbListFetcher } from "@/lib/tmdb-client";
 import type { MediaGridPage } from "@/types/media-grid";
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useCallback, useMemo } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 export default function TvPageClient({ initialData }: { initialData?: MediaGridPage[] | null }) {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
-  const lastSearchRef = useRef<string>(searchParams.toString());
-  const isInitialMount = useRef(true);
-  const [filters, setFilters] = useState<DiscoverFiltersState>(() =>
-    parseDiscoverFilters(searchParams, "tv")
+  const filters = useMemo(
+    () => parseDiscoverFilters(searchParams, "tv"),
+    [searchParams]
   );
 
-  // Sync filters FROM URL on mount and when URL changes
-  useEffect(() => {
-    const current = searchParams.toString();
-    if (current === lastSearchRef.current) return;
-    lastSearchRef.current = current;
-    setFilters(parseDiscoverFilters(searchParams, "tv"));
-  }, [searchParams]);
-
-  // Sync filters TO URL, but debounce to prevent loops
-  useEffect(() => {
-    if (isInitialMount.current) {
-      isInitialMount.current = false;
-      return;
-    }
-
-    const nextParams = buildDiscoverSearchParams(filters, "tv");
+  const handleFilterChange = useCallback((nextFilters: DiscoverFiltersState) => {
+    const nextParams = buildDiscoverSearchParams(nextFilters, "tv");
     const next = nextParams.toString();
-    if (next === lastSearchRef.current) return;
+    const current = searchParams.toString();
+    if (next === current) return;
     const url = next ? `${pathname}?${next}` : pathname;
-    lastSearchRef.current = next;
     router.replace(url, { scroll: false });
-  }, [filters, pathname, router]);
+  }, [pathname, router, searchParams]);
 
   const discoverParams = useMemo(() => {
     const params: Record<string, string> = {};
@@ -95,7 +80,7 @@ export default function TvPageClient({ initialData }: { initialData?: MediaGridP
 
   return (
     <div className="pb-4 md:pb-8">
-      <DiscoverFilterBar type="tv" title="TV Shows" filters={filters} onChange={setFilters} />
+      <DiscoverFilterBar type="tv" title="TV Shows" filters={filters} onChange={handleFilterChange} />
       <MediaGrid
         fetcher={createTmdbListFetcher("/api/v1/tmdb/discover/tv")}
         type="tv"

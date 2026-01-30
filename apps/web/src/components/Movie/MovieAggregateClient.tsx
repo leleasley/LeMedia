@@ -101,7 +101,8 @@ export function MovieActionButtons({
   trailerUrl,
   backdropUrl,
   prefetched,
-  posterUrl
+  posterUrl,
+  year
 }: {
   tmdbId: number;
   title: string;
@@ -109,6 +110,7 @@ export function MovieActionButtons({
   backdropUrl?: string | null;
   prefetched?: MovieAggregate;
   posterUrl?: string | null;
+  year?: string | number | null;
 }) {
   const { data, isLoading } = useMovieAggregate(tmdbId, title, prefetched);
   const available = Boolean(data?.availableInLibrary);
@@ -172,6 +174,7 @@ export function MovieActionButtons({
             title={title}
             posterUrl={posterUrl}
             backdropUrl={backdropUrl}
+            year={year}
           />
         </>
       )}

@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState, cloneElement, useCallback, useRef, useEffect } from "react";
+import { Fragment, useMemo, useState, cloneElement, useCallback, useRef } from "react";
 import { AlertTriangle, CalendarDays, Clock, Ellipsis, Film, Search, Settings, Sparkles, Tv, Users, X } from "lucide-react";
 import { PrefetchLink } from "@/components/Layout/PrefetchLink";
 import { usePathname } from "next/navigation";
@@ -53,11 +53,20 @@ export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, 
         setTimeout(() => setActiveTab(null), 400);
     }, []);
 
+    const resetDragState = useCallback(() => {
+        setDragOffset(0);
+        setIsDragging(false);
+    }, []);
+
     // Handle menu toggle with haptic feedback
     const handleMenuToggle = useCallback(() => {
         haptic('medium');
-        setIsMenuOpen(prev => !prev);
-    }, []);
+        setIsMenuOpen(prev => {
+            const next = !prev;
+            if (!next) resetDragState();
+            return next;
+        });
+    }, [resetDragState]);
 
     // Drag-to-dismiss handlers
     const handleTouchStart = useCallback((e: React.TouchEvent) => {
@@ -85,17 +94,11 @@ export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, 
         if (dragOffset > 80) {
             haptic('light');
             setIsMenuOpen(false);
+            resetDragState();
+            return;
         }
         setDragOffset(0);
-    }, [isDragging, dragOffset]);
-
-    // Reset drag state when menu closes
-    useEffect(() => {
-        if (!isMenuOpen) {
-            setDragOffset(0);
-            setIsDragging(false);
-        }
-    }, [isMenuOpen]);
+    }, [isDragging, dragOffset, resetDragState]);
 
     const mainLinks = useMemo<NavLink[]>(() => {
         const current = pathname ?? "/";
@@ -141,7 +144,8 @@ export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, 
     const closeMenu = useCallback(() => {
         haptic('light');
         setIsMenuOpen(false);
-    }, []);
+        resetDragState();
+    }, [resetDragState]);
 
     return (
         <div className="md:hidden">

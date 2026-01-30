@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { RefreshCcw, Search, Sparkles, ChevronDown, X, Loader2, Download, Cloud } from "lucide-react";
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { csrfFetch } from "@/lib/csrf-client";
 import { useToast } from "@/components/Providers/ToastProvider";
@@ -10,6 +11,7 @@ import type { UpgradeFinderItem } from "@/lib/upgrade-finder";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useLockBodyScroll } from "@/hooks/useLockBodyScroll";
+import { useIsIOS } from "@/hooks/useIsApple";
 
 const statusStyles: Record<UpgradeFinderItem["upgradeStatus"], { label: string; bg: string; text: string; border: string }> = {
   missing: {
@@ -77,6 +79,7 @@ type ReleaseRow = {
   guid: string;
   indexerId: number | null;
   title: string;
+  year?: number | null;
   indexer: string;
   protocol: string;
   infoUrl: string;
@@ -161,7 +164,8 @@ function InteractiveSearchModal(props: {
 }) {
   const { open, item, releases, isLoading, filter, onFilterChange, onClose, onRefresh, onGrab, grabbingGuid, onLoadMore, total } = props;
   const [releaseSearch, setReleaseSearch] = useState("");
-  useLockBodyScroll(open);
+  const isIOS = useIsIOS();
+  useLockBodyScroll(open, isIOS === true);
 
   useEffect(() => {
     if (!open) return;
@@ -197,7 +201,7 @@ function InteractiveSearchModal(props: {
 
   const modal = (
     <div
-      className="fixed inset-0 z-[1000] flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200"
+      className="fixed inset-0 z-[1000] flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200 touch-auto"
       role="dialog"
       aria-modal="true"
       aria-label="Interactive Search"
@@ -206,18 +210,22 @@ function InteractiveSearchModal(props: {
       }}
     >
       <div
-        className="w-full sm:max-w-6xl h-[92vh] sm:h-[90vh] flex flex-col bg-slate-950 rounded-t-3xl sm:rounded-3xl border-t sm:border border-white/10 shadow-2xl animate-in fade-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200 overflow-hidden"
+        className="w-full sm:max-w-6xl h-[92vh] sm:h-[90vh] flex flex-col bg-slate-950 rounded-t-3xl sm:rounded-3xl border-t sm:border border-white/10 shadow-2xl animate-in fade-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200 overflow-hidden touch-auto"
         onClick={(event) => event.stopPropagation()}
+        onMouseDown={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
       >
         {/* Header with backdrop */}
         <div className="flex-shrink-0 relative overflow-hidden">
           {/* Backdrop image */}
           {item.backdropUrl && (
             <div className="absolute inset-0">
-              <img
+              <Image
                 src={item.backdropUrl}
                 alt=""
-                className="w-full h-full object-cover object-top"
+                fill
+                sizes="(max-width: 640px) 100vw, 1200px"
+                className="object-cover object-top"
               />
               <div className="absolute inset-0 bg-gradient-to-b from-slate-950/60 via-slate-950/80 to-slate-950" />
               <div className="absolute inset-0 bg-gradient-to-r from-slate-950/90 via-transparent to-slate-950/90" />
@@ -238,11 +246,13 @@ function InteractiveSearchModal(props: {
               <div className="flex items-start gap-4 min-w-0 flex-1">
                 {/* Poster thumbnail */}
                 {item.posterUrl && (
-                  <div className="hidden sm:block flex-shrink-0 w-16 h-24 rounded-xl overflow-hidden ring-2 ring-white/20 shadow-xl">
-                    <img
+                  <div className="hidden sm:block flex-shrink-0 w-16 h-24 rounded-xl overflow-hidden ring-2 ring-white/20 shadow-xl relative">
+                    <Image
                       src={item.posterUrl}
                       alt={item.title}
-                      className="w-full h-full object-cover"
+                      width={64}
+                      height={96}
+                      className="h-full w-full object-cover"
                     />
                   </div>
                 )}
@@ -298,7 +308,11 @@ function InteractiveSearchModal(props: {
 
             {/* Search and filters */}
             <div className="flex flex-col sm:flex-row gap-3">
-              <div className="relative flex-1">
+              <div
+                className="relative flex-1"
+                onMouseDown={(event) => event.stopPropagation()}
+                onPointerDown={(event) => event.stopPropagation()}
+              >
                 <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-white/50" />
                 <input
                   value={releaseSearch}
@@ -381,6 +395,7 @@ function InteractiveSearchModal(props: {
                                    release.title.toLowerCase().includes("2160") ||
                                    release.quality.toLowerCase().includes("4k") ||
                                    release.quality.toLowerCase().includes("2160");
+                      const displayTitle = release.year ? `${release.title} (${release.year})` : release.title;
                       const historyDisplay = getHistoryDisplay(release.history);
 
                       return (
@@ -420,9 +435,9 @@ function InteractiveSearchModal(props: {
                                     "font-semibold text-sm leading-tight line-clamp-1 group-hover:text-orange-100 transition-colors",
                                     is4k ? "text-orange-200" : "text-white"
                                   )}
-                                  title={release.title}
+                                  title={displayTitle}
                                 >
-                                  {release.title}
+                                  {displayTitle}
                                 </div>
                                 <div className="flex items-center gap-2 mt-0.5 text-xs text-white/40">
                                   {release.infoUrl ? (
@@ -490,6 +505,7 @@ function InteractiveSearchModal(props: {
                                release.title.toLowerCase().includes("2160") ||
                                release.quality.toLowerCase().includes("4k") ||
                                release.quality.toLowerCase().includes("2160");
+                  const displayTitle = release.year ? `${release.title} (${release.year})` : release.title;
                   const historyDisplay = getHistoryDisplay(release.history);
 
                   return (
@@ -530,7 +546,7 @@ function InteractiveSearchModal(props: {
                           "font-semibold text-base leading-snug mb-3 group-hover:text-orange-100 transition-colors",
                           is4k ? "text-orange-200" : "text-white"
                         )}>
-                          {release.title}
+                          {displayTitle}
                         </div>
 
                         {/* Stats row */}
@@ -1009,11 +1025,12 @@ export function UpgradeFinderClient({ initialItems }: { initialItems: UpgradeFin
                       <div className="flex items-center gap-3">
                         <div className="relative w-10 h-14 rounded overflow-hidden bg-black/20 shadow-sm border border-white/5 flex items-center justify-center">
                           {item.posterUrl ? (
-                            <img
+                            <Image
                               src={item.posterUrl}
                               alt={item.title}
+                              width={40}
+                              height={56}
                               className="h-full w-full object-cover"
-                              loading="lazy"
                             />
                           ) : (
                             <span className="text-lg">🎬</span>
@@ -1115,13 +1132,14 @@ export function UpgradeFinderClient({ initialItems }: { initialItems: UpgradeFin
               >
                 {/* Header with title and status badges */}
                 <div className="flex items-start gap-3">
-                  <div className="flex-shrink-0 w-12 h-16 rounded overflow-hidden bg-black/20 shadow-sm border border-white/5 flex items-center justify-center">
+                  <div className="flex-shrink-0 w-12 h-16 rounded overflow-hidden bg-black/20 shadow-sm border border-white/5 flex items-center justify-center relative">
                     {item.posterUrl ? (
-                      <img
+                      <Image
                         src={item.posterUrl}
                         alt={item.title}
+                        width={48}
+                        height={64}
                         className="h-full w-full object-cover"
-                        loading="lazy"
                       />
                     ) : (
                       <span className="text-xl">🎬</span>

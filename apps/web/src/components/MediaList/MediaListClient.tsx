@@ -40,6 +40,8 @@ export function MediaListClient({ listType }: { listType: "favorite" | "watchlis
 
   const rowCount = Math.ceil(items.length / columns);
   const useVirtual = items.length > 60;
+  // TanStack Virtual returns functions that React Compiler can't memoize safely.
+  // eslint-disable-next-line react-hooks/incompatible-library
   const rowVirtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => parentRef.current ?? document.scrollingElement,

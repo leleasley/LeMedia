@@ -357,7 +357,7 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
         } finally {
             setTesting(false);
         }
-    }, [computedBaseUrl, form.apiKey, form.type, modal]);
+    }, [computedBaseUrl, form.apiKey, form.type, form.username, modal, needsUsername]);
 
     const pingService = useCallback(async (service: MediaService) => {
         setStatusMap(prev => ({ ...prev, [service.id]: { state: "checking" } }));

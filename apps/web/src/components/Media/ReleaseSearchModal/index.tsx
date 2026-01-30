@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { RefreshCcw, Search, X, Loader2, Download, Cloud } from "lucide-react";
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { csrfFetch } from "@/lib/csrf-client";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { useLockBodyScroll } from "@/hooks/useLockBodyScroll";
+import { useIsIOS } from "@/hooks/useIsApple";
 
 const PAGE_SIZE = 50;
 
@@ -15,6 +17,7 @@ type ReleaseRow = {
   downloadUrl?: string | null;
   indexerId: number | null;
   title: string;
+  year?: number | null;
   indexer: string;
   protocol: string;
   infoUrl: string;
@@ -85,6 +88,7 @@ export function ReleaseSearchModal(props: {
 }) {
   const { open, onClose, mediaType, mediaId, tmdbId, tvdbId, title, year, posterUrl, backdropUrl, preferProwlarr } = props;
   const toast = useToast();
+  const isIOS = useIsIOS();
   const [releases, setReleases] = useState<ReleaseRow[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [releaseFilter, setReleaseFilter] = useState<ReleaseFilter>("all");
@@ -94,7 +98,7 @@ export function ReleaseSearchModal(props: {
   const [grabbingKey, setGrabbingKey] = useState<string | null>(null);
   const [resolvedMediaId, setResolvedMediaId] = useState<number | null>(mediaId);
 
-  useLockBodyScroll(open);
+  useLockBodyScroll(open, isIOS === true);
 
   useEffect(() => {
     if (!open) return;
@@ -105,7 +109,7 @@ export function ReleaseSearchModal(props: {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, onClose]);
 
-  const loadReleases = async ({ offset, append }: { offset: number; append: boolean }) => {
+  const loadReleases = useCallback(async ({ offset, append }: { offset: number; append: boolean }) => {
     setIsLoading(true);
     try {
       const params = new URLSearchParams({
@@ -119,7 +123,6 @@ export function ReleaseSearchModal(props: {
       if (year !== undefined && year !== null && String(year).trim() !== "") {
         params.set("year", String(year));
       }
-      if (year) params.set("year", String(year));
       if (mediaId) params.set("id", String(mediaId));
       if (!mediaId && tmdbId) params.set("tmdbId", String(tmdbId));
       if (!mediaId && tvdbId) params.set("tvdbId", String(tvdbId));
@@ -138,7 +141,7 @@ export function ReleaseSearchModal(props: {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [mediaId, mediaType, preferProwlarr, title, tmdbId, tvdbId, year, toast]);
 
   useEffect(() => {
     if (!open) return;
@@ -149,7 +152,7 @@ export function ReleaseSearchModal(props: {
     setReleaseFilter("all");
     setResolvedMediaId(mediaId ?? null);
     void loadReleases({ offset: 0, append: false });
-  }, [open, mediaId, mediaType, tmdbId, tvdbId]);
+  }, [open, mediaId, mediaType, tmdbId, tvdbId, loadReleases]);
 
   if (!open) return null;
 
@@ -226,7 +229,7 @@ export function ReleaseSearchModal(props: {
 
   const modal = (
     <div
-      className="fixed inset-0 z-[1100] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200"
+      className="fixed inset-0 z-[1100] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200 touch-auto"
       role="dialog"
       aria-modal="true"
       aria-label="Interactive Search"
@@ -235,16 +238,18 @@ export function ReleaseSearchModal(props: {
       }}
     >
       <div
-        className="w-full sm:max-w-6xl h-[92vh] sm:h-[90vh] flex flex-col bg-slate-950 rounded-t-3xl sm:rounded-3xl border-t sm:border border-white/10 shadow-2xl animate-in fade-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200 overflow-hidden"
+        className="w-full sm:max-w-6xl h-[92vh] sm:h-[90vh] flex flex-col bg-slate-950 rounded-t-3xl sm:rounded-3xl border-t sm:border border-white/10 shadow-2xl animate-in fade-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200 overflow-hidden touch-auto"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex-shrink-0 relative overflow-hidden">
           {backdropUrl ? (
             <div className="absolute inset-0">
-              <img
+              <Image
                 src={backdropUrl}
                 alt=""
-                className="w-full h-full object-cover object-top"
+                fill
+                sizes="(max-width: 640px) 100vw, 1200px"
+                className="object-cover object-top"
               />
               <div className="absolute inset-0 bg-gradient-to-b from-slate-950/60 via-slate-950/80 to-slate-950" />
               <div className="absolute inset-0 bg-gradient-to-r from-slate-950/90 via-transparent to-slate-950/90" />
@@ -261,11 +266,13 @@ export function ReleaseSearchModal(props: {
             <div className="flex items-start justify-between gap-4 mb-4">
               <div className="flex items-start gap-4 min-w-0 flex-1">
                 {posterUrl ? (
-                  <div className="hidden sm:block flex-shrink-0 w-16 h-24 rounded-xl overflow-hidden ring-2 ring-white/20 shadow-xl">
-                    <img
+                  <div className="hidden sm:block flex-shrink-0 w-16 h-24 rounded-xl overflow-hidden ring-2 ring-white/20 shadow-xl relative">
+                    <Image
                       src={posterUrl}
                       alt={title}
-                      className="w-full h-full object-cover"
+                      width={64}
+                      height={96}
+                      className="h-full w-full object-cover"
                     />
                   </div>
                 ) : null}
@@ -322,9 +329,13 @@ export function ReleaseSearchModal(props: {
               <div className="relative flex-1">
                 <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-white/50" />
                 <input
+                  autoFocus
                   value={releaseSearch}
                   onChange={(event) => setReleaseSearch(event.target.value)}
                   placeholder="Search releases..."
+                  inputMode="search"
+                  autoCapitalize="none"
+                  autoCorrect="off"
                   className="w-full h-11 rounded-xl border border-white/20 bg-white/10 backdrop-blur-sm py-2 pl-10 pr-4 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-orange-500/40 focus:border-orange-500/40 transition-all"
                 />
               </div>
@@ -398,6 +409,7 @@ export function ReleaseSearchModal(props: {
                                    release.title.toLowerCase().includes("2160") ||
                                    release.quality.toLowerCase().includes("4k") ||
                                    release.quality.toLowerCase().includes("2160");
+                      const displayTitle = release.year ? `${release.title} (${release.year})` : release.title;
                       const historyDisplay = getHistoryDisplay(release.history);
                       const isTorrent = release.protocol?.toLowerCase() === "torrent";
 
@@ -438,9 +450,9 @@ export function ReleaseSearchModal(props: {
                                     "font-semibold text-sm leading-tight truncate group-hover:text-orange-100 transition-colors",
                                     is4k ? "text-orange-200" : "text-white"
                                   )}
-                                  title={release.title}
+                                  title={displayTitle}
                                 >
-                                  {release.title}
+                                  {displayTitle}
                                 </div>
                                 <div className="flex items-center gap-2 mt-0.5 text-xs text-white/40">
                                   {release.infoUrl ? (
@@ -507,6 +519,7 @@ export function ReleaseSearchModal(props: {
                                release.title.toLowerCase().includes("2160") ||
                                release.quality.toLowerCase().includes("4k") ||
                                release.quality.toLowerCase().includes("2160");
+                  const displayTitle = release.year ? `${release.title} (${release.year})` : release.title;
                   const historyDisplay = getHistoryDisplay(release.history);
                   const isTorrent = release.protocol?.toLowerCase() === "torrent";
 
@@ -545,7 +558,7 @@ export function ReleaseSearchModal(props: {
                           "font-semibold text-base leading-snug mb-3 group-hover:text-orange-100 transition-colors",
                           is4k ? "text-orange-200" : "text-white"
                         )}>
-                          {release.title}
+                          {displayTitle}
                         </div>
 
                         <div className="flex items-center gap-4 mb-4 text-sm">

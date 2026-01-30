@@ -378,22 +378,6 @@ export function TvDetailClientNew({
         />
     );
 
-    const toggleSeason = useCallback(async (seasonNumber: number) => {
-        const isExpanded = expandedSeasons.has(seasonNumber);
-        if (isExpanded) {
-            const next = new Set(expandedSeasons);
-            next.delete(seasonNumber);
-            setExpandedSeasons(next);
-        } else {
-            const next = new Set(expandedSeasons);
-            next.add(seasonNumber);
-            setExpandedSeasons(next);
-            if (!seasonEpisodes[seasonNumber]) {
-                await loadSeasonEpisodes(seasonNumber);
-            }
-        }
-    }, [expandedSeasons, seasonEpisodes]);
-
     const loadSeasonEpisodes = useCallback(async (seasonNumber: number) => {
         const next = new Set(loadingSeasons);
         next.add(seasonNumber);
@@ -422,6 +406,22 @@ export function TvDetailClientNew({
             setLoadingSeasons(end);
         }
     }, [tv.id, tvdbId, loadingSeasons]);
+
+    const toggleSeason = useCallback(async (seasonNumber: number) => {
+        const isExpanded = expandedSeasons.has(seasonNumber);
+        if (isExpanded) {
+            const next = new Set(expandedSeasons);
+            next.delete(seasonNumber);
+            setExpandedSeasons(next);
+        } else {
+            const next = new Set(expandedSeasons);
+            next.add(seasonNumber);
+            setExpandedSeasons(next);
+            if (!seasonEpisodes[seasonNumber]) {
+                await loadSeasonEpisodes(seasonNumber);
+            }
+        }
+    }, [expandedSeasons, seasonEpisodes, loadSeasonEpisodes]);
 
     // Pre-load availability counts for all seasons
     const loadAllSeasonAvailabilityCounts = useCallback(async () => {

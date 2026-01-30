@@ -68,7 +68,7 @@ export function NotificationUserSelector({
             return match?.id ?? null;
         }
         return null;
-    }, [users, selectedDiscordUserId, initialSelectedUserId]);
+    }, [users, normalizedDiscordUserId, initialSelectedUserId]);
 
     const selectedId = desiredId ?? userSelectedId;
     const selectedUser = useMemo(() => {
@@ -89,11 +89,6 @@ export function NotificationUserSelector({
             return;
         }
     }, [userSelectedId, storageKey, allowStoredSelection]);
-
-    useEffect(() => {
-        if (desiredId == null) return;
-        setUserSelectedId(desiredId);
-    }, [desiredId]);
 
     const handleSelect = (userId: number | null) => {
         if (userId == null) {

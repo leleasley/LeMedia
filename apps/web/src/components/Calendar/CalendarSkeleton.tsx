@@ -72,7 +72,7 @@ export function CalendarSkeleton() {
 
               {/* Event skeletons (randomize 0-3 events per day) */}
               {Array.from({
-                length: [0, 1, 2, 3][Math.floor(Math.random() * 4)] || 0,
+                length: (index * 3 + 1) % 4,
               }).map((_, eventIndex) => (
                 <div
                   key={eventIndex}

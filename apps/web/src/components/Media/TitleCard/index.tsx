@@ -297,11 +297,13 @@ export function TitleCard({
               defaultQualityProfileId={profileData?.defaultQualityProfileId ?? 1}
               requestsBlocked={profileData?.requestsBlocked ?? false}
               title={title}
+              year={displayYear}
               posterUrl={finalImage}
               backdropUrl={finalImage}
               isLoading={profilesLoading}
               isAdmin={Boolean(profileData?.isAdmin)}
               prowlarrEnabled={Boolean(profileData?.prowlarrEnabled)}
+              allowRaw={false}
               serviceItemId={profileData?.radarrMovie?.id ?? null}
           />
       )}

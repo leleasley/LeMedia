@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { PrefetchLink } from "@/components/Layout/PrefetchLink";
 import Image from "next/image";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { ModeToggle } from "@/components/ui/mode-toggle";
 import { AlertTriangle, Settings, LayoutGrid, Film, Tv, Inbox, Users, CalendarDays } from "lucide-react";
 import { MobileNav } from "@/components/Layout/MobileNav";
@@ -153,8 +153,11 @@ export default function AppLayoutClient({
     sidebarFooterText = "LeMedia v0.1.0"
 }: AppLayoutClientProps) {
     const pathname = usePathname();
+    const searchParams = useSearchParams();
     const isDesktop = useMediaQuery("(min-width: 768px)", null);
     const [liveCounts, setLiveCounts] = useState<{ pending?: number; open?: number } | null>(null);
+    const [progressVisible, setProgressVisible] = useState(false);
+    const [progressValue, setProgressValue] = useState(0);
     const { data: requestCounts } = useSWR<{ pending?: number }>(
         isAdmin ? "/api/v1/requests/count" : null,
         {
@@ -279,6 +282,34 @@ export default function AppLayoutClient({
         };
     }, [pathname]);
 
+    useEffect(() => {
+        if (!pathname) return;
+        const timers: number[] = [];
+        setProgressVisible(true);
+        setProgressValue(8);
+        timers.push(window.setTimeout(() => setProgressValue(28), 90));
+        timers.push(window.setTimeout(() => setProgressValue(52), 220));
+        timers.push(window.setTimeout(() => setProgressValue(76), 420));
+        timers.push(window.setTimeout(() => setProgressValue(92), 700));
+        timers.push(window.setTimeout(() => setProgressValue(100), 1000));
+        timers.push(window.setTimeout(() => setProgressVisible(false), 1300));
+        return () => {
+            timers.forEach((t) => window.clearTimeout(t));
+        };
+    }, [pathname, searchParams?.toString()]);
+
+    useEffect(() => {
+        if (!pathname) return;
+        // Reset scroll to top on route change (window + main scroll container)
+        if (typeof window !== "undefined") {
+            window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+        }
+        const mainContent = document.querySelector("main");
+        if (mainContent) {
+            mainContent.scrollTo({ top: 0, left: 0, behavior: "auto" });
+        }
+    }, [pathname]);
+
     const linkClass = (isActive: boolean) => cn(
         "flex items-center gap-4 px-4 py-3 mx-2 rounded-lg transition-all text-sm font-medium border-l-4",
         isActive 
@@ -288,6 +319,13 @@ export default function AppLayoutClient({
 
     return (
         <>
+            <div
+                className={cn(
+                    "fixed left-0 top-0 z-[2000] h-0.5 bg-gradient-to-r from-emerald-300 via-emerald-400 to-emerald-500 transition-[width,opacity] duration-500 ease-out",
+                    progressVisible ? "opacity-100" : "opacity-0"
+                )}
+                style={{ width: `${progressValue}%` }}
+            />
             <WebPushPrompt />
             <SessionResetModal />
             <PullToRefresh>

@@ -15,7 +15,6 @@ export const useLockBodyScroll = (
     disabled?: boolean
 ): void => {
     const originalOverflow = useRef<string | null>(null);
-    const originalTouchAction = useRef<string | null>(null);
 
     useEffect(() => {
         if (disabled) return;
@@ -26,25 +25,18 @@ export const useLockBodyScroll = (
             if (originalOverflow.current === null) {
                 originalOverflow.current = body.style.overflow || window.getComputedStyle(body).overflow;
             }
-            if (originalTouchAction.current === null) {
-                originalTouchAction.current = body.style.touchAction || window.getComputedStyle(body).touchAction;
-            }
             body.style.overflow = 'hidden';
-            body.style.touchAction = 'none';
-        } else if (originalOverflow.current !== null || originalTouchAction.current !== null) {
+            // Touch-action locking can break input focus on some modal stacks.
+        } else if (originalOverflow.current !== null) {
             body.style.overflow = originalOverflow.current ?? '';
-            body.style.touchAction = originalTouchAction.current ?? '';
             originalOverflow.current = null;
-            originalTouchAction.current = null;
         }
 
         return () => {
             if (!isLocked) return;
-            if (originalOverflow.current !== null || originalTouchAction.current !== null) {
+            if (originalOverflow.current !== null) {
                 body.style.overflow = originalOverflow.current ?? '';
-                body.style.touchAction = originalTouchAction.current ?? '';
                 originalOverflow.current = null;
-                originalTouchAction.current = null;
             }
         };
     }, [isLocked, disabled]);

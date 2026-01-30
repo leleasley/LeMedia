@@ -14,8 +14,10 @@ export function MfaSetupForm({ csrfToken }: MfaSetupFormProps) {
   const isTurnstileEnabled = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
+    if (mounted) return;
+    const id = window.requestAnimationFrame(() => setMounted(true));
+    return () => window.cancelAnimationFrame(id);
+  }, [mounted]);
 
   const handleTurnstileSuccess = useCallback((token: string) => {
     setTurnstileToken(token);

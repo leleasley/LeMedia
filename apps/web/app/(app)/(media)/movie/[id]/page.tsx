@@ -175,6 +175,7 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
               trailerUrl={trailerUrl}
               backdropUrl={backdropImage}
               posterUrl={poster}
+              year={releaseYear ?? null}
               prefetched={aggregate ?? undefined}
             />
           </div>

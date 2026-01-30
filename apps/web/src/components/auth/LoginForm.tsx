@@ -30,7 +30,12 @@ export function LoginForm({
     const isTurnstileEnabled = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
 
     useEffect(() => {
-        setMounted(true);
+        if (mounted) return;
+        const id = window.requestAnimationFrame(() => setMounted(true));
+        return () => window.cancelAnimationFrame(id);
+    }, [mounted]);
+
+    useEffect(() => {
         const error = searchParams.get("error");
         const success = searchParams.get("success");
 

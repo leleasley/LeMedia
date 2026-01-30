@@ -27,7 +27,8 @@ export function MovieRequestPanel({
   loading,
   title,
   posterUrl,
-  backdropUrl
+  backdropUrl,
+  year
 }: {
   tmdbId: number;
   prefetched?: MovieInfo | null;
@@ -35,6 +36,7 @@ export function MovieRequestPanel({
   title?: string;
   posterUrl?: string | null;
   backdropUrl?: string | null;
+  year?: string | number | null;
 }) {
   const [modalOpen, setModalOpen] = useState(false);
   const router = useRouter();
@@ -129,6 +131,7 @@ export function MovieRequestPanel({
           defaultQualityProfileId={info.defaultQualityProfileId}
           requestsBlocked={info.requestsBlocked}
           title={title}
+          year={year}
           posterUrl={posterUrl}
           backdropUrl={backdropUrl}
           isAdmin={Boolean(info.isAdmin)}

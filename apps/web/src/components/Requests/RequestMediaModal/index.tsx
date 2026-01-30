@@ -30,7 +30,8 @@ export function RequestMediaModal({
   monitor = true,
   isAdmin = false,
   prowlarrEnabled = false,
-  serviceItemId = null
+  serviceItemId = null,
+  allowRaw = true
 }: {
   open: boolean;
   onClose: () => void;
@@ -49,6 +50,7 @@ export function RequestMediaModal({
   isAdmin?: boolean;
   prowlarrEnabled?: boolean;
   serviceItemId?: number | null;
+  allowRaw?: boolean;
 }) {
   const [selectedQualityProfileId, setSelectedQualityProfileId] = useState<number>(defaultQualityProfileId);
   const [overrides, setOverrides] = useState<RequestOverrides>({});
@@ -60,7 +62,7 @@ export function RequestMediaModal({
   const toast = useToast();
 
   const blockedMessage = "Requesting blocked until notifications are applied";
-  const canOpenRaw = Boolean(isAdmin && prowlarrEnabled);
+  const canOpenRaw = Boolean(isAdmin && prowlarrEnabled && allowRaw);
 
   async function submit() {
     if (isSubmitting) return;
@@ -210,7 +212,7 @@ export function RequestMediaModal({
 
             {/* Actions */}
             <div className="flex gap-3 pt-2">
-              {isAdmin ? (
+              {isAdmin && allowRaw ? (
                 <button
                   onClick={() => {
                     if (canOpenRaw) setRawOpen(true);

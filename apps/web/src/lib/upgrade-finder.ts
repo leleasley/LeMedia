@@ -80,6 +80,13 @@ function extractReleaseTitle(release: any) {
   return String(release?.title ?? release?.releaseTitle ?? "");
 }
 
+function extractReleaseYear(release: any, title: string) {
+  const explicit = release?.year ?? release?.movieYear ?? release?.movie?.year ?? null;
+  if (explicit) return Number(explicit);
+  const match = title.match(/\b(19|20)\d{2}\b/);
+  return match ? Number(match[0]) : null;
+}
+
 function extractQualityName(release: any) {
   return String(release?.quality?.quality?.name ?? release?.quality?.name ?? "");
 }
@@ -168,11 +175,13 @@ export async function refreshUpgradeHintsForAll() {
 
 export function mapReleaseToRow(release: any) {
   const history = Array.isArray(release?.history) ? release.history : [];
+  const title = extractReleaseTitle(release);
   return {
     guid: release?.guid ?? release?.downloadUrl ?? "",
     downloadUrl: release?.downloadUrl ?? release?.downloadUri ?? null,
     indexerId: release?.indexerId ?? null,
-    title: extractReleaseTitle(release),
+    title,
+    year: extractReleaseYear(release, title),
     indexer: release?.indexer ?? release?.indexerName ?? "",
     protocol: release?.protocol ?? "",
     infoUrl: release?.infoUrl ?? release?.indexerUrl ?? "",
