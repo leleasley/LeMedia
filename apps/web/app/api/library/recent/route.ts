@@ -32,7 +32,7 @@ type RecentItem = {
 
 function findPosterUrl(images?: Array<{ coverType?: string; remoteUrl?: string; url?: string }>) {
   if (!images?.length) return null;
-  const poster = images.find(img => img.coverType === "poster") ?? images[0];
+  const poster = images.find(img => img.coverType === "poster") ?? null;
   return poster?.remoteUrl ?? poster?.url ?? null;
 }
 

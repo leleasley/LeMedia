@@ -196,13 +196,18 @@ export function CalendarSkeleton() {
         {/* Calendar cells */}
         {Array.from({ length: 5 }).map((_, weekIndex) => (
           <div key={weekIndex} className="grid grid-cols-7">
-            {Array.from({ length: 7 }).map((_, dayIndex) => (
-              <div key={dayIndex} className="min-h-[100px] p-2 border-r border-b border-white/5 last:border-r-0">
-                <Skeleton className="h-6 w-6 rounded-full mb-2" />
-                {Math.random() > 0.7 && <Skeleton className="h-5 w-full rounded mb-1" />}
-                {Math.random() > 0.8 && <Skeleton className="h-5 w-full rounded" />}
-              </div>
-            ))}
+            {Array.from({ length: 7 }).map((_, dayIndex) => {
+              const seed = weekIndex * 7 + dayIndex;
+              const showLine1 = seed % 3 === 0;
+              const showLine2 = seed % 5 === 0;
+              return (
+                <div key={dayIndex} className="min-h-[100px] p-2 border-r border-b border-white/5 last:border-r-0">
+                  <Skeleton className="h-6 w-6 rounded-full mb-2" />
+                  {showLine1 && <Skeleton className="h-5 w-full rounded mb-1" />}
+                  {showLine2 && <Skeleton className="h-5 w-full rounded" />}
+                </div>
+              );
+            })}
           </div>
         ))}
       </div>

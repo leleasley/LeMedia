@@ -888,6 +888,11 @@
   .text-muted {
     color: hsl(var(--muted-foreground));
   }
+
+  .content-visibility-auto {
+    content-visibility: auto;
+    contain-intrinsic-size: 300px 450px;
+  }
 }
 
 .react-select-container {

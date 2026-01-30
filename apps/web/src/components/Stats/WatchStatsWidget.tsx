@@ -34,11 +34,25 @@ export function WatchStatsWidget() {
   if (isLoading) {
     return (
       <div className="rounded-2xl glass-strong p-6 animate-pulse">
-        <div className="h-6 bg-white/10 rounded w-32 mb-4"></div>
-        <div className="grid grid-cols-3 gap-4">
-          <div className="h-20 bg-white/5 rounded"></div>
-          <div className="h-20 bg-white/5 rounded"></div>
-          <div className="h-20 bg-white/5 rounded"></div>
+        <div className="h-6 bg-white/10 rounded w-40 mb-4"></div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+          {Array.from({ length: 3 }).map((_, idx) => (
+            <div key={`watch-stat-skel-${idx}`} className="h-20 bg-white/5 rounded-xl border border-white/5" />
+          ))}
+        </div>
+        <div className="space-y-3">
+          <div className="h-4 w-32 rounded bg-white/10" />
+          <div className="space-y-2">
+            {Array.from({ length: 3 }).map((_, idx) => (
+              <div key={`recent-watched-skel-${idx}`} className="flex items-center justify-between bg-white/5 rounded-lg p-2">
+                <div className="flex items-center gap-2">
+                  <div className="h-4 w-4 rounded bg-white/10" />
+                  <div className="h-3 w-32 rounded bg-white/10" />
+                </div>
+                <div className="h-3 w-16 rounded bg-white/10" />
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     );

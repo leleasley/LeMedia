@@ -23,6 +23,9 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
     const [menuOpen, setMenuOpen] = useState(false);
     const [profile, setProfile] = useState<ProfileSummary | null>(initialProfile ?? null);
     const menuRef = useRef<HTMLDivElement | null>(null);
+    const searchRef = useRef<HTMLDivElement | null>(null);
+    const [recentOpen, setRecentOpen] = useState(false);
+    const [recentSearches, setRecentSearches] = useState<string[]>([]);
 
     useEffect(() => {
         return () => {
@@ -46,6 +49,20 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
     }, [initialProfile]);
 
     useEffect(() => {
+        if (!profile?.username) return;
+        try {
+            const key = `recentSearches:${profile.username}`;
+            const raw = window.localStorage.getItem(key);
+            const list = raw ? JSON.parse(raw) : [];
+            if (Array.isArray(list)) {
+                setRecentSearches(list.filter((v) => typeof v === "string"));
+            }
+        } catch {
+            // ignore localStorage errors
+        }
+    }, [profile?.username]);
+
+    useEffect(() => {
         if (!menuOpen) return;
         const onClick = (event: MouseEvent) => {
             if (!menuRef.current) return;
@@ -56,6 +73,35 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
         window.addEventListener("click", onClick);
         return () => window.removeEventListener("click", onClick);
     }, [menuOpen]);
+
+    useEffect(() => {
+        if (!recentOpen) return;
+        const onClick = (event: MouseEvent) => {
+            if (!searchRef.current) return;
+            if (!searchRef.current.contains(event.target as Node)) {
+                setRecentOpen(false);
+            }
+        };
+        window.addEventListener("click", onClick);
+        return () => window.removeEventListener("click", onClick);
+    }, [recentOpen]);
+
+    const persistRecent = (items: string[]) => {
+        setRecentSearches(items);
+        if (!profile?.username) return;
+        try {
+            window.localStorage.setItem(`recentSearches:${profile.username}`, JSON.stringify(items));
+        } catch {
+            // ignore localStorage errors
+        }
+    };
+
+    const addRecent = (value: string) => {
+        const trimmed = value.trim();
+        if (trimmed.length < 2) return;
+        const next = [trimmed, ...recentSearches.filter((item) => item.toLowerCase() !== trimmed.toLowerCase())].slice(0, 8);
+        persistRecent(next);
+    };
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const value = e.target.value;
@@ -74,6 +120,7 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
         e.preventDefault();
         const q = searchQuery.trim();
         if (q.length >= 2) {
+            addRecent(q);
             router.push(`/search?q=${encodeURIComponent(q)}&type=all`);
         }
     };
@@ -90,7 +137,7 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
     return (
         <div className="flex items-center gap-1.5 sm:gap-2 w-full">
             <form onSubmit={handleSearch} className="flex-1" autoComplete="off">
-                <div className="relative w-full">
+                <div className="relative w-full" ref={searchRef}>
                     <Search className="pointer-events-none absolute right-2.5 sm:right-3 top-1/2 h-3.5 w-3.5 sm:h-4 sm:w-4 -translate-y-1/2 text-gray-400 z-10" />
                     <input
                         ref={inputRef}
@@ -99,12 +146,45 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
                         value={searchQuery}
                         onChange={handleInputChange}
                         onKeyDown={handleKeyDown}
+                        onFocus={() => setRecentOpen(true)}
                         className="block w-full rounded-full border border-white/10 bg-white/8 py-1.5 sm:py-2 pl-3 sm:pl-4 pr-8 sm:pr-11 text-sm sm:text-base text-white placeholder-gray-500 hover:border-white/20 focus:border-white/30 focus:bg-white/12 focus:placeholder-gray-400 focus:outline-none focus:ring-0 relative transition-all duration-200"
                         style={{
                             backdropFilter: 'blur(8px)',
                             WebkitBackdropFilter: 'blur(8px)',
                         }}
                     />
+                    {recentOpen && recentSearches.length > 0 ? (
+                        <div className="absolute left-0 right-0 mt-2 rounded-2xl border border-white/10 shadow-2xl z-50 liquid-glass-sheet overflow-hidden">
+                            <div className="flex items-center justify-between px-4 py-2 border-b border-white/10">
+                                <span className="text-xs uppercase tracking-wider text-white/50 font-semibold">Recent searches</span>
+                                <button
+                                    type="button"
+                                    onClick={() => persistRecent([])}
+                                    className="text-xs text-white/60 hover:text-white transition-colors"
+                                >
+                                    Clear
+                                </button>
+                            </div>
+                            <div className="max-h-56 overflow-y-auto">
+                                {recentSearches.map((item) => (
+                                    <button
+                                        key={item}
+                                        type="button"
+                                        onClick={() => {
+                                            setSearchQuery(item);
+                                            addRecent(item);
+                                            router.push(`/search?q=${encodeURIComponent(item)}&type=all`);
+                                            setRecentOpen(false);
+                                        }}
+                                        className="flex w-full items-center justify-between px-4 py-2.5 text-sm text-white/90 hover:text-white hover:bg-white/10 transition-colors"
+                                    >
+                                        <span className="truncate">{item}</span>
+                                        <Search className="h-3.5 w-3.5 text-white/40" />
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    ) : null}
                 </div>
             </form>
             <NotificationBell />

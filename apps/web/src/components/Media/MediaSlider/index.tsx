@@ -94,7 +94,7 @@ export function MediaSlider({ title, url, linkUrl, sliderKey, mediaType }: Media
     const mediaStatus = availabilityToMediaStatus(itemStatus);
 
     return (
-      <div key={item.id} className="w-36 sm:w-36 md:w-44">
+      <div key={`${itemMediaType}:${item.id}`} className="w-36 sm:w-36 md:w-44">
         <TitleCard
           id={item.id}
           image={tmdbImageUrl(item.poster_path, "w500") || undefined}

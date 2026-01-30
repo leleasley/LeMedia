@@ -97,7 +97,7 @@ export function ContinueWatchingCarousel({
         >
           {items.map((item) => (
             <a
-              key={item.id}
+              key={`${item.type}:${item.id}`}
               href={item.playUrl}
               target="_blank"
               rel="noreferrer"

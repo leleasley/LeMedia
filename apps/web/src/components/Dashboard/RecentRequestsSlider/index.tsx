@@ -93,14 +93,30 @@ export function RecentRequestsSlider({ items, className, isLoading = false }: Re
             <div ref={containerRef} className={cn("space-y-4", className)}>
                 <div className="flex items-center justify-between">
                     <h2 className="text-xl md:text-2xl font-bold text-foreground tracking-tight">Recent Requests</h2>
-                    <div className="h-4 w-16 rounded bg-white/10 animate-pulse" />
+                    <div className="h-6 w-20 rounded-full bg-white/10 animate-pulse" />
                 </div>
                 <div className="flex gap-3 md:gap-5 overflow-hidden pb-4 -mx-3 px-3 md:mx-0 md:px-0">
                     {Array.from({ length: 3 }).map((_, idx) => (
                         <div
                             key={`recent-request-skeleton-${idx}`}
-                            className="h-40 sm:h-44 w-72 sm:w-96 rounded-xl bg-white/5 ring-1 ring-white/10 animate-pulse flex-shrink-0"
-                        />
+                            className="h-40 sm:h-44 w-72 sm:w-96 rounded-xl bg-white/5 ring-1 ring-white/10 flex-shrink-0 overflow-hidden"
+                        >
+                            <div className="h-full w-full animate-pulse relative">
+                                <div className="absolute inset-0 bg-gradient-to-br from-white/5 via-transparent to-white/0" />
+                                <div className="relative z-10 flex h-full items-center p-4">
+                                    <div className="flex min-w-0 flex-1 flex-col gap-2 pr-4">
+                                        <div className="h-3 w-10 rounded-full bg-white/10" />
+                                        <div className="h-4 w-40 rounded bg-white/10" />
+                                        <div className="flex items-center gap-2">
+                                            <div className="h-5 w-5 rounded-full bg-white/10" />
+                                            <div className="h-3 w-20 rounded bg-white/10" />
+                                        </div>
+                                        <div className="h-4 w-16 rounded-full bg-white/10" />
+                                    </div>
+                                    <div className="flex-shrink-0 w-20 sm:w-24 h-28 sm:h-32 rounded-md bg-white/10" />
+                                </div>
+                            </div>
+                        </div>
                     ))}
                 </div>
             </div>
