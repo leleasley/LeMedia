@@ -88,7 +88,7 @@ See `docs/JELLYFIN_AVAILABILITY.md` for setup, how the cache works, and troubles
 
 1. Clone or download this project:
    ```bash
-   git clone https://github.com/your-repo/LeMedia.git /opt/LeMedia
+   git clone https://github.com/leleasley/LeMedia.git /opt/LeMedia
    cd /opt/LeMedia
    ```
 
