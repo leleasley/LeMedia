@@ -77,5 +77,8 @@
     "tailwindcss": "^3.4.19",
     "tsx": "^4.21.0",
     "typescript": "latest"
+  },
+  "overrides": {
+    "fast-xml-parser": "^5.3.4"
   }
 }

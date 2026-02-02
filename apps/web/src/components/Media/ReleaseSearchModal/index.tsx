@@ -296,19 +296,20 @@ export function ReleaseSearchModal(props: {
   ];
 
   const modal = (
-    <div
-      className="fixed inset-0 z-[1100] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200 touch-auto"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Interactive Search"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
+    <>
       <div
-        className="w-full sm:max-w-6xl h-[92vh] sm:h-[90vh] flex flex-col bg-slate-950 rounded-t-3xl sm:rounded-3xl border-t sm:border border-white/10 shadow-2xl animate-in fade-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200 overflow-hidden touch-auto"
-        onClick={(event) => event.stopPropagation()}
+        className="fixed inset-0 z-[1100] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200 touch-auto"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Interactive Search"
+        onClick={(event) => {
+          if (event.target === event.currentTarget) onClose();
+        }}
       >
+        <div
+          className="w-full sm:max-w-6xl h-[92vh] sm:h-[90vh] flex flex-col bg-slate-950 rounded-t-3xl sm:rounded-3xl border-t sm:border border-white/10 shadow-2xl animate-in fade-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200 overflow-hidden touch-auto"
+          onClick={(event) => event.stopPropagation()}
+        >
         <div className="flex-shrink-0 relative overflow-hidden">
           {backdropUrl ? (
             <div className="absolute inset-0">
@@ -686,69 +687,70 @@ export function ReleaseSearchModal(props: {
             <div className="text-white/40">{canLoadMore ? "Scroll to load more" : "Search to load more"}</div>
           ) : null}
         </div>
-      </div>
-    </div>
-    <Modal
-      open={!!replaceModal}
-      title="Replace Existing File?"
-      onClose={() => {
-        if (replaceStatus === "loading") return;
-        setReplaceModal(null);
-        setReplaceStatus("idle");
-      }}
-    >
-      <div className="space-y-4">
-        <div className="text-sm text-white/80">
-          There is already a file for this movie.
         </div>
-        <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80">
-          <div className="text-[10px] uppercase tracking-wider text-white/50">Current File</div>
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm">
-            <span className="font-semibold text-white">{replaceModal?.info.quality || "Unknown"}</span>
-            {replaceModal?.info.sizeBytes ? (
-              <span className="text-white/50">| {formatBytes(replaceModal.info.sizeBytes)}</span>
-            ) : null}
-            {replaceModal?.info.dateAdded ? (
-              <span className="text-white/50">| Added: {formatDate(replaceModal.info.dateAdded)}</span>
-            ) : null}
+      </div>
+      <Modal
+        open={!!replaceModal}
+        title="Replace Existing File?"
+        onClose={() => {
+          if (replaceStatus === "loading") return;
+          setReplaceModal(null);
+          setReplaceStatus("idle");
+        }}
+      >
+        <div className="space-y-4">
+          <div className="text-sm text-white/80">
+            There is already a file for this movie.
+          </div>
+          <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80">
+            <div className="text-[10px] uppercase tracking-wider text-white/50">Current File</div>
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-sm">
+              <span className="font-semibold text-white">{replaceModal?.info.quality || "Unknown"}</span>
+              {replaceModal?.info.sizeBytes ? (
+                <span className="text-white/50">| {formatBytes(replaceModal.info.sizeBytes)}</span>
+              ) : null}
+              {replaceModal?.info.dateAdded ? (
+                <span className="text-white/50">| Added: {formatDate(replaceModal.info.dateAdded)}</span>
+              ) : null}
+            </div>
+          </div>
+          <div className="text-sm text-white/70">
+            Do you want to remove this one and download the one you&apos;re about to grab?
+          </div>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                if (replaceStatus === "loading") return;
+                setReplaceModal(null);
+                setReplaceStatus("idle");
+              }}
+              className="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 transition-colors disabled:opacity-50"
+              disabled={replaceStatus === "loading"}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={confirmReplace}
+              disabled={replaceStatus === "loading"}
+              className={cn(
+                "flex-1 rounded-lg px-4 py-2 text-sm font-semibold text-white transition-all disabled:opacity-50 inline-flex items-center justify-center gap-2",
+                replaceStatus === "success"
+                  ? "bg-emerald-600 hover:bg-emerald-500"
+                  : replaceStatus === "error"
+                  ? "bg-red-600 hover:bg-red-500"
+                  : "bg-indigo-600 hover:bg-indigo-500"
+              )}
+            >
+              {replaceStatus === "loading" ? "Replacing..." : "Yes, Replace & Grab"}
+              {replaceStatus === "success" ? <Check className="h-4 w-4" /> : null}
+              {replaceStatus === "error" ? <X className="h-4 w-4" /> : null}
+            </button>
           </div>
         </div>
-        <div className="text-sm text-white/70">
-          Do you want to remove this one and download the one you&apos;re about to grab?
-        </div>
-        <div className="flex gap-3">
-          <button
-            type="button"
-            onClick={() => {
-              if (replaceStatus === "loading") return;
-              setReplaceModal(null);
-              setReplaceStatus("idle");
-            }}
-            className="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 transition-colors disabled:opacity-50"
-            disabled={replaceStatus === "loading"}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={confirmReplace}
-            disabled={replaceStatus === "loading"}
-            className={cn(
-              "flex-1 rounded-lg px-4 py-2 text-sm font-semibold text-white transition-all disabled:opacity-50 inline-flex items-center justify-center gap-2",
-              replaceStatus === "success"
-                ? "bg-emerald-600 hover:bg-emerald-500"
-                : replaceStatus === "error"
-                ? "bg-red-600 hover:bg-red-500"
-                : "bg-indigo-600 hover:bg-indigo-500"
-            )}
-          >
-            {replaceStatus === "loading" ? "Replacing..." : "Yes, Replace & Grab"}
-            {replaceStatus === "success" ? <Check className="h-4 w-4" /> : null}
-            {replaceStatus === "error" ? <X className="h-4 w-4" /> : null}
-          </button>
-        </div>
-      </div>
-    </Modal>
+      </Modal>
+    </>
   );
 
   if (typeof document === "undefined") return modal;
