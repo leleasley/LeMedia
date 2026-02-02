@@ -602,7 +602,9 @@ export async function isEpisodeAvailable({
         return { available: true, itemId: String(matchByNumber.Id) };
     }
 
-    if (airDate) {
+    const allowDateFallback = allowAirDateOnly || isDaily;
+
+    if (allowDateFallback && airDate) {
         const normalizedAirDate = airDate.split("T")[0];
         logger.debug("[Jellyfin] Trying to match by air date", {
             seriesTitle,
@@ -665,7 +667,7 @@ export async function isEpisodeAvailable({
     }
 
     // Final fallback: if we have an air date, check DateCreated proximity (in case PremiereDate is missing)
-    if (airDate) {
+    if (allowDateFallback && airDate) {
         const normalizedAirDate = airDate.split("T")[0];
         const air = new Date(normalizedAirDate);
         const matchByCreated = items.find((ep: JellyfinApiItem) => {

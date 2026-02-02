@@ -20,6 +20,7 @@ export function MediaActionMenu(props: {
   manageItemId?: number | null;
   manageSlug?: string | null;
   manageBaseUrl?: string | null;
+  requestStatus?: string | null;
   prowlarrEnabled?: boolean;
 }) {
   const {
@@ -35,11 +36,13 @@ export function MediaActionMenu(props: {
     manageItemId,
     manageSlug,
     manageBaseUrl,
+    requestStatus,
     prowlarrEnabled = false
   } = props;
   const [reportOpen, setReportOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
-  const canManage = isAdmin;
+  const canManage =
+    isAdmin && (Number.isFinite(Number(manageItemId ?? NaN)) || Boolean(requestStatus));
 
   const links: PlayButtonLink[] = [];
   if (playUrl) {

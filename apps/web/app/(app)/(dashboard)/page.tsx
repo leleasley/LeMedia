@@ -124,15 +124,14 @@ export default async function Page() {
     { id: 1024, name: "Amazon Prime Video", logoUrl: "https://image.tmdb.org/t/p/w500_filter(duotone,ffffff,bababa)/ifhbNuuVnlwYy5oXA5VIb2YR8AZ.png" },
     { id: 2552, name: "Apple TV+", logoUrl: "https://image.tmdb.org/t/p/w500_filter(duotone,ffffff,bababa)/4KAy34EHvRM25Ih8wb82AuGU7zJ.png" },
     { id: 453, name: "Hulu", logoUrl: "https://image.tmdb.org/t/p/w500_filter(duotone,ffffff,bababa)/pqUTCleNUiTLAVlelGxUgWn1ELh.png" },
-    { id: 19, name: "HBO", logoUrl: "https://image.tmdb.org/t/p/w500_filter(duotone,ffffff,bababa)/tuomPhY2UtuPTqqFnKMVHvSb724.png" },
+    { id: 49, name: "HBO", logoUrl: "https://image.tmdb.org/t/p/w500_filter(duotone,ffffff,bababa)/tuomPhY2UtuPTqqFnKMVHvSb724.png" },
     { id: 4330, name: "Paramount+", logoUrl: "https://image.tmdb.org/t/p/w500_filter(duotone,ffffff,bababa)/fi83B1oztoS47xxcemFdPMhIzK.png" },
     // Traditional Networks
     { id: 6, name: "NBC", logoUrl: "https://image.tmdb.org/t/p/w500_filter(duotone,ffffff,bababa)/o3OedEP0f9mfZr33jz2BfXOUK5.png" },
     { id: 16, name: "CBS", logoUrl: "https://image.tmdb.org/t/p/w500_filter(duotone,ffffff,bababa)/nm8d7P7MJNiBLdgIzUK0gkuEA4r.png" },
     { id: 2, name: "ABC", logoUrl: "https://image.tmdb.org/t/p/w500_filter(duotone,ffffff,bababa)/ndAvF4JLsliGreX87jAc9GdjmJY.png" },
-    { id: 49, name: "Syfy", logoUrl: "https://image.tmdb.org/t/p/w500_filter(duotone,ffffff,bababa)/tuomPhY2UtuPTqqFnKMVHvSb724.png" },
+    { id: 19, name: "FOX", logoUrl: "https://image.tmdb.org/t/p/w500_filter(duotone,ffffff,bababa)/1DSpHrWyOORkL9N2QHX7Adt31mQ.png" },
     { id: 4353, name: "Discovery+", logoUrl: "https://image.tmdb.org/t/p/w500_filter(duotone,ffffff,bababa)/1D1bS3Dyw4ScYnFWTlBOvJXC3nb.png" },
-    { id: 27, name: "The CW", logoUrl: "https://image.tmdb.org/t/p/w500_filter(duotone,ffffff,bababa)/ge9hzeaU7nMtQ4PjkFlc68dGAJ9.png" },
     { id: 67, name: "Showtime", logoUrl: "https://image.tmdb.org/t/p/w500_filter(duotone,ffffff,bababa)/Allse9kbjiP6ExaQrnSpIhkurEi.png" },
     { id: 174, name: "AMC", logoUrl: "https://image.tmdb.org/t/p/w500_filter(duotone,ffffff,bababa)/pmvRmATOCaDykE6JrVoeYxlFHw3.png" },
     { id: 318, name: "Starz", logoUrl: "https://image.tmdb.org/t/p/w500_filter(duotone,ffffff,bababa)/8GJjw3HHsAJYwIWKIPBPfqMxlEa.png" },
@@ -140,7 +139,10 @@ export default async function Page() {
     { id: 359, name: "Cinemax", logoUrl: "https://image.tmdb.org/t/p/w500_filter(duotone,ffffff,bababa)/6mSHSquNpfLgDdv6VnOOvC5Uz2h.png" },
     { id: 56, name: "Cartoon Network", logoUrl: "https://image.tmdb.org/t/p/w500_filter(duotone,ffffff,bababa)/c5OC6oVCg6QP4eqzW6XIq17CQjI.png" },
     { id: 80, name: "Adult Swim", logoUrl: "https://image.tmdb.org/t/p/w500_filter(duotone,ffffff,bababa)/9AKyspxVzywuaMuZ1Bvilu8sXly.png" },
-  ];
+  ].filter((network, index, arr) => {
+    const name = network.name.toLowerCase().trim();
+    return arr.findIndex(item => item.id === network.id || item.name.toLowerCase().trim() === name) === index;
+  });
 
   // Build slider components map
   const sliderComponentsMap: Record<number, React.ReactNode> = {};

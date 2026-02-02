@@ -360,6 +360,7 @@ export function TvDetailClientNew({
     }, [requestStatusState]);
     const showRequestBadge = Boolean(!hasAnyAvailable && requestLabel);
 
+    const showReport = Boolean(hasAnyAvailable);
     const actionMenu = (
         <MediaActionMenu
             title={tv.name ?? tv.title ?? "Unknown"}
@@ -370,10 +371,11 @@ export function TvDetailClientNew({
             trailerUrl={trailerUrl ?? undefined}
             backdropUrl={backdrop ?? undefined}
             isAdmin={isAdminState}
-            showReport
+            showReport={showReport}
             manageItemId={manageItemIdState ?? null}
             manageSlug={manageSlugState ?? null}
             manageBaseUrl={manageBaseUrlState ?? null}
+            requestStatus={requestStatusState ?? null}
             prowlarrEnabled={prowlarrEnabledState}
         />
     );

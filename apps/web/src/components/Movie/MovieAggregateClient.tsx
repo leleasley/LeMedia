@@ -117,6 +117,8 @@ export function MovieActionButtons({
   const isAdmin = Boolean(data?.isAdmin);
   const manage = data?.manage;
   const radarr = data?.radarr ?? null;
+  const requestStatus = data?.request?.status ?? null;
+  const showReport = Boolean(available);
   const actionMenu = (
     <MediaActionMenu
       title={title}
@@ -126,10 +128,11 @@ export function MovieActionButtons({
       trailerUrl={trailerUrl ?? undefined}
       backdropUrl={backdropUrl ?? undefined}
       isAdmin={isAdmin}
-      showReport
+      showReport={showReport}
       manageItemId={manage?.itemId ?? null}
       manageSlug={manage?.slug ?? null}
       manageBaseUrl={manage?.baseUrl ?? null}
+      requestStatus={requestStatus}
       prowlarrEnabled={Boolean(radarr?.prowlarrEnabled)}
     />
   );
