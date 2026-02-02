@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { RefreshCcw, Search, X, Loader2, Download, Cloud } from "lucide-react";
+import { RefreshCcw, Search, X, Loader2, Download, Cloud, Check } from "lucide-react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { csrfFetch } from "@/lib/csrf-client";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { useLockBodyScroll } from "@/hooks/useLockBodyScroll";
 import { useIsIOS } from "@/hooks/useIsApple";
+import { Modal } from "@/components/Common/Modal";
 
 const PAGE_SIZE = 50;
 
@@ -97,6 +98,11 @@ export function ReleaseSearchModal(props: {
   const [releaseOffset, setReleaseOffset] = useState(0);
   const [grabbingKey, setGrabbingKey] = useState<string | null>(null);
   const [resolvedMediaId, setResolvedMediaId] = useState<number | null>(mediaId);
+  const [replaceModal, setReplaceModal] = useState<{
+    release: ReleaseRow;
+    info: { quality?: string | null; sizeBytes?: number | null; dateAdded?: string | null };
+  } | null>(null);
+  const [replaceStatus, setReplaceStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
 
   useLockBodyScroll(open, isIOS === true);
 
@@ -171,7 +177,7 @@ export function ReleaseSearchModal(props: {
     void loadReleases({ offset: releaseOffset, append: true });
   };
 
-  const handleGrabRelease = async (release: ReleaseRow) => {
+  const grabRelease = async (release: ReleaseRow, options?: { skipKey?: boolean }) => {
     const canGrab = Boolean(resolvedMediaId || tmdbId || tvdbId);
     if (!canGrab || grabbingKey) return;
     if (!release.guid && !release.downloadUrl) {
@@ -179,7 +185,7 @@ export function ReleaseSearchModal(props: {
       return;
     }
     const releaseKey = release.guid || release.downloadUrl || release.title;
-    setGrabbingKey(releaseKey);
+    if (!options?.skipKey) setGrabbingKey(releaseKey);
     try {
       const res = await csrfFetch("/api/v1/admin/media/grab", {
         method: "POST",
@@ -202,7 +208,69 @@ export function ReleaseSearchModal(props: {
     } catch (err: any) {
       toast.error(err?.message ?? "Grab failed");
     } finally {
-      setGrabbingKey(null);
+      if (!options?.skipKey) setGrabbingKey(null);
+    }
+  };
+
+  const handleGrabRelease = async (release: ReleaseRow) => {
+    if (mediaType === "movie" && resolvedMediaId && tmdbId) {
+      try {
+        const res = await fetch(`/api/v1/admin/media/info?mediaType=movie&id=${resolvedMediaId}`, {
+          credentials: "include"
+        });
+        const body = await res.json().catch(() => ({}));
+        if (res.ok && body?.hasFile) {
+          setReplaceStatus("idle");
+          setReplaceModal({
+            release,
+            info: {
+              quality: body?.quality ?? null,
+              sizeBytes: body?.sizeBytes ?? null,
+              dateAdded: body?.dateAdded ?? null
+            }
+          });
+          return;
+        }
+      } catch {
+        // fall through to grab if info fails
+      }
+    }
+    await grabRelease(release);
+  };
+
+  const formatDate = (dateStr?: string | null) => {
+    if (!dateStr) return "-";
+    try {
+      return new Date(dateStr).toLocaleDateString("en-GB", {
+        year: "numeric",
+        month: "short",
+        day: "numeric"
+      });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const confirmReplace = async () => {
+    if (!replaceModal || !tmdbId) return;
+    setReplaceStatus("loading");
+    try {
+      const removeRes = await csrfFetch("/api/v1/admin/media/movie", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tmdbId, action: "remove" })
+      });
+      const removeBody = await removeRes.json().catch(() => ({}));
+      if (!removeRes.ok) throw new Error(removeBody?.error || "Failed to remove existing file");
+      await grabRelease(replaceModal.release, { skipKey: true });
+      setReplaceStatus("success");
+      setTimeout(() => {
+        setReplaceModal(null);
+        setReplaceStatus("idle");
+      }, 1200);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to replace file");
+      setReplaceStatus("error");
     }
   };
 
@@ -620,6 +688,67 @@ export function ReleaseSearchModal(props: {
         </div>
       </div>
     </div>
+    <Modal
+      open={!!replaceModal}
+      title="Replace Existing File?"
+      onClose={() => {
+        if (replaceStatus === "loading") return;
+        setReplaceModal(null);
+        setReplaceStatus("idle");
+      }}
+    >
+      <div className="space-y-4">
+        <div className="text-sm text-white/80">
+          There is already a file for this movie.
+        </div>
+        <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80">
+          <div className="text-[10px] uppercase tracking-wider text-white/50">Current File</div>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm">
+            <span className="font-semibold text-white">{replaceModal?.info.quality || "Unknown"}</span>
+            {replaceModal?.info.sizeBytes ? (
+              <span className="text-white/50">| {formatBytes(replaceModal.info.sizeBytes)}</span>
+            ) : null}
+            {replaceModal?.info.dateAdded ? (
+              <span className="text-white/50">| Added: {formatDate(replaceModal.info.dateAdded)}</span>
+            ) : null}
+          </div>
+        </div>
+        <div className="text-sm text-white/70">
+          Do you want to remove this one and download the one you&apos;re about to grab?
+        </div>
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              if (replaceStatus === "loading") return;
+              setReplaceModal(null);
+              setReplaceStatus("idle");
+            }}
+            className="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 transition-colors disabled:opacity-50"
+            disabled={replaceStatus === "loading"}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={confirmReplace}
+            disabled={replaceStatus === "loading"}
+            className={cn(
+              "flex-1 rounded-lg px-4 py-2 text-sm font-semibold text-white transition-all disabled:opacity-50 inline-flex items-center justify-center gap-2",
+              replaceStatus === "success"
+                ? "bg-emerald-600 hover:bg-emerald-500"
+                : replaceStatus === "error"
+                ? "bg-red-600 hover:bg-red-500"
+                : "bg-indigo-600 hover:bg-indigo-500"
+            )}
+          >
+            {replaceStatus === "loading" ? "Replacing..." : "Yes, Replace & Grab"}
+            {replaceStatus === "success" ? <Check className="h-4 w-4" /> : null}
+            {replaceStatus === "error" ? <X className="h-4 w-4" /> : null}
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 
   if (typeof document === "undefined") return modal;

@@ -50,11 +50,14 @@ export async function GET(req: NextRequest) {
       const movieFile = movie?.movieFile ?? null;
       const quality = movieFile?.quality?.quality?.name ?? movieFile?.quality?.name ?? null;
       const sizeBytes = movieFile?.size ?? movieFile?.sizeBytes ?? null;
+      const dateAdded = movieFile?.dateAdded ?? null;
       return NextResponse.json({
         mediaType,
         id,
         quality: quality || null,
-        sizeBytes: typeof sizeBytes === "number" ? sizeBytes : null
+        sizeBytes: typeof sizeBytes === "number" ? sizeBytes : null,
+        dateAdded: typeof dateAdded === "string" ? dateAdded : null,
+        hasFile: Boolean(movieFile?.id)
       });
     }
 
