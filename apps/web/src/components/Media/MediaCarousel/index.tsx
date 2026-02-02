@@ -8,7 +8,7 @@ import { HoverMediaCard } from "@/components/Media/HoverMediaCard";
 import { cn } from "@/lib/utils";
 import { fetchAvailabilityStatusBatched } from "@/lib/availability-client";
 import { useWheelForHorizontalScroll } from "@/hooks/useWheelForHorizontalScroll";
-import { availabilityToMediaStatus } from "@/lib/media-status";
+import { statusToMediaStatus } from "@/lib/media-status";
 
 export interface CarouselItem {
     id: number;
@@ -201,7 +201,7 @@ export function MediaCarousel({ title, items, itemType, viewAllHref, className, 
                                     mediaType={item.type ?? itemType}
                                     mediaStatus={
                                         item.mediaStatus ??
-                                        availabilityToMediaStatus(availabilityStatus[`${item.type ?? itemType}:${item.id}`])
+                                        statusToMediaStatus(availabilityStatus[`${item.type ?? itemType}:${item.id}`])
                                     }
                                     imagePriority={idx < 6}
                                     imageLoading={idx < 6 ? "eager" : "lazy"}

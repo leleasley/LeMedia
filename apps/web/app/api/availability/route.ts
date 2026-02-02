@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getAvailabilityByTmdbIds, getAvailabilityStatusByTmdbIds } from "@/lib/library-availability";
 import { requireUser } from "@/auth";
+import { verifyExternalApiKey } from "@/lib/external-api";
 import { jsonResponseWithETag } from "@/lib/api-optimization";
 
 const TypeSchema = z.enum(["movie", "tv"]);
@@ -17,8 +18,18 @@ const IdsSchema = z
 
 export async function GET(req: NextRequest) {
   try {
-    const user = await requireUser();
-    if (user instanceof NextResponse) return user;
+    const apiKey =
+      req.headers.get("x-api-key")
+      || req.headers.get("X-Api-Key")
+      || req.headers.get("authorization")?.replace(/^Bearer\\s+/i, "")
+      || req.nextUrl.searchParams.get("api_key")
+      || "";
+    const allowPublic = process.env.ALLOW_PUBLIC_AVAILABILITY === "1";
+    const apiKeyOk = apiKey ? await verifyExternalApiKey(apiKey) : false;
+    if (!apiKeyOk && !allowPublic) {
+      const user = await requireUser();
+      if (user instanceof NextResponse) return user;
+    }
     const type = TypeSchema.parse(req.nextUrl.searchParams.get("type") ?? "");
     const ids = IdsSchema.parse(req.nextUrl.searchParams.get("ids") ?? "");
     const includeStatus = req.nextUrl.searchParams.get("includeStatus") === "1";

@@ -8,7 +8,7 @@ import type { MediaGridItem, MediaGridPage } from "@/types/media-grid";
 import useVerticalScroll from "@/hooks/useVerticalScroll";
 import useSWRInfinite from "swr/infinite";
 import { fetchAvailabilityStatusBatched } from "@/lib/availability-client";
-import { MediaStatus, availabilityToMediaStatus } from "@/lib/media-status";
+import { MediaStatus, statusToMediaStatus } from "@/lib/media-status";
 
 type MediaCard = {
   id: number;
@@ -32,8 +32,8 @@ function toCards(list: MediaGridItem[], type: "movie" | "tv", availability: Reco
     poster: tmdbImageUrl(item.poster_path, "w500"),
     href: type === "movie" ? `/movie/${item.id}` : `/tv/${item.id}`,
     overview: item.overview,
-    // Use shared utility for consistent status mapping
-    mediaStatus: availabilityToMediaStatus(availability[item.id])
+    // Use shared utility for consistent status mapping (handles both availability and request statuses)
+    mediaStatus: statusToMediaStatus(availability[item.id])
   }));
 }
 

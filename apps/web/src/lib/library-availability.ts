@@ -5,7 +5,7 @@ import {
   getSeriesAvailabilityStatus,
   seriesHasFiles
 } from "@/lib/media-status";
-import { getAvailableSeasons, hasCachedEpisodeAvailability, hasRecentJellyfinAvailabilityScan } from "@/db";
+import { getAvailableSeasons, hasCachedEpisodeAvailability, hasRecentJellyfinAvailabilityScan, findActiveRequestsByTmdbIds } from "@/db";
 import { getTv } from "@/lib/tmdb";
 
 type CacheEntry = { expiresAt: number; map: Map<number, boolean> };
@@ -112,10 +112,25 @@ export async function getAvailabilityByTmdbIds(type: "movie" | "tv", ids: number
 
 export async function getAvailabilityStatusByTmdbIds(type: "movie" | "tv", ids: number[]) {
   const map = await getAvailabilityStatusMap(type);
+
+  // Check for active requests (submitted, pending, queued)
+  const requestType = type === "movie" ? "movie" : "episode";
+  const activeRequests = await findActiveRequestsByTmdbIds({ requestType, tmdbIds: ids }).catch(() => []);
+  const requestMap = new Map<number, string>();
+  for (const req of activeRequests) {
+    requestMap.set(req.tmdb_id, req.status);
+  }
+
   if (type !== "tv") {
-    const out: Record<number, AvailabilityStatus> = {};
+    const out: Record<number, string> = {};
     for (const id of ids) {
-      out[id] = map.get(id) ?? "unavailable";
+      const availStatus = map.get(id) ?? "unavailable";
+      // If unavailable but has active request, use request status instead
+      if (availStatus === "unavailable" && requestMap.has(id)) {
+        out[id] = requestMap.get(id)!;
+      } else {
+        out[id] = availStatus;
+      }
     }
     return out;
   }
@@ -161,6 +176,10 @@ export async function getAvailabilityStatusByTmdbIds(type: "movie" | "tv", ids: 
         }
       }
 
+      // If unavailable but has active request, use request status instead
+      if (status === "unavailable" && requestMap.has(id)) {
+        return [id, requestMap.get(id)!] as const;
+      }
       return [id, status] as const;
     })
   );
