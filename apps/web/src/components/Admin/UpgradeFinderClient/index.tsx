@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { RefreshCcw, Search, Sparkles, ChevronDown, X, Loader2, Download, Cloud } from "lucide-react";
+import { RefreshCcw, Search, Sparkles, ChevronDown, X, Loader2, Download, Cloud, Check } from "lucide-react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { csrfFetch } from "@/lib/csrf-client";
@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useLockBodyScroll } from "@/hooks/useLockBodyScroll";
 import { useIsIOS } from "@/hooks/useIsApple";
+import { Modal } from "@/components/Common/Modal";
 
 const statusStyles: Record<UpgradeFinderItem["upgradeStatus"], { label: string; bg: string; text: string; border: string }> = {
   missing: {
@@ -40,7 +41,7 @@ const statusStyles: Record<UpgradeFinderItem["upgradeStatus"], { label: string; 
   }
 };
 
-type HintStatus = "checking" | "available" | "none" | "error" | "idle";
+type HintStatus = "checking" | "available" | "none" | "error" | "idle" | "ignored";
 
 const hintStyles: Record<HintStatus, { label: string; bg: string; text: string; border: string }> = {
   checking: {
@@ -56,10 +57,16 @@ const hintStyles: Record<HintStatus, { label: string; bg: string; text: string; 
     border: "border-orange-500/40"
   },
   none: {
-    label: "No 4K found",
+    label: "No 4K",
     bg: "bg-white/5",
-    text: "text-white/60",
+    text: "text-white/55",
     border: "border-white/10"
+  },
+  ignored: {
+    label: "Ignored",
+    bg: "bg-slate-600/10",
+    text: "text-slate-300",
+    border: "border-slate-500/25"
   },
   error: {
     label: "Check failed",
@@ -644,6 +651,11 @@ export function UpgradeFinderClient({ initialItems }: { initialItems: UpgradeFin
   const [releaseTotal, setReleaseTotal] = useState(0);
   const [releaseOffset, setReleaseOffset] = useState(0);
   const [grabbingGuid, setGrabbingGuid] = useState<string | null>(null);
+  const [replaceModal, setReplaceModal] = useState<{
+    release: ReleaseRow;
+    info: { quality?: string | null; sizeBytes?: number | null; dateAdded?: string | null };
+  } | null>(null);
+  const [replaceStatus, setReplaceStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const releaseCacheRef = useRef<Record<string, { items: ReleaseRow[]; total: number }>>({});
 
   const filteredItems = useMemo(() => {
@@ -808,7 +820,7 @@ export function UpgradeFinderClient({ initialItems }: { initialItems: UpgradeFin
     }
   };
 
-  const handleGrabRelease = async (release: ReleaseRow) => {
+  const grabRelease = async (release: ReleaseRow) => {
     if (!activeItem || grabbingGuid) return;
     setGrabbingGuid(release.guid);
     try {
@@ -831,6 +843,69 @@ export function UpgradeFinderClient({ initialItems }: { initialItems: UpgradeFin
       toast.error(err?.message ?? "Grab failed");
     } finally {
       setGrabbingGuid(null);
+    }
+  };
+
+  const handleGrabRelease = async (release: ReleaseRow) => {
+    if (!activeItem || grabbingGuid) return;
+    if (activeItem.mediaType === "movie") {
+      try {
+        const res = await fetch(`/api/v1/admin/media/info?mediaType=movie&id=${activeItem.id}`, {
+          credentials: "include"
+        });
+        const body = await res.json().catch(() => ({}));
+        if (res.ok && body?.hasFile) {
+          setReplaceStatus("idle");
+          setReplaceModal({
+            release,
+            info: {
+              quality: body?.quality ?? null,
+              sizeBytes: body?.sizeBytes ?? null,
+              dateAdded: body?.dateAdded ?? null
+            }
+          });
+          return;
+        }
+      } catch {
+        // ignore info failure; proceed to grab
+      }
+    }
+    await grabRelease(release);
+  };
+
+  const formatDate = (dateStr?: string | null) => {
+    if (!dateStr) return "-";
+    try {
+      return new Date(dateStr).toLocaleDateString("en-GB", {
+        year: "numeric",
+        month: "short",
+        day: "numeric"
+      });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const confirmReplace = async () => {
+    if (!replaceModal || !activeItem) return;
+    setReplaceStatus("loading");
+    try {
+      const removeRes = await csrfFetch("/api/v1/admin/media/movie", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "remove", movieId: activeItem.id })
+      });
+      const removeBody = await removeRes.json().catch(() => ({}));
+      if (!removeRes.ok) throw new Error(removeBody?.error || "Failed to remove existing file");
+      await grabRelease(replaceModal.release);
+      setReplaceStatus("success");
+      setTimeout(() => {
+        setReplaceModal(null);
+        setReplaceStatus("idle");
+      }, 1200);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to replace file");
+      setReplaceStatus("error");
     }
   };
 
@@ -914,7 +989,8 @@ export function UpgradeFinderClient({ initialItems }: { initialItems: UpgradeFin
   ];
 
   return (
-    <div className="space-y-6">
+    <>
+      <div className="space-y-6">
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="rounded-xl border border-white/10 bg-gradient-to-br from-slate-900/60 to-slate-900/40 p-4 shadow-lg">
@@ -1014,10 +1090,12 @@ export function UpgradeFinderClient({ initialItems }: { initialItems: UpgradeFin
               filteredItems.map(item => {
                 const key = itemKey(item);
                 const hintState = hintMap[key] ?? { status: "idle" as HintStatus };
+                const isIgnored = item.ignore4k && hintState.status === "available";
                 const shouldShowUpgrade = hintState.status === "available" && !item.ignore4k;
-                const status = statusStyles[shouldShowUpgrade ? "upgrade" : item.upgradeStatus];
+                const statusKey = isIgnored ? "up-to-date" : shouldShowUpgrade ? "upgrade" : item.upgradeStatus;
+                const status = statusStyles[statusKey];
                 const isRunning = runningIds.has(key);
-                const displayHintStatus = item.ignore4k && hintState.status === "available" ? "none" : hintState.status;
+                const displayHintStatus = isIgnored ? "ignored" : hintState.status;
                 const hintStyle = hintStyles[displayHintStatus];
                 return (
                   <tr key={`${item.mediaType}-${item.id}`} className="hover:bg-white/5 transition-colors group">
@@ -1053,13 +1131,10 @@ export function UpgradeFinderClient({ initialItems }: { initialItems: UpgradeFin
                       <span className={cn("inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold", status.bg, status.text, "ring-1", status.border.replace("border-", "ring-"))}>
                         {shouldShowUpgrade ? "Upgrade" : status.label}
                       </span>
-                      {item.ignore4k && (
-                        <div className="mt-1 text-[10px] text-white/30">4K ignored</div>
-                      )}
                     </td>
                     <td className="p-4">
-                      <span className={cn("inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold", hintStyle.bg, hintStyle.text, "ring-1", hintStyle.border.replace("border-", "ring-"))}>
-                        {hintStyle.label}
+                      <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap", hintStyle.bg, hintStyle.text, "ring-1", hintStyle.border.replace("border-", "ring-"))}>
+                        {displayHintStatus === "ignored" ? "4K Ignored" : hintStyle.label}
                       </span>
                     </td>
                     <td className="p-4 pr-6 text-right">
@@ -1119,10 +1194,12 @@ export function UpgradeFinderClient({ initialItems }: { initialItems: UpgradeFin
           filteredItems.map(item => {
             const key = itemKey(item);
             const hintState = hintMap[key] ?? { status: "idle" as HintStatus };
+            const isIgnored = item.ignore4k && hintState.status === "available";
             const shouldShowUpgrade = hintState.status === "available" && !item.ignore4k;
-            const status = statusStyles[shouldShowUpgrade ? "upgrade" : item.upgradeStatus];
+            const statusKey = isIgnored ? "up-to-date" : shouldShowUpgrade ? "upgrade" : item.upgradeStatus;
+            const status = statusStyles[statusKey];
             const isRunning = runningIds.has(key);
-            const displayHintStatus = item.ignore4k && hintState.status === "available" ? "none" : hintState.status;
+            const displayHintStatus = isIgnored ? "ignored" : hintState.status;
             const hintStyle = hintStyles[displayHintStatus];
 
             return (
@@ -1159,12 +1236,9 @@ export function UpgradeFinderClient({ initialItems }: { initialItems: UpgradeFin
                   <span className={cn("inline-flex items-center rounded-full px-2 py-1 text-[10px] font-semibold", status.bg, status.text, "ring-1", status.border.replace("border-", "ring-"))}>
                     {shouldShowUpgrade ? "Upgrade" : status.label}
                   </span>
-                  <span className={cn("inline-flex items-center rounded-full px-2 py-1 text-[10px] font-semibold", hintStyle.bg, hintStyle.text, "ring-1", hintStyle.border.replace("border-", "ring-"))}>
-                    {hintStyle.label}
+                  <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap", hintStyle.bg, hintStyle.text, "ring-1", hintStyle.border.replace("border-", "ring-"))}>
+                    {displayHintStatus === "ignored" ? "4K Ignored" : hintStyle.label}
                   </span>
-                  {item.ignore4k && (
-                    <span className="text-[10px] text-white/30">4K ignored</span>
-                  )}
                 </div>
 
                 {/* Quality info */}
@@ -1235,6 +1309,68 @@ export function UpgradeFinderClient({ initialItems }: { initialItems: UpgradeFin
         onLoadMore={handleLoadMore}
         total={releaseTotal}
       />
-    </div>
+      </div>
+      <Modal
+        open={!!replaceModal}
+        title="Replace Existing File?"
+        onClose={() => {
+          if (replaceStatus === "loading") return;
+          setReplaceModal(null);
+          setReplaceStatus("idle");
+        }}
+      >
+        <div className="space-y-4">
+          <div className="text-sm text-white/80">
+            There is already a file for this movie.
+          </div>
+          <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80">
+            <div className="text-[10px] uppercase tracking-wider text-white/50">Current File</div>
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-sm">
+              <span className="font-semibold text-white">{replaceModal?.info.quality || "Unknown"}</span>
+              {replaceModal?.info.sizeBytes ? (
+                <span className="text-white/50">| {formatBytes(replaceModal.info.sizeBytes)}</span>
+              ) : null}
+              {replaceModal?.info.dateAdded ? (
+                <span className="text-white/50">| Added: {formatDate(replaceModal.info.dateAdded)}</span>
+              ) : null}
+            </div>
+          </div>
+          <div className="text-sm text-white/70">
+            Do you want to remove this one and download the one you&apos;re about to grab?
+          </div>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                if (replaceStatus === "loading") return;
+                setReplaceModal(null);
+                setReplaceStatus("idle");
+              }}
+              className="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 transition-colors disabled:opacity-50"
+              disabled={replaceStatus === "loading"}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={confirmReplace}
+              disabled={replaceStatus === "loading"}
+              className={cn(
+                "flex-1 rounded-lg px-4 py-2 text-sm font-semibold text-white transition-all disabled:opacity-50 inline-flex items-center justify-center gap-2",
+                replaceStatus === "success"
+                  ? "bg-emerald-600 hover:bg-emerald-500"
+                  : replaceStatus === "error"
+                  ? "bg-red-600 hover:bg-red-500"
+                  : "bg-indigo-600 hover:bg-indigo-500"
+              )}
+            >
+              {replaceStatus === "loading" ? "Replacing..." : "Yes, Replace & Grab"}
+              {replaceStatus === "success" ? <Check className="h-4 w-4" /> : null}
+              {replaceStatus === "error" ? <X className="h-4 w-4" /> : null}
+            </button>
+          </div>
+        </div>
+      </Modal>
+    </>
   );
 }

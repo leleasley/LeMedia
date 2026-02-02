@@ -6,8 +6,11 @@ import { deleteMovie, getMovieByTmdbId } from "@/lib/radarr";
 import { requireCsrf } from "@/lib/csrf";
 
 const BodySchema = z.object({
-  tmdbId: z.coerce.number().int().positive(),
+  tmdbId: z.coerce.number().int().positive().optional(),
+  movieId: z.coerce.number().int().positive().optional(),
   action: z.enum(["remove", "clear"])
+}).refine((data) => data.tmdbId || data.movieId, {
+  message: "Missing movie identifier"
 });
 
 export async function POST(req: NextRequest) {
@@ -19,15 +22,21 @@ export async function POST(req: NextRequest) {
   try {
     const body = BodySchema.parse(await req.json());
     if (body.action === "remove") {
-      const movie = await getMovieByTmdbId(body.tmdbId);
-      if (!movie?.id) {
+      let movieId = body.movieId ?? null;
+      if (!movieId && body.tmdbId) {
+        const movie = await getMovieByTmdbId(body.tmdbId);
+        movieId = movie?.id ?? null;
+      }
+      if (!movieId) {
         return NextResponse.json({ error: "Movie not found in Radarr" }, { status: 404 });
       }
-      await deleteMovie(movie.id, { deleteFiles: true });
+      await deleteMovie(movieId, { deleteFiles: true });
       return NextResponse.json({ ok: true });
     }
 
-    await clearRequestsForTmdb("movie", body.tmdbId);
+    if (body.tmdbId) {
+      await clearRequestsForTmdb("movie", body.tmdbId);
+    }
     return NextResponse.json({ ok: true });
   } catch (err) {
     if (err instanceof z.ZodError) {

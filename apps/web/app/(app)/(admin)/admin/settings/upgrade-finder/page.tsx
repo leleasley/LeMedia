@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getUser } from "@/auth";
 import { listUpgradeFinderItems } from "@/lib/upgrade-finder";
-import { listUpgradeFinderHints } from "@/db";
+import { listUpgradeFinderHints, listUpgradeFinderOverrides } from "@/db";
 import { UpgradeFinderClient } from "@/components/Admin/UpgradeFinderClient";
 
 export const metadata = {
@@ -23,22 +23,28 @@ export default async function UpgradeFinderPage() {
     );
   }
 
-  const [items, hints] = await Promise.all([
+  const [items, hints, overrides] = await Promise.all([
     listUpgradeFinderItems(),
-    listUpgradeFinderHints().catch(() => [])
+    listUpgradeFinderHints().catch(() => []),
+    listUpgradeFinderOverrides().catch(() => [])
   ]);
 
   const hintMap = new Map(
     hints.map(hint => [`${hint.mediaType}:${hint.mediaId}`, hint])
   );
+  const overrideMap = new Map(
+    overrides.map(override => [`${override.mediaType}:${override.mediaId}`, override])
+  );
 
   const itemsWithHints = items.map(item => {
     const hint = hintMap.get(`${item.mediaType}:${item.id}`);
+    const override = overrideMap.get(`${item.mediaType}:${item.id}`);
     return {
       ...item,
       hintStatus: hint?.status ?? undefined,
       hintText: hint?.hintText ?? null,
       checkedAt: hint?.checkedAt ?? null,
+      ignore4k: override?.ignore4k ?? false,
     };
   });
 

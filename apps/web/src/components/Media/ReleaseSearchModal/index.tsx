@@ -252,13 +252,17 @@ export function ReleaseSearchModal(props: {
   };
 
   const confirmReplace = async () => {
-    if (!replaceModal || !tmdbId) return;
+    if (!replaceModal) return;
     setReplaceStatus("loading");
     try {
       const removeRes = await csrfFetch("/api/v1/admin/media/movie", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tmdbId, action: "remove" })
+        body: JSON.stringify({
+          action: "remove",
+          movieId: resolvedMediaId ?? undefined,
+          tmdbId: tmdbId ?? undefined
+        })
       });
       const removeBody = await removeRes.json().catch(() => ({}));
       if (!removeRes.ok) throw new Error(removeBody?.error || "Failed to remove existing file");
