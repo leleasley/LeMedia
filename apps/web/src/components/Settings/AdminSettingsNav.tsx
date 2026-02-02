@@ -43,7 +43,7 @@ type SettingsGroup = {
 export function AdminSettingsNav() {
     const pathname = usePathname();
     const router = useRouter();
-    const mediaServerLabel = "Jellyfin";
+    const mediaServerLabel = "Media Servers";
     const mediaServerRoute = "/admin/settings/jellyfin";
 
     const groups: SettingsGroup[] = [

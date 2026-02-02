@@ -12,8 +12,8 @@ import ProwlarrLogo from "@/assets/services/prowlarr.svg";
 import SabnzbdLogo from "@/assets/services/sabnzbd.svg";
 import QbittorrentLogo from "@/assets/services/qbittorrent.svg";
 import NzbgetLogo from "@/assets/services/nzbget.svg";
-import { ServiceHealthWidget } from "./ServiceHealthWidget";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Loader2, CheckCircle2, XCircle, Database, Film, Tv, RefreshCcw } from "lucide-react";
 
 type MediaService = {
     id: number;
@@ -37,6 +37,30 @@ type ProwlarrIndexer = {
     supportsSearch?: boolean;
     priority?: number;
     tags?: number[];
+};
+
+type ServiceHealthDetail = {
+    id: number;
+    name: string;
+    type: "radarr" | "sonarr" | string;
+    healthy: boolean;
+    enabled: boolean;
+    statusText?: string;
+    queueSize: number;
+    failedCount: number;
+    disk?: {
+        path?: string;
+        freeBytes?: number;
+        totalBytes?: number;
+    };
+};
+
+type HealthResponse = {
+    database: boolean;
+    tmdb: boolean;
+    jellyfin: boolean;
+    services: Record<string, boolean>;
+    serviceDetails?: ServiceHealthDetail[];
 };
 
 type ModalState = { mode: "create" } | { mode: "edit"; service: MediaService };
@@ -100,16 +124,76 @@ const initialForm: FormState = {
 };
 
 const cloneInitialForm = (): FormState => ({ ...initialForm });
-
 const toStringValue = (value?: unknown) => (value == null ? "" : String(value));
 
 const fetcher = async (url: string) => {
     const res = await fetch(url, { credentials: "include" });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-        throw new Error(data?.error || "Request failed");
-    }
+    if (!res.ok) throw new Error(data?.error || "Request failed");
     return data;
+};
+
+function formatBytes(bytes?: number) {
+    if (typeof bytes !== "number" || Number.isNaN(bytes)) return "—";
+    if (bytes <= 0) return "0 B";
+    const units = ["B", "KB", "MB", "GB", "TB", "PB"];
+    const i = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
+    const value = bytes / Math.pow(1024, i);
+    return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[i]}`;
+}
+
+const logoMap: Record<MediaService["type"], any> = {
+    radarr: RadarrLogo,
+    sonarr: SonarrLogo,
+    prowlarr: ProwlarrLogo,
+    sabnzbd: SabnzbdLogo,
+    qbittorrent: QbittorrentLogo,
+    nzbget: NzbgetLogo
+};
+
+const typeLabelMap: Record<FormState["type"], string> = {
+    radarr: "Radarr",
+    sonarr: "Sonarr",
+    prowlarr: "Prowlarr",
+    sabnzbd: "SABnzbd",
+    qbittorrent: "qBittorrent",
+    nzbget: "NZBGet"
+};
+
+const portPlaceholderMap: Record<FormState["type"], string> = {
+    radarr: "7878",
+    sonarr: "8989",
+    prowlarr: "9696",
+    sabnzbd: "8080",
+    qbittorrent: "8080",
+    nzbget: "6789"
+};
+
+const urlBasePlaceholderMap: Record<FormState["type"], string> = {
+    radarr: "/radarr",
+    sonarr: "/sonarr",
+    prowlarr: "/prowlarr",
+    sabnzbd: "",
+    qbittorrent: "",
+    nzbget: ""
+};
+
+const serviceDescriptions: Record<MediaService["type"], string> = {
+    radarr: "Movie collection manager",
+    sonarr: "TV series collection manager",
+    prowlarr: "Indexer manager for *arr apps",
+    sabnzbd: "Usenet download client",
+    qbittorrent: "BitTorrent download client",
+    nzbget: "Usenet download client"
+};
+
+const serviceGradients: Record<string, { from: string; to: string; text: string }> = {
+    radarr: { from: "from-amber-500/20", to: "to-orange-500/20", text: "text-amber-400" },
+    sonarr: { from: "from-sky-500/20", to: "to-blue-500/20", text: "text-sky-400" },
+    prowlarr: { from: "from-purple-500/20", to: "to-indigo-500/20", text: "text-purple-400" },
+    sabnzbd: { from: "from-yellow-500/20", to: "to-amber-500/20", text: "text-yellow-400" },
+    qbittorrent: { from: "from-blue-500/20", to: "to-cyan-500/20", text: "text-blue-400" },
+    nzbget: { from: "from-green-500/20", to: "to-emerald-500/20", text: "text-green-400" }
 };
 
 export function ServicesAdminPanel({ initialServices }: { initialServices: MediaService[] }) {
@@ -119,14 +203,19 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
         revalidateOnFocus: false
     });
 
+    const { data: healthData, mutate: mutateHealth } = useSWR<HealthResponse>("/api/admin/status/health", fetcher, {
+        refreshInterval: 30000
+    });
+
     const services = useMemo(() => data?.services ?? [], [data]);
     const prowlarrEnabled = services.some(service => service.type === "prowlarr");
+
     const { data: indexerData, mutate: mutateIndexers, error: indexerError } = useSWR<{ indexers: ProwlarrIndexer[] }>(
         prowlarrEnabled ? "/api/v1/admin/prowlarr/indexers" : null,
         fetcher,
         { revalidateOnFocus: false }
     );
-    
+
     const [modal, setModal] = useState<ModalState | null>(null);
     const [form, setForm] = useState<FormState>(cloneInitialForm);
     const [submitting, setSubmitting] = useState(false);
@@ -134,14 +223,13 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
     const [testing, setTesting] = useState(false);
     const [testMessage, setTestMessage] = useState<string | null>(null);
     const [statusMap, setStatusMap] = useState<Record<number, { state: "idle" | "checking" | "ok" | "error"; message?: string }>>({});
-    const [showIndexerPanel, setShowIndexerPanel] = useState(false);
+    const [expandedSection, setExpandedSection] = useState<string>("status");
+    const [showIndexers, setShowIndexers] = useState(false);
     const [editIndexer, setEditIndexer] = useState<ProwlarrIndexer | null>(null);
-    const [indexerForm, setIndexerForm] = useState({
-        enable: false,
-        priority: 1
-    });
+    const [indexerForm, setIndexerForm] = useState({ enable: false, priority: 1 });
     const [savingIndexer, setSavingIndexer] = useState(false);
     const [bulkIndexerSaving, setBulkIndexerSaving] = useState(false);
+    const [retryingId, setRetryingId] = useState<number | null>(null);
 
     const buildBaseUrl = useCallback((f: FormState) => {
         const trimmedHost = f.hostname.trim();
@@ -153,35 +241,11 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
     }, []);
 
     const computedBaseUrl = buildBaseUrl(form);
-    const typeLabelMap: Record<FormState["type"], string> = {
-        radarr: "Radarr",
-        sonarr: "Sonarr",
-        prowlarr: "Prowlarr",
-        sabnzbd: "SABnzbd",
-        qbittorrent: "qBittorrent",
-        nzbget: "NZBGet"
-    };
     const typeLabel = typeLabelMap[form.type];
-    const modalTitle = modal?.mode === "edit" ? `Edit ${typeLabel} server` : `Add ${typeLabel} server`;
+    const modalTitle = modal?.mode === "edit" ? `Edit ${typeLabel} Server` : `Add ${typeLabel} Server`;
     const isDownloader = ["sabnzbd", "qbittorrent", "nzbget"].includes(form.type);
     const needsUsername = form.type === "qbittorrent" || form.type === "nzbget";
     const apiKeyLabel = needsUsername ? "Password" : "API Key";
-    const portPlaceholderMap: Record<FormState["type"], string> = {
-        radarr: "7878",
-        sonarr: "8989",
-        prowlarr: "9696",
-        sabnzbd: "8080",
-        qbittorrent: "8080",
-        nzbget: "6789"
-    };
-    const urlBasePlaceholderMap: Record<FormState["type"], string> = {
-        radarr: "/radarr",
-        sonarr: "/sonarr",
-        prowlarr: "/prowlarr",
-        sabnzbd: "",
-        qbittorrent: "",
-        nzbget: ""
-    };
 
     const handleClose = useCallback(() => {
         setModal(null);
@@ -321,13 +385,12 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
             setTestMessage("Hostname required.");
             return;
         }
-        
+
         const apiKeyToUse = form.apiKey.trim();
         const usernameToUse = form.username.trim();
-        // If edit mode and no key, allow it (backend will use stored key)
         if (!apiKeyToUse && (!modal || modal.mode !== 'edit')) {
-             setTestMessage("API key required.");
-             return;
+            setTestMessage("API key required.");
+            return;
         }
         if (needsUsername && !usernameToUse && (!modal || modal.mode !== "edit")) {
             setTestMessage("Username required.");
@@ -337,12 +400,8 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
         setTesting(true);
         try {
             const payload: any = { type: form.type, baseUrl: computedBaseUrl, apiKey: apiKeyToUse };
-            if (needsUsername && usernameToUse) {
-                payload.username = usernameToUse;
-            }
-            if (modal?.mode === 'edit') {
-                payload.id = modal.service.id;
-            }
+            if (needsUsername && usernameToUse) payload.username = usernameToUse;
+            if (modal?.mode === 'edit') payload.id = modal.service.id;
 
             const res = await csrfFetch("/api/v1/admin/services/test", {
                 method: "POST",
@@ -371,28 +430,34 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
         }
     }, []);
 
-    const openIndexerEdit = useCallback((indexer: ProwlarrIndexer) => {
-        setEditIndexer(indexer);
-        setIndexerForm({
-            enable: Boolean(indexer.enable),
-            priority: Number.isFinite(Number(indexer.priority)) ? Number(indexer.priority) : 1
-        });
-    }, []);
+    const handleRetry = async (detail: ServiceHealthDetail) => {
+        setRetryingId(detail.id);
+        try {
+            const res = await fetch("/api/admin/status/retry-downloads", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ serviceId: detail.id })
+            });
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok || body?.error) throw new Error(body?.error || "Failed to trigger retry");
+            toast.success("Retry started");
+            mutateHealth();
+        } catch (err: any) {
+            toast.error(err?.message ?? "Retry failed");
+        } finally {
+            setRetryingId(null);
+        }
+    };
 
     const saveIndexer = useCallback(async (event: FormEvent) => {
         event.preventDefault();
-        if (!editIndexer) return;
-        if (savingIndexer) return;
+        if (!editIndexer || savingIndexer) return;
         setSavingIndexer(true);
         try {
             const res = await csrfFetch("/api/v1/admin/prowlarr/indexers", {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    id: editIndexer.id,
-                    enable: indexerForm.enable,
-                    priority: indexerForm.priority
-                })
+                body: JSON.stringify({ id: editIndexer.id, enable: indexerForm.enable, priority: indexerForm.priority })
             });
             const body = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(body?.error || "Failed to update indexer");
@@ -414,20 +479,14 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
                 const res = await csrfFetch("/api/v1/admin/prowlarr/indexers", {
                     method: "PATCH",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        id: indexer.id,
-                        enable: true
-                    })
+                    body: JSON.stringify({ id: indexer.id, enable: true })
                 });
-                const body = await res.json().catch(() => ({}));
-                if (!res.ok) {
-                    throw new Error(body?.error || `Failed to update ${indexer.name ?? "indexer"}`);
-                }
+                if (!res.ok) throw new Error(`Failed to update ${indexer.name ?? "indexer"}`);
                 return true;
             }));
             const failures = results.filter(result => result.status === "rejected");
             if (failures.length) {
-                toast.error(`Enabled with ${failures.length} failure(s). Check individual indexers.`);
+                toast.error(`Enabled with ${failures.length} failure(s)`);
             } else {
                 toast.success("All indexers enabled");
             }
@@ -443,73 +502,69 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
         services.forEach(s => { if (!statusMap[s.id]) pingService(s); });
     }, [services, statusMap, pingService]);
 
-    const renderIndexerFlag = (value: boolean | undefined) => {
-        if (value === undefined || value === null) {
-            return (
-                <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold bg-white/10 text-white/60">
-                    —
-                </span>
-            );
-        }
-        return (
-            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${value ? "bg-emerald-500" : "bg-rose-500"} text-white`}>
-                {value ? "Yes" : "No"}
-            </span>
-        );
-    };
-
     const radarrServices = services.filter(s => s.type === "radarr");
     const sonarrServices = services.filter(s => s.type === "sonarr");
     const prowlarrServices = services.filter(s => s.type === "prowlarr");
     const downloaderServices = services.filter(s => ["sabnzbd", "qbittorrent", "nzbget"].includes(s.type));
 
+    const mediaDetails: ServiceHealthDetail[] = useMemo(() => {
+        if (healthData?.serviceDetails?.length) return healthData.serviceDetails;
+        return services.map((svc: any) => ({
+            id: svc.id,
+            name: svc.name,
+            type: svc.type,
+            healthy: healthData?.services?.[`${svc.type}:${svc.id}`] ?? false,
+            enabled: svc.enabled,
+            statusText: svc.enabled ? undefined : "Disabled",
+            queueSize: 0,
+            failedCount: 0
+        }));
+    }, [healthData?.serviceDetails, healthData?.services, services]);
+
     const renderServiceCard = (service: MediaService) => {
         const cfg = (service.config as any) || {};
-        const logoMap: Record<MediaService["type"], any> = {
-            radarr: RadarrLogo,
-            sonarr: SonarrLogo,
-            prowlarr: ProwlarrLogo,
-            sabnzbd: SabnzbdLogo,
-            qbittorrent: QbittorrentLogo,
-            nzbget: NzbgetLogo
-        };
         const logo = logoMap[service.type];
         const status = statusMap[service.id]?.state ?? "idle";
+        const gradient = serviceGradients[service.type];
 
         return (
-            <div key={service.id} className="group relative flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl border border-white/10 bg-slate-900/40 p-3 hover:bg-slate-900/60 transition-all shadow-sm">
-                <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <div className="h-10 w-10 rounded-lg bg-white/5 p-2 flex items-center justify-center shrink-0 border border-white/5 group-hover:border-white/10 transition-colors">
-                        <Image src={logo} alt={service.type} className="h-full w-full object-contain opacity-80 group-hover:opacity-100 transition-opacity" />
-                    </div>
-                    
-                    <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                            <span className="text-sm font-semibold text-white truncate">{service.name}</span>
-                            {cfg.defaultServer && <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-tight">Default</span>}
-                            {cfg.fourKServer && <span className="text-[10px] text-amber-400 font-bold uppercase tracking-tight">4K</span>}
+            <div key={service.id} className="group relative rounded-xl border border-white/10 bg-white/5 overflow-hidden hover:bg-white/[0.07] transition-all">
+                <div className="p-4">
+                    <div className="flex items-start gap-3">
+                        <div className={`h-12 w-12 rounded-xl bg-gradient-to-br ${gradient.from} ${gradient.to} p-2.5 flex items-center justify-center shrink-0 ring-1 ring-white/10`}>
+                            <Image src={logo} alt={service.type} className="h-full w-full object-contain" />
                         </div>
-                        <div className="flex items-center gap-2 mt-0.5">
-                            <div className={`h-1.5 w-1.5 rounded-full ${status === 'ok' ? 'bg-emerald-500 animate-pulse' : status === 'error' ? 'bg-red-500' : 'bg-gray-500'}`} />
-                    <span className="text-[10px] text-muted truncate opacity-70">{service.base_url}</span>
+                        <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-semibold text-white">{service.name}</span>
+                                {cfg.defaultServer && (
+                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">DEFAULT</span>
+                                )}
+                                {cfg.fourKServer && (
+                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">4K</span>
+                                )}
+                            </div>
+                            <div className="flex items-center gap-2 mt-1">
+                                <div className={`h-2 w-2 rounded-full ${status === 'ok' ? 'bg-emerald-500' : status === 'error' ? 'bg-red-500' : status === 'checking' ? 'bg-amber-500 animate-pulse' : 'bg-gray-500'}`} />
+                                <span className="text-xs text-gray-500 truncate">{service.base_url}</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            </div>
-        </div>
-
-                <div className="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => pingService(service)} className="p-1.5 rounded-lg hover:bg-white/10 text-white/60 hover:text-white transition-colors" title="Ping">
+                <div className="flex items-center justify-end gap-1 px-3 py-2 border-t border-white/5 bg-white/[0.02]">
+                    <button onClick={() => pingService(service)} className="p-2 rounded-lg hover:bg-white/10 text-gray-500 hover:text-white transition-colors" title="Test Connection">
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" /></svg>
                     </button>
-                    <button onClick={() => openEdit(service)} className="p-1.5 rounded-lg hover:bg-white/10 text-white/60 hover:text-white transition-colors" title="Edit">
+                    <button onClick={() => openEdit(service)} className="p-2 rounded-lg hover:bg-white/10 text-gray-500 hover:text-white transition-colors" title="Edit">
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                     </button>
-                    <button 
+                    <button
                         onClick={async () => {
-                            if (!confirm("Delete service?")) return;
+                            if (!confirm("Delete this service?")) return;
                             await csrfFetch(`/api/v1/admin/services/${service.id}`, { method: "DELETE", credentials: "include" });
                             mutate();
-                        }} 
-                        className="p-1.5 rounded-lg hover:bg-red-500/20 text-white/60 hover:text-red-400 transition-colors" 
+                        }}
+                        className="p-2 rounded-lg hover:bg-red-500/20 text-gray-500 hover:text-red-400 transition-colors"
                         title="Delete"
                     >
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
@@ -519,339 +574,463 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
         );
     };
 
-    return (
-        <div className="flex flex-col gap-8">
-            <ServiceHealthWidget services={services} />
-            <div className="grid gap-6 lg:grid-cols-2">
-                {/* Radarr Section */}
-            <div className="rounded-xl border border-white/10 bg-slate-900/60 p-5 shadow-lg shadow-black/10">
-                <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                        <Image src={RadarrLogo} alt="Radarr" className="h-5 w-5" />
-                        <h3 className="text-lg font-bold text-white">Radarr</h3>
+    const renderServiceSection = (
+        title: string,
+        type: MediaService["type"],
+        serviceList: MediaService[],
+        icon: any,
+        gradient: { from: string; to: string; text: string }
+    ) => (
+        <div className="glass-strong rounded-2xl border border-white/10 overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-white/10">
+                <div className="flex items-center gap-3">
+                    <div className={`h-10 w-10 rounded-xl bg-gradient-to-br ${gradient.from} ${gradient.to} p-2 flex items-center justify-center ring-1 ring-white/10`}>
+                        <Image src={icon} alt={title} className="h-full w-full object-contain" />
                     </div>
-                    <button onClick={() => openCreate("radarr")} className="px-3 py-1.5 rounded-lg bg-indigo-600/20 text-indigo-300 text-xs font-bold hover:bg-indigo-600/30 transition-colors">
+                    <div>
+                        <h3 className="font-semibold text-white">{title}</h3>
+                        <p className="text-xs text-gray-500">{serviceDescriptions[type]}</p>
+                    </div>
+                </div>
+                <button
+                    onClick={() => openCreate(type)}
+                    className={`px-3 py-1.5 rounded-lg bg-gradient-to-r ${gradient.from} ${gradient.to} ${gradient.text} text-xs font-bold border border-white/10 hover:border-white/20 transition-all`}
+                >
+                    Add Server
+                </button>
+            </div>
+            <div className="p-4">
+                {serviceList.length === 0 ? (
+                    <div className="py-8 text-center rounded-xl border border-dashed border-white/10 bg-white/[0.02]">
+                        <p className="text-sm text-gray-500">No servers configured</p>
+                        <button onClick={() => openCreate(type)} className="mt-2 text-xs text-purple-400 hover:text-purple-300">
+                            Add your first {title} server
+                        </button>
+                    </div>
+                ) : (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                        {serviceList.map(renderServiceCard)}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+
+    return (
+        <div className="space-y-6">
+            {/* System Status Card */}
+            <div className="glass-strong rounded-2xl border border-white/10 overflow-hidden">
+                <button
+                    onClick={() => setExpandedSection(expandedSection === "status" ? "" : "status")}
+                    className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors"
+                >
+                    <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500/20 to-green-500/20 flex items-center justify-center ring-1 ring-white/10">
+                            <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+                        </div>
+                        <div className="text-left">
+                            <h3 className="font-semibold text-white">System Status</h3>
+                            <p className="text-xs text-gray-500">
+                                {healthData?.database && healthData?.tmdb ? "All systems operational" : "Some issues detected"}
+                            </p>
+                        </div>
+                    </div>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={`w-5 h-5 text-gray-400 transition-transform ${expandedSection === "status" ? "rotate-180" : ""}`}>
+                        <path fillRule="evenodd" d="M12.53 16.28a.75.75 0 01-1.06 0l-7.5-7.5a.75.75 0 011.06-1.06L12 14.69l6.97-6.97a.75.75 0 111.06 1.06l-7.5 7.5z" clipRule="evenodd" />
+                    </svg>
+                </button>
+
+                {expandedSection === "status" && (
+                    <div className="border-t border-white/10 p-4 space-y-4">
+                        {/* Core Services */}
+                        <div className="grid gap-3 sm:grid-cols-3">
+                            {[
+                                { label: "Database", healthy: healthData?.database ?? false, icon: Database },
+                                { label: "TMDB API", healthy: healthData?.tmdb ?? false, icon: Film },
+                                { label: "Jellyfin", healthy: healthData?.jellyfin ?? false, icon: Tv }
+                            ].map(item => (
+                                <div key={item.label} className="flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-white/5">
+                                    <div className={`p-2 rounded-lg ${item.healthy ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"}`}>
+                                        <item.icon className="h-4 w-4" />
+                                    </div>
+                                    <div className="flex-1">
+                                        <p className="text-sm font-medium text-white">{item.label}</p>
+                                        <p className={`text-xs ${item.healthy ? "text-emerald-400" : "text-red-400"}`}>
+                                            {item.healthy ? "Operational" : "Issue"}
+                                        </p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Service Details */}
+                        {mediaDetails.length > 0 && (
+                            <div className="space-y-3">
+                                <h4 className="text-sm font-semibold text-gray-400">Media Services</h4>
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    {mediaDetails.map(detail => (
+                                        <div key={detail.id} className="p-3 rounded-xl bg-white/5 border border-white/5">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <div className="flex items-center gap-2">
+                                                    <div className={`h-2 w-2 rounded-full ${detail.healthy ? "bg-emerald-500" : "bg-red-500"}`} />
+                                                    <span className="text-sm font-medium text-white">{detail.name}</span>
+                                                    <span className="text-xs text-gray-500">({detail.type})</span>
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-wrap gap-2 text-xs">
+                                                <span className="px-2 py-1 rounded-full bg-white/10 text-gray-300">Queue: {detail.queueSize}</span>
+                                                <span className={`px-2 py-1 rounded-full ${detail.failedCount > 0 ? "bg-red-500/20 text-red-300" : "bg-emerald-500/15 text-emerald-300"}`}>
+                                                    Failed: {detail.failedCount}
+                                                </span>
+                                                {detail.type === "prowlarr" && (
+                                                    <span className="px-2 py-1 rounded-full bg-white/10 text-gray-300">
+                                                        Indexers: {indexerData?.indexers?.filter(i => i.enable).length ?? "—"}
+                                                    </span>
+                                                )}
+                                                {detail.disk?.freeBytes && (
+                                                    <span className="px-2 py-1 rounded-full bg-white/10 text-gray-300">
+                                                        Free: {formatBytes(detail.disk.freeBytes)}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            {(detail.type === "radarr" || detail.type === "sonarr") && detail.failedCount > 0 && (
+                                                <button
+                                                    onClick={() => handleRetry(detail)}
+                                                    disabled={!detail.enabled || retryingId === detail.id}
+                                                    className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs font-medium text-white hover:bg-white/10 disabled:opacity-50"
+                                                >
+                                                    {retryingId === detail.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCcw className="h-3 w-3" />}
+                                                    Retry Failed
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+
+            {/* Service Sections */}
+            <div className="grid gap-6 lg:grid-cols-2">
+                {renderServiceSection("Radarr", "radarr", radarrServices, RadarrLogo, serviceGradients.radarr)}
+                {renderServiceSection("Sonarr", "sonarr", sonarrServices, SonarrLogo, serviceGradients.sonarr)}
+            </div>
+
+            {/* Prowlarr with Indexers */}
+            <div className="glass-strong rounded-2xl border border-white/10 overflow-hidden">
+                <div className="flex items-center justify-between p-4 border-b border-white/10">
+                    <div className="flex items-center gap-3">
+                        <div className={`h-10 w-10 rounded-xl bg-gradient-to-br ${serviceGradients.prowlarr.from} ${serviceGradients.prowlarr.to} p-2 flex items-center justify-center ring-1 ring-white/10`}>
+                            <Image src={ProwlarrLogo} alt="Prowlarr" className="h-full w-full object-contain" />
+                        </div>
+                        <div>
+                            <h3 className="font-semibold text-white">Prowlarr</h3>
+                            <p className="text-xs text-gray-500">{serviceDescriptions.prowlarr}</p>
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => openCreate("prowlarr")}
+                        className={`px-3 py-1.5 rounded-lg bg-gradient-to-r ${serviceGradients.prowlarr.from} ${serviceGradients.prowlarr.to} ${serviceGradients.prowlarr.text} text-xs font-bold border border-white/10 hover:border-white/20 transition-all`}
+                    >
                         Add Server
                     </button>
                 </div>
-                <div className="space-y-2">
-                    {radarrServices.length === 0 ? (
-                        <div className="py-8 text-center text-xs text-muted opacity-50 border border-dashed border-white/5 rounded-xl italic">No servers configured</div>
+                <div className="p-4">
+                    {prowlarrServices.length === 0 ? (
+                        <div className="py-8 text-center rounded-xl border border-dashed border-white/10 bg-white/[0.02]">
+                            <p className="text-sm text-gray-500">No Prowlarr servers configured</p>
+                        </div>
                     ) : (
-                        radarrServices.map(renderServiceCard)
+                        <div className="space-y-4">
+                            <div className="grid gap-3 sm:grid-cols-2">
+                                {prowlarrServices.map(renderServiceCard)}
+                            </div>
+
+                            {/* Indexers Section */}
+                            <div className="border-t border-white/10 pt-4">
+                                <button
+                                    onClick={() => setShowIndexers(!showIndexers)}
+                                    className="w-full flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
+                                >
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-sm font-medium text-white">Indexers</span>
+                                        {indexerData?.indexers && (
+                                            <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-xs">
+                                                {indexerData.indexers.filter(i => i.enable).length} / {indexerData.indexers.length} enabled
+                                            </span>
+                                        )}
+                                    </div>
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={`w-4 h-4 text-gray-400 transition-transform ${showIndexers ? "rotate-180" : ""}`}>
+                                        <path fillRule="evenodd" d="M12.53 16.28a.75.75 0 01-1.06 0l-7.5-7.5a.75.75 0 011.06-1.06L12 14.69l6.97-6.97a.75.75 0 111.06 1.06l-7.5 7.5z" clipRule="evenodd" />
+                                    </svg>
+                                </button>
+
+                                {showIndexers && (
+                                    <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.02] overflow-hidden">
+                                        {indexerError ? (
+                                            <div className="p-6 text-center text-sm text-gray-500">Failed to load indexers</div>
+                                        ) : !indexerData?.indexers?.length ? (
+                                            <div className="p-6 text-center text-sm text-gray-500">No indexers found in Prowlarr</div>
+                                        ) : (
+                                            <>
+                                                <div className="flex justify-end p-3 border-b border-white/10">
+                                                    <button
+                                                        onClick={enableAllIndexers}
+                                                        disabled={bulkIndexerSaving}
+                                                        className="px-3 py-1.5 rounded-lg bg-purple-500/20 text-purple-300 text-xs font-bold hover:bg-purple-500/30 disabled:opacity-50"
+                                                    >
+                                                        {bulkIndexerSaving ? "Enabling..." : "Enable All"}
+                                                    </button>
+                                                </div>
+                                                <div className="max-h-64 overflow-y-auto">
+                                                    {indexerData.indexers.map((indexer) => (
+                                                        <div key={indexer.id} className="flex items-center justify-between p-3 border-b border-white/5 last:border-0 hover:bg-white/5">
+                                                            <div className="flex items-center gap-3">
+                                                                <div className={`h-2 w-2 rounded-full ${indexer.enable ? "bg-emerald-500" : "bg-gray-500"}`} />
+                                                                <div>
+                                                                    <p className="text-sm font-medium text-white">{indexer.name}</p>
+                                                                    <p className="text-xs text-gray-500">{indexer.implementationName ?? indexer.protocol}</p>
+                                                                </div>
+                                                            </div>
+                                                            <button
+                                                                onClick={() => {
+                                                                    setEditIndexer(indexer);
+                                                                    setIndexerForm({ enable: Boolean(indexer.enable), priority: indexer.priority ?? 1 });
+                                                                }}
+                                                                className="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-xs font-medium text-white hover:bg-white/10"
+                                                            >
+                                                                Edit
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
                     )}
                 </div>
             </div>
 
-            {/* Sonarr Section */}
-            <div className="rounded-xl border border-white/10 bg-slate-900/60 p-5 shadow-lg shadow-black/10">
-                <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                        <Image src={SonarrLogo} alt="Sonarr" className="h-5 w-5" />
-                        <h3 className="text-lg font-bold text-white">Sonarr</h3>
+            {/* Downloaders */}
+            <div className="glass-strong rounded-2xl border border-white/10 overflow-hidden">
+                <div className="flex items-center justify-between p-4 border-b border-white/10">
+                    <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 p-2 flex items-center justify-center ring-1 ring-white/10">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5 text-cyan-400">
+                                <path fillRule="evenodd" d="M12 2.25a.75.75 0 01.75.75v11.69l3.22-3.22a.75.75 0 111.06 1.06l-4.5 4.5a.75.75 0 01-1.06 0l-4.5-4.5a.75.75 0 111.06-1.06l3.22 3.22V3a.75.75 0 01.75-.75zm-9 13.5a.75.75 0 01.75.75v2.25a1.5 1.5 0 001.5 1.5h13.5a1.5 1.5 0 001.5-1.5V16.5a.75.75 0 011.5 0v2.25a3 3 0 01-3 3H5.25a3 3 0 01-3-3V16.5a.75.75 0 01.75-.75z" clipRule="evenodd" />
+                            </svg>
+                        </div>
+                        <div>
+                            <h3 className="font-semibold text-white">Download Clients</h3>
+                            <p className="text-xs text-gray-500">Configure Usenet and BitTorrent clients</p>
+                        </div>
                     </div>
-                    <button onClick={() => openCreate("sonarr")} className="px-3 py-1.5 rounded-lg bg-indigo-600/20 text-indigo-300 text-xs font-bold hover:bg-indigo-600/30 transition-colors">
-                        Add Server
-                    </button>
+                    <div className="flex gap-2">
+                        <button onClick={() => openCreate("sabnzbd")} className="px-3 py-1.5 rounded-lg bg-yellow-500/20 text-yellow-300 text-xs font-bold border border-white/10 hover:border-white/20">SABnzbd</button>
+                        <button onClick={() => openCreate("qbittorrent")} className="px-3 py-1.5 rounded-lg bg-blue-500/20 text-blue-300 text-xs font-bold border border-white/10 hover:border-white/20">qBittorrent</button>
+                        <button onClick={() => openCreate("nzbget")} className="px-3 py-1.5 rounded-lg bg-green-500/20 text-green-300 text-xs font-bold border border-white/10 hover:border-white/20">NZBGet</button>
+                    </div>
                 </div>
-                <div className="space-y-2">
-                    {sonarrServices.length === 0 ? (
-                        <div className="py-8 text-center text-xs text-muted opacity-50 border border-dashed border-white/5 rounded-xl italic">No servers configured</div>
+                <div className="p-4">
+                    {downloaderServices.length === 0 ? (
+                        <div className="py-8 text-center rounded-xl border border-dashed border-white/10 bg-white/[0.02]">
+                            <p className="text-sm text-gray-500">No download clients configured</p>
+                        </div>
                     ) : (
-                        sonarrServices.map(renderServiceCard)
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                            {downloaderServices.map(renderServiceCard)}
+                        </div>
                     )}
                 </div>
             </div>
-            {/* Prowlarr Section */}
-            <div className="rounded-xl border border-white/10 bg-slate-900/60 p-5 shadow-lg shadow-black/10">
-                <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                        <Image src={ProwlarrLogo} alt="Prowlarr" className="h-5 w-5" />
-                        <h3 className="text-lg font-bold text-white">Prowlarr</h3>
-                    </div>
-                    <button onClick={() => openCreate("prowlarr")} className="px-3 py-1.5 rounded-lg bg-indigo-600/20 text-indigo-300 text-xs font-bold hover:bg-indigo-600/30 transition-colors">
-                        Add Server
-                    </button>
-                </div>
-                <div className="space-y-2">
-                    {prowlarrServices.length === 0 ? (
-                        <div className="py-8 text-center text-xs text-muted opacity-50 border border-dashed border-white/5 rounded-xl italic">No servers configured</div>
-                    ) : (
-                        prowlarrServices.map(renderServiceCard)
-                    )}
-                </div>
-                <div className="mt-4 border-t border-white/10 pt-4">
-                    <button
-                        type="button"
-                        onClick={() => setShowIndexerPanel(prev => !prev)}
-                        className="w-full flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-white hover:bg-white/10 transition-colors"
-                    >
-                        <span>Prowlarr Indexers</span>
-                        <span className="text-xs text-white/60">{showIndexerPanel ? "Hide" : "Show"}</span>
-                    </button>
-                    {showIndexerPanel ? (
-                        <div className="mt-3 rounded-lg border border-white/10 bg-white/5">
-                            {!prowlarrEnabled ? (
-                                <div className="px-4 py-6 text-center text-xs text-muted">Configure Prowlarr to view indexers.</div>
-                            ) : indexerError ? (
-                                <div className="px-4 py-6 text-center text-xs text-muted">Failed to load indexers. Check Prowlarr service settings.</div>
-                            ) : !indexerData?.indexers?.length ? (
-                                <div className="px-4 py-6 text-center text-xs text-muted">No indexers found in Prowlarr.</div>
-                            ) : (
-                                <div className="overflow-x-auto">
-                                    <div className="flex items-center justify-end px-3 pt-3">
-                                        <button
-                                            type="button"
-                                            onClick={enableAllIndexers}
-                                            disabled={bulkIndexerSaving}
-                                            className="rounded-md border border-white/10 bg-white/10 px-2.5 py-1 text-[10px] font-semibold text-white hover:bg-white/20 disabled:opacity-50"
-                                        >
-                                            {bulkIndexerSaving ? "Enabling..." : "Enable All"}
-                                        </button>
-                                    </div>
-                                    <table className="w-full text-xs">
-                                        <thead className="text-left text-muted">
-                                            <tr>
-                                                <th className="p-3">Name</th>
-                                                <th className="p-3">Implementation</th>
-                                                <th className="p-3">Protocol</th>
-                                                <th className="p-3">Enabled</th>
-                                                <th className="p-3">Capabilities</th>
-                                                <th className="p-3">Priority</th>
-                                                <th className="p-3">Tags</th>
-                                                <th className="p-3 text-right">Actions</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {indexerData.indexers.map((indexer) => (
-                                                <tr key={indexer.id} className="border-t border-white/10">
-                                                    <td className="p-3 font-semibold text-white">{indexer.name ?? "—"}</td>
-                                                    <td className="p-3 text-white/70">{indexer.implementationName ?? indexer.implementation ?? "—"}</td>
-                                                    <td className="p-3 text-white/70">{indexer.protocol ?? "—"}</td>
-                                                    <td className="p-3">
-                                                        {renderIndexerFlag(indexer.enable)}
-                                                    </td>
-                                                    <td className="p-3">
-                                                        <span className="text-[10px] text-white/70">
-                                                            {indexer.supportsRss ? "RSS" : "No RSS"}
-                                                            {" · "}
-                                                            {indexer.supportsSearch ? "Search" : "No Search"}
-                                                        </span>
-                                                    </td>
-                                                    <td className="p-3 text-white/70">{toStringValue(indexer.priority) || "—"}</td>
-                                                    <td className="p-3 text-white/50">{Array.isArray(indexer.tags) && indexer.tags.length ? indexer.tags.join(", ") : "—"}</td>
-                                                    <td className="p-3 text-right">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => openIndexerEdit(indexer)}
-                                                            className="rounded-md border border-white/10 bg-white/10 px-2 py-1 text-[10px] font-semibold text-white hover:bg-white/20"
-                                                        >
-                                                            Edit
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
+
+            {/* Service Modal */}
+            <Modal open={!!modal} title={modalTitle} onClose={handleClose}>
+                <form className="space-y-5 max-h-[75vh] overflow-y-auto pr-2" onSubmit={handleSubmit}>
+                    {/* Basic Info */}
+                    <div className="space-y-4">
+                        <div className="grid gap-4 sm:grid-cols-2">
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-white">Name</label>
+                                <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="input" required placeholder="Main Server" />
+                            </div>
+                            {isDownloader && (
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-white">Type</label>
+                                    <Select value={form.type} onValueChange={(value) => setForm({ ...form, type: value as FormState["type"] })}>
+                                        <SelectTrigger className="input"><SelectValue /></SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="sabnzbd">SABnzbd</SelectItem>
+                                            <SelectItem value="qbittorrent">qBittorrent</SelectItem>
+                                            <SelectItem value="nzbget">NZBGet</SelectItem>
+                                        </SelectContent>
+                                    </Select>
                                 </div>
                             )}
                         </div>
-                    ) : null}
-                </div>
-            </div>
-
-            {/* Downloaders Section */}
-            <div className="rounded-xl border border-white/10 bg-slate-900/60 p-5 shadow-lg shadow-black/10">
-                <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                        <Image src={SabnzbdLogo} alt="Downloaders" className="h-5 w-5" />
-                        <h3 className="text-lg font-bold text-white">Downloaders</h3>
                     </div>
-                    <button onClick={() => openCreate("sabnzbd")} className="px-3 py-1.5 rounded-lg bg-indigo-600/20 text-indigo-300 text-xs font-bold hover:bg-indigo-600/30 transition-colors">
-                        Add Downloader
-                    </button>
-                </div>
-                <div className="space-y-2">
-                    {downloaderServices.length === 0 ? (
-                        <div className="py-8 text-center text-xs text-muted opacity-50 border border-dashed border-white/5 rounded-xl italic">No downloaders configured</div>
-                    ) : (
-                        downloaderServices.map(renderServiceCard)
-                    )}
-                </div>
-            </div>
 
-            <Modal open={!!modal} title={modalTitle} onClose={handleClose}>
-                <form className="space-y-4 max-h-[80vh] overflow-y-auto pr-2 custom-scrollbar" onSubmit={handleSubmit}>
-                    <div className="grid gap-4 md:grid-cols-2 text-sm">
-                        <div className="space-y-1">
-                            <label className="font-semibold text-white/80">Name</label>
-                            <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="input" required placeholder="Main Server" />
-                        </div>
-                        {isDownloader && (
-                            <div className="space-y-1">
-                                <label className="font-semibold text-white/80">Downloader Type</label>
-                                <Select
-                                    value={form.type}
-                                    onValueChange={(value) => setForm({ ...form, type: value as FormState["type"] })}
-                                >
-                                    <SelectTrigger className="input">
-                                        <SelectValue placeholder="Select downloader" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="sabnzbd">SABnzbd</SelectItem>
-                                        <SelectItem value="qbittorrent">qBittorrent</SelectItem>
-                                        <SelectItem value="nzbget">NZBGet</SelectItem>
-                                    </SelectContent>
-                                </Select>
+                    {/* Connection */}
+                    <div className="space-y-4 pt-4 border-t border-white/10">
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500">Connection</h4>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-white">Hostname / IP</label>
+                                <input value={form.hostname} onChange={e => setForm({ ...form, hostname: e.target.value })} className="input" required placeholder="192.168.1.10" />
                             </div>
-                        )}
-                        <div className="space-y-1">
-                            <label className="font-semibold text-white/80">Hostname / IP</label>
-                            <input value={form.hostname} onChange={e => setForm({ ...form, hostname: e.target.value })} className="input" required placeholder="192.168.1.10" />
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-white">Port</label>
+                                    <input value={form.port} onChange={e => setForm({ ...form, port: e.target.value })} className="input" placeholder={portPlaceholderMap[form.type]} />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-white">URL Base</label>
+                                    <input value={form.urlBase} onChange={e => setForm({ ...form, urlBase: e.target.value })} className="input" placeholder={urlBasePlaceholderMap[form.type]} />
+                                </div>
+                            </div>
                         </div>
-                    </div>
-
-                    <div className="grid gap-4 md:grid-cols-3 text-sm">
-                        <div className="space-y-1">
-                            <label className="font-semibold text-white/80">Port</label>
-                            <input value={form.port} onChange={e => setForm({ ...form, port: e.target.value })} className="input" placeholder={portPlaceholderMap[form.type]} />
-                        </div>
-                        <div className="space-y-1">
-                            <label className="font-semibold text-white/80">URL Base</label>
-                            <input value={form.urlBase} onChange={e => setForm({ ...form, urlBase: e.target.value })} className="input" placeholder={urlBasePlaceholderMap[form.type]} />
-                        </div>
-                        <div className="flex flex-col justify-end pb-2">
-                            <label className="flex items-center gap-2 cursor-pointer select-none">
-                                <input type="checkbox" checked={form.useSsl} onChange={e => setForm({ ...form, useSsl: e.target.checked })} className="rounded bg-white/5 border-white/10" />
-                                <span className="text-xs font-semibold text-white/70">Use SSL</span>
+                        <div className="flex items-center gap-4">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" checked={form.useSsl} onChange={e => setForm({ ...form, useSsl: e.target.checked })} className="rounded bg-white/5 border-white/20" />
+                                <span className="text-sm text-gray-300">Use SSL</span>
                             </label>
                         </div>
                     </div>
 
-                    <div className="space-y-1 text-xs">
-                        <label className="font-semibold text-white/80">{apiKeyLabel}</label>
-                        <input type="password" value={form.apiKey} onChange={e => setForm({ ...form, apiKey: e.target.value })} className="input" placeholder={modal?.mode === "edit" ? "Stored (leave blank to keep)" : "Pasted from service settings"} required={modal?.mode === "create"} />
+                    {/* Authentication */}
+                    <div className="space-y-4 pt-4 border-t border-white/10">
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500">Authentication</h4>
+                        {needsUsername && (
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-white">Username</label>
+                                <input value={form.username} onChange={e => setForm({ ...form, username: e.target.value })} className="input" placeholder="admin" />
+                            </div>
+                        )}
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-white">{apiKeyLabel}</label>
+                            <input type="password" value={form.apiKey} onChange={e => setForm({ ...form, apiKey: e.target.value })} className="input" placeholder={modal?.mode === "edit" ? "Leave blank to keep current" : "Paste from service settings"} required={modal?.mode === "create"} />
+                        </div>
                     </div>
 
-                    {needsUsername && (
-                        <div className="space-y-1 text-xs">
-                            <label className="font-semibold text-white/80">Username</label>
-                            <input value={form.username} onChange={e => setForm({ ...form, username: e.target.value })} className="input" placeholder="admin" />
-                        </div>
-                    )}
-
+                    {/* Radarr Config */}
                     {form.type === "radarr" && (
-                        <div className="space-y-3 pt-2 border-t border-white/5">
-                            <h4 className="text-xs font-bold uppercase tracking-wider text-white/50">Radarr Config</h4>
-                            <div className="grid gap-4 md:grid-cols-2 text-sm">
-                                <div className="space-y-1">
-                                    <label className="font-semibold text-white/80">Quality Profile</label>
-                                    <input value={form.qualityProfileId} onChange={e => setForm({ ...form, qualityProfileId: e.target.value })} className="input" placeholder="Profile ID (e.g. 1)" />
+                        <div className="space-y-4 pt-4 border-t border-white/10">
+                            <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500">Radarr Settings</h4>
+                            <div className="grid gap-4 sm:grid-cols-2">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-white">Quality Profile ID</label>
+                                    <input value={form.qualityProfileId} onChange={e => setForm({ ...form, qualityProfileId: e.target.value })} className="input" placeholder="1" />
                                 </div>
-                                <div className="space-y-1">
-                                    <label className="font-semibold text-white/80">Root Folder</label>
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-white">Root Folder</label>
                                     <input value={form.rootFolder} onChange={e => setForm({ ...form, rootFolder: e.target.value })} className="input" placeholder="/movies" />
                                 </div>
                             </div>
-                            <div className="space-y-1 text-sm">
-                                <label className="font-semibold text-white/80">Tags</label>
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-white">Tags (comma separated)</label>
                                 <input value={form.tags} onChange={e => setForm({ ...form, tags: e.target.value })} className="input" placeholder="lemedia" />
                             </div>
                         </div>
                     )}
 
+                    {/* Sonarr Config */}
                     {form.type === "sonarr" && (
-                        <div className="space-y-3 pt-2 border-t border-white/5">
-                            <h4 className="text-xs font-bold uppercase tracking-wider text-white/50">Sonarr Config</h4>
-                            <div className="grid gap-4 md:grid-cols-2 text-sm">
-                                <div className="space-y-1">
-                                    <label className="font-semibold text-white/80">Series Type</label>
+                        <div className="space-y-4 pt-4 border-t border-white/10">
+                            <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500">Sonarr Settings</h4>
+                            <div className="grid gap-4 sm:grid-cols-2">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-white">Series Type</label>
                                     <input value={form.seriesType} onChange={e => setForm({ ...form, seriesType: e.target.value })} className="input" placeholder="standard" />
                                 </div>
-                                <div className="space-y-1">
-                                    <label className="font-semibold text-white/80">Quality Profile</label>
-                                    <input value={form.qualityProfileId} onChange={e => setForm({ ...form, qualityProfileId: e.target.value })} className="input" placeholder="Profile ID (e.g. 1)" />
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-white">Quality Profile ID</label>
+                                    <input value={form.qualityProfileId} onChange={e => setForm({ ...form, qualityProfileId: e.target.value })} className="input" placeholder="1" />
                                 </div>
                             </div>
-                            <div className="grid gap-4 md:grid-cols-2 text-sm">
-                                <div className="space-y-1">
-                                    <label className="font-semibold text-white/80">Root Folder</label>
+                            <div className="grid gap-4 sm:grid-cols-2">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-white">Root Folder</label>
                                     <input value={form.rootFolder} onChange={e => setForm({ ...form, rootFolder: e.target.value })} className="input" placeholder="/tv" />
                                 </div>
-                                <div className="space-y-1">
-                                    <label className="font-semibold text-white/80">Tags</label>
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-white">Tags</label>
                                     <input value={form.tags} onChange={e => setForm({ ...form, tags: e.target.value })} className="input" placeholder="lemedia" />
                                 </div>
                             </div>
-                            <div className="flex items-center gap-2 mt-2">
-                                <input type="checkbox" checked={form.seasonFolders} onChange={e => setForm({ ...form, seasonFolders: e.target.checked })} />
-                                <span className="text-sm font-semibold text-white/80">Season Folders</span>
-                            </div>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" checked={form.seasonFolders} onChange={e => setForm({ ...form, seasonFolders: e.target.checked })} className="rounded bg-white/5 border-white/20" />
+                                <span className="text-sm text-gray-300">Use Season Folders</span>
+                            </label>
                         </div>
                     )}
 
-                    <div className="flex flex-wrap gap-x-6 gap-y-3 pt-2">
-                        <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-white/70 hover:text-white transition-colors">
-                            <input type="checkbox" checked={form.enabled} onChange={e => setForm({ ...form, enabled: e.target.checked })} /> Enabled
+                    {/* Options */}
+                    <div className="flex flex-wrap gap-4 pt-4 border-t border-white/10">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" checked={form.enabled} onChange={e => setForm({ ...form, enabled: e.target.checked })} className="rounded bg-white/5 border-white/20" />
+                            <span className="text-sm text-gray-300">Enabled</span>
                         </label>
                         {!isDownloader && (
                             <>
-                                <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-white/70 hover:text-white transition-colors">
-                                    <input type="checkbox" checked={form.defaultServer} onChange={e => setForm({ ...form, defaultServer: e.target.checked })} /> Default Server
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" checked={form.defaultServer} onChange={e => setForm({ ...form, defaultServer: e.target.checked })} className="rounded bg-white/5 border-white/20" />
+                                    <span className="text-sm text-gray-300">Default Server</span>
                                 </label>
-                                <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-white/70 hover:text-white transition-colors">
-                                    <input type="checkbox" checked={form.fourKServer} onChange={e => setForm({ ...form, fourKServer: e.target.checked })} /> 4K Server
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" checked={form.fourKServer} onChange={e => setForm({ ...form, fourKServer: e.target.checked })} className="rounded bg-white/5 border-white/20" />
+                                    <span className="text-sm text-gray-300">4K Server</span>
                                 </label>
                             </>
                         )}
                     </div>
 
-                    <div className="border-t border-white/5 pt-4">
-                        <button type="button" onClick={runTest} disabled={testing} className="w-full py-2 rounded-lg bg-white/5 border border-white/10 text-xs font-bold hover:bg-white/10 transition-all">
+                    {/* Test Connection */}
+                    <div className="pt-4 border-t border-white/10">
+                        <button type="button" onClick={runTest} disabled={testing} className="w-full py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm font-semibold text-white hover:bg-white/10 transition-all disabled:opacity-50">
                             {testing ? "Testing..." : "Test Connection"}
                         </button>
-                        {testMessage && <p className={`mt-2 text-center text-[10px] font-bold ${testMessage.includes('succeeded') ? 'text-emerald-400' : 'text-red-400'}`}>{testMessage}</p>}
+                        {testMessage && (
+                            <p className={`mt-2 text-center text-sm font-medium ${testMessage.includes('succeeded') ? 'text-emerald-400' : 'text-red-400'}`}>
+                                {testMessage}
+                            </p>
+                        )}
                     </div>
 
-                    <div className="flex justify-end gap-3 pt-4 border-t border-white/5">
-                        <button type="button" onClick={handleClose} className="px-4 py-2 text-xs font-bold text-white/60 hover:text-white">Cancel</button>
-                        <button type="submit" disabled={submitting} className="px-6 py-2 rounded-lg bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-600/20">
+                    {/* Actions */}
+                    <div className="flex justify-end gap-3 pt-4 border-t border-white/10">
+                        <button type="button" onClick={handleClose} className="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white">Cancel</button>
+                        <button type="submit" disabled={submitting} className="px-6 py-2 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-500 text-white text-sm font-bold shadow-lg shadow-purple-500/20 hover:shadow-purple-500/30 disabled:opacity-50">
                             {submitting ? "Saving..." : modal?.mode === "edit" ? "Save Changes" : "Add Service"}
                         </button>
                     </div>
                 </form>
             </Modal>
+
+            {/* Indexer Edit Modal */}
             <Modal open={!!editIndexer} title={`Edit Indexer: ${editIndexer?.name ?? ""}`} onClose={() => setEditIndexer(null)}>
                 <form className="space-y-4" onSubmit={saveIndexer}>
-                    <div className="space-y-3">
-                        <label className="flex items-center gap-2 text-sm text-white/80">
-                            <input
-                                type="checkbox"
-                                checked={indexerForm.enable}
-                                onChange={e => setIndexerForm(prev => ({ ...prev, enable: e.target.checked }))}
-                            />
-                            Enable Indexer
-                        </label>
-                        <div className="space-y-1">
-                            <label className="text-sm font-semibold text-white/80">Priority</label>
-                            <input
-                                type="number"
-                                min={0}
-                                value={indexerForm.priority}
-                                onChange={e => setIndexerForm(prev => ({ ...prev, priority: Number(e.target.value) }))}
-                                className="input"
-                            />
-                        </div>
+                    <label className="flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-white/10 cursor-pointer hover:bg-white/10">
+                        <input type="checkbox" checked={indexerForm.enable} onChange={e => setIndexerForm(prev => ({ ...prev, enable: e.target.checked }))} className="rounded bg-white/5 border-white/20" />
+                        <span className="text-sm font-medium text-white">Enable Indexer</span>
+                    </label>
+                    <div className="space-y-2">
+                        <label className="text-sm font-medium text-white">Priority</label>
+                        <input type="number" min={0} value={indexerForm.priority} onChange={e => setIndexerForm(prev => ({ ...prev, priority: Number(e.target.value) }))} className="input" />
+                        <p className="text-xs text-gray-500">Lower priority is preferred (1 = highest priority)</p>
                     </div>
-                    <div className="flex justify-end gap-3 pt-2 border-t border-white/5">
-                        <button type="button" onClick={() => setEditIndexer(null)} className="px-4 py-2 text-xs font-bold text-white/60 hover:text-white">Cancel</button>
-                        <button type="submit" disabled={savingIndexer} className="px-6 py-2 rounded-lg bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-600/20">
+                    <div className="flex justify-end gap-3 pt-4 border-t border-white/10">
+                        <button type="button" onClick={() => setEditIndexer(null)} className="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white">Cancel</button>
+                        <button type="submit" disabled={savingIndexer} className="px-6 py-2 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-500 text-white text-sm font-bold shadow-lg shadow-purple-500/20 disabled:opacity-50">
                             {savingIndexer ? "Saving..." : "Save"}
                         </button>
                     </div>
                 </form>
             </Modal>
-            </div>
         </div>
     );
 }

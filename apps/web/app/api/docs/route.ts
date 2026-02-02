@@ -1,17 +1,15 @@
 import { NextResponse } from "next/server";
+import { generateOpenApiDocument } from "@/lib/openapi/registry";
+
+// Import route registrations to ensure they're loaded
+import "@/lib/openapi/routes";
 
 export async function GET() {
-  return NextResponse.json({
-    openapi: "3.0.0",
-    info: {
-      title: "LeMedia API",
-      version: "1.0.0",
+  const doc = generateOpenApiDocument();
+
+  return NextResponse.json(doc, {
+    headers: {
+      "Cache-Control": "public, max-age=3600, s-maxage=3600",
     },
-    servers: [
-      {
-        url: process.env.APP_BASE_URL || "http://localhost:3010",
-      },
-    ],
-    paths: {},
   });
 }

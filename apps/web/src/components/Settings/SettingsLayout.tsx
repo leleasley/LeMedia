@@ -31,7 +31,7 @@ const settingsRoutes: SettingsRoute[] = [
         icon: UserGroupIcon,
     },
     {
-        text: "Jellyfin",
+        text: "Media Servers",
         route: "/admin/settings/jellyfin",
         regex: /^\/admin\/settings\/jellyfin/,
         icon: ServerIcon,

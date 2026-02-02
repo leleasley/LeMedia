@@ -1,4 +1,4 @@
-import { getJellyfinConfig, upsertJellyfinAvailability } from "@/db";
+import { getJellyfinConfig, upsertJellyfinAvailability, startJellyfinScan, updateJellyfinScan } from "@/db";
 import { logger } from "@/lib/logger";
 import { decryptSecret } from "@/lib/encryption";
 import { getPool } from "@/db";
@@ -84,10 +84,11 @@ function hasPhysicalFile(item: any) {
   return hasMediaSourcePath || hasPath;
 }
 
-export async function syncJellyfinAvailability(): Promise<{ scanned: number; added: number; updated: number }> {
+export async function syncJellyfinAvailability(options?: { logToHistory?: boolean }): Promise<{ scanned: number; added: number; updated: number }> {
   let totalScanned = 0;
   let totalAdded = 0;
   let totalUpdated = 0;
+  let scanLogId: number | null = null;
 
   try {
     const config = await getJellyfinConfig();
@@ -96,6 +97,11 @@ export async function syncJellyfinAvailability(): Promise<{ scanned: number; add
     if (enabledLibraries.length === 0) {
       logger.info("[Jellyfin Availability Sync] No enabled libraries, skipping");
       return { scanned: 0, added: 0, updated: 0 };
+    }
+
+    // Create scan log entry if requested
+    if (options?.logToHistory) {
+      scanLogId = await startJellyfinScan({ libraryName: "Availability Sync" });
     }
 
     logger.info("[Jellyfin Availability Sync] Starting availability sync", {
@@ -115,9 +121,25 @@ export async function syncJellyfinAvailability(): Promise<{ scanned: number; add
       updated: totalUpdated
     });
 
+    // Update scan log with results
+    if (scanLogId) {
+      await updateJellyfinScan(scanLogId, {
+        itemsScanned: totalScanned,
+        itemsAdded: totalAdded,
+        scanStatus: "completed"
+      });
+    }
+
     return { scanned: totalScanned, added: totalAdded, updated: totalUpdated };
   } catch (err) {
     logger.error("[Jellyfin Availability Sync] Sync failed", err);
+    // Log failure if we have a scan log
+    if (scanLogId) {
+      await updateJellyfinScan(scanLogId, {
+        scanStatus: "failed",
+        errorMessage: err instanceof Error ? err.message : String(err)
+      }).catch(() => {});
+    }
     throw err;
   }
 }
@@ -270,10 +292,10 @@ async function syncLibrary(library: { id: string; name: string; type: "movie" | 
   return { scanned, added, updated };
 }
 
-// Manual trigger for immediate sync
+// Manual trigger for immediate sync (logs to history)
 export async function triggerManualAvailabilitySync(): Promise<void> {
   logger.info("[Jellyfin Availability Sync] Manual sync triggered");
-  await syncJellyfinAvailability();
+  await syncJellyfinAvailability({ logToHistory: true });
 }
 
 // Get cached episode availability for a TV show

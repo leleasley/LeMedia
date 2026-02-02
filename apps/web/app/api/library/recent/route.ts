@@ -12,11 +12,12 @@ import {
   isSeriesPartiallyAvailable,
   STATUS_STRINGS
 } from "@/lib/media-status";
-import { getAvailableSeasons, hasCachedEpisodeAvailability } from "@/db";
+import { getAvailableSeasons, hasCachedEpisodeAvailability, hasRecentJellyfinAvailabilityScan } from "@/db";
 
 const MAX_TAKE = 40;
 const DEFAULT_TAKE = 20;
 const SERVICE_TIMEOUT_MS = 2500;
+const JELLYFIN_AVAILABILITY_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 
 type RecentItem = {
   id: number;
@@ -63,6 +64,9 @@ export async function GET(request: NextRequest) {
     withTimeout(listRadarrMovies(), SERVICE_TIMEOUT_MS, [] as any[]),
     withTimeout(listSeries(), SERVICE_TIMEOUT_MS, [] as any[]),
   ]);
+  const hasRecentJellyfinScan = await hasRecentJellyfinAvailabilityScan(JELLYFIN_AVAILABILITY_MAX_AGE_MS).catch(
+    () => false
+  );
 
   const recentMovies = (
     await Promise.all(
@@ -105,34 +109,36 @@ export async function GET(request: NextRequest) {
         const isPartial = isSeriesPartiallyAvailable(series);
 
         let availabilityStatus: AvailabilityStatus | null = null;
-        let availableSeasons: number[] = [];
-        try {
-          availableSeasons = await getAvailableSeasons({ tmdbId: series.tmdbId });
-        } catch {
-          availableSeasons = [];
-        }
-
-        const seasonCount = availableSeasons.filter((season) => Number(season) > 0).length;
-        let hasJellyfinEpisodes = seasonCount > 0;
-        if (!hasJellyfinEpisodes) {
+        if (hasRecentJellyfinScan) {
+          let availableSeasons: number[] = [];
           try {
-            hasJellyfinEpisodes = await hasCachedEpisodeAvailability({ tmdbId: series.tmdbId });
+            availableSeasons = await getAvailableSeasons({ tmdbId: series.tmdbId });
           } catch {
-            hasJellyfinEpisodes = false;
+            availableSeasons = [];
           }
-        }
 
-        if (hasJellyfinEpisodes) {
-          if (!details) {
-            details = await getTv(series.tmdbId).catch(() => null);
+          const seasonCount = availableSeasons.filter((season) => Number(season) > 0).length;
+          let hasJellyfinEpisodes = seasonCount > 0;
+          if (!hasJellyfinEpisodes) {
+            try {
+              hasJellyfinEpisodes = await hasCachedEpisodeAvailability({ tmdbId: series.tmdbId });
+            } catch {
+              hasJellyfinEpisodes = false;
+            }
           }
-          const totalSeasons = Array.isArray(details?.seasons)
-            ? details.seasons.filter((season: any) => Number(season?.season_number ?? 0) > 0).length
-            : Number(details?.number_of_seasons ?? 0);
-          if (totalSeasons > 0) {
-            availabilityStatus = seasonCount >= totalSeasons ? "available" : "partially_available";
-          } else {
-            availabilityStatus = "available";
+
+          if (hasJellyfinEpisodes) {
+            if (!details) {
+              details = await getTv(series.tmdbId).catch(() => null);
+            }
+            const totalSeasons = Array.isArray(details?.seasons)
+              ? details.seasons.filter((season: any) => Number(season?.season_number ?? 0) > 0).length
+              : Number(details?.number_of_seasons ?? 0);
+            if (totalSeasons > 0) {
+              availabilityStatus = seasonCount >= totalSeasons ? "available" : "partially_available";
+            } else {
+              availabilityStatus = "available";
+            }
           }
         }
 

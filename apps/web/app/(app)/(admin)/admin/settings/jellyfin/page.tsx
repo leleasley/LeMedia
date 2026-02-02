@@ -1,12 +1,12 @@
 import { redirect } from "next/navigation";
 import { getUser } from "@/auth";
+import { MediaServersSettingsPanel } from "@/components/Settings/MediaServers";
 
 export const metadata = {
-  title: "Jellyfin Settings - LeMedia",
+  title: "Media Servers - LeMedia",
 };
-import { JellyfinSettingsPanel } from "@/components/Settings/Jellyfin/JellyfinSettingsPanel";
 
-export default async function AdminSettingsJellyfinPage() {
+export default async function AdminSettingsMediaServersPage() {
     const user = await getUser().catch(() => null);
     if (!user) {
         redirect("/login");
@@ -35,13 +35,13 @@ export default async function AdminSettingsJellyfinPage() {
                             </svg>
                         </div>
                         <div>
-                            <h1 className="text-2xl md:text-3xl font-bold text-white">Jellyfin</h1>
-                            <p className="text-sm text-white/60 mt-1">Configure the Jellyfin connection, API key, and library visibility</p>
+                            <h1 className="text-2xl md:text-3xl font-bold text-white">Media Servers</h1>
+                            <p className="text-sm text-white/60 mt-1">Connect your media servers to track availability and manage your library</p>
                         </div>
                     </div>
                 </div>
             </div>
-            <JellyfinSettingsPanel />
+            <MediaServersSettingsPanel />
         </section>
     );
 }

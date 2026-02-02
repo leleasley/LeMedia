@@ -4706,6 +4706,16 @@ export async function hasCachedEpisodeAvailability(params: {
   return (res.rowCount ?? 0) > 0;
 }
 
+export async function hasRecentJellyfinAvailabilityScan(maxAgeMs: number): Promise<boolean> {
+  const p = getPool();
+  const res = await p.query(`SELECT MAX(last_scanned_at) AS last_scanned_at FROM jellyfin_availability`);
+  const last = res.rows[0]?.last_scanned_at;
+  if (!last) return false;
+  const lastMs = new Date(last).getTime();
+  if (!Number.isFinite(lastMs)) return false;
+  return Date.now() - lastMs <= maxAgeMs;
+}
+
 export async function getAvailableSeasons(params: {
   tmdbId: number;
   tvdbId?: number | null;
