@@ -999,7 +999,7 @@ export function TvDetailClientNew({
                                     posterUrl={poster ?? null}
                                 />
                                 {actionMenu}
-                                {isPartiallyAvailable && canRequestSeries && (
+                                {canRequestSeries && (
                                     <>
                                         <ButtonWithDropdown
                                             text={

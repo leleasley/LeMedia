@@ -197,6 +197,7 @@ export async function addSeriesFromLookup(
     rootFolder?: string;
     tags?: number[];
     languageProfileId?: number;
+    monitoringOption?: string;
   }
 ) {
   const customService =
@@ -209,6 +210,8 @@ export async function addSeriesFromLookup(
   const cfg = await getSonarrConfig(customService ?? undefined);
   const fetcher = customService ? createSonarrFetcher(customService.base_url, customService.apiKey) : sonarrFetch;
   const rootFolderPath = await resolveSonarrRootFolderPath(cfg, fetcher, overrides?.rootFolder);
+  const monitoringOption = overrides?.monitoringOption;
+  const effectiveMonitored = monitoringOption === "none" ? false : monitored;
   const payload: Record<string, unknown> = {
     ...lookup,
     rootFolderPath,
@@ -216,10 +219,11 @@ export async function addSeriesFromLookup(
     languageProfileId: overrides?.languageProfileId ?? lookup.languageProfileId ?? cfg.languageProfileId,
     seriesType: cfg.seriesType,
     seasonFolder: cfg.seasonFolder,
-    monitored,
+    monitored: effectiveMonitored,
     addOptions: {
       searchForMissingEpisodes: false,
-      searchForCutoffUnmetEpisodes: false
+      searchForCutoffUnmetEpisodes: false,
+      ...(monitoringOption ? { monitor: monitoringOption } : {})
     }
   };
 
@@ -229,7 +233,7 @@ export async function addSeriesFromLookup(
     payload.tags = lookup.tags;
   }
 
-  if (!monitored && Array.isArray(payload.seasons)) {
+  if (!effectiveMonitored && Array.isArray(payload.seasons)) {
     payload.seasons = payload.seasons.map((s: any) => ({ ...s, monitored: false }));
   }
 
@@ -238,6 +242,18 @@ export async function addSeriesFromLookup(
   // If we're adding unmonitored by default, force seasons unmonitored too.
   const data = response;
   return data;
+}
+
+export async function setSeriesMonitoringOption(
+  seriesId: number,
+  monitoringOption: string,
+  fetcher: (path: string, init?: RequestInit) => Promise<any> = sonarrFetch
+) {
+  const monitored = monitoringOption !== "none";
+  return fetcher("/api/v3/series/editor", {
+    method: "PUT",
+    body: JSON.stringify({ seriesIds: [seriesId], monitored, monitor: monitoringOption })
+  });
 }
 
 export async function seriesSearch(

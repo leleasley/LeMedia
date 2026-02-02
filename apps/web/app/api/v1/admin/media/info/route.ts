@@ -63,6 +63,7 @@ export async function GET(req: NextRequest) {
     const fetcher = createSonarrFetcher(service.base_url, service.apiKey);
     const series = await fetcher(`/api/v3/series/${id}`);
     const stats = series?.statistics ?? {};
+    const monitored = series?.monitored ?? null;
     const sizeBytes = stats?.sizeOnDisk ?? series?.sizeOnDisk ?? null;
     let files: any[] = [];
     try {
@@ -79,7 +80,8 @@ export async function GET(req: NextRequest) {
       id,
       quality: quality || null,
       sizeBytes: typeof sizeBytes === "number" ? sizeBytes : null,
-      episodeFileCount
+      episodeFileCount,
+      monitored: typeof monitored === "boolean" ? monitored : null
     });
   } catch (err: any) {
     return NextResponse.json({ error: err?.message ?? "Failed to load media info" }, { status: 500 });

@@ -13,6 +13,7 @@ import SabnzbdLogo from "@/assets/services/sabnzbd.svg";
 import QbittorrentLogo from "@/assets/services/qbittorrent.svg";
 import NzbgetLogo from "@/assets/services/nzbget.svg";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 import { Loader2, CheckCircle2, XCircle, Database, Film, Tv, RefreshCcw } from "lucide-react";
 
 type MediaService = {
@@ -92,6 +93,7 @@ type FormState = {
     animeRootFolder: string;
     animeTags: string;
     seasonFolders: boolean;
+    monitoringOption: string;
 };
 
 const initialForm: FormState = {
@@ -120,7 +122,8 @@ const initialForm: FormState = {
     animeQualityProfileId: "",
     animeRootFolder: "",
     animeTags: "",
-    seasonFolders: true
+    seasonFolders: true,
+    monitoringOption: "all"
 };
 
 const cloneInitialForm = (): FormState => ({ ...initialForm });
@@ -195,6 +198,20 @@ const serviceGradients: Record<string, { from: string; to: string; text: string 
     qbittorrent: { from: "from-blue-500/20", to: "to-cyan-500/20", text: "text-blue-400" },
     nzbget: { from: "from-green-500/20", to: "to-emerald-500/20", text: "text-green-400" }
 };
+
+const monitoringOptions = [
+    { value: "all", label: "All Episodes" },
+    { value: "future", label: "Future Episodes" },
+    { value: "missing", label: "Missing Episodes" },
+    { value: "existing", label: "Existing Episodes" },
+    { value: "recent", label: "Recent Episodes" },
+    { value: "pilot", label: "Pilot Episode" },
+    { value: "firstSeason", label: "First Season" },
+    { value: "lastSeason", label: "Last Season" },
+    { value: "monitorSpecials", label: "Monitor Specials" },
+    { value: "unmonitorSpecials", label: "Unmonitor Specials" },
+    { value: "none", label: "None" }
+];
 
 export function ServicesAdminPanel({ initialServices }: { initialServices: MediaService[] }) {
     const toast = useToast();
@@ -304,6 +321,7 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
             animeRootFolder: toStringValue(cfg.animeRootFolder),
             animeTags: Array.isArray(cfg.animeTags) ? cfg.animeTags.join(", ") : toStringValue(cfg.animeTags),
             seasonFolders: Boolean(cfg.seasonFolders ?? true),
+            monitoringOption: toStringValue(cfg.monitoringOption ?? "all"),
             username: toStringValue(cfg.username)
         });
         setError(null);
@@ -342,6 +360,7 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
             animeRootFolder: form.animeRootFolder.trim() || undefined,
             animeTags: form.animeTags.split(",").map(t => t.trim()).filter(Boolean),
             seasonFolders: form.seasonFolders,
+            monitoringOption: form.monitoringOption,
             username: form.username.trim() || undefined
         };
 
@@ -951,6 +970,19 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
                                     <label className="text-sm font-medium text-white">Quality Profile ID</label>
                                     <input value={form.qualityProfileId} onChange={e => setForm({ ...form, qualityProfileId: e.target.value })} className="input" placeholder="1" />
                                 </div>
+                            </div>
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-white">Default Monitoring</label>
+                                <AdaptiveSelect
+                                    value={form.monitoringOption}
+                                    onValueChange={(value) => setForm({ ...form, monitoringOption: value })}
+                                    options={monitoringOptions}
+                                    placeholder="Select monitoring option"
+                                    className="w-full"
+                                />
+                                <p className="text-xs text-gray-400">
+                                    Applied when adding new series via requests.
+                                </p>
                             </div>
                             <div className="grid gap-4 sm:grid-cols-2">
                                 <div className="space-y-2">

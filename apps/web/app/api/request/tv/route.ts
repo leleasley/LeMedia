@@ -161,11 +161,13 @@ export async function POST(req: NextRequest) {
       }
 
       const lookupResult = lookup[0];
+      const monitoringOption = String((sonarrService.config as any)?.monitoringOption ?? "all");
       const series = await addSeriesFromLookup(lookupResult, body.monitor ?? true, body.qualityProfileId, {
         serviceId: sonarrService.id,
         rootFolder: body.rootFolder,
         tags: body.tags,
-        languageProfileId: body.languageProfileId
+        languageProfileId: body.languageProfileId,
+        monitoringOption
       });
 
       const fetcher = createSonarrFetcher(sonarrService.base_url, sonarrService.apiKey);

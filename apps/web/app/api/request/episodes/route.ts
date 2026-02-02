@@ -16,6 +16,7 @@ import {
   episodeSearch,
   seriesSearch
 } from "@/lib/sonarr";
+import { getActiveMediaService } from "@/lib/media-services";
 import { notifyRequestEvent } from "@/notifications/request-events";
 import { hasAssignedNotificationEndpoints } from "@/lib/notifications";
 import { rejectIfMaintenance } from "@/lib/maintenance";
@@ -228,8 +229,12 @@ export async function POST(req: NextRequest) {
         if (!Array.isArray(lookup) || lookup.length === 0) {
           throw new Error(`Sonarr lookup returned nothing for tvdb:${tvdbId}`);
         }
+        const sonarrService = await getActiveMediaService("sonarr").catch(() => null);
+        const monitoringOption = String((sonarrService?.config as any)?.monitoringOption ?? "all");
         // Add series unmonitored (we only monitor selected eps)
-        series = await addSeriesFromLookup(lookup[0], false, body.qualityProfileId);
+        series = await addSeriesFromLookup(lookup[0], false, body.qualityProfileId, {
+          monitoringOption
+        });
         seriesAdded = true;
         await seriesSearch(series.id);
       }

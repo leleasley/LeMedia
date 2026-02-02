@@ -57,6 +57,7 @@ export function TitleCard({
   const finalImage = image || posterUrl;
   const finalScore = userScore ?? rating;
   const canRequest =
+    mediaType === "tv" ||
     !mediaStatus ||
     mediaStatus === MediaStatus.UNKNOWN ||
     mediaStatus === MediaStatus.DELETED ||

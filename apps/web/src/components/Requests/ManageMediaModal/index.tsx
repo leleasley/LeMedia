@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { csrfFetch } from "@/lib/csrf-client";
-import { ExternalLink, Trash2, Eraser, Eye } from "lucide-react";
+import { ExternalLink, Trash2, Eraser, Eye, Check, X } from "lucide-react";
 import { ReleaseSearchModal } from "@/components/Media/ReleaseSearchModal";
 import { Modal } from "@/components/Common/Modal";
+import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 
 export function ManageMediaModal(props: {
   open: boolean;
@@ -43,9 +44,26 @@ export function ManageMediaModal(props: {
     quality?: string | null;
     sizeBytes?: number | null;
     episodeFileCount?: number | null;
+    monitored?: boolean | null;
   } | null>(null);
   const [currentInfoLoading, setCurrentInfoLoading] = useState(false);
   const [currentInfoError, setCurrentInfoError] = useState<string | null>(null);
+  const [monitoringOption, setMonitoringOption] = useState<string>("all");
+  const [monitoringSaving, setMonitoringSaving] = useState(false);
+  const [monitoringStatus, setMonitoringStatus] = useState<"idle" | "success" | "error">("idle");
+  const monitoringOptions = [
+    { value: "all", label: "All Episodes" },
+    { value: "future", label: "Future Episodes" },
+    { value: "missing", label: "Missing Episodes" },
+    { value: "existing", label: "Existing Episodes" },
+    { value: "recent", label: "Recent Episodes" },
+    { value: "pilot", label: "Pilot Episode" },
+    { value: "firstSeason", label: "First Season" },
+    { value: "lastSeason", label: "Last Season" },
+    { value: "monitorSpecials", label: "Monitor Specials" },
+    { value: "unmonitorSpecials", label: "Unmonitor Specials" },
+    { value: "none", label: "None" }
+  ];
 
   useEffect(() => {
     if (!open) setRawOpen(false);
@@ -72,8 +90,12 @@ export function ManageMediaModal(props: {
         setCurrentInfo({
           quality: data?.quality ?? null,
           sizeBytes: data?.sizeBytes ?? null,
-          episodeFileCount: data?.episodeFileCount ?? null
+          episodeFileCount: data?.episodeFileCount ?? null,
+          monitored: typeof data?.monitored === "boolean" ? data.monitored : null
         });
+        if (typeof data?.monitored === "boolean") {
+          setMonitoringOption(data.monitored ? "all" : "none");
+        }
       })
       .catch((err: any) => {
         if (cancelled) return;
@@ -120,6 +142,31 @@ export function ManageMediaModal(props: {
       setError(err?.message ?? "Action failed");
     } finally {
       setWorking(false);
+    }
+  };
+
+  const updateMonitoring = async () => {
+    if (monitoringSaving || !serviceItemId) return;
+    setMonitoringSaving(true);
+    setError(null);
+    setMonitoringStatus("idle");
+    try {
+      const res = await csrfFetch("/api/v1/sonarr/series/monitor", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ seriesId: serviceItemId, monitoringOption })
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || "Failed to update monitoring");
+      setCurrentInfo(prev => (prev ? { ...prev, monitored: monitoringOption !== "none" } : prev));
+      setMonitoringStatus("success");
+      setTimeout(() => setMonitoringStatus("idle"), 1500);
+    } catch (err: any) {
+      setError(err?.message ?? "Failed to update monitoring");
+      setMonitoringStatus("error");
+    } finally {
+      setMonitoringSaving(false);
     }
   };
 
@@ -170,8 +217,46 @@ export function ManageMediaModal(props: {
                     {mediaType === "tv" && typeof currentInfo?.episodeFileCount === "number" ? (
                       <span className="text-white/50">| Episodes: {currentInfo.episodeFileCount}</span>
                     ) : null}
+                    {mediaType === "tv" && typeof currentInfo?.monitored === "boolean" ? (
+                      <span className="text-white/50">| Monitored: {currentInfo.monitored ? "Yes" : "No"}</span>
+                    ) : null}
                   </div>
                 )}
+              </div>
+            ) : null}
+            {mediaType === "tv" && serviceItemId ? (
+              <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-3">
+                <div className="text-[10px] uppercase tracking-wider text-white/50 mb-2">Monitoring</div>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <div className="flex-1">
+                    <AdaptiveSelect
+                      value={monitoringOption}
+                      onValueChange={setMonitoringOption}
+                      disabled={monitoringSaving}
+                      options={monitoringOptions}
+                      placeholder="Select monitoring option"
+                      className="w-full"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={updateMonitoring}
+                    disabled={monitoringSaving}
+                    className={`rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 ${
+                      monitoringStatus === "success"
+                        ? "bg-emerald-600 hover:bg-emerald-500"
+                        : monitoringStatus === "error"
+                        ? "bg-red-600 hover:bg-red-500"
+                        : "bg-indigo-600 hover:bg-indigo-500"
+                    }`}
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      {monitoringSaving ? "Saving..." : "Save Monitoring"}
+                      {monitoringStatus === "success" ? <Check className="h-4 w-4" /> : null}
+                      {monitoringStatus === "error" ? <X className="h-4 w-4" /> : null}
+                    </span>
+                  </button>
+                </div>
               </div>
             ) : null}
             <button
