@@ -31,6 +31,8 @@ const QuerySchema = z.object({
 
 const PROFILE_CACHE_TTL_MS = 2 * 60 * 1000;
 let cachedUltraHdProfileId: { id: number; expiresAt: number } | null = null;
+const RELEASE_CACHE_TTL_MS = 60 * 1000;
+const releaseCache = new Map<string, { expiresAt: number; payload: any }>();
 
 function padEpisode(value?: number | null) {
   if (value === null || value === undefined || !Number.isFinite(value)) return "00";
@@ -129,6 +131,12 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    const cacheKey = req.nextUrl.searchParams.toString();
+    const cached = cacheKey ? releaseCache.get(cacheKey) : null;
+    if (cached && cached.expiresAt > Date.now()) {
+      return NextResponse.json(cached.payload);
+    }
+
     const {
       mediaType,
       id,
@@ -425,13 +433,19 @@ export async function GET(req: NextRequest) {
     const start = offset;
     const end = start + limit;
 
-    return NextResponse.json({
+    const payload = {
       items: items.slice(start, end),
       total,
       offset,
       limit,
       resolvedId
-    });
+    };
+
+    if (cacheKey) {
+      releaseCache.set(cacheKey, { expiresAt: Date.now() + RELEASE_CACHE_TTL_MS, payload });
+    }
+
+    return NextResponse.json(payload);
   } catch (err: any) {
     return NextResponse.json({ error: err?.message ?? "Failed to load releases" }, { status: 500 });
   }

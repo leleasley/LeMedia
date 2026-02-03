@@ -2,22 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { csrfFetch } from "@/lib/csrf-client";
-import { ExternalLink, Trash2, Eraser, Eye, Check, X, Search } from "lucide-react";
+import { ExternalLink, Trash2, Eraser, Eye, Check, X } from "lucide-react";
 import { ReleaseSearchModal } from "@/components/Media/ReleaseSearchModal";
 import { Modal } from "@/components/Common/Modal";
 import { AdaptiveSelect } from "@/components/ui/adaptive-select";
-
-type SeasonSummary = {
-  season_number: number;
-  episode_count: number;
-  name: string;
-};
-
-type EpisodeSummary = {
-  episode_number: number;
-  name: string;
-  air_date: string | null;
-};
 
 export function ManageMediaModal(props: {
   open: boolean;
@@ -52,7 +40,6 @@ export function ManageMediaModal(props: {
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rawOpen, setRawOpen] = useState(false);
-  const [episodeSearchOpen, setEpisodeSearchOpen] = useState(false);
   const [currentInfo, setCurrentInfo] = useState<{
     quality?: string | null;
     sizeBytes?: number | null;
@@ -65,12 +52,6 @@ export function ManageMediaModal(props: {
   const [monitoringOption, setMonitoringOption] = useState<string>("all");
   const [monitoringSaving, setMonitoringSaving] = useState(false);
   const [monitoringStatus, setMonitoringStatus] = useState<"idle" | "success" | "error">("idle");
-  const [seasons, setSeasons] = useState<SeasonSummary[]>([]);
-  const [seasonEpisodes, setSeasonEpisodes] = useState<Record<number, EpisodeSummary[]>>({});
-  const [seasonsLoading, setSeasonsLoading] = useState(false);
-  const [episodesLoading, setEpisodesLoading] = useState(false);
-  const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
-  const [selectedEpisode, setSelectedEpisode] = useState<number | null>(null);
   const monitoringOptions = [
     { value: "all", label: "All Episodes" },
     { value: "future", label: "Future Episodes" },
@@ -87,10 +68,6 @@ export function ManageMediaModal(props: {
 
   useEffect(() => {
     if (!open) setRawOpen(false);
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) setEpisodeSearchOpen(false);
   }, [open]);
 
   useEffect(() => {
@@ -134,73 +111,6 @@ export function ManageMediaModal(props: {
       cancelled = true;
     };
   }, [open, mediaType, serviceItemId]);
-
-  useEffect(() => {
-    if (!open || mediaType !== "tv" || !tmdbId) {
-      setSeasons([]);
-      setSeasonEpisodes({});
-      setSelectedSeason(null);
-      setSelectedEpisode(null);
-      return;
-    }
-    const controller = new AbortController();
-    setSeasonsLoading(true);
-    fetch(`/api/v1/tmdb/tv/${tmdbId}`, { signal: controller.signal })
-      .then(async (res) => {
-        if (!res.ok) throw new Error("Failed to load seasons");
-        return res.json();
-      })
-      .then((data) => {
-        const list: SeasonSummary[] = Array.isArray(data?.seasons)
-          ? data.seasons.filter((s: SeasonSummary) => s.season_number > 0 || data.seasons.length === 1)
-          : [];
-        setSeasons(list);
-        const defaultSeason = list[0]?.season_number ?? null;
-        setSelectedSeason((prev) => prev ?? defaultSeason);
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setSeasons([]);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setSeasonsLoading(false);
-      });
-    return () => controller.abort();
-  }, [open, mediaType, tmdbId]);
-
-  useEffect(() => {
-    if (!open || mediaType !== "tv" || !tmdbId || selectedSeason === null) {
-      setSelectedEpisode(null);
-      return;
-    }
-    if (seasonEpisodes[selectedSeason]) {
-      const firstEpisode = seasonEpisodes[selectedSeason]?.[0]?.episode_number ?? null;
-      setSelectedEpisode((prev) => prev ?? firstEpisode);
-      return;
-    }
-    const controller = new AbortController();
-    setEpisodesLoading(true);
-    fetch(`/api/v1/tmdb/tv/${tmdbId}/season/${selectedSeason}/enhanced`, { signal: controller.signal })
-      .then(async (res) => {
-        if (!res.ok) throw new Error("Failed to load episodes");
-        return res.json();
-      })
-      .then((data) => {
-        const episodes: EpisodeSummary[] = Array.isArray(data?.episodes) ? data.episodes : [];
-        setSeasonEpisodes(prev => ({ ...prev, [selectedSeason]: episodes }));
-        const firstEpisode = episodes?.[0]?.episode_number ?? null;
-        setSelectedEpisode((prev) => prev ?? firstEpisode);
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) {
-          setSeasonEpisodes(prev => ({ ...prev, [selectedSeason]: [] }));
-          setSelectedEpisode(null);
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setEpisodesLoading(false);
-      });
-    return () => controller.abort();
-  }, [open, mediaType, tmdbId, selectedSeason, seasonEpisodes]);
 
   // Construct URL like Jellyseerr does: baseUrl/movie/titleSlug or baseUrl/series/titleSlug
   // If slug is not available, fall back to using the ID
@@ -269,22 +179,6 @@ export function ManageMediaModal(props: {
     const value = bytes / Math.pow(1024, i);
     return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[i]}`;
   };
-
-  const formatSeasonLabel = (season: SeasonSummary) => `Season ${season.season_number}`;
-
-  const formatEpisodeLabel = (episode: EpisodeSummary) => {
-    const episodeNumber = String(episode.episode_number).padStart(2, "0");
-    const airDate = episode.air_date ? ` • ${episode.air_date}` : "";
-    return `E${episodeNumber} • ${episode.name || "Episode"}${airDate}`;
-  };
-
-  const selectedEpisodeData = selectedSeason !== null && selectedEpisode !== null
-    ? (seasonEpisodes[selectedSeason] || []).find(ep => ep.episode_number === selectedEpisode) ?? null
-    : null;
-
-  const episodeSearchTitle = selectedEpisodeData && selectedSeason !== null && selectedEpisode !== null
-    ? `${title} · S${String(selectedSeason).padStart(2, "0")}E${String(selectedEpisode).padStart(2, "0")} · ${selectedEpisodeData.name || "Episode"}`
-    : title;
 
   if (!open) return null;
 
@@ -370,47 +264,6 @@ export function ManageMediaModal(props: {
                 </div>
               </div>
             ) : null}
-            {mediaType === "tv" ? (
-              <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-3">
-                <div className="text-[10px] uppercase tracking-wider text-white/50 mb-2">Episode Interactive Search</div>
-                <div className="flex flex-col gap-2">
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    <AdaptiveSelect
-                      value={selectedSeason !== null ? String(selectedSeason) : ""}
-                      onValueChange={(value) => setSelectedSeason(Number(value))}
-                      disabled={seasonsLoading || seasons.length === 0}
-                      options={seasons.map(season => ({ value: String(season.season_number), label: formatSeasonLabel(season) }))}
-                      placeholder={seasonsLoading ? "Loading seasons..." : "Select season"}
-                      className="w-full"
-                    />
-                    <AdaptiveSelect
-                      value={selectedEpisode !== null ? String(selectedEpisode) : ""}
-                      onValueChange={(value) => setSelectedEpisode(Number(value))}
-                      disabled={episodesLoading || selectedSeason === null}
-                      options={(selectedSeason !== null ? (seasonEpisodes[selectedSeason] || []) : []).map(ep => ({
-                        value: String(ep.episode_number),
-                        label: formatEpisodeLabel(ep)
-                      }))}
-                      placeholder={episodesLoading ? "Loading episodes..." : "Select episode"}
-                      className="w-full"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setEpisodeSearchOpen(true)}
-                    disabled={!selectedEpisodeData || !prowlarrEnabled}
-                    className="flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <Search className="h-4 w-4" />
-                    {!prowlarrEnabled
-                      ? "Set up Prowlarr in services"
-                      : selectedEpisodeData
-                      ? "Search Episode Releases"
-                      : "Select an episode"}
-                  </button>
-                </div>
-              </div>
-            ) : null}
             <button
               type="button"
               onClick={() => runAction("remove")}
@@ -473,26 +326,6 @@ export function ManageMediaModal(props: {
           posterUrl={posterUrl ?? null}
           backdropUrl={backdropUrl ?? null}
           preferProwlarr={prowlarrEnabled}
-        />
-      ) : null}
-      {mediaType === "tv" ? (
-        <ReleaseSearchModal
-          open={episodeSearchOpen}
-          onClose={() => setEpisodeSearchOpen(false)}
-          mediaType="tv"
-          mediaId={serviceItemId ?? null}
-          tmdbId={tmdbId}
-          tvdbId={tvdbId ?? null}
-          title={episodeSearchTitle}
-          searchTitle={title}
-          year={year ?? null}
-          posterUrl={posterUrl ?? null}
-          backdropUrl={backdropUrl ?? null}
-          preferProwlarr={prowlarrEnabled}
-          seasonNumber={selectedSeason ?? undefined}
-          episodeNumber={selectedEpisode ?? undefined}
-          airDate={selectedEpisodeData?.air_date ?? null}
-          seriesType={currentInfo?.seriesType ?? null}
         />
       ) : null}
     </>

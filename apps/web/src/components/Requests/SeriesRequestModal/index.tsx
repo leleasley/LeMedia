@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Modal } from "@/components/Common/Modal";
@@ -8,7 +8,7 @@ import { readJson } from "@/lib/fetch-utils";
 import { csrfFetch } from "@/lib/csrf-client";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { logger } from "@/lib/logger";
-import { Check, X, Loader2, ChevronDown, ChevronUp, Tv, CheckCircle, Info, Star, Eye } from "lucide-react";
+import { Check, X, Loader2, ChevronDown, ChevronUp, Tv, CheckCircle, Info, Star, Eye, Search as SearchIcon } from "lucide-react";
 import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 import { ReleaseSearchModal } from "@/components/Media/ReleaseSearchModal";
 
@@ -73,6 +73,8 @@ export function SeriesRequestModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitState, setSubmitState] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [rawOpen, setRawOpen] = useState(false);
+  const [episodeSearchOpen, setEpisodeSearchOpen] = useState(false);
+  const [selectedEpisodeForSearch, setSelectedEpisodeForSearch] = useState<{ seasonNumber: number; episodeNumber: number; name: string; air_date: string | null } | null>(null);
   const router = useRouter();
   const toast = useToast();
 
@@ -83,6 +85,7 @@ export function SeriesRequestModal({
   const [seasonEpisodes, setSeasonEpisodes] = useState<Record<number, Episode[]>>({});
   const [loadingEpisodes, setLoadingEpisodes] = useState<Set<number>>(new Set());
   const [checkedEpisodes, setCheckedEpisodes] = useState<Record<number, Set<number>>>({});
+  const prefetchStartedRef = useRef(false);
 
   const blockedMessage = "Requesting blocked until notifications are applied";
   const canOpenRaw = Boolean(isAdmin && prowlarrEnabled);
@@ -105,35 +108,7 @@ export function SeriesRequestModal({
           if (abortController.signal.aborted) return;
           setSeasons(allSeasons);
 
-          // Pre-load all season episodes in parallel for immediate availability display
-          const episodePromises = allSeasons.map(async (season: Season) => {
-            try {
-              const episodeRes = await fetch(
-                `/api/v1/tmdb/tv/${tmdbId}/season/${season.season_number}/enhanced`,
-                { signal: abortController.signal }
-              );
-              if (episodeRes.ok) {
-                const episodeData = await episodeRes.json();
-                return { seasonNumber: season.season_number, episodes: episodeData.episodes || [] };
-              }
-            } catch (err: any) {
-              if (err.name === 'AbortError') throw err;
-              // Ignore errors for individual seasons
-            }
-            return null;
-          });
-
-          const results = await Promise.all(episodePromises);
-
-          if (abortController.signal.aborted) return;
-
-          const newSeasonEpisodes: Record<number, Episode[]> = {};
-          for (const result of results) {
-            if (result) {
-              newSeasonEpisodes[result.seasonNumber] = result.episodes;
-            }
-          }
-          setSeasonEpisodes(newSeasonEpisodes);
+          // Episodes are loaded lazily when a season is expanded.
         }
       } catch (err: any) {
         if (err.name !== 'AbortError') {
@@ -161,15 +136,70 @@ export function SeriesRequestModal({
       setCheckedEpisodes({});
       setSubmitState("idle");
       setRawOpen(false);
+      setEpisodeSearchOpen(false);
+      setSelectedEpisodeForSearch(null);
+      prefetchStartedRef.current = false;
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!open || seasons.length === 0 || prefetchStartedRef.current) return;
+    prefetchStartedRef.current = true;
+    let cancelled = false;
+    const controller = new AbortController();
+    const seasonParams = tvdbId ? `?tvdbId=${encodeURIComponent(String(tvdbId))}` : "";
+
+    const prefetch = async () => {
+      const seasonNumbers = seasons.map(s => s.season_number).filter(sn => !seasonEpisodes[sn]);
+      if (seasonNumbers.length === 0) return;
+
+      const concurrency = 3;
+      let index = 0;
+      const worker = async () => {
+        while (!cancelled && index < seasonNumbers.length) {
+          const seasonNumber = seasonNumbers[index++];
+          try {
+            const res = await fetch(
+              `/api/v1/tmdb/tv/${tmdbId}/season/${seasonNumber}/fast${seasonParams}`,
+              { signal: controller.signal }
+            );
+            if (!res.ok) continue;
+            const data = await res.json();
+            if (!cancelled && data?.episodes) {
+              setSeasonEpisodes(prev => (prev[seasonNumber] ? prev : { ...prev, [seasonNumber]: data.episodes || [] }));
+            }
+          } catch {
+            // ignore prefetch errors
+          }
+        }
+      };
+
+      await Promise.all(Array.from({ length: concurrency }, () => worker()));
+    };
+
+    const schedule = () => {
+      if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+        (window as any).requestIdleCallback(prefetch, { timeout: 1500 });
+      } else {
+        setTimeout(prefetch, 300);
+      }
+    };
+
+    schedule();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [open, seasons, seasonEpisodes, tmdbId, tvdbId]);
 
   async function loadSeasonEpisodes(seasonNumber: number) {
     if (seasonEpisodes[seasonNumber]) return;
 
     setLoadingEpisodes(prev => new Set(prev).add(seasonNumber));
     try {
-      const res = await fetch(`/api/v1/tmdb/tv/${tmdbId}/season/${seasonNumber}/enhanced`);
+      const seasonParams = tvdbId ? `?tvdbId=${encodeURIComponent(String(tvdbId))}` : "";
+      const res = await fetch(`/api/v1/tmdb/tv/${tmdbId}/season/${seasonNumber}/fast${seasonParams}`);
       if (res.ok) {
         const data = await res.json();
         setSeasonEpisodes(prev => ({ ...prev, [seasonNumber]: data.episodes || [] }));
@@ -415,6 +445,9 @@ export function SeriesRequestModal({
                               src={`https://image.tmdb.org/t/p/w92${season.poster_path}`}
                               alt=""
                               fill
+                              sizes="40px"
+                              loading="lazy"
+                              unoptimized
                               className="object-cover"
                             />
                           ) : (
@@ -493,56 +526,78 @@ export function SeriesRequestModal({
                                   const isCheckedForUi = Boolean(isChecked || isAvailable);
 
                                   return (
-                                    <label
+                                    <div
                                       key={episode.episode_number}
                                       className={`flex items-center gap-2 p-2 rounded transition-colors ${
-                                        isDisabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:bg-white/5'
-                                      } ${isChecked ? 'bg-purple-500/10' : ''}`}
+                                        isDisabled ? 'opacity-60' : 'hover:bg-white/5'
+                                      } ${isChecked ? 'bg-purple-500/10' : 'group'}`}
                                     >
-                                      <input
-                                        type="checkbox"
-                                        checked={isCheckedForUi}
-                                        onChange={() => toggleEpisode(season.season_number, episode.episode_number, episode)}
-                                        disabled={isDisabled}
-                                        className="hidden"
-                                      />
-                                      <div className={`h-4 w-4 rounded border flex items-center justify-center transition-colors flex-shrink-0 ${
-                                        isDisabled ? 'bg-gray-700 border-gray-600' :
-                                        isChecked ? 'bg-purple-500 border-purple-500' : 'border-gray-500'
-                                      }`}>
-                                        {(isCheckedForUi || isDisabled) && <Check className="h-3 w-3 text-white" />}
-                                      </div>
+                                      <label className="flex items-center gap-2 flex-1 cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          checked={isCheckedForUi}
+                                          onChange={() => toggleEpisode(season.season_number, episode.episode_number, episode)}
+                                          disabled={isDisabled}
+                                          className="hidden"
+                                        />
+                                        <div className={`h-4 w-4 rounded border flex items-center justify-center transition-colors flex-shrink-0 ${
+                                          isDisabled ? 'bg-gray-700 border-gray-600' :
+                                          isChecked ? 'bg-purple-500 border-purple-500' : 'border-gray-500'
+                                        }`}>
+                                          {(isCheckedForUi || isDisabled) && <Check className="h-3 w-3 text-white" />}
+                                        </div>
 
-                                      <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-1.5 flex-wrap">
-                                          <span className="text-xs font-medium text-white">
-                                            E{episode.episode_number}
-                                          </span>
-                                          <span className="text-xs text-gray-400 truncate">
-                                            {episode.name || "Untitled"}
-                                          </span>
+                                        <div className="flex-1 min-w-0">
+                                          <div className="flex items-center gap-1.5 flex-wrap">
+                                            <span className="text-xs font-medium text-white">
+                                              E{episode.episode_number}
+                                            </span>
+                                            <span className="text-xs text-gray-400 truncate">
+                                              {episode.name || "Untitled"}
+                                            </span>
+                                          </div>
+                                          <div className="flex items-center gap-1.5 mt-0.5">
+                                            {isAvailable && (
+                                              <span className="inline-flex items-center gap-0.5 text-[10px] text-indigo-300">
+                                                <CheckCircle className="h-2.5 w-2.5" />
+                                                Available
+                                              </span>
+                                            )}
+                                            {isRequested && (
+                                              <span className="inline-flex items-center gap-0.5 text-[10px] text-blue-300">
+                                                <Info className="h-2.5 w-2.5" />
+                                                Requested
+                                              </span>
+                                            )}
+                                            {!isAvailable && !isRequested && episode.air_date && (
+                                              <span className="text-[10px] text-gray-500">
+                                                {formatDate(episode.air_date)}
+                                              </span>
+                                            )}
+                                          </div>
                                         </div>
-                                        <div className="flex items-center gap-1.5 mt-0.5">
-                                          {isAvailable && (
-                                            <span className="inline-flex items-center gap-0.5 text-[10px] text-indigo-300">
-                                              <CheckCircle className="h-2.5 w-2.5" />
-                                              Available
-                                            </span>
-                                          )}
-                                          {isRequested && (
-                                            <span className="inline-flex items-center gap-0.5 text-[10px] text-blue-300">
-                                              <Info className="h-2.5 w-2.5" />
-                                              Requested
-                                            </span>
-                                          )}
-                                          {!isAvailable && !isRequested && episode.air_date && (
-                                            <span className="text-[10px] text-gray-500">
-                                              {formatDate(episode.air_date)}
-                                            </span>
-                                          )}
-                                        </div>
-                                      </div>
-                                    </label>
+                                      </label>
+
+                                      {isAdmin && prowlarrEnabled ? (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSelectedEpisodeForSearch({
+                                              seasonNumber: season.season_number,
+                                              episodeNumber: episode.episode_number,
+                                              name: episode.name || "Untitled",
+                                              air_date: episode.air_date || null
+                                            });
+                                            setEpisodeSearchOpen(true);
+                                          }}
+                                          title="Search releases for this episode"
+                                          className="flex-shrink-0 p-1.5 rounded text-gray-400 hover:text-white hover:bg-white/10 transition-colors opacity-0 group-hover:opacity-100"
+                                        >
+                                          <SearchIcon className="h-4 w-4" />
+                                        </button>
+                                      ) : null}
+                                    </div>
                                   );
                                 })}
                               </div>
@@ -628,6 +683,28 @@ export function SeriesRequestModal({
           posterUrl={posterUrl ?? null}
           backdropUrl={backdropUrl ?? null}
           preferProwlarr={prowlarrEnabled}
+        />
+      ) : null}
+      {selectedEpisodeForSearch ? (
+        <ReleaseSearchModal
+          open={episodeSearchOpen}
+          onClose={() => {
+            setEpisodeSearchOpen(false);
+            setSelectedEpisodeForSearch(null);
+          }}
+          mediaType="tv"
+          mediaId={serviceItemId}
+          tmdbId={tmdbId}
+          tvdbId={tvdbId ?? null}
+          title={`${title || "Series"} · S${String(selectedEpisodeForSearch.seasonNumber).padStart(2, "0")}E${String(selectedEpisodeForSearch.episodeNumber).padStart(2, "0")} · ${selectedEpisodeForSearch.name}`}
+          searchTitle={title || "Series"}
+          year={year ?? null}
+          posterUrl={posterUrl ?? null}
+          backdropUrl={backdropUrl ?? null}
+          preferProwlarr={prowlarrEnabled}
+          seasonNumber={selectedEpisodeForSearch.seasonNumber}
+          episodeNumber={selectedEpisodeForSearch.episodeNumber}
+          airDate={selectedEpisodeForSearch.air_date}
         />
       ) : null}
     </>
