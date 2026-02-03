@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { RefreshCcw, Search, X, Loader2, Download, Cloud, Check } from "lucide-react";
+import { RefreshCcw, Search, X, Loader2, Download, Cloud, Check, Grid, List } from "lucide-react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { csrfFetch } from "@/lib/csrf-client";
@@ -11,7 +11,7 @@ import { useLockBodyScroll } from "@/hooks/useLockBodyScroll";
 import { useIsIOS } from "@/hooks/useIsApple";
 import { Modal } from "@/components/Common/Modal";
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 100;
 
 type ReleaseRow = {
   guid: string;
@@ -119,6 +119,8 @@ export function ReleaseSearchModal(props: {
   const [releaseTotal, setReleaseTotal] = useState(0);
   const [releaseOffset, setReleaseOffset] = useState(0);
   const [grabbingKey, setGrabbingKey] = useState<string | null>(null);
+  const [grabbedKey, setGrabbedKey] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"table" | "grid">("grid");
   const [resolvedMediaId, setResolvedMediaId] = useState<number | null>(mediaId);
   const [replaceModal, setReplaceModal] = useState<{
     release: ReleaseRow;
@@ -198,6 +200,7 @@ export function ReleaseSearchModal(props: {
     setReleaseSearch("");
     setReleaseFilter("all");
     setResolvedMediaId(mediaId ?? null);
+    setGrabbedKey(null);
     void loadReleases({ offset: 0, append: false });
   }, [open, mediaId, mediaType, tmdbId, tvdbId, loadReleases]);
 
@@ -240,12 +243,18 @@ export function ReleaseSearchModal(props: {
           indexerId: release.indexerId ?? undefined,
           downloadUrl: release.downloadUrl ?? undefined,
           title: release.title,
-          protocol: release.protocol
+          protocol: release.protocol,
+          preferProwlarr: Boolean(preferProwlarr)
         })
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body?.error || "Grab failed");
-      toast.success(body?.message ?? "Release queued", { timeoutMs: 2500 });
+      setGrabbedKey(releaseKey);
+      toast.success(body?.message ?? "File grabbed", { timeoutMs: 2000 });
+      setTimeout(() => {
+        setGrabbedKey(null);
+        onClose();
+      }, 700);
     } catch (err: any) {
       toast.error(err?.message ?? "Grab failed");
     } finally {
@@ -386,6 +395,8 @@ export function ReleaseSearchModal(props: {
                       alt={title}
                       width={64}
                       height={96}
+                      loading="lazy"
+                      unoptimized
                       className="h-full w-full object-cover"
                     />
                   </div>
@@ -470,12 +481,40 @@ export function ReleaseSearchModal(props: {
                   </button>
                 ))}
               </div>
+              <div className="hidden md:flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setViewMode("grid")}
+                  title="Grid view"
+                  className={cn(
+                    "flex-shrink-0 p-2 rounded-lg transition-all duration-300 backdrop-blur-sm",
+                    viewMode === "grid"
+                      ? "bg-orange-500/30 text-orange-100 border border-orange-500/40"
+                      : "bg-white/10 text-white/60 border border-white/20 hover:text-white hover:bg-white/20"
+                  )}
+                >
+                  <Grid className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode("table")}
+                  title="Table view"
+                  className={cn(
+                    "flex-shrink-0 p-2 rounded-lg transition-all duration-300 backdrop-blur-sm",
+                    viewMode === "table"
+                      ? "bg-orange-500/30 text-orange-100 border border-orange-500/40"
+                      : "bg-white/10 text-white/60 border border-white/20 hover:text-white hover:bg-white/20"
+                  )}
+                >
+                  <List className="h-4 w-4" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
 
         <div
-          className="flex-1 overflow-y-auto overflow-x-hidden"
+          className="flex-1 overflow-y-auto overflow-x-hidden px-2 sm:px-0"
           onScroll={(event) => {
             const target = event.currentTarget;
             if (!canLoadMore) return;
@@ -506,6 +545,8 @@ export function ReleaseSearchModal(props: {
             </div>
           ) : (
             <>
+              {/* Table View for Desktop */}
+              {viewMode === "table" && (
               <div className="hidden md:block overflow-x-hidden min-w-0">
                 <table className="w-full table-fixed min-w-0">
                   <thead>
@@ -526,6 +567,7 @@ export function ReleaseSearchModal(props: {
                       const displayTitle = release.year ? `${release.title} (${release.year})` : release.title;
                       const historyDisplay = getHistoryDisplay(release.history);
                       const isTorrent = release.protocol?.toLowerCase() === "torrent";
+                      const actionKey = release.guid || release.downloadUrl || release.title;
 
                       return (
                         <tr
@@ -602,21 +644,23 @@ export function ReleaseSearchModal(props: {
                           <td className="p-3 pr-5 text-right">
                             <button
                               type="button"
-                              disabled={grabbingKey === (release.guid || release.downloadUrl || release.title) || !canGrab}
+                              disabled={grabbingKey === actionKey || grabbedKey === actionKey || !canGrab}
                               onClick={() => handleGrabRelease(release)}
                               className={cn(
                                 "inline-flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-semibold transition-all duration-300",
-                                grabbingKey === (release.guid || release.downloadUrl || release.title) || !canGrab
+                                grabbingKey === actionKey || grabbedKey === actionKey || !canGrab
                                   ? "bg-white/10 text-white/50 cursor-not-allowed"
                                   : "bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 ring-1 ring-emerald-500/30 hover:ring-emerald-500/50 active:scale-95"
                               )}
                             >
-                              {grabbingKey === (release.guid || release.downloadUrl || release.title) ? (
+                              {grabbingKey === actionKey ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : grabbedKey === actionKey ? (
+                                <Check className="h-4 w-4 text-emerald-300" />
                               ) : (
                                 <Download className="h-4 w-4" />
                               )}
-                              <span>{grabbingKey === (release.guid || release.downloadUrl || release.title) ? "..." : "Grab"}</span>
+                              <span>{grabbingKey === actionKey ? "..." : grabbedKey === actionKey ? "Grabbed" : "Grab"}</span>
                             </button>
                           </td>
                         </tr>
@@ -625,8 +669,107 @@ export function ReleaseSearchModal(props: {
                   </tbody>
                 </table>
               </div>
+              )}
 
-              <div className="md:hidden p-4 space-y-3">
+              {/* Grid View for Desktop */}
+              {viewMode === "grid" && (
+              <div className="hidden md:block overflow-x-hidden min-w-0">
+                <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3 p-4">
+                  {filtered.map((release, index) => {
+                    const rowKey = release.guid || `${release.indexerId ?? "x"}-${release.title}`;
+                    const is4k = release.title.toLowerCase().includes("4k") ||
+                                 release.title.toLowerCase().includes("2160") ||
+                                 release.quality.toLowerCase().includes("4k") ||
+                                 release.quality.toLowerCase().includes("2160");
+                    const displayTitle = release.year ? `${release.title} (${release.year})` : release.title;
+                    const historyDisplay = getHistoryDisplay(release.history);
+                    const isTorrent = release.protocol?.toLowerCase() === "torrent";
+                    const actionKey = release.guid || release.downloadUrl || release.title;
+
+                    return (
+                      <div
+                        key={rowKey}
+                        className="group relative overflow-hidden rounded-2xl bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 hover:border-white/20 transition-all duration-300 hover:shadow-xl hover:shadow-orange-500/10"
+                        style={{ animationDelay: `${index * 30}ms` }}
+                      >
+                        <div className="absolute inset-0 bg-gradient-to-br from-orange-500/0 to-amber-500/0 group-hover:from-orange-500/5 group-hover:to-amber-500/5 transition-all duration-500" />
+                        
+                        <div className="relative p-3">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className={cn(
+                              "px-2 py-0.5 rounded-lg text-[9px] font-bold uppercase border flex-shrink-0",
+                              isTorrent
+                                ? "bg-orange-500/20 text-orange-300 border-orange-500/30"
+                                : "bg-sky-500/20 text-sky-300 border-sky-500/30"
+                            )}>
+                              {isTorrent ? "TOR" : "NZB"}
+                            </span>
+                            <span className={cn(
+                              "px-2 py-0.5 rounded-lg text-[9px] font-bold border flex-shrink-0",
+                              is4k
+                                ? "bg-orange-500/20 text-orange-200 border-orange-500/30"
+                                : "bg-white/10 text-white/60 border-white/10"
+                            )}>
+                              {release.quality || "-"}
+                            </span>
+                            {historyDisplay.isImport && (
+                              <Cloud className="h-3 w-3 text-sky-400 flex-shrink-0" />
+                            )}
+                          </div>
+
+                          <div className={cn(
+                            "font-semibold text-sm leading-tight mb-2 group-hover:text-orange-100 transition-colors line-clamp-2",
+                            is4k ? "text-orange-200" : "text-white"
+                          )}>
+                            {displayTitle}
+                          </div>
+
+                          <div className="flex items-center gap-3 mb-3 text-xs">
+                            <div className="flex items-center gap-1">
+                              <span className="text-white/40">Size:</span>
+                              <span className="font-semibold text-white/70 text-[11px]">{formatBytes(release.size ?? undefined)}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="text-white/40">Age:</span>
+                              <span className="font-semibold text-white/70 text-[11px]">{formatAge(release.age)}</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between">
+                            <div className="text-[10px] text-white/40 truncate">
+                              {historyDisplay.text}
+                            </div>
+                            <button
+                              type="button"
+                              disabled={grabbingKey === actionKey || grabbedKey === actionKey || !canGrab}
+                              onClick={() => handleGrabRelease(release)}
+                              className={cn(
+                                "inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[10px] font-semibold transition-all duration-300 flex-shrink-0",
+                                grabbingKey === actionKey || grabbedKey === actionKey || !canGrab
+                                  ? "bg-white/10 text-white/50 cursor-not-allowed"
+                                  : "bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 ring-1 ring-emerald-500/30 hover:ring-emerald-500/50"
+                              )}
+                            >
+                              {grabbingKey === actionKey ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : grabbedKey === actionKey ? (
+                                <Check className="h-3 w-3 text-emerald-300" />
+                              ) : (
+                                <Download className="h-3 w-3" />
+                              )}
+                              {grabbingKey === actionKey ? "..." : grabbedKey === actionKey ? "Grabbed" : "Grab"}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              )}
+
+
+              <div className="md:hidden p-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {filtered.map((release, index) => {
                   const rowKey = release.guid || `${release.indexerId ?? "x"}-${release.title}`;
                   const is4k = release.title.toLowerCase().includes("4k") ||
@@ -636,19 +779,20 @@ export function ReleaseSearchModal(props: {
                   const displayTitle = release.year ? `${release.title} (${release.year})` : release.title;
                   const historyDisplay = getHistoryDisplay(release.history);
                   const isTorrent = release.protocol?.toLowerCase() === "torrent";
+                  const actionKey = release.guid || release.downloadUrl || release.title;
 
                   return (
                     <div
                       key={rowKey}
-                      className="group relative overflow-hidden rounded-2xl bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 hover:border-white/20 transition-all duration-300 hover:shadow-xl hover:shadow-orange-500/10"
-                      style={{ animationDelay: `${index * 50}ms` }}
+                      className="group relative overflow-hidden rounded-xl bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 hover:border-white/20 transition-all duration-300 hover:shadow-lg hover:shadow-orange-500/10"
+                      style={{ animationDelay: `${index * 30}ms` }}
                     >
                       <div className="absolute inset-0 bg-gradient-to-br from-orange-500/0 to-amber-500/0 group-hover:from-orange-500/5 group-hover:to-amber-500/5 transition-all duration-500" />
 
-                      <div className="relative p-4">
-                        <div className="flex items-center gap-2 mb-3">
+                      <div className="relative p-2.5">
+                        <div className="flex items-center gap-1.5 mb-2">
                           <span className={cn(
-                            "px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase border",
+                            "px-2 py-0.5 rounded text-[8px] font-bold uppercase border flex-shrink-0",
                             isTorrent
                               ? "bg-orange-500/20 text-orange-300 border-orange-500/30"
                               : "bg-sky-500/20 text-sky-300 border-sky-500/30"
@@ -656,7 +800,7 @@ export function ReleaseSearchModal(props: {
                             {isTorrent ? "TOR" : "NZB"}
                           </span>
                           <span className={cn(
-                            "px-2.5 py-1 rounded-lg text-[10px] font-bold border",
+                            "px-2 py-0.5 rounded text-[8px] font-bold border flex-shrink-0",
                             is4k
                               ? "bg-orange-500/20 text-orange-200 border-orange-500/30"
                               : "bg-white/10 text-white/60 border-white/10"
@@ -664,49 +808,52 @@ export function ReleaseSearchModal(props: {
                             {release.quality || "-"}
                           </span>
                           {historyDisplay.isImport && (
-                            <Cloud className="h-4 w-4 text-sky-400" />
+                            <Cloud className="h-3 w-3 text-sky-400 flex-shrink-0" />
                           )}
                         </div>
 
                         <div className={cn(
-                          "font-semibold text-base leading-snug mb-3 group-hover:text-orange-100 transition-colors",
+                          "font-semibold text-xs leading-tight mb-2 group-hover:text-orange-100 transition-colors line-clamp-2",
                           is4k ? "text-orange-200" : "text-white"
                         )}>
                           {displayTitle}
                         </div>
 
-                        <div className="flex items-center gap-4 mb-4 text-sm">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-white/40">Size:</span>
-                            <span className="font-semibold text-white/80">{formatBytes(release.size ?? undefined)}</span>
+                        <div className="flex items-center gap-2 mb-2 text-[11px]">
+                          <div className="flex items-center gap-0.5">
+                            <span className="text-white/40 text-[10px]">Size:</span>
+                            <span className="font-semibold text-white/70">{formatBytes(release.size ?? undefined)}</span>
                           </div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-white/40">Age:</span>
-                            <span className="font-semibold text-white/80">{formatAge(release.age)}</span>
+                          <span className="text-white/20">•</span>
+                          <div className="flex items-center gap-0.5">
+                            <span className="text-white/40 text-[10px]">Age:</span>
+                            <span className="font-semibold text-white/70">{formatAge(release.age)}</span>
                           </div>
                         </div>
 
-                        <div className="flex items-center justify-between">
-                          <div className="text-xs text-white/40">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-[9px] text-white/40 truncate flex-1">
                             {historyDisplay.text}
                           </div>
-                            <button
-                              type="button"
-                              disabled={grabbingKey === (release.guid || release.downloadUrl || release.title) || !canGrab}
-                              onClick={() => handleGrabRelease(release)}
-                              className={cn(
-                                "inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition-all duration-300",
-                                grabbingKey === (release.guid || release.downloadUrl || release.title) || !canGrab
-                                  ? "bg-white/10 text-white/50 cursor-not-allowed"
-                                  : "bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 ring-1 ring-emerald-500/30 hover:ring-emerald-500/50"
-                              )}
-                            >
-                            {grabbingKey === (release.guid || release.downloadUrl || release.title) ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <Download className="h-3.5 w-3.5" />
+                          <button
+                            type="button"
+                            disabled={grabbingKey === actionKey || grabbedKey === actionKey || !canGrab}
+                            onClick={() => handleGrabRelease(release)}
+                            className={cn(
+                              "inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-[9px] font-semibold transition-all duration-300 flex-shrink-0",
+                              grabbingKey === actionKey || grabbedKey === actionKey || !canGrab
+                                ? "bg-white/10 text-white/50 cursor-not-allowed"
+                                : "bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 ring-1 ring-emerald-500/30 hover:ring-emerald-500/50"
                             )}
-                            <span>{grabbingKey === (release.guid || release.downloadUrl || release.title) ? "..." : "Grab"}</span>
+                          >
+                            {grabbingKey === actionKey ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : grabbedKey === actionKey ? (
+                              <Check className="h-3 w-3 text-emerald-300" />
+                            ) : (
+                              <Download className="h-3 w-3" />
+                            )}
+                            <span>{grabbingKey === actionKey ? "..." : grabbedKey === actionKey ? "Grabbed" : "Grab"}</span>
                           </button>
                         </div>
                       </div>

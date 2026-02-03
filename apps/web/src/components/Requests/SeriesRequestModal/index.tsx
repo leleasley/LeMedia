@@ -8,7 +8,7 @@ import { readJson } from "@/lib/fetch-utils";
 import { csrfFetch } from "@/lib/csrf-client";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { logger } from "@/lib/logger";
-import { Check, X, Loader2, ChevronDown, ChevronUp, Tv, CheckCircle, Info, Star, Eye, Search as SearchIcon } from "lucide-react";
+import { Check, X, Loader2, ChevronDown, ChevronUp, Tv, CheckCircle, Info, Star, Search as SearchIcon, Package } from "lucide-react";
 import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 import { ReleaseSearchModal } from "@/components/Media/ReleaseSearchModal";
 
@@ -72,9 +72,10 @@ export function SeriesRequestModal({
   const [errorModal, setErrorModal] = useState<{ title: string; message: string } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitState, setSubmitState] = useState<"idle" | "loading" | "success" | "error">("idle");
-  const [rawOpen, setRawOpen] = useState(false);
   const [episodeSearchOpen, setEpisodeSearchOpen] = useState(false);
   const [selectedEpisodeForSearch, setSelectedEpisodeForSearch] = useState<{ seasonNumber: number; episodeNumber: number; name: string; air_date: string | null } | null>(null);
+  const [seasonPackSearchOpen, setSeasonPackSearchOpen] = useState(false);
+  const [selectedSeasonForSearch, setSelectedSeasonForSearch] = useState<{ seasonNumber: number; name: string } | null>(null);
   const router = useRouter();
   const toast = useToast();
 
@@ -88,7 +89,6 @@ export function SeriesRequestModal({
   const prefetchStartedRef = useRef(false);
 
   const blockedMessage = "Requesting blocked until notifications are applied";
-  const canOpenRaw = Boolean(isAdmin && prowlarrEnabled);
 
   // Load seasons when modal opens
   useEffect(() => {
@@ -135,9 +135,10 @@ export function SeriesRequestModal({
       setSeasonEpisodes({});
       setCheckedEpisodes({});
       setSubmitState("idle");
-      setRawOpen(false);
       setEpisodeSearchOpen(false);
       setSelectedEpisodeForSearch(null);
+      setSeasonPackSearchOpen(false);
+      setSelectedSeasonForSearch(null);
       prefetchStartedRef.current = false;
     }
   }, [open]);
@@ -415,6 +416,20 @@ export function SeriesRequestModal({
               </div>
             )}
 
+            {/* Search for Series Packs */}
+            {isAdmin && prowlarrEnabled && (
+              <button
+                onClick={() => {
+                  setSelectedSeasonForSearch({ seasonNumber: 0, name: "Complete Series" });
+                  setSeasonPackSearchOpen(true);
+                }}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-to-r from-orange-500/10 to-amber-500/10 border border-orange-500/30 text-orange-300 hover:from-orange-500/20 hover:to-amber-500/20 hover:border-orange-500/50 transition-all text-sm font-medium"
+              >
+                <Package className="h-4 w-4" />
+                Search for Series Packs (Complete/Multi-Season)
+              </button>
+            )}
+
             {/* Seasons List */}
             <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
               {seasons.length === 0 ? (
@@ -620,19 +635,6 @@ export function SeriesRequestModal({
 
             {/* Actions */}
             <div className="flex gap-3 pt-2 flex-wrap">
-              {isAdmin ? (
-                <button
-                  onClick={() => {
-                    if (canOpenRaw) setRawOpen(true);
-                  }}
-                  disabled={!canOpenRaw}
-                  title={canOpenRaw ? "View Raw releases" : "Set up Prowlarr in services"}
-                  className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                >
-                  <Eye className="h-4 w-4" />
-                  {canOpenRaw ? "View Raw" : "Set up Prowlarr in services"}
-                </button>
-              ) : null}
               <button
                 onClick={handleClose}
                 disabled={isSubmitting}
@@ -670,21 +672,6 @@ export function SeriesRequestModal({
           </div>
         )}
       </Modal>
-      {canOpenRaw ? (
-        <ReleaseSearchModal
-          open={rawOpen}
-          onClose={() => setRawOpen(false)}
-          mediaType="tv"
-          mediaId={serviceItemId}
-          tmdbId={tmdbId}
-          tvdbId={tvdbId ?? null}
-          title={title || "Series"}
-          year={year ?? null}
-          posterUrl={posterUrl ?? null}
-          backdropUrl={backdropUrl ?? null}
-          preferProwlarr={prowlarrEnabled}
-        />
-      ) : null}
       {selectedEpisodeForSearch ? (
         <ReleaseSearchModal
           open={episodeSearchOpen}
@@ -705,6 +692,26 @@ export function SeriesRequestModal({
           seasonNumber={selectedEpisodeForSearch.seasonNumber}
           episodeNumber={selectedEpisodeForSearch.episodeNumber}
           airDate={selectedEpisodeForSearch.air_date}
+        />
+      ) : null}
+      {selectedSeasonForSearch ? (
+        <ReleaseSearchModal
+          open={seasonPackSearchOpen}
+          onClose={() => {
+            setSeasonPackSearchOpen(false);
+            setSelectedSeasonForSearch(null);
+          }}
+          mediaType="tv"
+          mediaId={serviceItemId}
+          tmdbId={tmdbId}
+          tvdbId={tvdbId ?? null}
+          title={`${title || "Series"} · Complete/Multi-Season Packs`}
+          searchTitle={title || "Series"}
+          year={year ?? null}
+          posterUrl={posterUrl ?? null}
+          backdropUrl={backdropUrl ?? null}
+          preferProwlarr={prowlarrEnabled}
+          seasonNumber={selectedSeasonForSearch.seasonNumber}
         />
       ) : null}
     </>

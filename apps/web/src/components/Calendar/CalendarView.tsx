@@ -39,7 +39,9 @@ import {
   CheckCircle2,
   Download,
   Play,
-  RefreshCw
+  RefreshCw,
+  Eye,
+  EyeOff
 } from "lucide-react";
 import { clsx } from "clsx";
 import { GenreFilterDropdown } from "./GenreFilterDropdown";
@@ -85,6 +87,7 @@ type ViewMode = "month" | "week" | "list" | "agenda";
 export function CalendarView() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>("month");
+  const [includeJellyfin, setIncludeJellyfin] = useState(false);
   const [filters, setFilters] = useState({
     movies: true,
     tv: true,
@@ -123,7 +126,7 @@ export function CalendarView() {
 
   // Fetch data for the visible range with error handling
   const { data, isLoading, error, mutate } = useSWR<{ events: CalendarEvent[] }>(
-    `/api/calendar?start=${format(calendarStart, 'yyyy-MM-dd')}&end=${format(calendarEnd, 'yyyy-MM-dd')}`,
+    `/api/calendar?start=${format(calendarStart, 'yyyy-MM-dd')}&end=${format(calendarEnd, 'yyyy-MM-dd')}&jellyfin=${includeJellyfin}`,
     fetcher,
     { revalidateOnFocus: false } // Don't revalidate on tab focus
   );
@@ -335,6 +338,8 @@ export function CalendarView() {
               // Ignore clipboard failures silently
             }
           }}
+          includeJellyfin={includeJellyfin}
+          onJellyfinToggle={() => setIncludeJellyfin(!includeJellyfin)}
         />
 
         {isLoading ? (
@@ -406,6 +411,8 @@ export function CalendarView() {
             // Ignore clipboard failures silently
           }
         }}
+        includeJellyfin={includeJellyfin}
+        onJellyfinToggle={() => setIncludeJellyfin(!includeJellyfin)}
       />
 
       {/* Calendar Grid */}
@@ -533,7 +540,9 @@ function CalendarHeader({
   onSearchChange,
   feedUrl,
   feedCopied,
-  onCopyFeed
+  onCopyFeed,
+  includeJellyfin,
+  onJellyfinToggle
 }: any) {
   return (
     <div className="space-y-4">
@@ -607,6 +616,23 @@ function CalendarHeader({
             onGenresChange={(genreIds) => onFiltersChange({ ...filters, genreFilters: genreIds })}
             mediaType="all"
           />
+          <button
+            onClick={onJellyfinToggle}
+            title={includeJellyfin ? "Click to hide availability (faster)" : "Click to show availability (slower)"}
+            className={clsx(
+              "inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all",
+              includeJellyfin
+                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30"
+                : "bg-gray-700 text-gray-300 border border-gray-600 hover:bg-gray-600"
+            )}
+          >
+            {includeJellyfin ? (
+              <Eye className="w-4 h-4" />
+            ) : (
+              <EyeOff className="w-4 h-4" />
+            )}
+            <span className="hidden sm:inline">{includeJellyfin ? "Availability On" : "Availability Off"}</span>
+          </button>
         </div>
       </div>
     </div>

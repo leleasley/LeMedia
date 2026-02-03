@@ -61,7 +61,77 @@ function buildEpisodeSearchTerm(input: {
     const episode = padEpisode(input.episodeNumber);
     return `${safeTitle} S${season}E${episode}`.trim();
   }
+  // Season pack search (season number but no episode number)
+  if (typeof input.seasonNumber === "number") {
+    const season = padEpisode(input.seasonNumber);
+    return `${safeTitle} S${season}`.trim();
+  }
   return safeTitle;
+}
+
+function buildSeasonPackSearchTerm(input: { title?: string | null; seasonNumber?: number | null }) {
+  const safeTitle = input.title?.trim();
+  if (!safeTitle) return "";
+  if (typeof input.seasonNumber === "number" && input.seasonNumber > 0) {
+    return `${safeTitle} S${padEpisode(input.seasonNumber)}`.trim();
+  }
+  return `${safeTitle} complete series`.trim();
+}
+
+function buildSeasonPackAltTerms(input: { title?: string | null; seasonNumber?: number | null }) {
+  const safeTitle = input.title?.trim();
+  if (!safeTitle) return [];
+  if (typeof input.seasonNumber === "number" && input.seasonNumber > 0) {
+    return [
+      `${safeTitle} Season ${input.seasonNumber}`,
+      `${safeTitle} season pack`
+    ];
+  }
+  return [
+    `${safeTitle} complete`,
+    `${safeTitle} season pack`
+  ];
+}
+
+function isSingleEpisodeTitle(title: string) {
+  const singleEpisode = /\bS\d{1,2}E\d{2}\b/i.test(title);
+  if (!singleEpisode) return false;
+  const episodeRange =
+    /\bS\d{1,2}E\d{2}\s*[-~]\s*E?\d{2}\b/i.test(title) ||
+    /\bE\d{2}\s*[-~]\s*E?\d{2}\b/i.test(title);
+  return !episodeRange;
+}
+
+function isLikelySeasonPackTitle(title: string, seasonNumber?: number | null) {
+  const normalized = title.toLowerCase();
+  if (isSingleEpisodeTitle(title)) return false;
+
+  const hasPackKeyword = /(season pack|complete|collection|boxset|all seasons|complete series|full series|series complete)/i.test(normalized);
+  const hasMultiSeasonRange =
+    /\bS\d{1,2}\s*[-–]\s*S?\d{1,2}\b/i.test(title) ||
+    /\bSeason\s*\d+\s*[-–]\s*\d+\b/i.test(title);
+
+  if (typeof seasonNumber === "number" && seasonNumber > 0) {
+    const seasonPadded = String(seasonNumber).padStart(2, "0");
+    const hasSeasonTag =
+      new RegExp(`\\bS${seasonPadded}\\b`, "i").test(title) ||
+      new RegExp(`\\bS${seasonNumber}\\b`, "i").test(title) ||
+      new RegExp(`\\bSeason\\s*${seasonNumber}\\b`, "i").test(title);
+    return hasSeasonTag || hasPackKeyword || hasMultiSeasonRange;
+  }
+
+  // Complete/multi-season packs
+  return hasPackKeyword || hasMultiSeasonRange;
+}
+
+function filterSeasonPackReleases(releases: any[], seasonNumber?: number | null) {
+  if (!Array.isArray(releases) || releases.length === 0) return releases;
+  const filtered = releases.filter((release) => {
+    const title = String(release?.title ?? release?.releaseTitle ?? "");
+    if (!title) return false;
+    return isLikelySeasonPackTitle(title, seasonNumber);
+  });
+  return filtered.length ? filtered : releases;
 }
 
 async function getUltraHdProfileId(fetcher: (path: string, init?: RequestInit) => Promise<any>) {
@@ -159,6 +229,7 @@ export async function GET(req: NextRequest) {
     let resolvedId: number | null = typeof id === "number" && Number.isFinite(id) ? id : null;
     const yearNumber = year ? Number.parseInt(year, 10) : null;
     const hasEpisodeSearch = mediaType === "tv" && typeof seasonNumber === "number" && typeof episodeNumber === "number";
+    const hasSeasonPackSearch = mediaType === "tv" && typeof seasonNumber === "number" && typeof episodeNumber !== "number";
 
     const radarrService = mediaType === "movie"
       ? await getActiveMediaService("radarr").catch(() => null)
@@ -177,7 +248,7 @@ export async function GET(req: NextRequest) {
       resolvedId = (byTvdb ?? byTmdb)?.id ?? null;
     }
 
-    const shouldUseProwlarr = Boolean(preferProwlarr && !resolvedId);
+    const shouldUseProwlarr = Boolean(preferProwlarr && (hasSeasonPackSearch || !resolvedId));
 
     if (shouldUseProwlarr) {
       const prowlarrService = await getActiveMediaService("prowlarr").catch(() => null);
@@ -216,8 +287,16 @@ export async function GET(req: NextRequest) {
               seriesType: requestedSeriesType ?? null
             })
           : "";
+        const seasonPackTerm = hasSeasonPackSearch
+          ? buildSeasonPackSearchTerm({ title, seasonNumber })
+          : "";
+        const seasonPackAltTerms = hasSeasonPackSearch
+          ? buildSeasonPackAltTerms({ title, seasonNumber })
+          : [];
         const searchQueries = [
           episodeTerm,
+          seasonPackTerm,
+          ...seasonPackAltTerms,
           tvdbId ? `tvdb:${tvdbId}` : "",
           tmdbId ? `tmdb:${tmdbId}` : "",
           title ? title : ""
@@ -365,7 +444,7 @@ export async function GET(req: NextRequest) {
             }
           }
 
-          if (!releases.length) {
+          if (!releases.length && !hasSeasonPackSearch) {
             const response = await fetcher(`/api/v3/release?seriesId=${resolvedId}`);
             releases = Array.isArray(response) ? response : [];
           }
@@ -379,6 +458,7 @@ export async function GET(req: NextRequest) {
 
         // If still no releases and we have a title, try title/episode search in Sonarr
         if (!releases.length && title) {
+          // For season pack searches, include season/pack hints to avoid single-episode noise
           const searchTerm = hasEpisodeSearch
             ? buildEpisodeSearchTerm({
                 title,
@@ -387,7 +467,9 @@ export async function GET(req: NextRequest) {
                 airDate: airDate ?? null,
                 seriesType: resolvedSeriesType
               })
-            : title;
+            : (hasSeasonPackSearch
+              ? buildSeasonPackSearchTerm({ title, seasonNumber })
+              : title);
           if (searchTerm) {
             const response = await fetcher(`/api/v3/release?term=${encodeURIComponent(searchTerm)}`);
             releases = Array.isArray(response) ? response : [];
@@ -400,7 +482,7 @@ export async function GET(req: NextRequest) {
     if (!releases.length && title) {
       const prowlarrService = await getActiveMediaService("prowlarr").catch(() => null);
       if (prowlarrService) {
-        // Include year in search query for better results
+        // For season pack searches, use title only to get all season releases
         const searchQuery = hasEpisodeSearch
           ? buildEpisodeSearchTerm({
               title,
@@ -409,13 +491,21 @@ export async function GET(req: NextRequest) {
               airDate: airDate ?? null,
               seriesType: requestedSeriesType ?? null
             })
-          : (year ? `${title} ${year}` : title);
+          : (hasSeasonPackSearch
+            ? (seasonNumber && seasonNumber > 0
+              ? `${title} S${padEpisode(seasonNumber)}`
+              : `${title} complete series`)
+            : (year ? `${title} ${year}` : title));
         releases = await searchProwlarr(searchQuery, prowlarrService, releaseTimeout, {
           type: mediaType,
           limit: 100
         }).catch(() => []);
         usedProwlarr = Array.isArray(releases) && releases.length > 0;
       }
+    }
+
+    if (hasSeasonPackSearch) {
+      releases = filterSeasonPackReleases(releases, seasonNumber);
     }
 
     if (yearNumber && Number.isFinite(yearNumber) && usedProwlarr) {

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireAdmin } from "@/auth";
 import { requireCsrf } from "@/lib/csrf";
 import { getActiveMediaService } from "@/lib/media-services";
+import { createProwlarrFetcher } from "@/lib/prowlarr";
 import { addMovie, createRadarrFetcher, getMovieByTmdbId } from "@/lib/radarr";
 import { addSeriesFromLookup, createSonarrFetcher, getSeriesByTmdbId, getSeriesByTvdbId, lookupSeriesByTvdb } from "@/lib/sonarr";
 
@@ -17,7 +18,8 @@ const GrabSchema = z.object({
   indexerId: z.number().int().optional(),
   downloadUrl: z.string().url().optional(),
   title: z.string().optional(),
-  protocol: z.string().optional()
+  protocol: z.string().optional(),
+  preferProwlarr: z.boolean().optional()
 }).refine((data) => data.mediaId || data.tmdbId || data.tvdbId, {
   message: "Missing media identifier"
 });
@@ -80,6 +82,19 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: "Movie not found in Radarr" }, { status: 404 });
         }
       }
+      if (parsed.data.preferProwlarr) {
+        const prowlarr = await getActiveMediaService("prowlarr");
+        if (!prowlarr) return NextResponse.json({ error: "No Prowlarr service configured" }, { status: 400 });
+        if (!parsed.data.guid || !parsed.data.indexerId) {
+          return NextResponse.json({ error: "Missing Prowlarr release identifier" }, { status: 400 });
+        }
+        const prowlarrFetcher = createProwlarrFetcher(prowlarr.base_url, prowlarr.apiKey);
+        await prowlarrFetcher("/api/v1/search", {
+          method: "POST",
+          body: JSON.stringify({ guid: parsed.data.guid, indexerId: parsed.data.indexerId })
+        });
+        return NextResponse.json({ ok: true, message: added ? "Movie added and release queued" : "Release queued successfully" });
+      }
       await fetcher("/api/v3/release", {
         method: "POST",
         body: JSON.stringify(buildGrabPayload({ ...parsed.data, mediaId }))
@@ -119,6 +134,19 @@ export async function POST(req: NextRequest) {
       if (!mediaId) {
         return NextResponse.json({ error: "Series not found in Sonarr" }, { status: 404 });
       }
+    }
+    if (parsed.data.preferProwlarr) {
+      const prowlarr = await getActiveMediaService("prowlarr");
+      if (!prowlarr) return NextResponse.json({ error: "No Prowlarr service configured" }, { status: 400 });
+      if (!parsed.data.guid || !parsed.data.indexerId) {
+        return NextResponse.json({ error: "Missing Prowlarr release identifier" }, { status: 400 });
+      }
+      const prowlarrFetcher = createProwlarrFetcher(prowlarr.base_url, prowlarr.apiKey);
+      await prowlarrFetcher("/api/v1/search", {
+        method: "POST",
+        body: JSON.stringify({ guid: parsed.data.guid, indexerId: parsed.data.indexerId })
+      });
+      return NextResponse.json({ ok: true, message: added ? "Series added and release queued" : "Release queued successfully" });
     }
     await fetcher("/api/v3/release", {
       method: "POST",

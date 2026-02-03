@@ -540,12 +540,16 @@ async function enrichWithJellyfinAvailability(events: CalendarEvent[]): Promise<
 
   for (let i = 0; i < events.length; i += batchSize) {
     const batch = events.slice(i, i + batchSize);
+    const timeoutMs = 4000; // 4 second timeout per batch for Jellyfin
 
-    await Promise.all(
-      batch.map(async (event) => {
-        if (!event.mediaType) return;
+    try {
+      // Wrap in timeout - if Jellyfin is slow, continue without availability info
+      await Promise.race([
+        Promise.all(
+          batch.map(async (event) => {
+            if (!event.mediaType) return;
 
-        try {
+            try {
           const seasonNumber = event.metadata?.seasonNumber;
           const episodeNumber = event.metadata?.episodeNumber;
           const baseTitle = event.metadata?.baseTitle || event.title.replace(/\s*-\s*S\d{2}E\d{2}.*/i, "");
@@ -707,8 +711,14 @@ async function enrichWithJellyfinAvailability(events: CalendarEvent[]): Promise<
           // Non-fatal: Jellyfin down or item not found
           console.error(`[Calendar] Error checking Jellyfin availability for ${event.title}:`, error);
         }
-      })
-    );
+          })
+        ),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Jellyfin timeout')), timeoutMs))
+      ]);
+    } catch (timeoutError) {
+      // Timeout or error - continue without enrichment for this batch
+      logger.debug(`[Calendar] Jellyfin check timeout/error for batch at index ${i}, skipping enrichment for this batch`);
+    }
   }
 
   return events;
