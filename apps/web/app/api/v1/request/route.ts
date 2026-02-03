@@ -67,6 +67,37 @@ function mapRequestType(mediaType: string | null) {
   return undefined;
 }
 
+// Map LeMedia status strings to Overseerr status numbers for API compatibility
+function mapStatusToOverseerr(status: string): number {
+  const statusMap: Record<string, number> = {
+    "pending": 1,
+    "queued": 1,
+    "submitted": 2,
+    "downloading": 2,
+    "available": 3,
+    "denied": 4,
+    "failed": 5,
+    "already_exists": 3
+  };
+  return statusMap[status] ?? 1;
+}
+
+// Convert media type to Overseerr format
+function mapMediaTypeToOverseerr(type: string) {
+  if (type === "episode") return "tv";
+  return type;
+}
+
+// Convert UUID to a consistent numeric ID for Overseerr compatibility
+// Must fit in 32-bit signed integer range (-2,147,483,648 to 2,147,483,647)
+function uuidToNumericId(uuid: string): number {
+  // Take first 7 hex chars and parse, ensuring it fits in int32 range
+  const hex = uuid.replace(/-/g, '').substring(0, 7);
+  const num = parseInt(hex, 16);
+  // Keep it positive and within int32 range (max 2,147,483,647)
+  return num % 2147483647;
+}
+
 async function resolveApiUser(req: NextRequest) {
   const apiUserHeader = req.headers.get("x-api-user") || "";
   const apiUserId = Number(apiUserHeader);
@@ -175,15 +206,33 @@ export async function GET(req: NextRequest) {
     Array.from(tvGroups.values()).map(async ({ base, requestIds }) => {
       const jellyfinMediaId = await getJellyfinItemIdByTmdb("tv", base.tmdb_id);
       return {
-        id: base.id,
-        status: base.status,
+        id: uuidToNumericId(base.id), // Overseerr expects numeric ID
+        requestId: base.id, // Keep UUID for reference
+        status: mapStatusToOverseerr(base.status), // Overseerr expects numeric status
+        statusText: base.status, // Keep text status for reference
         createdAt: base.created_at,
+        updatedAt: base.created_at,
         type: "tv" as const,
         mediaType: "tv" as const,
         title: base.title,
         tmdbId: base.tmdb_id,
-        requestedBy: { id: base.user_id, username: base.username },
-        media: { jellyfinMediaId: jellyfinMediaId ?? null }
+        requestedBy: {
+          id: base.user_id,
+          username: base.username,
+          displayName: base.username
+        },
+        modifiedBy: null,
+        is4k: false,
+        serverId: null,
+        profileId: null,
+        rootFolder: null,
+        media: {
+          id: base.tmdb_id,
+          jellyfinMediaId: jellyfinMediaId ?? null,
+          tmdbId: base.tmdb_id,
+          mediaType: "tv",
+          status: mapStatusToOverseerr(base.status)
+        }
       };
     })
   );
@@ -192,15 +241,33 @@ export async function GET(req: NextRequest) {
     movies.map(async m => {
       const jellyfinMediaId = await getJellyfinItemIdByTmdb("movie", m.tmdb_id);
       return {
-        id: m.id,
-        status: m.status,
+        id: uuidToNumericId(m.id), // Overseerr expects numeric ID
+        requestId: m.id, // Keep UUID for reference
+        status: mapStatusToOverseerr(m.status), // Overseerr expects numeric status
+        statusText: m.status, // Keep text status for reference
         createdAt: m.created_at,
+        updatedAt: m.created_at,
         type: "movie" as const,
         mediaType: "movie" as const,
         title: m.title,
         tmdbId: m.tmdb_id,
-        requestedBy: { id: m.user_id, username: m.username },
-        media: { jellyfinMediaId: jellyfinMediaId ?? null }
+        requestedBy: {
+          id: m.user_id,
+          username: m.username,
+          displayName: m.username
+        },
+        modifiedBy: null,
+        is4k: false,
+        serverId: null,
+        profileId: null,
+        rootFolder: null,
+        media: {
+          id: m.tmdb_id,
+          jellyfinMediaId: jellyfinMediaId ?? null,
+          tmdbId: m.tmdb_id,
+          mediaType: "movie",
+          status: mapStatusToOverseerr(m.status)
+        }
       };
     })
   );
@@ -209,9 +276,9 @@ export async function GET(req: NextRequest) {
 
   return cacheableJsonResponseWithETag(req, {
     pageInfo: {
-      pages: Math.max(Math.ceil(combined.length / take), 1),
+      pages: Math.max(Math.ceil(total / take), 1),
       pageSize: take,
-      results: combined.length,
+      results: total,
       page: Math.floor(skip / take) + 1
     },
     results: combined

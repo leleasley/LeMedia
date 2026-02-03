@@ -67,6 +67,7 @@ export async function GET(req: NextRequest) {
     const series = await fetcher(`/api/v3/series/${id}`);
     const stats = series?.statistics ?? {};
     const monitored = series?.monitored ?? null;
+    const seriesType = series?.seriesType ?? null;
     const sizeBytes = stats?.sizeOnDisk ?? series?.sizeOnDisk ?? null;
     let files: any[] = [];
     try {
@@ -84,7 +85,8 @@ export async function GET(req: NextRequest) {
       quality: quality || null,
       sizeBytes: typeof sizeBytes === "number" ? sizeBytes : null,
       episodeFileCount,
-      monitored: typeof monitored === "boolean" ? monitored : null
+      monitored: typeof monitored === "boolean" ? monitored : null,
+      seriesType: typeof seriesType === "string" ? seriesType : null
     });
   } catch (err: any) {
     return NextResponse.json({ error: err?.message ?? "Failed to load media info" }, { status: 500 });

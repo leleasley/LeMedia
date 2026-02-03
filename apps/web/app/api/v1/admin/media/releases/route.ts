@@ -19,6 +19,10 @@ const QuerySchema = z.object({
   preferProwlarr: z.coerce.number().int().optional(),
   title: z.string().trim().max(200).optional(),
   year: z.string().trim().max(4).optional(),
+  seasonNumber: z.coerce.number().int().min(0).optional(),
+  episodeNumber: z.coerce.number().int().min(0).optional(),
+  airDate: z.string().trim().max(16).optional(),
+  seriesType: z.string().trim().max(50).optional(),
   offset: z.coerce.number().int().min(0).default(0),
   limit: z.coerce.number().int().min(1).max(200).default(50)
 }).refine((data) => data.id || data.tmdbId || data.tvdbId || data.title, {
@@ -27,6 +31,36 @@ const QuerySchema = z.object({
 
 const PROFILE_CACHE_TTL_MS = 2 * 60 * 1000;
 let cachedUltraHdProfileId: { id: number; expiresAt: number } | null = null;
+
+function padEpisode(value?: number | null) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "00";
+  return String(value).padStart(2, "0");
+}
+
+function normalizeSeriesType(value?: string | null) {
+  return value ? String(value).toLowerCase() : null;
+}
+
+function buildEpisodeSearchTerm(input: {
+  title?: string | null;
+  seasonNumber?: number | null;
+  episodeNumber?: number | null;
+  airDate?: string | null;
+  seriesType?: string | null;
+}) {
+  const safeTitle = input.title?.trim();
+  if (!safeTitle) return "";
+  const seriesType = normalizeSeriesType(input.seriesType);
+  if (seriesType === "daily" && input.airDate) {
+    return `${safeTitle} ${input.airDate}`.trim();
+  }
+  if (typeof input.seasonNumber === "number" && typeof input.episodeNumber === "number") {
+    const season = padEpisode(input.seasonNumber);
+    const episode = padEpisode(input.episodeNumber);
+    return `${safeTitle} S${season}E${episode}`.trim();
+  }
+  return safeTitle;
+}
 
 async function getUltraHdProfileId(fetcher: (path: string, init?: RequestInit) => Promise<any>) {
   const now = Date.now();
@@ -82,6 +116,10 @@ export async function GET(req: NextRequest) {
     preferProwlarr: req.nextUrl.searchParams.get("preferProwlarr") ?? undefined,
     title: req.nextUrl.searchParams.get("title") ?? undefined,
     year: req.nextUrl.searchParams.get("year") ?? undefined,
+    seasonNumber: req.nextUrl.searchParams.get("seasonNumber") ?? undefined,
+    episodeNumber: req.nextUrl.searchParams.get("episodeNumber") ?? undefined,
+    airDate: req.nextUrl.searchParams.get("airDate") ?? undefined,
+    seriesType: req.nextUrl.searchParams.get("seriesType") ?? undefined,
     offset: req.nextUrl.searchParams.get("offset") ?? "0",
     limit: req.nextUrl.searchParams.get("limit") ?? "50"
   });
@@ -91,12 +129,28 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const { mediaType, id, offset, limit, tmdbId, tvdbId, useUpgradeFinder, preferProwlarr, title, year } = parsed.data;
+    const {
+      mediaType,
+      id,
+      offset,
+      limit,
+      tmdbId,
+      tvdbId,
+      useUpgradeFinder,
+      preferProwlarr,
+      title,
+      year,
+      seasonNumber,
+      episodeNumber,
+      airDate,
+      seriesType: requestedSeriesType
+    } = parsed.data;
     const releaseTimeout = 120000;
     let releases: any[] = [];
     let usedProwlarr = false;
     let resolvedId: number | null = typeof id === "number" && Number.isFinite(id) ? id : null;
     const yearNumber = year ? Number.parseInt(year, 10) : null;
+    const hasEpisodeSearch = mediaType === "tv" && typeof seasonNumber === "number" && typeof episodeNumber === "number";
 
     const radarrService = mediaType === "movie"
       ? await getActiveMediaService("radarr").catch(() => null)
@@ -145,7 +199,17 @@ export async function GET(req: NextRequest) {
           releases = filterProwlarrByIds(releases, { imdbId, tmdbId });
         }
       } else {
+        const episodeTerm = hasEpisodeSearch
+          ? buildEpisodeSearchTerm({
+              title,
+              seasonNumber,
+              episodeNumber,
+              airDate: airDate ?? null,
+              seriesType: requestedSeriesType ?? null
+            })
+          : "";
         const searchQueries = [
+          episodeTerm,
           tvdbId ? `tvdb:${tvdbId}` : "",
           tmdbId ? `tmdb:${tmdbId}` : "",
           title ? title : ""
@@ -254,18 +318,49 @@ export async function GET(req: NextRequest) {
 
       if (service) {
         const fetcher = createSonarrFetcher(service.base_url, service.apiKey, releaseTimeout);
+        let resolvedSeriesType: string | null = normalizeSeriesType(requestedSeriesType);
 
         // Try to resolve the series ID if we have tvdbId/tmdbId but no resolvedId
         if (!resolvedId && (tvdbId || tmdbId)) {
           const byTvdb = tvdbId ? await getSeriesByTvdbId(tvdbId).catch(() => null) : null;
           const byTmdb = !byTvdb && tmdbId ? await getSeriesByTmdbId(tmdbId).catch(() => null) : null;
           resolvedId = (byTvdb ?? byTmdb)?.id ?? null;
+          const seriesType = (byTvdb ?? byTmdb)?.seriesType ?? null;
+          if (!resolvedSeriesType && seriesType) resolvedSeriesType = normalizeSeriesType(seriesType);
         }
 
-        // If we have a resolvedId (series is in Sonarr), search by seriesId
+        if (resolvedId && !resolvedSeriesType) {
+          try {
+            const series = await fetcher(`/api/v3/series/${resolvedId}`);
+            if (series?.seriesType) resolvedSeriesType = normalizeSeriesType(series.seriesType);
+          } catch {
+            // ignore series type errors
+          }
+        }
+
+        // If we have a resolvedId (series is in Sonarr), search by episode or series
         if (resolvedId) {
-          const response = await fetcher(`/api/v3/release?seriesId=${resolvedId}`);
-          releases = Array.isArray(response) ? response : [];
+          if (hasEpisodeSearch) {
+            try {
+              const episodes = await fetcher(`/api/v3/episode?seriesId=${resolvedId}`);
+              const episodeList = Array.isArray(episodes) ? episodes : [];
+              const matched = episodeList.find((episode: any) =>
+                Number(episode?.seasonNumber) === Number(seasonNumber) &&
+                Number(episode?.episodeNumber) === Number(episodeNumber)
+              );
+              if (matched?.id) {
+                const response = await fetcher(`/api/v3/release?episodeId=${matched.id}`);
+                releases = Array.isArray(response) ? response : [];
+              }
+            } catch {
+              // ignore episode lookup errors
+            }
+          }
+
+          if (!releases.length) {
+            const response = await fetcher(`/api/v3/release?seriesId=${resolvedId}`);
+            releases = Array.isArray(response) ? response : [];
+          }
         }
         // Series not in Sonarr - try searching by tvdbId or tmdbId
         else if (tvdbId || tmdbId) {
@@ -274,10 +369,21 @@ export async function GET(req: NextRequest) {
           releases = Array.isArray(response) ? response : [];
         }
 
-        // If still no releases and we have a title, try title search in Sonarr
+        // If still no releases and we have a title, try title/episode search in Sonarr
         if (!releases.length && title) {
-          const response = await fetcher(`/api/v3/release?term=${encodeURIComponent(title)}`);
-          releases = Array.isArray(response) ? response : [];
+          const searchTerm = hasEpisodeSearch
+            ? buildEpisodeSearchTerm({
+                title,
+                seasonNumber,
+                episodeNumber,
+                airDate: airDate ?? null,
+                seriesType: resolvedSeriesType
+              })
+            : title;
+          if (searchTerm) {
+            const response = await fetcher(`/api/v3/release?term=${encodeURIComponent(searchTerm)}`);
+            releases = Array.isArray(response) ? response : [];
+          }
         }
       }
     }
@@ -287,7 +393,15 @@ export async function GET(req: NextRequest) {
       const prowlarrService = await getActiveMediaService("prowlarr").catch(() => null);
       if (prowlarrService) {
         // Include year in search query for better results
-        const searchQuery = year ? `${title} ${year}` : title;
+        const searchQuery = hasEpisodeSearch
+          ? buildEpisodeSearchTerm({
+              title,
+              seasonNumber,
+              episodeNumber,
+              airDate: airDate ?? null,
+              seriesType: requestedSeriesType ?? null
+            })
+          : (year ? `${title} ${year}` : title);
         releases = await searchProwlarr(searchQuery, prowlarrService, releaseTimeout, {
           type: mediaType,
           limit: 100

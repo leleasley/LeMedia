@@ -12,16 +12,8 @@ function extractApiKey(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-  const user = await getUser().catch(() => null);
-  const isAdmin = Boolean(user?.isAdmin);
-  if (!isAdmin) {
-    const apiKey = extractApiKey(req);
-    const ok = apiKey ? await verifyExternalApiKey(apiKey) : false;
-    if (!ok) {
-      return cacheableJsonResponseWithETag(req, { error: "Unauthorized" }, { maxAge: 0, private: true });
-    }
-  }
-
+  // Status endpoint is public (like Overseerr) to allow external integrations
+  // to verify connectivity without authentication
   return cacheableJsonResponseWithETag(req, {
     version: process.env.APP_VERSION ?? "0.1.0",
     commitTag: process.env.COMMIT_TAG ?? "local",

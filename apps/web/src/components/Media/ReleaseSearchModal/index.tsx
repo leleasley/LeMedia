@@ -82,12 +82,34 @@ export function ReleaseSearchModal(props: {
   tmdbId?: number | null;
   tvdbId?: number | null;
   title: string;
+  searchTitle?: string | null;
   year?: string | number | null;
   posterUrl?: string | null;
   backdropUrl?: string | null;
   preferProwlarr?: boolean;
+  seasonNumber?: number | null;
+  episodeNumber?: number | null;
+  airDate?: string | null;
+  seriesType?: string | null;
 }) {
-  const { open, onClose, mediaType, mediaId, tmdbId, tvdbId, title, year, posterUrl, backdropUrl, preferProwlarr } = props;
+  const {
+    open,
+    onClose,
+    mediaType,
+    mediaId,
+    tmdbId,
+    tvdbId,
+    title,
+    searchTitle,
+    year,
+    posterUrl,
+    backdropUrl,
+    preferProwlarr,
+    seasonNumber,
+    episodeNumber,
+    airDate,
+    seriesType
+  } = props;
   const toast = useToast();
   const isIOS = useIsIOS();
   const [releases, setReleases] = useState<ReleaseRow[]>([]);
@@ -125,10 +147,15 @@ export function ReleaseSearchModal(props: {
       });
       if (mediaType === "movie") params.set("useUpgradeFinder", "1");
       if (preferProwlarr) params.set("preferProwlarr", "1");
-      if (title) params.set("title", title);
+      const effectiveTitle = searchTitle ?? title;
+      if (effectiveTitle) params.set("title", effectiveTitle);
       if (year !== undefined && year !== null && String(year).trim() !== "") {
         params.set("year", String(year));
       }
+      if (typeof seasonNumber === "number") params.set("seasonNumber", String(seasonNumber));
+      if (typeof episodeNumber === "number") params.set("episodeNumber", String(episodeNumber));
+      if (airDate) params.set("airDate", airDate);
+      if (seriesType) params.set("seriesType", seriesType);
       if (mediaId) params.set("id", String(mediaId));
       if (!mediaId && tmdbId) params.set("tmdbId", String(tmdbId));
       if (!mediaId && tvdbId) params.set("tvdbId", String(tvdbId));
@@ -147,7 +174,21 @@ export function ReleaseSearchModal(props: {
     } finally {
       setIsLoading(false);
     }
-  }, [mediaId, mediaType, preferProwlarr, title, tmdbId, tvdbId, year, toast]);
+  }, [
+    mediaId,
+    mediaType,
+    preferProwlarr,
+    title,
+    searchTitle,
+    tmdbId,
+    tvdbId,
+    year,
+    seasonNumber,
+    episodeNumber,
+    airDate,
+    seriesType,
+    toast
+  ]);
 
   useEffect(() => {
     if (!open) return;

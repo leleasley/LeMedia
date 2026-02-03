@@ -17,6 +17,7 @@ import { getJellyfinPlayUrl } from "@/lib/jellyfin-links";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
 import { withCache } from "@/lib/local-cache";
 import { getTvDetailAggregate } from "@/lib/media-aggregate";
+import { verifyExternalApiKey } from "@/lib/external-api";
 
 const ParamsSchema = z.object({ id: z.coerce.number().int().positive() });
 type ParamsInput = { id: string } | Promise<{ id: string }>;
@@ -29,19 +30,53 @@ async function resolveParams(params: ParamsInput) {
   return params as { id: string };
 }
 
+function extractApiKey(req: NextRequest) {
+  return req.headers.get("x-api-key")
+    || req.headers.get("X-Api-Key")
+    || req.headers.get("authorization")?.replace(/^Bearer\s+/i, "")
+    || req.nextUrl.searchParams.get("api_key")
+    || "";
+}
+
+// Convert UUID to numeric ID for Overseerr compatibility (same as request endpoint)
+function uuidToNumericId(uuid: string): number {
+  const hex = uuid.replace(/-/g, '').substring(0, 7);
+  const num = parseInt(hex, 16);
+  return num % 2147483647;
+}
+
+// Map status strings to Overseerr numeric codes
+function mapStatusToOverseerr(status: string): number {
+  const statusMap: Record<string, number> = {
+    "pending": 1,
+    "queued": 1,
+    "submitted": 2,
+    "downloading": 2,
+    "available": 3,
+    "denied": 4,
+    "failed": 5,
+    "already_exists": 3
+  };
+  return statusMap[status] ?? 1;
+}
+
 export async function GET(req: NextRequest, { params }: { params: ParamsInput }) {
   const parsed = ParamsSchema.safeParse(await resolveParams(params));
   if (!parsed.success) {
     return cacheableJsonResponseWithETag(req, { error: "Invalid tv id" }, { maxAge: 0, private: true });
   }
 
+  // Support both session auth (web UI) and API key auth (Wholphin/external)
+  const apiKey = extractApiKey(req);
+  const hasValidApiKey = apiKey ? await verifyExternalApiKey(apiKey) : false;
+  const currentUser = hasValidApiKey ? null : await getUser().catch(() => null);
+  const isAdmin = Boolean(currentUser?.isAdmin);
+
   const tmdbId = parsed.data.id;
   const tvdbParam = req.nextUrl.searchParams.get("tvdbId");
   const tvdbId = tvdbParam && /^\d+$/.test(tvdbParam) ? Number(tvdbParam) : undefined;
   const title = (req.nextUrl.searchParams.get("title") ?? "").trim().slice(0, 200);
   const includeDetails = req.nextUrl.searchParams.get("details") === "1";
-  const currentUser = await getUser().catch(() => null);
-  const isAdmin = Boolean(currentUser?.isAdmin);
 
   let requestsBlocked = false;
   if (REQUESTS_REQUIRE_NOTIFICATIONS && currentUser?.username) {
@@ -140,7 +175,7 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
     }
   }
 
-  const details = includeDetails ? await getTvDetailAggregate(tmdbId) : null;
+  const details = includeDetails || hasValidApiKey ? await getTvDetailAggregate(tmdbId) : null;
   const request = await withCache(
     `agg:requests:tv:${tmdbId}`,
     30 * 1000,
@@ -167,6 +202,63 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
     () => hasActiveMediaService("prowlarr").catch(() => false)
   );
 
+  // Return Overseerr-compatible format when accessed via API key
+  if (hasValidApiKey && details?.tv) {
+    const tv = details.tv;
+    return cacheableJsonResponseWithETag(req, {
+      id: tmdbId,
+      tmdbId,
+      tvdbId: tvdbId ?? null,
+      mediaType: "tv",
+      adult: tv.adult ?? false,
+      backdropPath: tv.backdrop_path ? `https://image.tmdb.org/t/p/w780${tv.backdrop_path}` : null,
+      createdBy: tv.created_by ?? [],
+      episodeRunTime: tv.episode_run_time ?? [],
+      firstAirDate: tv.first_air_date ?? null,
+      genres: tv.genres ?? [],
+      homepage: tv.homepage ?? null,
+      inProduction: tv.in_production ?? false,
+      languages: tv.languages ?? [],
+      lastAirDate: tv.last_air_date ?? null,
+      lastEpisodeToAir: tv.last_episode_to_air ?? null,
+      name: tv.name ?? null,
+      nextEpisodeToAir: tv.next_episode_to_air ?? null,
+      networks: tv.networks ?? [],
+      numberOfEpisodes: tv.number_of_episodes ?? 0,
+      numberOfSeasons: tv.number_of_seasons ?? 0,
+      originCountry: tv.origin_country ?? [],
+      originalLanguage: tv.original_language ?? null,
+      originalName: tv.original_name ?? null,
+      overview: tv.overview ?? null,
+      popularity: tv.popularity ?? 0,
+      posterPath: tv.poster_path ? `https://image.tmdb.org/t/p/w500${tv.poster_path}` : null,
+      productionCompanies: tv.production_companies ?? [],
+      productionCountries: tv.production_countries ?? [],
+      seasons: tv.seasons ?? [],
+      spokenLanguages: tv.spoken_languages ?? [],
+      status: tv.status ?? null,
+      tagline: tv.tagline ?? null,
+      type: tv.type ?? null,
+      voteAverage: tv.vote_average ?? 0,
+      voteCount: tv.vote_count ?? 0,
+      credits: (details as any).credits ?? { cast: [], crew: [] },
+      externalIds: {
+        tvdbId: tvdbId ?? null,
+        facebookId: null,
+        instagramId: null,
+        twitterId: null
+      },
+      mediaInfo: {
+        id: tmdbId,
+        tmdbId,
+        tvdbId: tvdbId ?? null,
+        status: availableInJellyfin || sonarrHasFiles ? 5 : 1,
+        requests: request ? [{ id: uuidToNumericId(request.id), status: mapStatusToOverseerr(request.status) }] : []
+      }
+    }, { maxAge: 300, sMaxAge: 600 });
+  }
+
+  // Return LeMedia internal format for web UI (session auth)
   return cacheableJsonResponseWithETag(req,
     {
       tmdbId,
