@@ -10,11 +10,21 @@ import { rejectIfMaintenance } from "@/lib/maintenance";
 import { randomUUID } from "crypto";
 import { requireCsrf } from "@/lib/csrf";
 import asyncLock from "@/lib/async-lock";
+import { verifyExternalApiKey } from "@/lib/external-api";
+import { POST as requestPost } from "../../v1/request/route";
 
 const Body = z.object({
   tmdbId: z.coerce.number().int(),
   qualityProfileId: z.coerce.number().int().optional()
 });
+
+function extractApiKey(req: NextRequest) {
+  return req.headers.get("x-api-key")
+    || req.headers.get("X-Api-Key")
+    || req.headers.get("authorization")?.replace(/^Bearer\s+/i, "")
+    || req.nextUrl.searchParams.get("api_key")
+    || "";
+}
 
 function buildMovieNotificationMeta(movie: any) {
   const posterPath = movie?.poster_path ?? null;
@@ -32,6 +42,29 @@ function buildMovieNotificationMeta(movie: any) {
 }
 
 export async function POST(req: NextRequest) {
+  const apiKey = extractApiKey(req);
+  if (apiKey) {
+    const ok = await verifyExternalApiKey(apiKey);
+    if (!ok) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const body = await req.json().catch(() => ({}));
+    const mediaIdRaw = body?.mediaId ?? body?.tmdbId ?? body?.id;
+    const mediaId = Number(mediaIdRaw);
+    if (!Number.isFinite(mediaId)) {
+      return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+    }
+    const headers = new Headers(req.headers);
+    headers.set("content-type", "application/json");
+    const proxyRequest = new NextRequest(
+      new Request("http://internal/api/v1/request", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ mediaType: "movie", mediaId })
+      })
+    );
+    return requestPost(proxyRequest);
+  }
+
   const user = await requireUser();
   if (user instanceof NextResponse) return user;
   const maintenance = await rejectIfMaintenance(req);

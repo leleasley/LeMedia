@@ -10,6 +10,7 @@ import { PasskeySettings } from "@/components/Profile/PasskeySettings";
 import { UserSessionsPanel } from "@/components/Profile/UserSessionsPanel";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { LinkedAccountsPanel } from "@/components/LinkedAccounts/LinkedAccountsPanel";
+import { csrfFetch } from "@/lib/csrf-client";
 
 interface AssignedEndpoint {
   id: number;
@@ -81,6 +82,10 @@ export function ProfileSettingsPageClient({
   const activeTab = tabOrder.some(tab => tab.key === normalizedTab) ? (normalizedTab as SettingsTabKey) : "general";
   const { data: passkeysData } = useSWR<Credential[]>("/api/auth/webauthn/credentials", securityFetcher);
   const { data: sessionsData } = useSWR<SessionsResponse>("/api/profile/sessions", securityFetcher);
+  const { data: apiTokenData, mutate: mutateApiToken, isLoading: apiTokenLoading } = useSWR<{ token: string | null }>("/api/profile/api-token", securityFetcher);
+  const [apiTokenVisible, setApiTokenVisible] = useState(false);
+  const [apiTokenSaving, setApiTokenSaving] = useState(false);
+  const toast = useToast();
 
   const passkeyCount = passkeysData ? passkeysData.length : null;
   const activeSessions = sessionsData ? sessionsData.sessions.filter(session => !session.revokedAt).length : null;
@@ -90,6 +95,42 @@ export function ProfileSettingsPageClient({
   // Notifications data
   const { data: pushData } = useSWR<PushPreference>("/api/push/preference", securityFetcher);
   const pushEnabled = pushData?.enabled ?? null;
+
+  const apiToken = apiTokenData?.token ?? null;
+
+  async function rotateApiToken() {
+    setApiTokenSaving(true);
+    try {
+      const res = await csrfFetch("/api/profile/api-token", { method: "POST", credentials: "include" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body?.error || "Failed to rotate API token");
+      }
+      toast.success(apiToken ? "API token rotated" : "API token generated");
+      mutateApiToken();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Unable to rotate API token");
+    } finally {
+      setApiTokenSaving(false);
+    }
+  }
+
+  async function revokeApiToken() {
+    setApiTokenSaving(true);
+    try {
+      const res = await csrfFetch("/api/profile/api-token", { method: "DELETE", credentials: "include" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body?.error || "Failed to revoke API token");
+      }
+      toast.success("API token revoked");
+      mutateApiToken();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Unable to revoke API token");
+    } finally {
+      setApiTokenSaving(false);
+    }
+  }
 
   return (
     <div className="min-h-screen">
@@ -197,6 +238,90 @@ export function ProfileSettingsPageClient({
 
             {/* Password Section */}
             <ProfileSettings section="security" />
+
+            {/* API Token Section */}
+            <div className="rounded-2xl md:rounded-3xl border border-white/10 bg-white/[0.02] p-6 md:p-8">
+              <div className="flex items-center gap-4 mb-6">
+                <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 ring-1 ring-white/10">
+                  <span className="text-xl">🔑</span>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-xl font-bold text-white">Personal API token</h3>
+                  <p className="text-sm text-gray-400 mt-1">Use this for per-user integrations without sharing the global token</p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {apiToken ? (
+                  <div className="w-full px-3 py-2 bg-slate-800/50 border border-white/10 rounded overflow-hidden">
+                    <code className="text-sm text-white break-all block overflow-wrap-anywhere" style={{ wordBreak: 'break-all' }}>
+                      {apiTokenVisible ? apiToken : apiToken.replace(/./g, '•')}
+                    </code>
+                  </div>
+                ) : (
+                  <div className="w-full px-3 py-2 bg-slate-800/50 border border-white/10 rounded text-muted italic text-sm">
+                    {apiTokenLoading ? "Loading…" : "Generate a token to enable"}
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="btn flex-1 sm:flex-none"
+                    onClick={() => setApiTokenVisible(prev => !prev)}
+                    disabled={!apiToken}
+                  >
+                    {apiTokenVisible ? "Hide" : "Reveal"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn flex-1 sm:flex-none"
+                    onClick={async () => {
+                      if (!apiToken) return;
+                      try {
+                        await navigator.clipboard.writeText(apiToken);
+                        toast.success("API token copied");
+                      } catch {
+                        toast.error("Failed to copy API token");
+                      }
+                    }}
+                    disabled={!apiToken}
+                  >
+                    Copy
+                  </button>
+                  <button
+                    type="button"
+                    className="btn flex-1 sm:flex-none"
+                    disabled={apiTokenSaving}
+                    onClick={() => {
+                      if (!apiToken) {
+                        void rotateApiToken();
+                        return;
+                      }
+                      if (!confirm("Rotate your personal API token? Existing integrations will stop working.")) return;
+                      void rotateApiToken();
+                    }}
+                  >
+                    {apiToken ? "Rotate" : "Generate"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-danger flex-1 sm:flex-none"
+                    disabled={!apiToken || apiTokenSaving}
+                    onClick={() => {
+                      if (!apiToken) return;
+                      if (!confirm("Revoke your personal API token? This cannot be undone.")) return;
+                      void revokeApiToken();
+                    }}
+                  >
+                    Revoke
+                  </button>
+                </div>
+                <p className="text-xs text-muted">
+                  Requests made with this token follow your role. Admins auto-approve; members require approval.
+                </p>
+              </div>
+            </div>
 
             {/* MFA Section */}
             <div className="rounded-2xl md:rounded-3xl border border-white/10 bg-white/[0.02] p-6 md:p-8">

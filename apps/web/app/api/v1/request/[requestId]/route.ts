@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyExternalApiKey } from "@/lib/external-api";
+import { getExternalApiAuth } from "@/lib/external-api";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
 import { deleteRequestById, findRequestIdByNumericId, getRequestWithItems } from "@/db";
 import { getJellyfinItemIdByTmdb } from "@/lib/jellyfin";
+import { deleteMovie, getMovieByTmdbId } from "@/lib/radarr";
+import { deleteSeries, getSeriesByTmdbId } from "@/lib/sonarr";
 
 function extractApiKey(req: NextRequest) {
   return req.headers.get("x-api-key")
@@ -45,8 +47,8 @@ async function resolveRequestId(raw: string): Promise<string | null> {
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ requestId: string }> }) {
   const apiKey = extractApiKey(req);
-  const ok = apiKey ? await verifyExternalApiKey(apiKey) : false;
-  if (!ok) {
+  const auth = apiKey ? await getExternalApiAuth(apiKey) : { ok: false, isGlobal: false, userId: null };
+  if (!auth.ok) {
     return cacheableJsonResponseWithETag(req, { error: "Unauthorized" }, { maxAge: 0, private: true });
   }
 
@@ -98,8 +100,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ requ
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ requestId: string }> }) {
   const apiKey = extractApiKey(req);
-  const ok = apiKey ? await verifyExternalApiKey(apiKey) : false;
-  if (!ok) {
+  const auth = apiKey ? await getExternalApiAuth(apiKey) : { ok: false, isGlobal: false, userId: null };
+  if (!auth.ok) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -107,6 +109,41 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ r
   const requestId = await resolveRequestId(raw);
   if (!requestId) {
     return NextResponse.json({ error: "Request not found" }, { status: 404 });
+  }
+
+  const data = await getRequestWithItems(requestId);
+  if (data?.request) {
+    const mediaType = data.request.request_type === "episode" ? "tv" : "movie";
+    const items = data.items ?? [];
+    try {
+      if (mediaType === "movie") {
+        const providerIds = Array.from(new Set(items.filter(i => i.provider === "radarr" && i.provider_id).map(i => i.provider_id as number)));
+        if (providerIds.length) {
+          for (const id of providerIds) {
+            await deleteMovie(id, { deleteFiles: false, addExclusion: false });
+          }
+        } else {
+          const radarrMovie = await getMovieByTmdbId(data.request.tmdb_id);
+          if (radarrMovie?.id) {
+            await deleteMovie(Number(radarrMovie.id), { deleteFiles: false, addExclusion: false });
+          }
+        }
+      } else {
+        const providerIds = Array.from(new Set(items.filter(i => i.provider === "sonarr" && i.provider_id).map(i => i.provider_id as number)));
+        if (providerIds.length) {
+          for (const id of providerIds) {
+            await deleteSeries(id, { deleteFiles: false, addExclusion: false });
+          }
+        } else {
+          const series = await getSeriesByTmdbId(data.request.tmdb_id);
+          if (series?.id) {
+            await deleteSeries(Number(series.id), { deleteFiles: false, addExclusion: false });
+          }
+        }
+      }
+    } catch {
+      // Best-effort cleanup; still remove request record below.
+    }
   }
 
   await deleteRequestById(requestId);

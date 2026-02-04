@@ -58,6 +58,61 @@ function mapRelatedVideos(input: any): Array<{
   }));
 }
 
+function mapCreditCast(credit: any) {
+  return {
+    id: credit?.id ?? null,
+    castid: credit?.cast_id ?? null,
+    character: credit?.character ?? null,
+    creditId: credit?.credit_id ?? null,
+    gender: credit?.gender ?? null,
+    name: credit?.name ?? null,
+    order: credit?.order ?? null,
+    profilePath: credit?.profile_path ?? null,
+    originalName: credit?.original_name ?? null,
+    adult: credit?.adult ?? null,
+    mediaType: credit?.media_type ?? null,
+    originalLanguage: credit?.original_language ?? null,
+    overview: credit?.overview ?? null,
+    popularity: credit?.popularity ?? null,
+    posterPath: credit?.poster_path ?? null,
+    backdropPath: credit?.backdrop_path ?? null,
+    firstAirDate: credit?.first_air_date ?? null,
+    releaseDate: credit?.release_date ?? null,
+    voteAverage: credit?.vote_average ?? null,
+    voteCount: credit?.vote_count ?? null,
+    genreIds: credit?.genre_ids ?? [],
+    episodeCount: credit?.episode_count ?? null,
+    title: credit?.title ?? null
+  };
+}
+
+function mapCreditCrew(credit: any) {
+  return {
+    id: credit?.id ?? null,
+    creditId: credit?.credit_id ?? null,
+    department: credit?.department ?? null,
+    job: credit?.job ?? null,
+    gender: credit?.gender ?? null,
+    name: credit?.name ?? null,
+    profilePath: credit?.profile_path ?? null,
+    originalName: credit?.original_name ?? null,
+    adult: credit?.adult ?? null,
+    mediaType: credit?.media_type ?? null,
+    originalLanguage: credit?.original_language ?? null,
+    overview: credit?.overview ?? null,
+    popularity: credit?.popularity ?? null,
+    posterPath: credit?.poster_path ?? null,
+    backdropPath: credit?.backdrop_path ?? null,
+    firstAirDate: credit?.first_air_date ?? null,
+    releaseDate: credit?.release_date ?? null,
+    voteAverage: credit?.vote_average ?? null,
+    voteCount: credit?.vote_count ?? null,
+    genreIds: credit?.genre_ids ?? [],
+    episodeCount: credit?.episode_count ?? null,
+    title: credit?.title ?? null
+  };
+}
+
 // Convert UUID to numeric ID for Overseerr compatibility (same as request endpoint)
 function uuidToNumericId(uuid: string): number {
   const hex = uuid.replace(/-/g, '').substring(0, 7);
@@ -78,6 +133,26 @@ function mapStatusToOverseerr(status: string): number {
     "already_exists": 5
   };
   return statusMap[status] ?? 1;
+}
+
+function mapRequestStatusToMediaStatus(status: string | null | undefined, available: boolean): number {
+  if (available) return 5;
+  switch (status) {
+    case "pending":
+    case "queued":
+      return 2;
+    case "submitted":
+    case "downloading":
+      return 3;
+    case "available":
+    case "already_exists":
+      return 5;
+    case "denied":
+    case "failed":
+      return 1;
+    default:
+      return 1;
+  }
 }
 
 export async function GET(req: NextRequest, { params }: { params: ParamsInput }) {
@@ -183,6 +258,8 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
   // Return Overseerr-compatible format when accessed via API key
   if (hasValidApiKey && details?.movie) {
     const movie = details.movie;
+    const isAvailable = jellyfinAvailable || Boolean(radarrMovieSummary?.hasFile);
+    const mediaStatus = mapRequestStatusToMediaStatus(request?.status ?? null, isAvailable);
     return cacheableJsonResponseWithETag(req, {
       id: tmdbId,
       tmdbId,
@@ -210,7 +287,10 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
       video: movie.video ?? false,
       voteAverage: movie.vote_average ?? 0,
       voteCount: movie.vote_count ?? 0,
-      credits: movie.credits ?? { cast: [], crew: [] },
+      credits: {
+        cast: Array.isArray(movie.credits?.cast) ? movie.credits.cast.map(mapCreditCast) : [],
+        crew: Array.isArray(movie.credits?.crew) ? movie.credits.crew.map(mapCreditCrew) : []
+      },
       relatedVideos: mapRelatedVideos(movie.videos),
       collection: movie.belongs_to_collection ?? null,
       externalIds: {
@@ -222,7 +302,7 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
       mediaInfo: {
         id: tmdbId,
         tmdbId,
-        status: jellyfinAvailable || Boolean(radarrMovieSummary?.hasFile) ? 5 : 1,
+        status: mediaStatus,
         requests: request ? [{ id: uuidToNumericId(request.id), status: mapStatusToOverseerr(request.status) }] : []
       }
     }, { maxAge: 300, sMaxAge: 600 });

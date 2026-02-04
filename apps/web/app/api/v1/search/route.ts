@@ -37,7 +37,7 @@ type TmdbSearchItem = {
 };
 
 function buildMediaInfo(jellyfinMediaId: string | null, available: boolean | null) {
-  if (!available) return { jellyfinMediaId: null, status: 1 };
+  if (!available) return null;
   return { jellyfinMediaId, status: 5 };
 }
 

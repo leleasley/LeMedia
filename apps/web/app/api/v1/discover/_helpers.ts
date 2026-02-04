@@ -45,7 +45,7 @@ export async function mapDiscoverResults(items: TmdbItem[], forcedType?: "movie"
         voteCount: item.vote_count ?? null,
         genreIds: item.genre_ids ?? [],
         overview: item.overview ?? null,
-        mediaInfo: available ? { jellyfinMediaId, status: 5 } : { jellyfinMediaId: null, status: 1 }
+        mediaInfo: available ? { jellyfinMediaId, status: 5 } : null
       };
     })
   );

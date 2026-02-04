@@ -25,7 +25,7 @@ import {
 } from "@/lib/sonarr";
 import { notifyRequestEvent } from "@/notifications/request-events";
 import { hasAssignedNotificationEndpoints } from "@/lib/notifications";
-import { verifyExternalApiKey } from "@/lib/external-api";
+import { getExternalApiAuth } from "@/lib/external-api";
 import { rejectIfMaintenance } from "@/lib/maintenance";
 import { randomUUID } from "crypto";
 import asyncLock from "@/lib/async-lock";
@@ -88,6 +88,23 @@ function mapMediaTypeToOverseerr(type: string) {
   return type;
 }
 
+// Map request status to Overseerr media status numbers
+function mapRequestStatusToMediaStatus(status: string): number {
+  switch (status) {
+    case "pending":
+    case "queued":
+      return 2;
+    case "submitted":
+    case "downloading":
+      return 3;
+    case "available":
+    case "already_exists":
+      return 5;
+    default:
+      return 1;
+  }
+}
+
 // Convert UUID to a consistent numeric ID for Overseerr compatibility
 // Must fit in 32-bit signed integer range (-2,147,483,648 to 2,147,483,647)
 function uuidToNumericId(uuid: string): number {
@@ -98,7 +115,11 @@ function uuidToNumericId(uuid: string): number {
   return num % 2147483647;
 }
 
-async function resolveApiUser(req: NextRequest) {
+async function resolveApiUser(req: NextRequest, fallbackUserId?: number | null) {
+  if (fallbackUserId && Number.isFinite(fallbackUserId)) {
+    const user = await getUserById(Number(fallbackUserId));
+    if (user) return user;
+  }
   const apiUserHeader = req.headers.get("x-api-user") || "";
   const apiUserId = Number(apiUserHeader);
   if (Number.isFinite(apiUserId) && apiUserId > 0) {
@@ -114,7 +135,7 @@ async function resolveApiUser(req: NextRequest) {
 const CreateSchema = z.object({
   mediaType: z.enum(["movie", "tv"]),
   mediaId: z.coerce.number().int(),
-  seasons: z.string().optional()
+  seasons: z.union([z.string(), z.array(z.coerce.number().int()), z.coerce.number().int()]).optional()
 });
 
 function buildMovieNotificationMeta(movie: any) {
@@ -147,6 +168,48 @@ function buildTvNotificationMeta(tv: any) {
   return { imageUrl, rating, year, overview };
 }
 
+async function buildMediaRequestResponse(input: {
+  requestId: string;
+  status: string;
+  mediaType: "movie" | "tv";
+  tmdbId: number;
+  title: string;
+  user: { id: number; username: string };
+  createdAt?: string | null;
+}) {
+  const createdAt = input.createdAt ?? new Date().toISOString();
+  const jellyfinMediaId = await getJellyfinItemIdByTmdb(input.mediaType, input.tmdbId);
+  return {
+    id: uuidToNumericId(input.requestId),
+    requestId: input.requestId,
+    status: mapStatusToOverseerr(input.status),
+    statusText: input.status,
+    createdAt,
+    updatedAt: createdAt,
+    type: input.mediaType,
+    mediaType: input.mediaType,
+    title: input.title,
+    tmdbId: input.tmdbId,
+    requestedBy: {
+      id: input.user.id,
+      username: input.user.username,
+      displayName: input.user.username
+    },
+    modifiedBy: null,
+    is4k: false,
+    serverId: null,
+    profileId: null,
+    rootFolder: null,
+    media: {
+      id: input.tmdbId,
+      jellyfinMediaId: jellyfinMediaId ?? null,
+      tmdbId: input.tmdbId,
+      mediaType: input.mediaType,
+      status: mapRequestStatusToMediaStatus(input.status)
+    }
+  };
+}
+
 async function waitForSeriesEpisodes(seriesId: number, tries = 1, delayMs = 1200) {
   for (let attempt = 0; attempt < tries; attempt++) {
     const episodes = await getEpisodesForSeries(seriesId);
@@ -160,8 +223,8 @@ async function waitForSeriesEpisodes(seriesId: number, tries = 1, delayMs = 1200
 
 export async function GET(req: NextRequest) {
   const apiKey = extractApiKey(req);
-  const ok = apiKey ? await verifyExternalApiKey(apiKey) : false;
-  if (!ok) {
+  const auth = apiKey ? await getExternalApiAuth(apiKey) : { ok: false, isGlobal: false, userId: null };
+  if (!auth.ok) {
     return cacheableJsonResponseWithETag(req, { error: "Unauthorized" }, { maxAge: 0, private: true });
   }
 
@@ -169,6 +232,9 @@ export async function GET(req: NextRequest) {
   const skip = Math.max(Number(req.nextUrl.searchParams.get("skip") ?? 0), 0);
   const requestedByRaw = req.nextUrl.searchParams.get("requestedBy");
   let requestedById = requestedByRaw && /^\d+$/.test(requestedByRaw) ? Number(requestedByRaw) : null;
+  if (requestedById == null && auth.userId) {
+    requestedById = auth.userId;
+  }
   // If no requestedBy param, default to X-Api-User header when provided
   if (requestedById == null) {
     const apiUserHeader = req.headers.get("x-api-user") || req.headers.get("X-Api-User") || "";
@@ -287,15 +353,16 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const apiKey = extractApiKey(req);
-  const ok = apiKey ? await verifyExternalApiKey(apiKey) : false;
-  if (!ok) {
+  const auth = apiKey ? await getExternalApiAuth(apiKey) : { ok: false, isGlobal: false, userId: null };
+  if (!auth.ok) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const usingApiKey = auth.ok;
 
   const maintenance = await rejectIfMaintenance(req);
   if (maintenance) return maintenance;
 
-  const user = await resolveApiUser(req);
+  const user = await resolveApiUser(req, auth.userId ?? null);
   if (!user) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
@@ -306,8 +373,9 @@ export async function POST(req: NextRequest) {
   }
 
   const isAdmin = isAdminGroup(user.groups);
+  const canAutoApprove = isAdmin;
   const hasNotifications = await hasAssignedNotificationEndpoints(user.id);
-  if (!hasNotifications) {
+  if (!hasNotifications && !usingApiKey) {
     return NextResponse.json(
       { ok: false, error: "notifications_required", message: "Requesting blocked until notifications are applied" },
       { status: 403 }
@@ -325,13 +393,21 @@ export async function POST(req: NextRequest) {
       const existing = await findActiveRequestByTmdb({ requestType: "movie", tmdbId: body.data.mediaId });
       if (existing) {
         response = NextResponse.json(
-          { ok: false, error: "already_requested", message: "This movie has already been requested.", requestId: existing.id },
+          await buildMediaRequestResponse({
+            requestId: existing.id,
+            status: existing.status,
+            mediaType: "movie",
+            tmdbId: body.data.mediaId,
+            title,
+            user,
+            createdAt: existing.created_at
+          }),
           { status: 409 }
         );
         return;
       }
 
-      if (!isAdmin) {
+      if (!canAutoApprove) {
         const limitStatus = await getUserRequestLimitStatus(user.id, "movie");
         if (!limitStatus.unlimited && (limitStatus.remaining ?? 0) <= 0) {
           response = NextResponse.json(
@@ -367,7 +443,16 @@ export async function POST(req: NextRequest) {
           userId: user.id,
           ...movieMeta
         });
-        response = NextResponse.json({ ok: true, pending: true, requestId: r.id });
+        response = NextResponse.json(
+          await buildMediaRequestResponse({
+            requestId: r.id,
+            status: "pending",
+            mediaType: "movie",
+            tmdbId: body.data.mediaId,
+            title,
+            user
+          })
+        );
         return;
       }
 
@@ -394,9 +479,34 @@ export async function POST(req: NextRequest) {
           userId: user.id,
           ...movieMeta
         });
-        response = NextResponse.json({ ok: true, requestId: r.id, radarrMovieId: radarrMovie?.id ?? null });
+        response = NextResponse.json(
+          await buildMediaRequestResponse({
+            requestId: r.id,
+            status: "submitted",
+            mediaType: "movie",
+            tmdbId: body.data.mediaId,
+            title,
+            user
+          })
+        );
       } catch (e: any) {
         if (e instanceof ActiveRequestExistsError) {
+          const existing = await findActiveRequestByTmdb({ requestType: "movie", tmdbId: body.data.mediaId });
+          if (existing) {
+            response = NextResponse.json(
+              await buildMediaRequestResponse({
+                requestId: existing.id,
+                status: existing.status,
+                mediaType: "movie",
+                tmdbId: body.data.mediaId,
+                title,
+                user,
+                createdAt: existing.created_at
+              }),
+              { status: 409 }
+            );
+            return;
+          }
           response = NextResponse.json(
             { ok: false, error: "already_requested", message: "This movie has already been requested.", requestId: e.requestId },
             { status: 409 }
@@ -437,7 +547,7 @@ export async function POST(req: NextRequest) {
     const existingItems = await listActiveEpisodeRequestItemsByTmdb(body.data.mediaId);
     const already = new Set(existingItems.map(i => `${i.season}:${i.episode}`));
 
-    if (!isAdmin) {
+    if (!canAutoApprove) {
       const limitStatus = await getUserRequestLimitStatus(user.id, "episode");
       if (!limitStatus.unlimited && (limitStatus.remaining ?? 0) <= 0) {
         response = NextResponse.json(
@@ -471,10 +581,26 @@ export async function POST(req: NextRequest) {
         const episodes = await waitForSeriesEpisodes(series.id, attempts);
         const toRequest = episodes.filter((e: any) => !already.has(`${e.seasonNumber}:${e.episodeNumber}`));
         if (!toRequest.length) {
-          response = NextResponse.json(
-            { ok: false, error: "already_requested", message: "This series has already been requested." },
-            { status: 409 }
-          );
+          const existing = await findActiveRequestByTmdb({ requestType: "episode", tmdbId: body.data.mediaId });
+          if (existing) {
+            response = NextResponse.json(
+              await buildMediaRequestResponse({
+                requestId: existing.id,
+                status: existing.status,
+                mediaType: "tv",
+                tmdbId: body.data.mediaId,
+                title,
+                user,
+                createdAt: existing.created_at
+              }),
+              { status: 409 }
+            );
+          } else {
+            response = NextResponse.json(
+              { ok: false, error: "already_requested", message: "This series has already been requested." },
+              { status: 409 }
+            );
+          }
           return;
         }
 
@@ -504,7 +630,16 @@ export async function POST(req: NextRequest) {
           userId: user.id,
           ...tvMeta
         });
-        response = NextResponse.json({ ok: true, pending: true, requestId: r.id, tvdbId, count: toRequest.length });
+        response = NextResponse.json(
+          await buildMediaRequestResponse({
+            requestId: r.id,
+            status: "pending",
+            mediaType: "tv",
+            tmdbId: body.data.mediaId,
+            title,
+            user
+          })
+        );
       } catch (e: any) {
         response = NextResponse.json({ ok: false, error: e?.message ?? "Request failed" }, { status: 500 });
       }
@@ -531,10 +666,26 @@ export async function POST(req: NextRequest) {
       const wanted = episodes.filter((e: any) => !already.has(`${e.seasonNumber}:${e.episodeNumber}`));
 
       if (wanted.length === 0) {
-        response = NextResponse.json(
-          { ok: false, error: "already_requested", message: "This series has already been requested." },
-          { status: 409 }
-        );
+        const existing = await findActiveRequestByTmdb({ requestType: "episode", tmdbId: body.data.mediaId });
+        if (existing) {
+          response = NextResponse.json(
+            await buildMediaRequestResponse({
+              requestId: existing.id,
+              status: existing.status,
+              mediaType: "tv",
+              tmdbId: body.data.mediaId,
+              title,
+              user,
+              createdAt: existing.created_at
+            }),
+            { status: 409 }
+          );
+        } else {
+          response = NextResponse.json(
+            { ok: false, error: "already_requested", message: "This series has already been requested." },
+            { status: 409 }
+          );
+        }
         return;
       }
 
@@ -570,7 +721,16 @@ export async function POST(req: NextRequest) {
         ...tvMeta
       });
 
-      response = NextResponse.json({ ok: true, requestId: r.id, sonarrSeriesId: series.id, tvdbId, count: wanted.length });
+      response = NextResponse.json(
+        await buildMediaRequestResponse({
+          requestId: r.id,
+          status: "submitted",
+          mediaType: "tv",
+          tmdbId: body.data.mediaId,
+          title,
+          user
+        })
+      );
     } catch (e: any) {
       const msg = e?.message ?? String(e);
       const fakeRequestId = `failed-episodes-${body.data.mediaId}-${randomUUID()}`;

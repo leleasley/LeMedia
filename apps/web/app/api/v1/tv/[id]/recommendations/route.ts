@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getTvRecommendations } from "@/lib/tmdb";
 import { verifyExternalApiKey } from "@/lib/external-api";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
-import { getJellyfinItemIdByTmdb } from "@/lib/jellyfin";
+import { getJellyfinItemIdByTmdb, isAvailableByTmdb } from "@/lib/jellyfin";
 
 function extractApiKey(req: NextRequest) {
   return req.headers.get("x-api-key")
@@ -39,7 +39,8 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
 
   const results = await Promise.all(
     (Array.isArray(data?.results) ? data.results : []).map(async (tv: any) => {
-      const jellyfinMediaId = await getJellyfinItemIdByTmdb("tv", tv.id);
+      const available = await isAvailableByTmdb("tv", tv.id);
+      const jellyfinMediaId = available ? await getJellyfinItemIdByTmdb("tv", tv.id) : null;
       return {
         id: tv.id,
         name: tv.name,
@@ -55,7 +56,7 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
         originalLanguage: tv.original_language,
         originCountry: tv.origin_country,
         mediaType: "tv" as const,
-        mediaInfo: jellyfinMediaId ? { jellyfinMediaId, status: 5 } : null
+        mediaInfo: available ? { jellyfinMediaId, status: 5 } : null
       };
     })
   );

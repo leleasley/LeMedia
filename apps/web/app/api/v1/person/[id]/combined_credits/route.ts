@@ -56,7 +56,7 @@ async function mapCredit(item: any) {
     character: item.character ?? null,
     department: item.department ?? null,
     job: item.job ?? null,
-    mediaInfo: available ? { jellyfinMediaId, status: 5 } : { jellyfinMediaId: null, status: 1 }
+    mediaInfo: available ? { jellyfinMediaId, status: 5 } : null
   };
 }
 

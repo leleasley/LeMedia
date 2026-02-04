@@ -109,12 +109,12 @@ export function AdminSettingsPanel() {
             });
             if (!res.ok) {
                 const body = await res.json().catch(() => ({}));
-                throw new Error(body?.error || "Failed to rotate API key");
+                throw new Error(body?.error || "Failed to rotate API token");
             }
-            toast.success(apiKey ? "API key rotated" : "API key generated");
+            toast.success(apiKey ? "API token rotated" : "API token generated");
             mutateApiKey();
         } catch (err: any) {
-            toast.error(err?.message ?? "Unable to rotate API key");
+            toast.error(err?.message ?? "Unable to rotate API token");
         }
     }
 
@@ -409,9 +409,9 @@ export function AdminSettingsPanel() {
 
                 <div className="border-t border-white/10 pt-4 space-y-3">
                     <div>
-                        <label className="text-sm font-semibold text-white">External API key</label>
+                        <label className="text-sm font-semibold text-white">Global API token</label>
                         <p className="mt-1 text-xs text-muted">
-                            Use this in Jellyfin/Jellyseerr integrations to read requests. Treat it like a password.
+                            Use this for server-wide integrations (Jellyfin/Jellyseerr). Treat it like a password.
                         </p>
                     </div>
                     <div className="space-y-2">
@@ -442,9 +442,9 @@ export function AdminSettingsPanel() {
                                     if (!apiKey) return;
                                     try {
                                         await navigator.clipboard.writeText(apiKey);
-                                        toast.success("API key copied");
+                                        toast.success("API token copied");
                                     } catch {
-                                        toast.error("Failed to copy API key");
+                                        toast.error("Failed to copy API token");
                                     }
                                 }}
                                 disabled={!apiKey}

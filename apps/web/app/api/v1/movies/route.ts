@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
         mediaInfo: available ? {
           jellyfinMediaId,
           status: 5 // available
-        } : { jellyfinMediaId: null, status: 1 }
+        } : null
       };
     })
   );

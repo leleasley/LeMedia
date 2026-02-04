@@ -494,7 +494,10 @@ async function getRequestsWithReleaseDate(userId: number): Promise<CalendarEvent
 
     result.rows.forEach((row: any) => {
       // Use created_at as the display date
-      const displayDate = row.created_at.split('T')[0];
+      const createdAt = row.created_at instanceof Date 
+        ? row.created_at.toISOString() 
+        : String(row.created_at);
+      const displayDate = createdAt.split('T')[0];
 
       events.push({
         id: `request-${row.id}`,

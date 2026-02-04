@@ -7,6 +7,8 @@ import { defaultDashboardSliders, type DashboardSlider } from "@/lib/dashboard-s
 import { logger } from "@/lib/logger";
 import { validateEnv } from "@/lib/env-validation";
 import { normalizeGroupList } from "@/lib/groups";
+import { decryptSecret, encryptSecret } from "@/lib/encryption";
+import { hashUserApiToken } from "@/lib/api-tokens";
 
 const DatabaseUrlSchema = z.string().min(1);
 let cachedDatabaseUrl: string | null = null;
@@ -1149,6 +1151,68 @@ export async function getUserById(id: number) {
   };
 }
 
+export async function getUserApiToken(userId: number): Promise<{ token: string; createdAt: string | null; updatedAt: string | null } | null> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `SELECT token_encrypted, created_at, updated_at FROM user_api_token WHERE user_id = $1 LIMIT 1`,
+    [userId]
+  );
+  if (!res.rows.length) return null;
+  const row = res.rows[0];
+  const raw = row.token_encrypted as string;
+  let token = raw;
+  try {
+    token = decryptSecret(raw);
+  } catch {
+    // stored as plain text
+  }
+  return {
+    token,
+    createdAt: row.created_at ?? null,
+    updatedAt: row.updated_at ?? null
+  };
+}
+
+export async function upsertUserApiToken(userId: number, token: string): Promise<{ token: string; createdAt: string | null; updatedAt: string | null }> {
+  await ensureUserSchema();
+  const p = getPool();
+  const tokenHash = hashUserApiToken(token);
+  const tokenEncrypted = encryptSecret(token);
+  const res = await p.query(
+    `
+    INSERT INTO user_api_token (user_id, token_hash, token_encrypted, created_at, updated_at)
+    VALUES ($1, $2, $3, NOW(), NOW())
+    ON CONFLICT (user_id)
+    DO UPDATE SET token_hash = EXCLUDED.token_hash, token_encrypted = EXCLUDED.token_encrypted, updated_at = NOW()
+    RETURNING token_encrypted, created_at, updated_at
+    `,
+    [userId, tokenHash, tokenEncrypted]
+  );
+  const row = res.rows[0];
+  return {
+    token,
+    createdAt: row?.created_at ?? null,
+    updatedAt: row?.updated_at ?? null
+  };
+}
+
+export async function revokeUserApiToken(userId: number): Promise<boolean> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(`DELETE FROM user_api_token WHERE user_id = $1`, [userId]);
+  return Number(res.rowCount ?? 0) > 0;
+}
+
+export async function findUserIdByApiToken(token: string): Promise<number | null> {
+  await ensureUserSchema();
+  const p = getPool();
+  const tokenHash = hashUserApiToken(token);
+  const res = await p.query(`SELECT user_id FROM user_api_token WHERE token_hash = $1 LIMIT 1`, [tokenHash]);
+  if (!res.rows.length) return null;
+  return Number(res.rows[0].user_id);
+}
+
 export async function setUserPassword(username: string, groups: string[], passwordHash: string, email?: string | null): Promise<DbUserWithHash> {
   await ensureUserSchema();
   const p = getPool();
@@ -1619,6 +1683,17 @@ async function ensureUserSchema() {
     `);
     await p.query(`ALTER TABLE user_credential ADD COLUMN IF NOT EXISTS name TEXT;`);
     await p.query(`CREATE INDEX IF NOT EXISTS idx_user_credential_user_id ON user_credential(user_id);`);
+
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS user_api_token (
+        user_id BIGINT PRIMARY KEY REFERENCES app_user(id) ON DELETE CASCADE,
+        token_hash TEXT UNIQUE NOT NULL,
+        token_encrypted TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_user_api_token_hash ON user_api_token(token_hash);`);
 
     await p.query(`
       CREATE TABLE IF NOT EXISTS webauthn_challenge (

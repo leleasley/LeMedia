@@ -17,6 +17,8 @@ import { requireCsrf } from "@/lib/csrf";
 import { getActiveMediaService, getMediaServiceByIdWithKey } from "@/lib/media-services";
 import asyncLock from "@/lib/async-lock";
 import { isAdminGroup } from "@/lib/groups";
+import { verifyExternalApiKey } from "@/lib/external-api";
+import { POST as requestPost } from "../../v1/request/route";
 
 const Body = z.object({
   tmdbId: z.coerce.number().int(),
@@ -47,8 +49,39 @@ function buildTvNotificationMeta(tv: any) {
   return { imageUrl, rating, year, overview };
 }
 
+function extractApiKey(req: NextRequest) {
+  return req.headers.get("x-api-key")
+    || req.headers.get("X-Api-Key")
+    || req.headers.get("authorization")?.replace(/^Bearer\s+/i, "")
+    || req.nextUrl.searchParams.get("api_key")
+    || "";
+}
+
 export async function POST(req: NextRequest) {
   try {
+    const apiKey = extractApiKey(req);
+    if (apiKey) {
+      const ok = await verifyExternalApiKey(apiKey);
+      if (!ok) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+      const body = await req.json().catch(() => ({}));
+      const mediaIdRaw = body?.mediaId ?? body?.tmdbId ?? body?.id;
+      const mediaId = Number(mediaIdRaw);
+      if (!Number.isFinite(mediaId)) {
+        return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+      }
+      const headers = new Headers(req.headers);
+      headers.set("content-type", "application/json");
+      const proxyRequest = new NextRequest(
+        new Request("http://internal/api/v1/request", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ mediaType: "tv", mediaId })
+        })
+      );
+      return requestPost(proxyRequest);
+    }
+
     const user = await requireUser();
     if (user instanceof NextResponse) return user;
     const maintenance = await rejectIfMaintenance(req);

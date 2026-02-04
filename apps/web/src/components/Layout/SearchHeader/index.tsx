@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Inbox, LogOut, Search, Settings, User } from "lucide-react";
+import { Inbox, LogOut, Search, Settings, User, Clock } from "lucide-react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import Link from "next/link";
 import { getAvatarAlt, getAvatarSrc } from "@/lib/avatar";
@@ -136,7 +136,7 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
             if (debounceRef.current) clearTimeout(debounceRef.current);
             debounceRef.current = setTimeout(() => {
                 router.push(`/search?q=${encodeURIComponent(value.trim())}&type=all`);
-            }, 200);
+            }, 300);
         }
     };
 
@@ -151,6 +151,7 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === "Escape") {
             setSearchQuery("");
+            setRecentOpen(false);
         }
     };
 
@@ -177,13 +178,16 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
                         }}
                     />
                     {recentOpen && recentSearches.length > 0 ? (
-                        <div className="absolute left-0 right-0 mt-2 rounded-2xl border border-white/10 shadow-2xl z-50 liquid-glass-sheet overflow-hidden">
-                            <div className="flex items-center justify-between px-4 py-2 border-b border-white/10">
-                                <span className="text-xs uppercase tracking-wider text-white/50 font-semibold">Recent searches</span>
+                        <div className="absolute left-0 right-0 mt-2 rounded-2xl border border-white/10 shadow-2xl z-50 liquid-glass-sheet overflow-hidden backdrop-blur-xl">
+                            <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/10">
+                                <div className="flex items-center gap-2">
+                                    <Clock className="h-3.5 w-3.5 text-white/40" />
+                                    <span className="text-xs uppercase tracking-wider text-white/50 font-semibold">Recent searches</span>
+                                </div>
                                 <button
                                     type="button"
                                     onClick={() => persistRecent([])}
-                                    className="text-xs text-white/60 hover:text-white transition-colors"
+                                    className="text-xs text-white/60 hover:text-white transition-colors font-medium"
                                 >
                                     Clear
                                 </button>
@@ -199,10 +203,10 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
                                             router.push(`/search?q=${encodeURIComponent(item)}&type=all`);
                                             setRecentOpen(false);
                                         }}
-                                        className="flex w-full items-center justify-between px-4 py-2.5 text-sm text-white/90 hover:text-white hover:bg-white/10 transition-colors"
+                                        className="flex w-full items-center justify-between px-4 py-2.5 text-sm text-white/90 hover:text-white hover:bg-white/10 transition-all group border-b border-white/5 last:border-b-0"
                                     >
-                                        <span className="truncate">{item}</span>
-                                        <Search className="h-3.5 w-3.5 text-white/40" />
+                                        <span className="truncate group-hover:text-indigo-300 transition-colors">{item}</span>
+                                        <Search className="h-3.5 w-3.5 text-white/40 group-hover:text-indigo-400 transition-colors" />
                                     </button>
                                 ))}
                             </div>

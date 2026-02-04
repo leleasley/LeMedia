@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyExternalApiKey } from "@/lib/external-api";
+import { getExternalApiAuth } from "@/lib/external-api";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
 import { getUserById, listUsers } from "@/db";
 import { isAdminGroup } from "@/lib/groups";
@@ -23,7 +23,21 @@ type ApiUserInfo = {
   avatarUrl?: string | null;
 };
 
-async function resolveExternalApiUser(req: NextRequest): Promise<ApiUserInfo | null> {
+async function resolveExternalApiUser(req: NextRequest, fallbackUserId?: number | null): Promise<ApiUserInfo | null> {
+  if (fallbackUserId && Number.isFinite(fallbackUserId)) {
+    const user = await getUserById(Number(fallbackUserId));
+    if (user) {
+      return {
+        id: user.id,
+        username: user.username,
+        email: user.email ?? null,
+        groups: user.groups,
+        createdAt: user.created_at ?? null,
+        lastSeenAt: user.last_seen_at ?? null,
+        avatarUrl: null
+      };
+    }
+  }
   const apiUserHeader = req.headers.get("x-api-user") || "";
   const apiUserId = Number(apiUserHeader);
   if (Number.isFinite(apiUserId) && apiUserId > 0) {
@@ -75,9 +89,9 @@ function toSeerrUser(user: ApiUserInfo | null) {
 
 export async function GET(req: NextRequest) {
   const apiKey = extractApiKey(req);
-  const ok = apiKey ? await verifyExternalApiKey(apiKey) : false;
-  if (ok) {
-    const user = await resolveExternalApiUser(req);
+  const auth = apiKey ? await getExternalApiAuth(apiKey) : { ok: false, isGlobal: false, userId: null };
+  if (auth.ok) {
+    const user = await resolveExternalApiUser(req, auth.userId ?? null);
     if (!user) {
       return NextResponse.json({ error: "No users found" }, { status: 404 });
     }

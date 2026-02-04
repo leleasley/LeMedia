@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getSimilarMovies } from "@/lib/tmdb";
 import { verifyExternalApiKey } from "@/lib/external-api";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
-import { getJellyfinItemIdByTmdb } from "@/lib/jellyfin";
+import { getJellyfinItemIdByTmdb, isAvailableByTmdb } from "@/lib/jellyfin";
 
 function extractApiKey(req: NextRequest) {
   return req.headers.get("x-api-key")
@@ -39,7 +39,8 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
 
   const results = await Promise.all(
     (Array.isArray(data?.results) ? data.results : []).map(async (movie: any) => {
-      const jellyfinMediaId = await getJellyfinItemIdByTmdb("movie", movie.id);
+      const available = await isAvailableByTmdb("movie", movie.id);
+      const jellyfinMediaId = available ? await getJellyfinItemIdByTmdb("movie", movie.id) : null;
       return {
         id: movie.id,
         title: movie.title,
@@ -56,7 +57,7 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
         originalLanguage: movie.original_language,
         video: movie.video,
         mediaType: "movie" as const,
-        mediaInfo: jellyfinMediaId ? { jellyfinMediaId, status: 5 } : null
+        mediaInfo: available ? { jellyfinMediaId, status: 5 } : null
       };
     })
   );

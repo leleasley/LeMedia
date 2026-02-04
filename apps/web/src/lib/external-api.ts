@@ -5,7 +5,7 @@ import type { AxiosInstance, AxiosRequestConfig } from "axios";
 import type NodeCache from "node-cache";
 import { randomBytes, timingSafeEqual } from "crypto";
 import { decryptSecret, encryptSecret } from "@/lib/encryption";
-import { getSetting, setSetting } from "@/db";
+import { findUserIdByApiToken, getSetting, setSetting } from "@/db";
 import { requestInterceptorFunction } from "@/lib/custom-proxy-agent";
 
 // 5 minute default TTL (in seconds)
@@ -152,9 +152,23 @@ export async function setExternalApiKey(apiKey: string): Promise<void> {
   await setSetting(EXTERNAL_API_KEY_SETTING, encrypted);
 }
 
-export async function verifyExternalApiKey(apiKey: string): Promise<boolean> {
+export async function getExternalApiAuth(apiKey: string): Promise<{ ok: boolean; isGlobal: boolean; userId: number | null }> {
+  if (!apiKey) return { ok: false, isGlobal: false, userId: null };
+
   const stored = await getExternalApiKey();
-  if (!stored) return false;
-  if (stored.length !== apiKey.length) return false;
-  return timingSafeEqual(Buffer.from(stored, "utf8"), Buffer.from(apiKey, "utf8"));
+  if (stored && stored.length === apiKey.length) {
+    if (timingSafeEqual(Buffer.from(stored, "utf8"), Buffer.from(apiKey, "utf8"))) {
+      return { ok: true, isGlobal: true, userId: null };
+    }
+  }
+
+  const userId = await findUserIdByApiToken(apiKey);
+  if (userId) return { ok: true, isGlobal: false, userId };
+
+  return { ok: false, isGlobal: false, userId: null };
+}
+
+export async function verifyExternalApiKey(apiKey: string): Promise<boolean> {
+  const auth = await getExternalApiAuth(apiKey);
+  return auth.ok;
 }
