@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCollection } from "@/lib/tmdb";
 import { verifyExternalApiKey } from "@/lib/external-api";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
-import { getJellyfinItemIdByTmdb } from "@/lib/jellyfin";
+import { getJellyfinItemIdByTmdb, isAvailableByTmdb } from "@/lib/jellyfin";
 
 function extractApiKey(req: NextRequest) {
   return req.headers.get("x-api-key")
@@ -38,7 +38,8 @@ export async function GET(
   // Map collection parts (movies) to include Jellyfin IDs
   const parts = await Promise.all(
     (collection.parts || []).map(async (movie: any) => {
-      const jellyfinMediaId = await getJellyfinItemIdByTmdb("movie", movie.id);
+      const available = await isAvailableByTmdb("movie", movie.id);
+      const jellyfinMediaId = available ? await getJellyfinItemIdByTmdb("movie", movie.id) : null;
       return {
         id: movie.id,
         title: movie.title,
@@ -54,10 +55,10 @@ export async function GET(
         genreIds: movie.genre_ids,
         video: movie.video,
         mediaType: "movie",
-        mediaInfo: jellyfinMediaId ? {
+        mediaInfo: available ? {
           jellyfinMediaId,
-          status: 3 // available
-        } : null
+          status: 5 // available
+        } : { jellyfinMediaId: null, status: 1 }
       };
     })
   );

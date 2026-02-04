@@ -261,3 +261,28 @@ Currently uses mock quotas (50 movies, 30 series). To implement real quotas:
 - Cache automatically cleaned when it exceeds 1000 entries
 - Fallback handling if TMDB API is unavailable
 - Uses `/imageproxy/tmdb/` for image optimization
+
+## Jellyseerr-Compatible API Surface
+
+These endpoints are implemented for Jellyseerr-compatible integrations (base URL: `/api/v1`). API key auth is supported via `X-Api-Key` or `Authorization: Bearer <key>`.
+
+- `GET /api/v1/settings/public`
+- `GET /api/v1/auth/me`
+- `GET /api/v1/search`
+- `GET /api/v1/discover/movies`
+- `GET /api/v1/discover/tv`
+- `GET /api/v1/discover/trending`
+- `GET /api/v1/discover/movies/upcoming`
+- `GET /api/v1/discover/tv/upcoming`
+- `GET /api/v1/request`
+- `POST /api/v1/request`
+- `DELETE /api/v1/request/{requestId}`
+- `GET /api/v1/movie/{id}`
+- `GET /api/v1/movie/{id}/ratings`
+- `GET /api/v1/movie/{id}/recommendations`
+- `GET /api/v1/movie/{id}/similar`
+- `GET /api/v1/tv/{id}`
+- `GET /api/v1/tv/{id}/ratings`
+- `GET /api/v1/tv/{id}/recommendations`
+- `GET /api/v1/tv/{id}/similar`
+- `GET /api/v1/person/{id}/combined_credits`

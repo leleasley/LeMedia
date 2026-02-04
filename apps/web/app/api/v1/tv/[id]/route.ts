@@ -38,6 +38,33 @@ function extractApiKey(req: NextRequest) {
     || "";
 }
 
+function buildRelatedVideoUrl(video: any) {
+  if (!video?.key) return null;
+  const site = String(video.site || "").toLowerCase();
+  if (site === "youtube") return `https://www.youtube.com/watch?v=${video.key}`;
+  if (site === "vimeo") return `https://vimeo.com/${video.key}`;
+  return null;
+}
+
+function mapRelatedVideos(input: any): Array<{
+  url: string | null;
+  key: string | null;
+  name: string | null;
+  size: number | null;
+  type: string | null;
+  site: string | null;
+}> {
+  const list = Array.isArray(input?.results) ? input.results : Array.isArray(input) ? input : [];
+  return list.map((video: any) => ({
+    url: buildRelatedVideoUrl(video),
+    key: video?.key ?? null,
+    name: video?.name ?? null,
+    size: typeof video?.size === "number" ? video.size : null,
+    type: video?.type ?? null,
+    site: video?.site ?? null
+  }));
+}
+
 // Convert UUID to numeric ID for Overseerr compatibility (same as request endpoint)
 function uuidToNumericId(uuid: string): number {
   const hex = uuid.replace(/-/g, '').substring(0, 7);
@@ -49,13 +76,13 @@ function uuidToNumericId(uuid: string): number {
 function mapStatusToOverseerr(status: string): number {
   const statusMap: Record<string, number> = {
     "pending": 1,
-    "queued": 1,
+    "queued": 2,
     "submitted": 2,
     "downloading": 2,
-    "available": 3,
-    "denied": 4,
-    "failed": 5,
-    "already_exists": 3
+    "available": 5,
+    "denied": 3,
+    "failed": 4,
+    "already_exists": 5
   };
   return statusMap[status] ?? 1;
 }
@@ -241,7 +268,8 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
       type: tv.type ?? null,
       voteAverage: tv.vote_average ?? 0,
       voteCount: tv.vote_count ?? 0,
-      credits: (details as any).credits ?? { cast: [], crew: [] },
+      credits: tv.credits ?? { cast: [], crew: [] },
+      relatedVideos: mapRelatedVideos(tv.videos),
       externalIds: {
         tvdbId: tvdbId ?? null,
         facebookId: null,

@@ -381,7 +381,7 @@ export async function getTvByNetwork(networkId: number, page = 1) {
 
 // Get TV season details
 export async function getTvSeason(tvId: number, seasonNumber: number) {
-  return tmdbGet(`/tv/${tvId}/season/${seasonNumber}`, {}, TWO_HOURS_MS);
+  return tmdbGet(`/tv/${tvId}/season/${seasonNumber}`, { append_to_response: "external_ids" }, TWO_HOURS_MS);
 }
 
 // Get episodes for a TV season

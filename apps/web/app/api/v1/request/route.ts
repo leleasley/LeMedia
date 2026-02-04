@@ -44,15 +44,15 @@ function mapFilter(filter: string | null) {
   switch ((filter ?? "").toLowerCase()) {
     case "approved":
     case "processing":
-      return ["submitted", "downloading"];
+      return ["queued", "submitted", "downloading"];
     case "pending":
-      return ["pending", "queued"];
+      return ["pending"];
     case "failed":
       return ["failed", "denied"];
     case "completed":
     case "available":
     case "deleted":
-      return ["available"];
+      return ["available", "already_exists"];
     case "unavailable":
       return ["pending", "queued", "submitted", "downloading"];
     default:
@@ -71,13 +71,13 @@ function mapRequestType(mediaType: string | null) {
 function mapStatusToOverseerr(status: string): number {
   const statusMap: Record<string, number> = {
     "pending": 1,
-    "queued": 1,
+    "queued": 2,
     "submitted": 2,
     "downloading": 2,
-    "available": 3,
-    "denied": 4,
-    "failed": 5,
-    "already_exists": 3
+    "available": 5,
+    "denied": 3,
+    "failed": 4,
+    "already_exists": 5
   };
   return statusMap[status] ?? 1;
 }
@@ -165,7 +165,7 @@ export async function GET(req: NextRequest) {
     return cacheableJsonResponseWithETag(req, { error: "Unauthorized" }, { maxAge: 0, private: true });
   }
 
-  const take = Math.min(Math.max(Number(req.nextUrl.searchParams.get("take") ?? 10), 1), 100);
+  const take = Math.min(Math.max(Number(req.nextUrl.searchParams.get("take") ?? 100), 1), 100);
   const skip = Math.max(Number(req.nextUrl.searchParams.get("skip") ?? 0), 0);
   const requestedByRaw = req.nextUrl.searchParams.get("requestedBy");
   let requestedById = requestedByRaw && /^\d+$/.test(requestedByRaw) ? Number(requestedByRaw) : null;

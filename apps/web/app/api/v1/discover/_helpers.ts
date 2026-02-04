@@ -1,4 +1,4 @@
-import { getJellyfinItemIdByTmdb } from "@/lib/jellyfin";
+import { getJellyfinItemIdByTmdb, isAvailableByTmdb } from "@/lib/jellyfin";
 import { tmdbImageUrl } from "@/lib/tmdb-images";
 
 type TmdbItem = {
@@ -25,7 +25,8 @@ export async function mapDiscoverResults(items: TmdbItem[], forcedType?: "movie"
   const mapped = await Promise.all(
     items.map(async item => {
       const mediaType = forcedType ?? (item.media_type === "tv" ? "tv" : "movie");
-      const jellyfinMediaId = await getJellyfinItemIdByTmdb(mediaType, item.id);
+      const available = await isAvailableByTmdb(mediaType, item.id);
+      const jellyfinMediaId = available ? await getJellyfinItemIdByTmdb(mediaType, item.id) : null;
       return {
         id: item.id,
         mediaType,
@@ -44,7 +45,7 @@ export async function mapDiscoverResults(items: TmdbItem[], forcedType?: "movie"
         voteCount: item.vote_count ?? null,
         genreIds: item.genre_ids ?? [],
         overview: item.overview ?? null,
-        mediaInfo: jellyfinMediaId ? { jellyfinMediaId } : null
+        mediaInfo: available ? { jellyfinMediaId, status: 5 } : { jellyfinMediaId: null, status: 1 }
       };
     })
   );

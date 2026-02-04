@@ -56,8 +56,11 @@ export default async function Page() {
   if (!u) {
     redirect("/login");
   }
-  const imageProxyEnabled = await getImageProxyEnabled();
-  const { id: userId } = await upsertUser(u.username, u.groups);
+  const [imageProxyEnabled, userRecord] = await Promise.all([
+    getImageProxyEnabled(),
+    upsertUser(u.username, u.groups)
+  ]);
+  const { id: userId } = userRecord;
   
   let sliders: any[] = [];
   try {
@@ -326,7 +329,7 @@ export default async function Page() {
   return (
     <>
       <WatchStatsWidget />
-      <DashboardCustomizeClient sliderComponents={sliderComponentsMap} />
+      <DashboardCustomizeClient sliderComponents={sliderComponentsMap} initialSliders={sliders} />
     </>
   );
 }

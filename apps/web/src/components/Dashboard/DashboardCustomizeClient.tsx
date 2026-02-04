@@ -20,12 +20,20 @@ const Position = {
 
 type DashboardCustomizeClientProps = {
   sliderComponents: Record<number, React.ReactNode>;
+  initialSliders?: DashboardSlider[];
 };
 
-export default function DashboardCustomizeClient({ sliderComponents }: DashboardCustomizeClientProps) {
+export default function DashboardCustomizeClient({ sliderComponents, initialSliders = [] }: DashboardCustomizeClientProps) {
   const toast = useToast();
-  const { data: dashboardData, mutate } = useSWR<DashboardSlider[]>("/api/v1/settings/dashboard", fetcher);
-  const [sliders, setSliders] = useState<DashboardSlider[]>([]);
+  const { data: dashboardData, mutate } = useSWR<DashboardSlider[]>(
+    "/api/v1/settings/dashboard",
+    fetcher,
+    {
+      fallbackData: initialSliders,
+      revalidateOnMount: false,
+    }
+  );
+  const [sliders, setSliders] = useState<DashboardSlider[]>(initialSliders);
   const [isEditing, setIsEditing] = useState(false);
 
   // Sync state when data loads or when editing stops

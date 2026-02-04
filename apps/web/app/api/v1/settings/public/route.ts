@@ -7,7 +7,11 @@ export async function GET(req: NextRequest) {
   // LeMedia is always initialized if the app is running
   return cacheableJsonResponseWithETag(
     req,
-    { initialized: true },
+    {
+      initialized: true,
+      movie4kEnabled: false,
+      series4kEnabled: false
+    },
     { maxAge: 60, sMaxAge: 120 }
   );
 }

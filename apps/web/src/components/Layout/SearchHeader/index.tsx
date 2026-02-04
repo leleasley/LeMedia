@@ -2,8 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Inbox, LogOut, Search, Settings, User } from "lucide-react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { usePathname } from "next/navigation";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import Link from "next/link";
 import { getAvatarAlt, getAvatarSrc } from "@/lib/avatar";
 import { NotificationBell } from "@/components/Notifications/NotificationBell";
@@ -18,6 +17,8 @@ type ProfileSummary = {
 function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQuery: string; isAdmin: boolean; initialProfile?: ProfileSummary | null }) {
     const [searchQuery, setSearchQuery] = useState(initialQuery);
     const router = useRouter();
+    const pathname = usePathname();
+    const searchParams = useSearchParams();
     const inputRef = useRef<HTMLInputElement | null>(null);
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [menuOpen, setMenuOpen] = useState(false);
@@ -26,6 +27,7 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
     const searchRef = useRef<HTMLDivElement | null>(null);
     const [recentOpen, setRecentOpen] = useState(false);
     const [recentSearches, setRecentSearches] = useState<string[]>([]);
+    const lastSavedRef = useRef<string>("");
 
     useEffect(() => {
         return () => {
@@ -53,9 +55,19 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
         try {
             const key = `recentSearches:${profile.username}`;
             const raw = window.localStorage.getItem(key);
+            const rawGlobal = window.localStorage.getItem("recentSearches:global");
             const list = raw ? JSON.parse(raw) : [];
-            if (Array.isArray(list)) {
-                setRecentSearches(list.filter((v) => typeof v === "string"));
+            const globalList = rawGlobal ? JSON.parse(rawGlobal) : [];
+            const combined = Array.isArray(list) ? list : [];
+            if (Array.isArray(globalList)) {
+                globalList.forEach((item) => {
+                    if (typeof item === "string" && !combined.includes(item)) {
+                        combined.push(item);
+                    }
+                });
+            }
+            if (combined.length) {
+                setRecentSearches(combined.filter((v) => typeof v === "string"));
             }
         } catch {
             // ignore localStorage errors
@@ -86,11 +98,21 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
         return () => window.removeEventListener("click", onClick);
     }, [recentOpen]);
 
+    useEffect(() => {
+        const q = searchParams.get("q") ?? "";
+        const isSearchPage = pathname === "/search";
+        if (!isSearchPage) return;
+        if (q.trim().length < 2) return;
+        addRecent(q);
+    }, [pathname, searchParams]);
+
     const persistRecent = (items: string[]) => {
         setRecentSearches(items);
-        if (!profile?.username) return;
         try {
-            window.localStorage.setItem(`recentSearches:${profile.username}`, JSON.stringify(items));
+            if (profile?.username) {
+                window.localStorage.setItem(`recentSearches:${profile.username}`, JSON.stringify(items));
+            }
+            window.localStorage.setItem("recentSearches:global", JSON.stringify(items));
         } catch {
             // ignore localStorage errors
         }
@@ -99,7 +121,9 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
     const addRecent = (value: string) => {
         const trimmed = value.trim();
         if (trimmed.length < 2) return;
+        if (lastSavedRef.current.toLowerCase() === trimmed.toLowerCase()) return;
         const next = [trimmed, ...recentSearches.filter((item) => item.toLowerCase() !== trimmed.toLowerCase())].slice(0, 8);
+        lastSavedRef.current = trimmed;
         persistRecent(next);
     };
 
@@ -120,7 +144,6 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
         e.preventDefault();
         const q = searchQuery.trim();
         if (q.length >= 2) {
-            addRecent(q);
             router.push(`/search?q=${encodeURIComponent(q)}&type=all`);
         }
     };

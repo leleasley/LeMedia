@@ -11,6 +11,11 @@ import { normalizeGroupList } from "@/lib/groups";
 const DatabaseUrlSchema = z.string().min(1);
 let cachedDatabaseUrl: string | null = null;
 
+const dashboardSliderCache = cacheManager.getCache("dashboard-sliders", {
+  stdTTL: 60,
+  checkperiod: 120,
+});
+
 let pool: Pool | null = null;
 export function getPool(): Pool {
   if (!pool) {
@@ -775,6 +780,23 @@ export async function getRequestWithItems(requestId: string) {
   if (!r) return null;
   const items = await listRequestItems(requestId);
   return { request: r, items };
+}
+
+export async function findRequestIdByNumericId(numericId: number): Promise<string | null> {
+  if (!Number.isFinite(numericId) || numericId <= 0) return null;
+  const hex = Math.floor(numericId).toString(16).padStart(7, "0").slice(0, 7);
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT id
+    FROM media_request
+    WHERE substring(replace(id::text, '-', '') from 1 for 7) = $1
+    ORDER BY created_at DESC
+    LIMIT 1
+    `,
+    [hex]
+  );
+  return (res.rows[0]?.id as string | undefined) ?? null;
 }
 
 export async function markRequestStatus(requestId: string, status: string) {
@@ -2378,6 +2400,23 @@ interface DashboardSliderRow {
   is_builtin: boolean;
 }
 
+function getDashboardSliderCacheKey(userId: number) {
+  return `user:${userId}`;
+}
+
+function getCachedDashboardSliders(userId: number): DashboardSlider[] | null {
+  const cached = dashboardSliderCache.get<DashboardSlider[]>(getDashboardSliderCacheKey(userId));
+  return cached ?? null;
+}
+
+function setCachedDashboardSliders(userId: number, sliders: DashboardSlider[]) {
+  dashboardSliderCache.set(getDashboardSliderCacheKey(userId), sliders);
+}
+
+function invalidateDashboardSliderCache(userId: number) {
+  dashboardSliderCache.del(getDashboardSliderCacheKey(userId));
+}
+
 function mapDashboardSliderRow(r: DashboardSliderRow): DashboardSlider {
   return {
     id: Number(r.id),
@@ -2392,6 +2431,8 @@ function mapDashboardSliderRow(r: DashboardSliderRow): DashboardSlider {
 
 export async function listDashboardSlidersForUser(userId: number): Promise<DashboardSlider[]> {
   await ensureSchema();
+  const cached = getCachedDashboardSliders(userId);
+  if (cached) return cached;
   await bootstrapDashboardSlidersForUser(userId);
   const p = getPool();
   const res = await p.query(
@@ -2403,7 +2444,9 @@ export async function listDashboardSlidersForUser(userId: number): Promise<Dashb
     `,
     [userId]
   );
-  return res.rows.map(mapDashboardSliderRow);
+  const sliders = res.rows.map(mapDashboardSliderRow);
+  setCachedDashboardSliders(userId, sliders);
+  return sliders;
 }
 
 export async function resetDashboardSlidersForUser(userId: number): Promise<void> {
@@ -2422,6 +2465,7 @@ export async function resetDashboardSlidersForUser(userId: number): Promise<void
       );
     }
     await p.query("COMMIT");
+    invalidateDashboardSliderCache(userId);
   } catch (e) {
     await p.query("ROLLBACK");
     throw e;
@@ -2477,6 +2521,7 @@ export async function updateDashboardSlidersForUser(userId: number, sliders: Das
       }
     }
     await p.query("COMMIT");
+    invalidateDashboardSliderCache(userId);
   } catch (e) {
     await p.query("ROLLBACK");
     throw e;
@@ -2496,7 +2541,9 @@ export async function createDashboardSliderForUser(userId: number, input: { type
     `,
     [userId, Number(input.type), input.title, input.data, nextOrder]
   );
-  return mapDashboardSliderRow(res.rows[0]);
+  const slider = mapDashboardSliderRow(res.rows[0]);
+  invalidateDashboardSliderCache(userId);
+  return slider;
 }
 
 export async function updateCustomDashboardSliderForUser(userId: number, sliderId: number, input: { type: number; title: string; data: string }): Promise<DashboardSlider | null> {
@@ -2512,7 +2559,9 @@ export async function updateCustomDashboardSliderForUser(userId: number, sliderI
     [userId, sliderId, Number(input.type), input.title, input.data]
   );
   if (!res.rows.length) return null;
-  return mapDashboardSliderRow(res.rows[0]);
+  const slider = mapDashboardSliderRow(res.rows[0]);
+  invalidateDashboardSliderCache(userId);
+  return slider;
 }
 
 export async function deleteCustomDashboardSliderForUser(userId: number, sliderId: number): Promise<boolean> {
@@ -2522,6 +2571,9 @@ export async function deleteCustomDashboardSliderForUser(userId: number, sliderI
     `DELETE FROM user_dashboard_slider WHERE user_id = $1 AND id = $2 AND is_builtin = false`,
     [userId, sliderId]
   );
+  if ((res.rowCount ?? 0) > 0) {
+    invalidateDashboardSliderCache(userId);
+  }
   return (res.rowCount ?? 0) > 0;
 }
 

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getUser } from "@/auth";
-import { listRequests } from "@/db";
+import { listRequests, updateRequestMetadata } from "@/db";
 import { getMovie, getTv, tmdbImageUrl } from "@/lib/tmdb";
 import { approveRequest, denyRequest, deleteRequest, markRequestAvailable } from "./actions";
 import { getImageProxyEnabled } from "@/lib/app-settings";
@@ -25,22 +25,40 @@ export default async function AllRequestsPage() {
     );
   }
 
-  const imageProxyEnabled = await getImageProxyEnabled();
-  const requests = await listRequests(200);
+  const [imageProxyEnabled, requests] = await Promise.all([
+    getImageProxyEnabled(),
+    listRequests(200)
+  ]);
 
-  // Fetch TMDB details for posters and backdrop
+  const tmdbResults = await Promise.allSettled(
+    requests.map((r) => {
+      const needsDetails = !r.poster_path || !r.backdrop_path;
+      if (!needsDetails) return Promise.resolve(null);
+      return r.request_type === "movie" ? getMovie(r.tmdb_id) : getTv(r.tmdb_id);
+    })
+  );
+
   const detailedRequests = await Promise.all(
-    requests.map(async (r) => {
+    requests.map(async (r, idx) => {
       try {
-        const details = r.request_type === "movie"
-          ? await getMovie(r.tmdb_id).catch(() => null)
-          : await getTv(r.tmdb_id).catch(() => null);
-        const poster_path = details?.poster_path
-          ? tmdbImageUrl(details.poster_path, "w200", imageProxyEnabled)
-          : null;
-        const backdrop_path = details?.backdrop_path
-          ? tmdbImageUrl(details.backdrop_path, "w500", imageProxyEnabled)
-          : null;
+        const detailsResult = tmdbResults[idx];
+        const details = detailsResult?.status === "fulfilled" ? detailsResult.value : null;
+        if (details && (!r.poster_path || !r.backdrop_path || !r.release_year)) {
+          void updateRequestMetadata({
+            requestId: r.id,
+            posterPath: r.poster_path ?? details?.poster_path ?? null,
+            backdropPath: r.backdrop_path ?? details?.backdrop_path ?? null,
+            releaseYear: r.release_year ?? (
+              r.request_type === "movie"
+                ? Number(details?.release_date?.slice(0, 4)) || null
+                : Number(details?.first_air_date?.slice(0, 4)) || null
+            )
+          }).catch(() => undefined);
+        }
+        const posterSource = r.poster_path ?? details?.poster_path ?? null;
+        const backdropSource = r.backdrop_path ?? details?.backdrop_path ?? null;
+        const poster_path = posterSource ? tmdbImageUrl(posterSource, "w200", imageProxyEnabled) : null;
+        const backdrop_path = backdropSource ? tmdbImageUrl(backdropSource, "w500", imageProxyEnabled) : null;
         return { ...r, poster_path, backdrop_path };
       } catch {
         return { ...r, poster_path: null, backdrop_path: null };

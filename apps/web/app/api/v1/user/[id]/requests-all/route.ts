@@ -33,7 +33,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
     const take = Math.min(Math.max(Number(req.nextUrl.searchParams.get("take") ?? 100), 1), 200);
     const skip = Math.max(Number(req.nextUrl.searchParams.get("skip") ?? 0), 0);
 
-    const { results } = await listRequestsPaged({
+    const { total, results } = await listRequestsPaged({
         limit: take,
         offset: skip,
         requestedById: userId
@@ -105,8 +105,8 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
 
     return cacheableJsonResponseWithETag(req, {
         pageInfo: {
-            results: combined.length,
-            pages: Math.max(Math.ceil(combined.length / take), 1),
+            results: total,
+            pages: Math.max(Math.ceil(total / take), 1),
             page: Math.floor(skip / take) + 1,
             pageSize: take
         },
