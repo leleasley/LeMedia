@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useMemo, useState, cloneElement, useCallback, useRef } from "react";
-import { AlertTriangle, CalendarDays, Clock, Ellipsis, Film, Search, Settings, Sparkles, Tv, Users, X } from "lucide-react";
+import { AlertTriangle, CalendarDays, Clock, Ellipsis, Film, Activity, Settings, Sparkles, Tv, Users, X } from "lucide-react";
 import { PrefetchLink } from "@/components/Layout/PrefetchLink";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -106,7 +106,7 @@ export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, 
             { href: "/", label: "Home", icon: Sparkles, isActive: current === "/" },
             { href: "/movies", label: "Movies", icon: Film, isActive: current === "/movies" || current.startsWith("/movie/") },
             { href: "/tv", label: "Series", icon: Tv, isActive: current === "/tv" || current.startsWith("/tv/") },
-            { href: "/search", label: "Search", icon: Search, isActive: current.startsWith("/search") },
+            { href: "/my-activity", label: "Activity", icon: Activity, isActive: current.startsWith("/my-activity") },
         ];
     }, [pathname]);
 
