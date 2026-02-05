@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS app_user (
   jellyfin_username TEXT,
   jellyfin_device_id TEXT,
   jellyfin_auth_token TEXT,
+  letterboxd_username TEXT,
   avatar_url TEXT,
   avatar_version INTEGER NOT NULL DEFAULT 0,
   request_limit_movie INTEGER,
@@ -22,11 +23,13 @@ CREATE TABLE IF NOT EXISTS app_user (
 );
 ALTER TABLE app_user ADD COLUMN IF NOT EXISTS mfa_secret TEXT;
 ALTER TABLE app_user ADD COLUMN IF NOT EXISTS oidc_sub TEXT;
+ALTER TABLE app_user ADD COLUMN IF NOT EXISTS letterboxd_username TEXT;
 ALTER TABLE app_user ADD COLUMN IF NOT EXISTS request_limit_movie INTEGER;
 ALTER TABLE app_user ADD COLUMN IF NOT EXISTS request_limit_movie_days INTEGER;
 ALTER TABLE app_user ADD COLUMN IF NOT EXISTS request_limit_series INTEGER;
 ALTER TABLE app_user ADD COLUMN IF NOT EXISTS request_limit_series_days INTEGER;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_app_user_oidc_sub ON app_user(oidc_sub);
+CREATE INDEX IF NOT EXISTS idx_app_user_letterboxd_username ON app_user(letterboxd_username);
 
 -- Notification endpoints (Discord/Telegram/Email/Webhook configs) and per-user subscriptions.
 CREATE TABLE IF NOT EXISTS notification_endpoint (
@@ -176,6 +179,25 @@ CREATE TABLE IF NOT EXISTS user_media_list (
 );
 CREATE INDEX IF NOT EXISTS idx_user_media_list_user ON user_media_list(user_id, list_type, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_user_media_list_tmdb ON user_media_list(media_type, tmdb_id);
+
+-- User reviews and ratings
+CREATE TABLE IF NOT EXISTS user_review (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+  media_type TEXT NOT NULL CHECK (media_type IN ('movie','tv')),
+  tmdb_id INTEGER NOT NULL,
+  rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  review_text TEXT,
+  spoiler BOOLEAN NOT NULL DEFAULT FALSE,
+  title TEXT NOT NULL,
+  poster_path TEXT,
+  release_year INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(user_id, media_type, tmdb_id)
+);
+CREATE INDEX IF NOT EXISTS idx_user_review_media ON user_review(media_type, tmdb_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_review_user ON user_review(user_id, created_at DESC);
 
 -- Per-user dashboard layout customization (Jellyseerr-style sliders)
 CREATE TABLE IF NOT EXISTS user_dashboard_slider (

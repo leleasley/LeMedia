@@ -11,6 +11,7 @@ import { getMovieDetailAggregateFast } from "@/lib/media-aggregate-fast";
 import { headers } from "next/headers";
 import { RecentlyViewedTracker } from "@/components/Media/RecentlyViewedTracker";
 import { ExternalRatings } from "@/components/Media/ExternalRatings";
+import { MediaReviews } from "@/components/Reviews/MediaReviews";
 
 const Params = z.object({ id: z.coerce.number().int() });
 type ParamsInput = { id: string } | Promise<{ id: string }>;
@@ -282,6 +283,15 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
           />
         </div>
       </div>
+
+      <MediaReviews
+        tmdbId={movie.id}
+        mediaType="movie"
+        title={movie.title}
+        posterPath={movie.poster_path}
+        releaseYear={releaseYear}
+        imageProxyEnabled={imageProxyEnabled}
+      />
 
       {/* Cast Section */}
       {cast.length > 0 && (

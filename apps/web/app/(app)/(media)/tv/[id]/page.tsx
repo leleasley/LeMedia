@@ -7,6 +7,7 @@ import { getTvDetailAggregateFast } from "@/lib/media-aggregate-fast";
 import { RecentlyViewedTracker } from "@/components/Media/RecentlyViewedTracker";
 import { ExternalRatings } from "@/components/Media/ExternalRatings";
 import { headers } from "next/headers";
+import { MediaReviews } from "@/components/Reviews/MediaReviews";
 
 const Params = z.object({ id: z.coerce.number().int() });
 type ParamsInput = { id: string } | Promise<{ id: string }>;
@@ -136,6 +137,16 @@ export default async function TvPage({ params }: { params: ParamsInput }) {
             <ExternalRatings tmdbId={tv.id} mediaType="tv" imdbId={imdbId} />
           }
         >
+          <div className="px-4 mt-8">
+            <MediaReviews
+              tmdbId={tv.id}
+              mediaType="tv"
+              title={tv.name}
+              posterPath={tv.poster_path}
+              releaseYear={tv.first_air_date ? new Date(tv.first_air_date).getFullYear() : null}
+              imageProxyEnabled={imageProxyEnabled}
+            />
+          </div>
           {/* Recommendations Section */}
           <div className="px-4 mt-8">
             <MediaSlider

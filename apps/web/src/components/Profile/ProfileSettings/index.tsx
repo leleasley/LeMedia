@@ -18,6 +18,7 @@ type ProfileResponse = {
     jellyfinUserId?: string | null;
     jellyfinUsername?: string | null;
     discordUserId?: string | null;
+    letterboxdUsername?: string | null;
     avatarUrl?: string | null;
     discoverRegion?: string | null;
     originalLanguage?: string | null;
@@ -35,6 +36,7 @@ type UpdateResponse = {
     username: string;
     email: string | null;
     discordUserId?: string | null;
+    letterboxdUsername?: string | null;
     discoverRegion?: string | null;
     originalLanguage?: string | null;
     watchlistSyncMovies?: boolean;
@@ -47,6 +49,7 @@ type FormState = {
   username: string;
   email: string;
   discordUserId: string;
+  letterboxdUsername: string;
   currentPassword: string;
   newPassword: string;
   confirmPassword: string;
@@ -60,6 +63,7 @@ const initialForm: FormState = {
   username: "",
   email: "",
   discordUserId: "",
+  letterboxdUsername: "",
   currentPassword: "",
   newPassword: "",
   confirmPassword: "",
@@ -123,6 +127,7 @@ export function ProfileSettings({
       username: data.user.username,
       email: data.user.email ?? "",
       discordUserId: data.user.discordUserId ?? "",
+      letterboxdUsername: data.user.letterboxdUsername ?? "",
       discoverRegion: data.user.discoverRegion ?? null,
       originalLanguage: data.user.originalLanguage ?? null,
       watchlistSyncMovies: data.user.watchlistSyncMovies ?? false,
@@ -157,6 +162,11 @@ export function ProfileSettings({
     const discordChanged = form.discordUserId.trim() !== (initialData.discordUserId ?? "");
     if (discordChanged) {
       payload.discordUserId = form.discordUserId.trim();
+    }
+
+    const letterboxdChanged = form.letterboxdUsername.trim() !== (initialData.letterboxdUsername ?? "");
+    if (letterboxdChanged) {
+      payload.letterboxdUsername = form.letterboxdUsername.trim();
     }
 
     if (form.discoverRegion !== initialData.discoverRegion) {
@@ -210,6 +220,7 @@ export function ProfileSettings({
         username: data.user.username,
         email: data.user.email ?? "",
         discordUserId: form.discordUserId,
+        letterboxdUsername: data.user.letterboxdUsername ?? form.letterboxdUsername,
         discoverRegion: data.user.discoverRegion ?? null,
         originalLanguage: data.user.originalLanguage ?? null,
         watchlistSyncMovies: data.user.watchlistSyncMovies ?? false,
@@ -346,6 +357,23 @@ export function ProfileSettings({
                   />
                   <p className="text-xs text-foreground/50">
                     The multi-digit ID tied to your Discord account. <a href="https://support.discord.com/hc/en-us/articles/206346498-Where-can-I-find-my-User-Server-Message-ID-" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">Find your ID</a>
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-foreground flex items-center gap-2" htmlFor="profile-letterboxd">
+                    <span>Letterboxd Username</span>
+                    <span className="text-xs text-foreground/50 font-normal">(optional)</span>
+                  </label>
+                  <input
+                    id="profile-letterboxd"
+                    value={form.letterboxdUsername}
+                    onChange={e => updateField("letterboxdUsername", e.target.value)}
+                    placeholder="your-letterboxd-username"
+                    className="w-full rounded-xl border border-white/20 bg-white/5 px-4 py-3 md:py-4 text-foreground placeholder:text-foreground/30 outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all text-sm backdrop-blur-sm"
+                  />
+                  <p className="text-xs text-foreground/50">
+                    If you haven&apos;t got one, please create/sign in to retrieve this. <a href="https://letterboxd.com/signup" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">Letterboxd signup</a>
                   </p>
                 </div>
 
