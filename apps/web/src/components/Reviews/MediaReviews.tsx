@@ -148,7 +148,7 @@ export function MediaReviews({ tmdbId, mediaType, title, posterPath, releaseYear
     if (!userReview) return;
     setSubmitting(true);
     try {
-      const response = await fetch(`/api/v1/reviews/${userReview.id}`, {
+      const response = await fetch(`/api/v1/reviews/review/${userReview.id}`, {
         method: "DELETE",
         headers: {
           "X-CSRF-Token": getCsrfToken(),
