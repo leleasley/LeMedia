@@ -1,10 +1,11 @@
 "use client";
 
 import React, { memo } from "react";
-import Image from "next/image";
 import { CheckCircle, ChevronDown, ChevronUp, Tv } from "lucide-react";
 import { Season, Episode } from "./types";
 import { TvEpisodeRow } from "./TvEpisodeRow";
+import CachedImage from "@/components/Common/CachedImage";
+import { tmdbImageUrl } from "@/lib/tmdb-images";
 
 interface TvSeasonItemProps {
     season: Season;
@@ -25,6 +26,7 @@ interface TvSeasonItemProps {
     getAiringBadge: (dateStr: string) => string | null;
     formatDate: (dateStr: string) => string;
     formatRating: (rating: number) => string;
+    imageProxyEnabled: boolean;
 }
 
 export const TvSeasonItem = memo(({
@@ -45,7 +47,8 @@ export const TvSeasonItem = memo(({
     isSubmitting,
     getAiringBadge,
     formatDate,
-    formatRating
+    formatRating,
+    imageProxyEnabled
 }: TvSeasonItemProps) => {
     const checkedCount = checkedEpisodes.size;
     const selectableCount = episodes.filter(e => !e.requested && !e.available).length;
@@ -64,7 +67,13 @@ export const TvSeasonItem = memo(({
                 <div className="flex items-center gap-6">
                     {season.poster_path ? (
                         <div className="h-16 w-12 rounded bg-neutral-800 flex-shrink-0 relative overflow-hidden hidden sm:block">
-                            <Image src={`https://image.tmdb.org/t/p/w200${season.poster_path}`} alt="" fill className="object-cover" />
+                            <CachedImage
+                                type="tmdb"
+                                src={tmdbImageUrl(season.poster_path, "w200", imageProxyEnabled) ?? ""}
+                                alt=""
+                                fill
+                                className="object-cover"
+                            />
                         </div>
                     ) : (
                         <div className="h-16 w-12 rounded bg-white/5 flex-shrink-0 hidden sm:flex items-center justify-center">
@@ -167,6 +176,7 @@ export const TvSeasonItem = memo(({
                                         getAiringBadge={getAiringBadge}
                                         formatDate={formatDate}
                                         formatRating={formatRating}
+                                        imageProxyEnabled={imageProxyEnabled}
                                     />
                                 ))}
                             </div>

@@ -86,8 +86,8 @@ export default async function TvPage({ params }: { params: ParamsInput }) {
     const manageSlug = aggregate?.manage?.slug ?? null;
     const manageBaseUrl = aggregate?.manage?.baseUrl ?? null;
 
-    const poster = tmdbImageUrl(tv.poster_path, "w600_and_h900_bestv2", imageProxyEnabled);
-    const backdrop = tmdbImageUrl(tv.backdrop_path, "w1920_and_h800_multi_faces", imageProxyEnabled);
+    const poster = tmdbImageUrl(tv.poster_path, "w600_and_h900_bestv2", false);
+    const backdrop = tmdbImageUrl(tv.backdrop_path, "w1920_and_h800_multi_faces", false);
     const trailerUrl = pickTrailerUrl(tv);
     const seasons = (tv.seasons ?? [])
       .filter((s: any) => s.season_number !== 0)
@@ -105,6 +105,7 @@ export default async function TvPage({ params }: { params: ParamsInput }) {
           tv={tv}
           poster={poster}
           backdrop={backdrop}
+          imageProxyEnabled={false}
           trailerUrl={trailerUrl}
           playUrl={playUrl}
           seasons={seasons}

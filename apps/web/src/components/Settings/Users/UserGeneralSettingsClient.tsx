@@ -60,11 +60,16 @@ export function UserGeneralSettingsClient() {
     const [revokingSession, setRevokingSession] = useState<string | null>(null);
     const [deletingSession, setDeletingSession] = useState<string | null>(null);
     const [revokingAll, setRevokingAll] = useState(false);
+    const [apiTokenVisible, setApiTokenVisible] = useState(false);
+    const [apiTokenSaving, setApiTokenSaving] = useState(false);
 
     const { data: user, error, mutate } = useSWR<User>(userId ? `/api/v1/admin/users/${userId}` : null);
     const { data: defaultLimits } = useSWR<DefaultLimits>("/api/v1/admin/settings/users");
     const { data: sessionsData, mutate: mutateSessions } = useSWR<UserSessionsResponse>(
         userId ? `/api/v1/admin/users/${userId}/sessions` : null
+    );
+    const { data: apiTokenData, mutate: mutateApiToken } = useSWR<{ token: string | null }>(
+        userId ? `/api/v1/admin/users/${userId}/api-token` : null
     );
 
     const [formData, setFormData] = useState({
@@ -245,6 +250,46 @@ export function UserGeneralSettingsClient() {
             toast.error("Failed to reset MFA");
         } finally {
             setResettingMfa(false);
+        }
+    };
+
+    const rotateApiToken = async () => {
+        if (!userId) return;
+        setApiTokenSaving(true);
+        try {
+            const res = await csrfFetch(`/api/v1/admin/users/${userId}/api-token`, {
+                method: "POST",
+            });
+            const payload = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(payload?.error || "Failed to rotate API token");
+            }
+            toast.success("API token rotated");
+            mutateApiToken();
+        } catch (err: any) {
+            toast.error(err?.message || "Failed to rotate API token");
+        } finally {
+            setApiTokenSaving(false);
+        }
+    };
+
+    const revokeApiToken = async () => {
+        if (!userId) return;
+        setApiTokenSaving(true);
+        try {
+            const res = await csrfFetch(`/api/v1/admin/users/${userId}/api-token`, {
+                method: "DELETE",
+            });
+            const payload = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(payload?.error || "Failed to revoke API token");
+            }
+            toast.success("API token revoked");
+            mutateApiToken();
+        } catch (err: any) {
+            toast.error(err?.message || "Failed to revoke API token");
+        } finally {
+            setApiTokenSaving(false);
         }
     };
 
@@ -552,6 +597,67 @@ export function UserGeneralSettingsClient() {
                                 </table>
                             </div>
                         )}
+                    </div>
+                </div>
+
+                {/* API Token (Admin) */}
+                <div className="border-t border-white/10 pt-6 space-y-3">
+                    <div>
+                        <h4 className="text-md font-semibold text-white mb-1">User API Token</h4>
+                        <p className="text-sm text-gray-400">View or rotate this user’s API token.</p>
+                    </div>
+                    {apiTokenData?.token ? (
+                        <div className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md">
+                            <code className="text-xs text-white break-all block overflow-wrap-anywhere" style={{ wordBreak: "break-all" }}>
+                                {apiTokenVisible ? apiTokenData.token : apiTokenData.token.replace(/./g, "•")}
+                            </code>
+                        </div>
+                    ) : (
+                        <div className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-xs text-gray-400 italic">
+                            No token generated
+                        </div>
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                        <button
+                            type="button"
+                            className="btn flex-1 sm:flex-none"
+                            onClick={() => setApiTokenVisible(prev => !prev)}
+                            disabled={!apiTokenData?.token}
+                        >
+                            {apiTokenVisible ? "Hide" : "Reveal"}
+                        </button>
+                        <button
+                            type="button"
+                            className="btn flex-1 sm:flex-none"
+                            onClick={async () => {
+                                if (!apiTokenData?.token) return;
+                                try {
+                                    await navigator.clipboard.writeText(apiTokenData.token);
+                                    toast.success("API token copied");
+                                } catch {
+                                    toast.error("Failed to copy API token");
+                                }
+                            }}
+                            disabled={!apiTokenData?.token}
+                        >
+                            Copy
+                        </button>
+                        <button
+                            type="button"
+                            className="btn flex-1 sm:flex-none"
+                            onClick={rotateApiToken}
+                            disabled={apiTokenSaving}
+                        >
+                            {apiTokenData?.token ? "Rotate" : "Generate"}
+                        </button>
+                        <button
+                            type="button"
+                            className="btn-danger flex-1 sm:flex-none"
+                            onClick={revokeApiToken}
+                            disabled={!apiTokenData?.token || apiTokenSaving}
+                        >
+                            Revoke
+                        </button>
                     </div>
                 </div>
 

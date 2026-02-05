@@ -430,19 +430,20 @@ export function AdminUsersPageClient() {
                  />
                </div>
 
-              <div className="relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-full bg-gray-800 ring-2 ring-gray-800">
-                <Image
-                  src={avatarSrc}
-                  alt={avatarAlt}
-                  fill
-                  className="object-cover"
-                  unoptimized={shouldBypassNextImage(avatarSrc)}
-                />
-              </div>
-              
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                   <h3 className="truncate text-base font-semibold text-white">{user.displayName || user.email}</h3>
+              <PrefetchLink href={`/admin/users/${user.id}/settings`} className="flex items-center gap-4 min-w-0 flex-1">
+                <div className="relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-full bg-gray-800 ring-2 ring-gray-800">
+                  <Image
+                    src={avatarSrc}
+                    alt={avatarAlt}
+                    fill
+                    className="object-cover"
+                    unoptimized={shouldBypassNextImage(avatarSrc)}
+                  />
+                </div>
+                
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                     <h3 className="truncate text-base font-semibold text-white">{user.displayName || user.email}</h3>
                    {user.isAdmin && (
                       <span className="inline-flex items-center rounded-full bg-purple-500/10 px-2 py-0.5 text-[10px] font-medium text-purple-400 ring-1 ring-inset ring-purple-500/20">
                         Admin
@@ -468,8 +469,8 @@ export function AdminUsersPageClient() {
                         Digest {user.weeklyDigestOptIn ? "on" : "off"}
                       </span>
                    )}
-                </div>
-                <div className="truncate text-sm text-gray-400">{user.email}</div>
+                  </div>
+                  <div className="truncate text-sm text-gray-400">{user.email}</div>
                 
             <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-gray-500">
                   <span className="flex items-center gap-1">
@@ -478,7 +479,8 @@ export function AdminUsersPageClient() {
                   <span className="h-1 w-1 rounded-full bg-gray-700"></span>
                   <span>Joined {new Date(user.createdAt).toLocaleDateString()}</span>
                 </div>
-              </div>
+                </div>
+              </PrefetchLink>
             </div>
 
             <div className="mt-3 flex flex-wrap gap-2">
@@ -657,7 +659,7 @@ export function AdminUsersPageClient() {
                   {new Date(user.createdAt).toLocaleDateString()}
                 </td>
                 <td className="px-6 py-4 text-right text-sm">
-                  <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex items-center justify-end gap-2">
                     <button
                       onClick={() => handleToggleBan(user)}
                       className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-700 bg-gray-800 transition ${

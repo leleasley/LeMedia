@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
@@ -19,6 +18,8 @@ import { useTrackView } from "@/hooks/useTrackView";
 import { ShareButton } from "@/components/Media/ShareButton";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { logger } from "@/lib/logger";
+import CachedImage from "@/components/Common/CachedImage";
+import { tmdbImageUrl } from "@/lib/tmdb-images";
 import {
     Select,
     SelectContent,
@@ -122,6 +123,7 @@ export function TvDetailClientNew({
     tv,
     poster,
     backdrop,
+    imageProxyEnabled,
     trailerUrl,
     playUrl,
     seasons,
@@ -155,6 +157,7 @@ export function TvDetailClientNew({
     tv: TvDetail;
     poster: string | null;
     backdrop: string | null;
+    imageProxyEnabled: boolean;
     trailerUrl: string | null;
     playUrl?: string | null;
     seasons: Season[];
@@ -205,6 +208,11 @@ export function TvDetailClientNew({
     ].slice(0, 6), [creators, crew, crewRoles]);
 
     const totalSeasons = useMemo(() => seasons.filter(s => s.season_number !== 0).length, [seasons]);
+
+    const getTmdbImage = useCallback(
+        (path: string | null | undefined, size: string) => tmdbImageUrl(path, size, imageProxyEnabled),
+        [imageProxyEnabled]
+    );
     const [expandedSeasons, setExpandedSeasons] = useState<Set<number>>(new Set());
     const [seasonEpisodes, setSeasonEpisodes] = useState<Record<number, Episode[]>>({});
     const [loadingSeasons, setLoadingSeasons] = useState<Set<number>>(new Set());
@@ -865,7 +873,13 @@ export function TvDetailClientNew({
                                 <div key={season.season_number} className="rounded-lg overflow-hidden border border-white/10 bg-white/5">
                                     <div className="relative aspect-[2/3] bg-neutral-900">
                                         {season.poster_path ? (
-                                            <Image src={`https://image.tmdb.org/t/p/w300${season.poster_path}`} alt="" fill className="object-cover" />
+                                            <CachedImage
+                                                type="tmdb"
+                                                src={getTmdbImage(season.poster_path, "w300") ?? ""}
+                                                alt=""
+                                                fill
+                                                className="object-cover"
+                                            />
                                         ) : (
                                             <div className="absolute inset-0 flex items-center justify-center text-gray-500"><Tv className="h-6 w-6" /></div>
                                         )}
@@ -896,7 +910,8 @@ export function TvDetailClientNew({
             {/* Backdrop with Seerr-style gradient overlay */}
             {(backdrop || poster) && (
                 <div className="media-page-bg-image" style={{ height: 493 }}>
-                    <Image
+                    <CachedImage
+                        type="tmdb"
                         src={backdrop || poster || ""}
                         alt=""
                         fill
@@ -913,7 +928,8 @@ export function TvDetailClientNew({
                 {/* Poster */}
                 <div className="media-poster relative">
                     {poster ? (
-                        <Image
+                        <CachedImage
+                            type="tmdb"
                             src={poster}
                             alt={tv.name ?? "Poster"}
                             width={600}
@@ -1172,6 +1188,7 @@ export function TvDetailClientNew({
                                     getAiringBadge={getAiringBadge}
                                     formatDate={formatDate}
                                     formatRating={formatRating}
+                                    imageProxyEnabled={imageProxyEnabled}
                                 />
                             ))
                         )}
@@ -1237,7 +1254,7 @@ export function TvDetailClientNew({
                     <h2 className="text-xl sm:text-2xl font-bold text-white tracking-wide mb-4 sm:mb-6">Cast</h2>
                     <div className="grid grid-cols-4 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-1.5 sm:gap-3">
                         {cast.map((person) => {
-                            const img = person.profile_path ? `https://image.tmdb.org/t/p/w300${person.profile_path}` : null;
+                            const img = getTmdbImage(person.profile_path, "w300");
                             const name = person.name ?? "Unknown";
                             const character = person.roles ? person.roles[0]?.character : (person.character ?? "");
                             const episodeCount = person.roles ? person.total_episode_count : null;
@@ -1251,7 +1268,13 @@ export function TvDetailClientNew({
                                 >
                                     <div className="relative aspect-[2/3] overflow-hidden rounded-md sm:rounded-lg border border-white/10 bg-white/5 transition-transform duration-300 group-hover:scale-105 group-hover:border-white/20">
                                         {img ? (
-                                            <Image src={img} alt={name} fill className="object-cover transition-transform duration-300 group-hover:scale-110" />
+                                            <CachedImage
+                                                type="tmdb"
+                                                src={img}
+                                                alt={name}
+                                                fill
+                                                className="object-cover transition-transform duration-300 group-hover:scale-110"
+                                            />
                                         ) : (
                                             <div className="absolute inset-0 flex items-center justify-center text-gray-500 font-semibold text-xs sm:text-sm">{initials(name)}</div>
                                         )}

@@ -1,9 +1,10 @@
 "use client";
 
 import React, { memo } from "react";
-import Image from "next/image";
 import { Check, CheckCircle, Info, Star, Tv } from "lucide-react";
 import { Episode } from "./types";
+import CachedImage from "@/components/Common/CachedImage";
+import { tmdbImageUrl } from "@/lib/tmdb-images";
 
 interface TvEpisodeRowProps {
     episode: Episode;
@@ -13,6 +14,7 @@ interface TvEpisodeRowProps {
     getAiringBadge: (dateStr: string) => string | null;
     formatDate: (dateStr: string) => string;
     formatRating: (rating: number) => string;
+    imageProxyEnabled: boolean;
 }
 
 export const TvEpisodeRow = memo(({
@@ -22,9 +24,10 @@ export const TvEpisodeRow = memo(({
     onToggle,
     getAiringBadge,
     formatDate,
-    formatRating
+    formatRating,
+    imageProxyEnabled
 }: TvEpisodeRowProps) => {
-    const stillUrl = episode.still_path ? `https://image.tmdb.org/t/p/w300${episode.still_path}` : null;
+    const stillUrl = tmdbImageUrl(episode.still_path, "w300", imageProxyEnabled);
     const airBadge = getAiringBadge(episode.air_date);
     const isRequested = episode.requested ?? false;
     const isAvailable = episode.available ?? false;
@@ -90,7 +93,7 @@ export const TvEpisodeRow = memo(({
             </div>
             <div className="hidden sm:block w-28 sm:w-44 h-16 sm:h-24 relative rounded-lg overflow-hidden bg-neutral-800 flex-shrink-0">
                 {stillUrl ? (
-                    <Image src={stillUrl} alt={episode.name} fill className="object-cover" />
+                    <CachedImage type="tmdb" src={stillUrl} alt={episode.name} fill className="object-cover" />
                 ) : (
                     <div className="w-full h-full flex items-center justify-center">
                         <Tv className="h-6 w-6 text-gray-600" />

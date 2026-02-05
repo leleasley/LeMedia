@@ -17,8 +17,7 @@ import {
   CheckCircle2,
   XCircle,
   Download,
-  AlertCircle,
-  Sparkles
+  AlertCircle
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getAvatarSrc, getAvatarAlt } from "@/lib/avatar";
@@ -57,7 +56,7 @@ const statusConfig: Record<string, {
     bg: "bg-blue-500/10",
     text: "text-blue-400",
     border: "border-blue-500/30",
-    icon: Sparkles,
+    icon: RefreshCw,
     label: "Submitted"
   },
   pending: {
@@ -148,6 +147,7 @@ export function AllRequestsClient({
   markRequestAvailable: (formData: FormData) => Promise<void>;
 }) {
   const [optimisticRemovals, setOptimisticRemovals] = useState<Set<string | number>>(new Set());
+  const [optimisticStatusUpdates, setOptimisticStatusUpdates] = useState<Record<string | number, string>>({});
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
@@ -156,8 +156,12 @@ export function AllRequestsClient({
   const toast = useToast();
 
   const handleAction = async (action: string, requestId: string | number) => {
-    if (action === "approve" || action === "deny" || action === "delete") {
+    if (action === "approve" || action === "delete") {
       setOptimisticRemovals(prev => new Set(prev).add(requestId));
+    }
+    // For deny, update status optimistically instead of removing
+    if (action === "deny") {
+      setOptimisticStatusUpdates(prev => ({ ...prev, [requestId]: "denied" }));
     }
 
     const formData = new FormData();
@@ -194,6 +198,10 @@ export function AllRequestsClient({
   const filteredRequests = useMemo(() => {
     return initialRequests
       .filter(r => !optimisticRemovals.has(r.id))
+      .map(r => ({
+        ...r,
+        status: optimisticStatusUpdates[r.id] ?? r.status
+      }))
       .filter(r => {
         if (filterStatus === "all") return true;
         return r.status === filterStatus;
@@ -206,10 +214,15 @@ export function AllRequestsClient({
           r.username.toLowerCase().includes(query)
         );
       });
-  }, [initialRequests, optimisticRemovals, filterStatus, searchQuery]);
+  }, [initialRequests, optimisticRemovals, optimisticStatusUpdates, filterStatus, searchQuery]);
 
   const stats = useMemo(() => {
-    const visible = initialRequests.filter(r => !optimisticRemovals.has(r.id));
+    const visible = initialRequests
+      .filter(r => !optimisticRemovals.has(r.id))
+      .map(r => ({
+        ...r,
+        status: optimisticStatusUpdates[r.id] ?? r.status
+      }));
     return {
       total: visible.length,
       pending: visible.filter(r => r.status === "pending").length,
@@ -217,8 +230,10 @@ export function AllRequestsClient({
       downloading: visible.filter(r => r.status === "downloading").length,
       partiallyAvailable: visible.filter(r => r.status === "partially_available").length,
       available: visible.filter(r => r.status === "available").length,
+      denied: visible.filter(r => r.status === "denied").length,
+      failed: visible.filter(r => r.status === "failed").length,
     };
-  }, [initialRequests, optimisticRemovals]);
+  }, [initialRequests, optimisticRemovals, optimisticStatusUpdates]);
 
   return (
     <div className="space-y-6">
@@ -247,6 +262,14 @@ export function AllRequestsClient({
         <div className="rounded-xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 p-4 shadow-lg">
           <div className="text-xs font-medium text-emerald-400 uppercase tracking-wider">Available</div>
           <div className="text-2xl font-bold text-white mt-1">{stats.available}</div>
+        </div>
+        <div className="rounded-xl border border-red-500/20 bg-gradient-to-br from-red-500/10 to-red-500/5 p-4 shadow-lg">
+          <div className="text-xs font-medium text-red-400 uppercase tracking-wider">Denied</div>
+          <div className="text-2xl font-bold text-white mt-1">{stats.denied}</div>
+        </div>
+        <div className="rounded-xl border border-red-500/20 bg-gradient-to-br from-red-500/10 to-red-500/5 p-4 shadow-lg">
+          <div className="text-xs font-medium text-red-400 uppercase tracking-wider">Failed</div>
+          <div className="text-2xl font-bold text-white mt-1">{stats.failed}</div>
         </div>
       </div>
 
