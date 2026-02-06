@@ -178,8 +178,8 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
                         }}
                     />
                     {recentOpen && recentSearches.length > 0 ? (
-                        <div className="absolute left-0 right-0 mt-2 rounded-2xl border border-white/10 shadow-2xl z-50 liquid-glass-sheet overflow-hidden backdrop-blur-xl">
-                            <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/10">
+                        <div className="absolute left-0 right-0 mt-2 rounded-2xl border border-white/10 shadow-md z-50 bg-slate-900 overflow-hidden backdrop-blur-xl">
+                            <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/10 bg-slate-800/50">
                                 <div className="flex items-center gap-2">
                                     <Clock className="h-3.5 w-3.5 text-white/40" />
                                     <span className="text-xs uppercase tracking-wider text-white/50 font-semibold">Recent searches</span>
@@ -235,9 +235,9 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
                 </button>
                 {menuOpen ? (
                     <div
-                        className="absolute right-0 mt-2 w-52 sm:w-56 rounded-2xl border border-white/10 shadow-2xl z-50 liquid-glass-sheet animate-ios-bounce-in overflow-hidden"
+                        className="absolute right-0 mt-2 w-52 sm:w-56 rounded-2xl border border-white/10 shadow-md z-50 bg-slate-900 animate-ios-bounce-in overflow-hidden"
                     >
-                        <div className="px-4 py-3 border-b border-white/10">
+                        <div className="px-4 py-3 border-b border-white/10 bg-slate-800/50">
                             <div className="text-sm font-semibold text-white truncate">{profile?.username ?? "User"}</div>
                             <div className="text-xs text-white/60 truncate mt-0.5">{profile?.email ?? "No email"}</div>
                         </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useMemo, useState, cloneElement, useCallback, useRef } from "react";
-import { AlertTriangle, CalendarDays, Clock, Ellipsis, Film, Activity, Settings, Sparkles, Tv, Users, X, Star } from "lucide-react";
+import { AlertTriangle, CalendarDays, Clock, Ellipsis, Film, Activity, Settings, Sparkles, Tv, Users, X, Star, LayoutGrid } from "lucide-react";
 import { PrefetchLink } from "@/components/Layout/PrefetchLink";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -103,10 +103,11 @@ export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, 
     const mainLinks = useMemo<NavLink[]>(() => {
         const current = pathname ?? "/";
         return [
-            { href: "/", label: "Home", icon: Sparkles, isActive: current === "/" },
+            { href: "/", label: "Home", icon: LayoutGrid, isActive: current === "/" },
             { href: "/movies", label: "Movies", icon: Film, isActive: current === "/movies" || current.startsWith("/movie/") },
             { href: "/tv", label: "Series", icon: Tv, isActive: current === "/tv" || current.startsWith("/tv/") },
             { href: "/my-activity", label: "Activity", icon: Activity, isActive: current.startsWith("/my-activity") },
+            { href: "/recommendations", label: "Recs", icon: Sparkles, isActive: current === "/recommendations" },
             { href: "/reviews", label: "Reviews", icon: Star, isActive: current.startsWith("/reviews") },
         ];
     }, [pathname]);

@@ -3998,6 +3998,30 @@ export async function getReviewStatsForMedia(mediaType: "movie" | "tv", tmdbId: 
   };
 }
 
+export async function listUserReviewsForUser(input: {
+  userId: number;
+  minRating?: number;
+  limit?: number;
+}) {
+  const p = getPool();
+  const minRating = Math.min(Math.max(input.minRating ?? 4, 1), 5);
+  const limit = Math.min(Math.max(input.limit ?? 20, 1), 200);
+  const res = await p.query(
+    `SELECT media_type, tmdb_id, rating, created_at
+     FROM user_review
+     WHERE user_id = $1 AND rating >= $2
+     ORDER BY created_at DESC
+     LIMIT $3`,
+    [input.userId, minRating, limit]
+  );
+  return res.rows.map(r => ({
+    mediaType: r.media_type as "movie" | "tv",
+    tmdbId: r.tmdb_id as number,
+    rating: r.rating as number,
+    createdAt: r.created_at as string
+  }));
+}
+
 export async function getReviewsForMedia(mediaType: "movie" | "tv", tmdbId: number, limit = 50) {
   const p = getPool();
   const res = await p.query(

@@ -6,7 +6,7 @@ import { PrefetchLink } from "@/components/Layout/PrefetchLink";
 import Image from "next/image";
 import { usePathname, useSearchParams } from "next/navigation";
 import { ModeToggle } from "@/components/ui/mode-toggle";
-import { AlertTriangle, Settings, LayoutGrid, Film, Tv, Inbox, Users, CalendarDays, Activity, Star } from "lucide-react";
+import { AlertTriangle, Settings, LayoutGrid, Film, Tv, Inbox, Users, CalendarDays, Activity, Star, Sparkles } from "lucide-react";
 import { MobileNav } from "@/components/Layout/MobileNav";
 import { SearchHeader } from "@/components/Layout/SearchHeader";
 import { cn } from "@/lib/utils";
@@ -370,6 +370,10 @@ export default function AppLayoutClient({
                                 <PrefetchLink href="/my-activity" className={linkClass(pathname === "/my-activity")}>
                                     <Activity className="h-5 w-5" />
                                     <span>My Activity</span>
+                                </PrefetchLink>
+                                <PrefetchLink href="/recommendations" className={linkClass(pathname === "/recommendations")}>
+                                    <Sparkles className="h-5 w-5" />
+                                    <span>Recommendations</span>
                                 </PrefetchLink>
                                 <PrefetchLink href="/reviews" className={linkClass(pathname === "/reviews")}>
                                     <Star className="h-5 w-5" />

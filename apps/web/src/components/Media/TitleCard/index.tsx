@@ -74,6 +74,22 @@ export function TitleCard({
   const [requestModalOpen, setRequestModalOpen] = useState(false);
   const toast = useToast();
 
+  // Fetch media list status (favorites/watchlist) on mount
+  useEffect(() => {
+    let active = true;
+    fetch(`/api/v1/media-list?tmdbId=${id}&mediaType=${mediaType}`, { credentials: "include" })
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => {
+        if (!active || !data) return;
+        setFavorite(Boolean(data.favorite));
+        setWatchlist(Boolean(data.watchlist));
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [id, mediaType]);
+
   // Fetch quality profiles when modal opens
   const shouldFetchProfiles = requestModalOpen && mediaType;
   const { data: profileData, isLoading: profilesLoading } = useSWR<{
