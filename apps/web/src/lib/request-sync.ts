@@ -2,12 +2,13 @@ import {
   RequestForSync,
   listRequestsForSync,
   markRequestStatus,
-  setRequestItemsStatus
+  setRequestItemsStatus,
+  addUserMediaListItem
 } from "@/db";
 import { RequestNotificationEvent, notifyRequestEvent } from "@/notifications/request-events";
 import { notifyRequestAvailable } from "./notification-helper";
 import { getRadarrMovie, radarrQueue } from "./radarr";
-import { getEpisodesForSeries, getSeries, sonarrQueue } from "./sonarr";
+import { getSeries, sonarrQueue } from "./sonarr";
 import { isServiceNotFoundError } from "./fetch-utils";
 import { isSeriesPartiallyAvailable, seriesHasFiles, STATUS_STRINGS } from "./media-status";
 
@@ -162,11 +163,274 @@ async function syncEpisodeRequest(request: RequestForSync, queueMap: Map<number,
 
 import { listUsersWithWatchlistSync, createRequestWithItemsTransaction, findActiveRequestByTmdb, getUserTraktToken, upsertUserTraktToken, getTraktConfig } from "@/db";
 import { getJellyfinWatchlist } from "@/lib/jellyfin";
-import { getMovie as getTmdbMovie, getTv as getTmdbTv } from "@/lib/tmdb";
+import { getMovie as getTmdbMovie, getTv as getTmdbTv, getTvExternalIds } from "@/lib/tmdb";
 import { getMovieByTmdbId } from "@/lib/radarr";
-import { getSeriesByTmdbId, getSeriesByTvdbId } from "@/lib/sonarr";
+import { evaluateApprovalRules } from "@/lib/approval-rules";
+import {
+  addSeriesFromLookup,
+  episodeSearch,
+  getEpisodesForSeries,
+  getSeriesByTmdbId,
+  getSeriesByTvdbId,
+  listSeries,
+  lookupSeriesByTvdb,
+  seriesSearch,
+  setEpisodeMonitored
+} from "@/lib/sonarr";
 import { logger } from "@/lib/logger";
 import { fetchTraktWatchlist, refreshTraktToken } from "@/lib/trakt";
+import { addMovie } from "@/lib/radarr";
+
+export type AutoRequestItem = {
+  tmdbId: number;
+  mediaType: "movie" | "tv";
+  titleHint?: string;
+  tvdbId?: number | null;
+};
+
+type UserPermissions = {
+  permManageRequests?: boolean;
+  permAutoapprove?: boolean;
+  permAutoapproveMovies?: boolean;
+  permAutoapproveTv?: boolean;
+};
+
+export type AutoRequestUser = {
+  id: number;
+  username: string;
+  syncMovies: boolean;
+  syncTv: boolean;
+  isAdmin: boolean;
+  permissions?: UserPermissions;
+};
+
+function canAutoApproveFromPermissions(permissions: UserPermissions | undefined, mediaType: "movie" | "tv") {
+  if (!permissions) return false;
+  if (permissions.permManageRequests) return true;
+  if (permissions.permAutoapprove) return true;
+  if (mediaType === "movie" && permissions.permAutoapproveMovies) return true;
+  if (mediaType === "tv" && permissions.permAutoapproveTv) return true;
+  return false;
+}
+
+export async function autoRequestItemsForUser(
+  user: AutoRequestUser,
+  items: AutoRequestItem[]
+): Promise<{ createdCount: number; errors: number; skippedExisting: number }> {
+  let createdCount = 0;
+  let errors = 0;
+  let skippedExisting = 0;
+
+  for (const entry of items) {
+    try {
+      const isMovie = entry.mediaType === "movie";
+      const isSeries = entry.mediaType === "tv";
+      if (isMovie && !user.syncMovies) continue;
+      if (isSeries && !user.syncTv) continue;
+
+      const tmdbId = entry.tmdbId;
+
+      // Keep local watchlist in sync so it appears in /watchlist
+      await addUserMediaListItem({
+        userId: user.id,
+        listType: "watchlist",
+        mediaType: isMovie ? "movie" : "tv",
+        tmdbId
+      });
+
+      const existing = await findActiveRequestByTmdb({
+        requestType: isMovie ? "movie" : "episode",
+        tmdbId
+      });
+      if (existing) {
+        skippedExisting++;
+        continue;
+      }
+
+      let existsInService = false;
+      if (isMovie) {
+        const m = await getMovieByTmdbId(tmdbId);
+        if (m) existsInService = true;
+      } else {
+        const s = await getSeriesByTmdbId(tmdbId);
+        if (s) {
+          existsInService = true;
+        } else if (entry.tvdbId) {
+          const tvdbId = entry.tvdbId;
+          if (!isNaN(tvdbId)) {
+            const s2 = await getSeriesByTvdbId(tvdbId);
+            if (s2) existsInService = true;
+          }
+        }
+      }
+
+      if (existsInService) continue;
+
+      let title = entry.titleHint || (isMovie ? "Unknown Movie" : "Unknown Series");
+      let posterPath = null;
+      let backdropPath = null;
+      let releaseYear = null;
+      let voteAverage: number | undefined;
+      let popularity: number | undefined;
+      let genres: number[] | undefined;
+
+      try {
+        if (isMovie) {
+          const tmdbData = await getTmdbMovie(tmdbId);
+          if (tmdbData) {
+            title = tmdbData.title;
+            posterPath = tmdbData.poster_path;
+            backdropPath = tmdbData.backdrop_path;
+            releaseYear = tmdbData.release_date ? new Date(tmdbData.release_date).getFullYear() : null;
+            voteAverage = typeof tmdbData.vote_average === "number" ? tmdbData.vote_average : undefined;
+            popularity = typeof tmdbData.popularity === "number" ? tmdbData.popularity : undefined;
+            genres = Array.isArray(tmdbData.genres) ? tmdbData.genres.map((g: any) => Number(g.id)).filter((n: number) => Number.isFinite(n)) : undefined;
+          }
+        } else {
+          const tmdbData = await getTmdbTv(tmdbId);
+          if (tmdbData) {
+            title = tmdbData.name;
+            posterPath = tmdbData.poster_path;
+            backdropPath = tmdbData.backdrop_path;
+            releaseYear = tmdbData.first_air_date ? new Date(tmdbData.first_air_date).getFullYear() : null;
+            voteAverage = typeof tmdbData.vote_average === "number" ? tmdbData.vote_average : undefined;
+            popularity = typeof tmdbData.popularity === "number" ? tmdbData.popularity : undefined;
+            genres = Array.isArray(tmdbData.genres) ? tmdbData.genres.map((g: any) => Number(g.id)).filter((n: number) => Number.isFinite(n)) : undefined;
+          }
+        }
+      } catch {
+        // ignore metadata fetch errors
+      }
+
+      let autoApprove = user.isAdmin || canAutoApproveFromPermissions(user.permissions, entry.mediaType);
+      if (!autoApprove && !user.isAdmin) {
+        const { shouldApprove } = await evaluateApprovalRules({
+          requestType: isMovie ? "movie" : "episode",
+          tmdbId,
+          userId: user.id,
+          username: user.username,
+          isAdmin: user.isAdmin,
+          voteAverage,
+          popularity,
+          genres,
+          releaseYear: releaseYear ?? undefined
+        });
+        autoApprove = shouldApprove;
+      }
+
+      const requestStatus = autoApprove ? "queued" : "pending";
+      const finalStatus = autoApprove ? "submitted" : undefined;
+
+      if (isMovie) {
+        let providerId: number | null = null;
+        if (autoApprove) {
+          try {
+            const radarrMovie = await addMovie(tmdbId, undefined, null);
+            providerId = radarrMovie?.id ?? null;
+          } catch (e) {
+            logger.error("[request-sync] Failed to add movie to Radarr", e);
+          }
+        }
+
+        await createRequestWithItemsTransaction({
+          requestType: "movie",
+          tmdbId,
+          title,
+          userId: user.id,
+          requestStatus,
+          finalStatus,
+          posterPath,
+          backdropPath,
+          releaseYear,
+          items: [
+            {
+              provider: "radarr",
+              providerId,
+              status: finalStatus ?? requestStatus
+            }
+          ]
+        });
+      } else {
+        let tvdbId = entry.tvdbId ?? null;
+        if (!tvdbId) {
+          try {
+            const ext = await getTvExternalIds(tmdbId);
+            tvdbId = ext?.tvdb_id ?? null;
+          } catch {
+            tvdbId = null;
+          }
+        }
+        if (!tvdbId) {
+          throw new Error("TMDB show has no tvdb_id; Sonarr needs TVDB");
+        }
+
+        let series = (await listSeries()).find((s: any) => Number(s.tvdbId) === Number(tvdbId));
+        let seriesAdded = false;
+        if (!series) {
+          const lookup = await lookupSeriesByTvdb(tvdbId);
+          if (!Array.isArray(lookup) || lookup.length === 0) {
+            throw new Error(`Sonarr lookup returned nothing for tvdb:${tvdbId}`);
+          }
+          series = await addSeriesFromLookup(lookup[0], autoApprove, undefined);
+          seriesAdded = true;
+          if (autoApprove) {
+            await seriesSearch(series.id);
+          }
+        }
+
+        const attempts = seriesAdded ? 4 : 1;
+        let episodes = await getEpisodesForSeries(series.id);
+        if ((!episodes || episodes.length === 0) && attempts > 1) {
+          for (let i = 0; i < attempts; i++) {
+            episodes = await getEpisodesForSeries(series.id);
+            if (episodes?.length) break;
+          }
+        }
+
+        if (autoApprove && Array.isArray(episodes) && episodes.length > 0) {
+          const episodeIds = episodes.map((ep: any) => ep.id);
+          await setEpisodeMonitored(episodeIds, true);
+          await episodeSearch(episodeIds);
+        }
+
+        const items = Array.isArray(episodes)
+          ? episodes.map((ep: any) => ({
+              provider: "sonarr" as const,
+              providerId: series.id ?? null,
+              season: ep.seasonNumber,
+              episode: ep.episodeNumber,
+              status: finalStatus ?? requestStatus
+            }))
+          : [
+              {
+                provider: "sonarr" as const,
+                providerId: series.id ?? null,
+                status: finalStatus ?? requestStatus
+              }
+            ];
+
+        await createRequestWithItemsTransaction({
+          requestType: "episode",
+          tmdbId,
+          title,
+          userId: user.id,
+          requestStatus,
+          finalStatus,
+          posterPath,
+          backdropPath,
+          releaseYear,
+          items
+        });
+      }
+      createdCount++;
+    } catch (err) {
+      logger.error(`[request-sync] Failed to auto-request item for user ${user.username}`, err);
+      errors++;
+    }
+  }
+
+  return { createdCount, errors, skippedExisting };
+}
 
 export async function syncWatchlists(options?: { userId?: number }) {
   const users = await listUsersWithWatchlistSync(options?.userId);
@@ -241,113 +505,9 @@ export async function syncWatchlists(options?: { userId?: number }) {
         }
       }
 
-      for (const entry of watchlistItems.values()) {
-        const isMovie = entry.mediaType === "movie";
-        const isSeries = entry.mediaType === "tv";
-        const tmdbId = entry.tmdbId;
-
-        // Check if already requested
-        const existing = await findActiveRequestByTmdb({
-          requestType: isMovie ? "movie" : "episode",
-          tmdbId
-        });
-        if (existing) continue;
-
-        // Check availability in services
-        let existsInService = false;
-        if (isMovie) {
-          const m = await getMovieByTmdbId(tmdbId);
-          if (m) existsInService = true;
-        } else {
-          // For TV, check TMDB first, then TVDB
-          const s = await getSeriesByTmdbId(tmdbId);
-          if (s) {
-            existsInService = true;
-          } else if (entry.tvdbId) {
-            const tvdbId = entry.tvdbId;
-            if (!isNaN(tvdbId)) {
-              const s2 = await getSeriesByTvdbId(tvdbId);
-              if (s2) existsInService = true;
-            }
-          }
-        }
-
-        if (existsInService) continue;
-
-        // Fetch Metadata
-        let title = entry.titleHint || (isMovie ? "Unknown Movie" : "Unknown Series");
-        let posterPath = null;
-        let backdropPath = null;
-        let releaseYear = null;
-
-        try {
-            if (isMovie) {
-                const tmdbData = await getTmdbMovie(tmdbId);
-                if (tmdbData) {
-                    title = tmdbData.title;
-                    posterPath = tmdbData.poster_path;
-                    backdropPath = tmdbData.backdrop_path;
-                    releaseYear = tmdbData.release_date ? new Date(tmdbData.release_date).getFullYear() : null;
-                }
-            } else {
-                const tmdbData = await getTmdbTv(tmdbId);
-                if (tmdbData) {
-                    title = tmdbData.name;
-                    posterPath = tmdbData.poster_path;
-                    backdropPath = tmdbData.backdrop_path;
-                    releaseYear = tmdbData.first_air_date ? new Date(tmdbData.first_air_date).getFullYear() : null;
-                }
-            }
-        } catch (e) {
-            // Ignore metadata fetch errors, use defaults
-        }
-
-        // Create Request
-        // If admin, status is 'submitted' (implying approved), otherwise 'pending' (requiring approval)
-        // NOTE: In a full implementation, 'submitted' requests should be automatically sent to Radarr/Sonarr.
-        // For now, we set to 'pending' for non-admins. Admin requests are 'submitted'.
-        // If the system has an auto-approver for 'submitted' requests, it will handle it.
-        // Otherwise they sit as submitted.
-        
-        // Per user request: "if they're not an admin it will have to be approved... and if an admin it does obvs"
-        // This implies auto-approve for admins.
-        
-        const requestStatus = user.isAdmin ? "queued" : "pending";
-        const finalStatus = user.isAdmin ? "submitted" : undefined;
-
-        await createRequestWithItemsTransaction({
-          requestType: isMovie ? "movie" : "episode",
-          // Wait, createRequest schema says: request_type CHECK (request_type IN ('movie','episode'))
-          // But usually Series requests are type 'tv'?
-          // Let's check db.ts createRequest input type.
-          // It says `requestType: "movie" | "episode"`. 
-          // But looking at getRequestCounts in db.ts: `COUNT(CASE WHEN request_type = 'episode' THEN 1 END)`
-          // It seems 'episode' is used for TV. 
-          // But media_request table constraint says `request_type IN ('movie','episode')`.
-          // Okay, so we use 'episode' for Series requests? Or is there a separate 'tv' type?
-          // The table definition in `db.ts` says `request_type TEXT NOT NULL CHECK (request_type IN ('movie','episode'))`.
-          // So for a Series request, do we create a request for 'episode'?
-          // Usually a Series request implies requesting the show.
-          // Let's check `createRequest` usage in `app/api/v1/request/route.ts` if possible.
-          
-          tmdbId,
-          title,
-          userId: user.id,
-          requestStatus,
-          finalStatus,
-          posterPath,
-          backdropPath,
-          releaseYear,
-          items: [
-            {
-              provider: isMovie ? "radarr" : "sonarr",
-              providerId: null,
-              status: finalStatus ?? requestStatus
-            }
-          ]
-        });
-        createdCount++;
-      }
+      const { createdCount: userCreated, errors: userErrors } = await autoRequestItemsForUser(user, Array.from(watchlistItems.values()));
+      createdCount += userCreated;
+      errors += userErrors;
     } catch (err) {
       logger.error(`[request-sync] Failed to sync watchlist for user ${user.username}`, err);
       errors++;

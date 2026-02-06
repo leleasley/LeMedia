@@ -131,6 +131,10 @@ export async function findTvByTvdbId(tvdbId: number) {
   return tmdbGet(`/find/${tvdbId}`, { external_source: "tvdb_id" }, TWELVE_HOURS_MS);
 }
 
+export async function findByImdbId(imdbId: string) {
+  return tmdbGet(`/find/${imdbId}`, { external_source: "imdb_id" }, TWELVE_HOURS_MS);
+}
+
 export async function getPerson(id: number) {
   return tmdbGet(`/person/${id}`, { append_to_response: "images" }, SIX_HOURS_MS);
 }

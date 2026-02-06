@@ -26,9 +26,13 @@ export async function POST(req: NextRequest) {
     const result = await syncWatchlists({ userId: dbUser.id });
 
     return NextResponse.json({ 
-        success: true, 
-        message: "Sync started", 
-        stats: result 
+        success: true,
+        message: "Sync started",
+        stats: {
+          added: result.createdCount,
+          skipped: 0,
+          failed: result.errors
+        }
     });
 
   } catch (error: any) {

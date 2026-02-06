@@ -830,6 +830,17 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
                     </div>
                 </form>
             </div>
+            <div className="glass-strong rounded-2xl border border-white/10 overflow-hidden p-5">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted">Integrations</p>
+                        <h2 className="text-lg font-semibold text-white">IMDb</h2>
+                        <p className="text-sm text-muted">
+                            We cannot build IMDB due to a proxy needed which there is no point.
+                        </p>
+                    </div>
+                </div>
+            </div>
             {/* System Status Card */}
             <div className="glass-strong rounded-2xl border border-white/10 overflow-hidden">
                 <button

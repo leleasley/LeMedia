@@ -1106,6 +1106,7 @@ export async function getUserById(id: number) {
       u.email,
       u.discord_user_id,
       u.letterboxd_username,
+      
       u.groups,
       u.created_at,
       u.last_seen_at,
@@ -1406,6 +1407,7 @@ export async function listUsers(): Promise<DbUser[]> {
     u.jellyfin_user_id,
     u.jellyfin_username,
     u.discord_user_id,
+    
     u.avatar_url,
     u.avatar_version,
     u.email,
@@ -3521,7 +3523,7 @@ export type TraktConfig = {
   clientId: string;
   clientSecret: string;
   redirectUri: string;
-  appAuthorizedAt: string | null;
+  appAuthorizedAt?: string | null;
 };
 
 const TraktConfigSchema = z.object({
@@ -3577,8 +3579,7 @@ export async function getTraktConfig(): Promise<TraktConfig> {
     clientId: parsed.clientId ?? withEnv.clientId ?? TraktConfigDefaults.clientId,
     clientSecret: parsed.clientSecret ?? withEnv.clientSecret ?? TraktConfigDefaults.clientSecret,
     redirectUri: parsed.redirectUri ?? withEnv.redirectUri ?? TraktConfigDefaults.redirectUri,
-    enabled: parsed.enabled ?? withEnv.enabled ?? TraktConfigDefaults.enabled,
-    appAuthorizedAt: parsed.appAuthorizedAt ?? TraktConfigDefaults.appAuthorizedAt
+    enabled: parsed.enabled ?? withEnv.enabled ?? TraktConfigDefaults.enabled
   };
 }
 

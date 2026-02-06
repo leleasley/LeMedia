@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS app_user (
   username TEXT UNIQUE NOT NULL,
   email TEXT UNIQUE,
   password_hash TEXT,
+  permissions JSONB NOT NULL DEFAULT '{}'::jsonb,
   oidc_sub TEXT,
   jellyfin_user_id TEXT,
   jellyfin_username TEXT,
@@ -23,6 +24,7 @@ CREATE TABLE IF NOT EXISTS app_user (
 );
 ALTER TABLE app_user ADD COLUMN IF NOT EXISTS mfa_secret TEXT;
 ALTER TABLE app_user ADD COLUMN IF NOT EXISTS oidc_sub TEXT;
+ALTER TABLE app_user ADD COLUMN IF NOT EXISTS permissions JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE app_user ADD COLUMN IF NOT EXISTS letterboxd_username TEXT;
 ALTER TABLE app_user ADD COLUMN IF NOT EXISTS request_limit_movie INTEGER;
 ALTER TABLE app_user ADD COLUMN IF NOT EXISTS request_limit_movie_days INTEGER;

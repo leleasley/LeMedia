@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Image from "next/image";
-import { useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { csrfFetch } from "@/lib/csrf-client";
@@ -19,6 +18,7 @@ type AdminUser = {
   jellyfinUsername: string | null;
   discordUserId?: string | null;
   letterboxdUsername?: string | null;
+  imdbUserId?: string | null;
   traktUsername?: string | null;
 };
 
@@ -30,6 +30,7 @@ type ProfileResponse = {
     jellyfinUsername?: string | null;
     discordUserId?: string | null;
     letterboxdUsername?: string | null;
+    imdbUserId?: string | null;
     traktUsername?: string | null;
     traktLinked?: boolean;
     traktTokenExpiresAt?: string | null;
@@ -44,8 +45,6 @@ export function LinkedAccountsPanel({
   userId?: string | number;
 }) {
   const toast = useToast();
-  const router = useRouter();
-  const searchParams = useSearchParams();
   const [unlinking, setUnlinking] = useState(false);
   const [showLinkForm, setShowLinkForm] = useState(false);
   const [linking, setLinking] = useState(false);
@@ -88,25 +87,6 @@ export function LinkedAccountsPanel({
   };
 
   const { data, error, mutate, isLoading } = useSWR<AdminUser | ProfileResponse>(swrKey, fetcher);
-
-  useEffect(() => {
-    if (mode !== "self") return;
-    const trakt = searchParams.get("trakt");
-    const errorMsg = searchParams.get("error");
-    if (trakt === "linked") {
-      toast.success("Trakt connected successfully");
-      mutate();
-    } else if (errorMsg) {
-      toast.error(errorMsg);
-    }
-    if (trakt || errorMsg) {
-      const url = new URL(window.location.href);
-      url.searchParams.delete("trakt");
-      url.searchParams.delete("error");
-      router.replace(url.pathname + url.search);
-    }
-  }, [mode, searchParams, toast, router, mutate]);
-
   const normalized = useMemo(() => {
     if (!data) return null;
     if (mode === "admin") {
@@ -595,84 +575,54 @@ export function LinkedAccountsPanel({
               </div>
             </div>
           ) : (
-            <>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="h-14 w-14 rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shadow-lg">
-                    <Image
-                      src="/images/letterboxd.svg"
-                      alt="Letterboxd"
-                      width={32}
-                      height={32}
-                      className="h-8 w-8"
-                    />
-                  </div>
-                  <div className="flex-1">
-                    <h4 className="text-lg font-bold text-white">Letterboxd</h4>
-                    <p className="text-sm text-gray-300">
-                      {hasLetterboxd ? `@${normalized.letterboxdUsername}` : "Not connected"}
-                    </p>
-                  </div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="h-14 w-14 rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shadow-lg">
+                  <Image
+                    src="/images/letterboxd.svg"
+                    alt="Letterboxd"
+                    width={32}
+                    height={32}
+                    className="h-8 w-8"
+                  />
                 </div>
-                <div className="flex items-center gap-2">
-                  {hasLetterboxd && (
-                    <div className="px-3 py-1 rounded-full bg-green-500/20 text-green-300 text-xs font-semibold border border-green-500/30">
-                      Connected
-                    </div>
-                  )}
-                  {(mode === "self" || mode === "admin") && (
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => {
-                          setEditingLetterboxd(true);
-                          setLetterboxdInput(normalized.letterboxdUsername ?? "");
-                        }}
-                        className="px-4 py-2 rounded-lg bg-emerald-600/80 text-white hover:bg-emerald-600 transition text-sm font-medium"
-                      >
-                        {hasLetterboxd ? "Edit" : "Add"}
-                      </button>
-                      {hasLetterboxd && (
-                        <button
-                          onClick={handleDeleteLetterboxd}
-                          disabled={letterboxdDeleting}
-                          className="px-4 py-2 rounded-lg bg-red-600/80 text-white hover:bg-red-600 transition text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {letterboxdDeleting ? "Removing..." : "Unlink"}
-                        </button>
-                      )}
-                    </div>
-                  )}
+                <div className="flex-1">
+                  <h4 className="text-lg font-bold text-white">Letterboxd</h4>
+                  <p className="text-sm text-gray-300">
+                    {hasLetterboxd ? `@${normalized.letterboxdUsername}` : "Not connected"}
+                  </p>
                 </div>
               </div>
-              {mode === "self" && hasLetterboxd && (
-                <div className="mt-4 flex items-center justify-between rounded-xl border border-emerald-500/20 bg-emerald-950/20 px-4 py-3">
-                  <div>
-                    <div className="text-sm font-semibold text-white">Import Letterboxd reviews</div>
-                    <div className="text-xs text-emerald-200/70">Pull your latest Letterboxd ratings into LeMedia reviews.</div>
+              <div className="flex items-center gap-2">
+                {hasLetterboxd && (
+                  <div className="px-3 py-1 rounded-full bg-green-500/20 text-green-300 text-xs font-semibold border border-green-500/30">
+                    Connected
                   </div>
-                  <button
-                    onClick={async () => {
-                      setLetterboxdImporting(true);
-                      try {
-                        const res = await csrfFetch("/api/v1/profile/import-letterboxd", { method: "POST" });
-                        const body = await res.json().catch(() => ({}));
-                        if (!res.ok) throw new Error(body?.error || "Import failed");
-                        const count = body?.stats?.imported ?? 0;
-                        toast.success(`Imported ${count} Letterboxd review(s).`);
-                      } catch (err: any) {
-                        toast.error(err?.message ?? "Failed to import Letterboxd reviews");
-                      } finally {
-                        setLetterboxdImporting(false);
-                      }
-                    }}
-                    disabled={letterboxdImporting}
-                    className="px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {letterboxdImporting ? "Importing..." : "Import Now"}
-                  </button>
-                </div>
-              )}
-            </>
+                )}
+                {(mode === "self" || mode === "admin") && (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setEditingLetterboxd(true);
+                        setLetterboxdInput(normalized.letterboxdUsername ?? "");
+                      }}
+                      className="px-4 py-2 rounded-lg bg-emerald-600/80 text-white hover:bg-emerald-600 transition text-sm font-medium"
+                    >
+                      {hasLetterboxd ? "Edit" : "Add"}
+                    </button>
+                    {hasLetterboxd && (
+                      <button
+                        onClick={handleDeleteLetterboxd}
+                        disabled={letterboxdDeleting}
+                        className="px-4 py-2 rounded-lg bg-red-600/80 text-white hover:bg-red-600 transition text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {letterboxdDeleting ? "Removing..." : "Unlink"}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
           )}
         </div>
       </div>
