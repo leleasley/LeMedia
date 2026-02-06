@@ -852,6 +852,7 @@ export type DbUserWithHash = {
   jellyfin_auth_token: string | null;
   letterboxd_username: string | null;
   discord_user_id: string | null;
+  trakt_username: string | null;
   avatar_url: string | null;
   avatar_version: number | null;
   created_at: string;
@@ -1052,7 +1053,7 @@ export async function getUserWithHash(username: string): Promise<DbUserWithHash 
   const p = getPool();
   const res = await p.query(
     `
-  SELECT id, username, groups, password_hash, email, oidc_sub, jellyfin_user_id, jellyfin_username, jellyfin_device_id, jellyfin_auth_token, letterboxd_username, discord_user_id, avatar_url, avatar_version, created_at, last_seen_at, mfa_secret, discover_region, original_language, watchlist_sync_movies, watchlist_sync_tv, request_limit_movie, request_limit_movie_days, request_limit_series, request_limit_series_days, banned, weekly_digest_opt_in
+  SELECT id, username, groups, password_hash, email, oidc_sub, jellyfin_user_id, jellyfin_username, jellyfin_device_id, jellyfin_auth_token, letterboxd_username, discord_user_id, trakt_username, avatar_url, avatar_version, created_at, last_seen_at, mfa_secret, discover_region, original_language, watchlist_sync_movies, watchlist_sync_tv, request_limit_movie, request_limit_movie_days, request_limit_series, request_limit_series_days, banned, weekly_digest_opt_in
   FROM app_user
   WHERE username = $1
   LIMIT 1
@@ -1074,6 +1075,7 @@ export async function getUserWithHash(username: string): Promise<DbUserWithHash 
     jellyfin_auth_token: row.jellyfin_auth_token ?? null,
     letterboxd_username: row.letterboxd_username ?? null,
     discord_user_id: row.discord_user_id ?? null,
+    trakt_username: row.trakt_username ?? null,
     avatar_url: row.avatar_url ?? null,
     avatar_version: row.avatar_version ?? null,
     created_at: row.created_at,
@@ -1217,6 +1219,91 @@ export async function findUserIdByApiToken(token: string): Promise<number | null
   return Number(res.rows[0].user_id);
 }
 
+export async function getUserTraktTokenStatus(userId: number): Promise<{ linked: boolean; expiresAt: string | null }> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `SELECT expires_at FROM user_trakt_token WHERE user_id = $1 LIMIT 1`,
+    [userId]
+  );
+  if (!res.rows[0]) return { linked: false, expiresAt: null };
+  return { linked: true, expiresAt: res.rows[0].expires_at as string | null };
+}
+
+export async function getUserTraktToken(userId: number): Promise<{
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: string | null;
+  scope: string | null;
+} | null> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `SELECT access_token_encrypted, refresh_token_encrypted, expires_at, scope
+     FROM user_trakt_token
+     WHERE user_id = $1
+     LIMIT 1`,
+    [userId]
+  );
+  if (!res.rows[0]) return null;
+  const row = res.rows[0];
+  let accessToken = row.access_token_encrypted as string;
+  let refreshToken = row.refresh_token_encrypted as string;
+  try {
+    accessToken = decryptSecret(accessToken);
+  } catch {
+    // ignore
+  }
+  try {
+    refreshToken = decryptSecret(refreshToken);
+  } catch {
+    // ignore
+  }
+  return {
+    accessToken,
+    refreshToken,
+    expiresAt: row.expires_at as string | null,
+    scope: row.scope as string | null
+  };
+}
+
+export async function upsertUserTraktToken(input: {
+  userId: number;
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: string | null;
+  scope?: string | null;
+}): Promise<void> {
+  await ensureUserSchema();
+  const p = getPool();
+  const accessEncrypted = encryptSecret(input.accessToken);
+  const refreshEncrypted = encryptSecret(input.refreshToken);
+  await p.query(
+    `INSERT INTO user_trakt_token (
+        user_id,
+        access_token_encrypted,
+        refresh_token_encrypted,
+        expires_at,
+        scope
+     )
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (user_id)
+     DO UPDATE SET
+        access_token_encrypted = EXCLUDED.access_token_encrypted,
+        refresh_token_encrypted = EXCLUDED.refresh_token_encrypted,
+        expires_at = EXCLUDED.expires_at,
+        scope = EXCLUDED.scope,
+        updated_at = NOW()`,
+    [input.userId, accessEncrypted, refreshEncrypted, input.expiresAt, input.scope ?? null]
+  );
+}
+
+export async function deleteUserTraktToken(userId: number): Promise<void> {
+  await ensureUserSchema();
+  const p = getPool();
+  await p.query(`DELETE FROM user_trakt_token WHERE user_id = $1`, [userId]);
+}
+
 export async function setUserPassword(username: string, groups: string[], passwordHash: string, email?: string | null): Promise<DbUserWithHash> {
   await ensureUserSchema();
   const p = getPool();
@@ -1226,7 +1313,7 @@ export async function setUserPassword(username: string, groups: string[], passwo
     VALUES ($1, $2, $3, $4, NOW())
     ON CONFLICT (username)
     DO UPDATE SET groups = EXCLUDED.groups, password_hash = EXCLUDED.password_hash, email = COALESCE(EXCLUDED.email, app_user.email), last_seen_at = NOW()
-    RETURNING id, username, groups, password_hash, email, oidc_sub, jellyfin_user_id, jellyfin_username, jellyfin_device_id, jellyfin_auth_token, letterboxd_username, discord_user_id, avatar_url, avatar_version, created_at, last_seen_at, mfa_secret, discover_region, original_language, watchlist_sync_movies, watchlist_sync_tv, request_limit_movie, request_limit_movie_days, request_limit_series, request_limit_series_days, banned, weekly_digest_opt_in
+    RETURNING id, username, groups, password_hash, email, oidc_sub, jellyfin_user_id, jellyfin_username, jellyfin_device_id, jellyfin_auth_token, letterboxd_username, discord_user_id, trakt_username, avatar_url, avatar_version, created_at, last_seen_at, mfa_secret, discover_region, original_language, watchlist_sync_movies, watchlist_sync_tv, request_limit_movie, request_limit_movie_days, request_limit_series, request_limit_series_days, banned, weekly_digest_opt_in
     `,
     [username, groups.join(","), passwordHash, email ?? null]
   );
@@ -1244,6 +1331,7 @@ export async function setUserPassword(username: string, groups: string[], passwo
     jellyfin_auth_token: row.jellyfin_auth_token ?? null,
     letterboxd_username: row.letterboxd_username ?? null,
     discord_user_id: row.discord_user_id ?? null,
+    trakt_username: row.trakt_username ?? null,
     avatar_url: row.avatar_url ?? null,
     avatar_version: row.avatar_version ?? null,
     created_at: row.created_at,
@@ -1371,7 +1459,7 @@ export async function listUsers(): Promise<DbUser[]> {
   }));
 }
 
-export async function updateUserProfile(id: number, input: { username?: string; email?: string | null; groups?: string[]; discordUserId?: string | null; letterboxdUsername?: string | null; discoverRegion?: string | null; originalLanguage?: string | null; watchlistSyncMovies?: boolean; watchlistSyncTv?: boolean }) {
+export async function updateUserProfile(id: number, input: { username?: string; email?: string | null; groups?: string[]; discordUserId?: string | null; letterboxdUsername?: string | null; traktUsername?: string | null; discoverRegion?: string | null; originalLanguage?: string | null; watchlistSyncMovies?: boolean; watchlistSyncTv?: boolean }) {
   await ensureUserSchema();
   const p = getPool();
   const clauses: string[] = [];
@@ -1397,6 +1485,10 @@ export async function updateUserProfile(id: number, input: { username?: string; 
   if (input.letterboxdUsername !== undefined) {
     clauses.push(`letterboxd_username = $${idx++}`);
     values.push(input.letterboxdUsername);
+  }
+  if (input.traktUsername !== undefined) {
+    clauses.push(`trakt_username = $${idx++}`);
+    values.push(input.traktUsername);
   }
   if (input.discoverRegion !== undefined) {
     clauses.push(`discover_region = $${idx++}`);
@@ -1454,7 +1546,7 @@ export async function getUserByJellyfinUserId(jellyfinUserId: string): Promise<D
   const p = getPool();
   const res = await p.query(
     `
-    SELECT id, username, groups, password_hash, email, oidc_sub, jellyfin_user_id, jellyfin_username, jellyfin_device_id, jellyfin_auth_token, letterboxd_username, discord_user_id, avatar_url, avatar_version, created_at, last_seen_at, mfa_secret, discover_region, original_language, watchlist_sync_movies, watchlist_sync_tv, request_limit_movie, request_limit_movie_days, request_limit_series, request_limit_series_days, banned, weekly_digest_opt_in
+    SELECT id, username, groups, password_hash, email, oidc_sub, jellyfin_user_id, jellyfin_username, jellyfin_device_id, jellyfin_auth_token, letterboxd_username, discord_user_id, trakt_username, avatar_url, avatar_version, created_at, last_seen_at, mfa_secret, discover_region, original_language, watchlist_sync_movies, watchlist_sync_tv, request_limit_movie, request_limit_movie_days, request_limit_series, request_limit_series_days, banned, weekly_digest_opt_in
     FROM app_user
     WHERE jellyfin_user_id = $1
     LIMIT 1
@@ -1476,6 +1568,7 @@ export async function getUserByJellyfinUserId(jellyfinUserId: string): Promise<D
     jellyfin_auth_token: row.jellyfin_auth_token ?? null,
     letterboxd_username: row.letterboxd_username ?? null,
     discord_user_id: row.discord_user_id ?? null,
+    trakt_username: row.trakt_username ?? null,
     avatar_url: row.avatar_url ?? null,
     avatar_version: row.avatar_version ?? null,
     created_at: row.created_at,
@@ -1499,7 +1592,7 @@ export async function getUserByEmailOrUsername(email: string | null, username: s
   const p = getPool();
   const res = await p.query(
     `
-    SELECT id, username, groups, password_hash, email, oidc_sub, jellyfin_user_id, jellyfin_username, jellyfin_device_id, jellyfin_auth_token, letterboxd_username, discord_user_id, avatar_url, avatar_version, created_at, last_seen_at, mfa_secret, discover_region, original_language, watchlist_sync_movies, watchlist_sync_tv, request_limit_movie, request_limit_movie_days, request_limit_series, request_limit_series_days, banned, weekly_digest_opt_in
+    SELECT id, username, groups, password_hash, email, oidc_sub, jellyfin_user_id, jellyfin_username, jellyfin_device_id, jellyfin_auth_token, letterboxd_username, discord_user_id, trakt_username, avatar_url, avatar_version, created_at, last_seen_at, mfa_secret, discover_region, original_language, watchlist_sync_movies, watchlist_sync_tv, request_limit_movie, request_limit_movie_days, request_limit_series, request_limit_series_days, banned, weekly_digest_opt_in
     FROM app_user
     WHERE (LOWER(email) = LOWER($1) AND $1 <> '') OR (LOWER(username) = LOWER($2) AND $2 <> '')
     LIMIT 1
@@ -1521,6 +1614,7 @@ export async function getUserByEmailOrUsername(email: string | null, username: s
     jellyfin_auth_token: row.jellyfin_auth_token ?? null,
     letterboxd_username: row.letterboxd_username ?? null,
     discord_user_id: row.discord_user_id ?? null,
+    trakt_username: row.trakt_username ?? null,
     avatar_url: row.avatar_url ?? null,
     avatar_version: row.avatar_version ?? null,
     created_at: row.created_at,
@@ -1606,7 +1700,7 @@ export async function createJellyfinUser(input: {
     `
     INSERT INTO app_user (username, groups, email, jellyfin_user_id, jellyfin_username, jellyfin_device_id, avatar_url, last_seen_at)
     VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-    RETURNING id, username, groups, password_hash, email, oidc_sub, jellyfin_user_id, jellyfin_username, jellyfin_device_id, jellyfin_auth_token, letterboxd_username, discord_user_id, avatar_url, avatar_version, created_at, last_seen_at, mfa_secret, discover_region, original_language, watchlist_sync_movies, watchlist_sync_tv, request_limit_movie, request_limit_movie_days, request_limit_series, request_limit_series_days, banned, weekly_digest_opt_in
+    RETURNING id, username, groups, password_hash, email, oidc_sub, jellyfin_user_id, jellyfin_username, jellyfin_device_id, jellyfin_auth_token, letterboxd_username, discord_user_id, trakt_username, avatar_url, avatar_version, created_at, last_seen_at, mfa_secret, discover_region, original_language, watchlist_sync_movies, watchlist_sync_tv, request_limit_movie, request_limit_movie_days, request_limit_series, request_limit_series_days, banned, weekly_digest_opt_in
     `,
     [
       input.username,
@@ -1632,6 +1726,7 @@ export async function createJellyfinUser(input: {
     jellyfin_auth_token: row.jellyfin_auth_token ?? null,
     letterboxd_username: row.letterboxd_username ?? null,
     discord_user_id: row.discord_user_id ?? null,
+    trakt_username: row.trakt_username ?? null,
     avatar_url: row.avatar_url ?? null,
     avatar_version: row.avatar_version ?? null,
     created_at: row.created_at,
@@ -1725,6 +1820,19 @@ async function ensureUserSchema() {
       );
     `);
     await p.query(`CREATE INDEX IF NOT EXISTS idx_user_api_token_hash ON user_api_token(token_hash);`);
+
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS user_trakt_token (
+        user_id BIGINT PRIMARY KEY REFERENCES app_user(id) ON DELETE CASCADE,
+        access_token_encrypted TEXT NOT NULL,
+        refresh_token_encrypted TEXT NOT NULL,
+        expires_at TIMESTAMPTZ,
+        scope TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_user_trakt_token_expires_at ON user_trakt_token(expires_at);`);
 
     await p.query(`
       CREATE TABLE IF NOT EXISTS webauthn_challenge (
@@ -1886,7 +1994,7 @@ export async function getUserByOidcSub(oidcSub: string): Promise<DbUserWithHash 
   const p = getPool();
   const res = await p.query(
     `
-    SELECT id, username, groups, password_hash, email, oidc_sub, jellyfin_user_id, jellyfin_username, jellyfin_device_id, jellyfin_auth_token, letterboxd_username, discord_user_id, avatar_url, avatar_version, created_at, last_seen_at, mfa_secret, discover_region, original_language, watchlist_sync_movies, watchlist_sync_tv, request_limit_movie, request_limit_movie_days, request_limit_series, request_limit_series_days, banned, weekly_digest_opt_in
+    SELECT id, username, groups, password_hash, email, oidc_sub, jellyfin_user_id, jellyfin_username, jellyfin_device_id, jellyfin_auth_token, letterboxd_username, discord_user_id, trakt_username, avatar_url, avatar_version, created_at, last_seen_at, mfa_secret, discover_region, original_language, watchlist_sync_movies, watchlist_sync_tv, request_limit_movie, request_limit_movie_days, request_limit_series, request_limit_series_days, banned, weekly_digest_opt_in
     FROM app_user
     WHERE oidc_sub = $1
     LIMIT 1
@@ -1908,6 +2016,7 @@ export async function getUserByOidcSub(oidcSub: string): Promise<DbUserWithHash 
     jellyfin_auth_token: row.jellyfin_auth_token ?? null,
     letterboxd_username: row.letterboxd_username ?? null,
     discord_user_id: row.discord_user_id ?? null,
+    trakt_username: row.trakt_username ?? null,
     avatar_url: row.avatar_url ?? null,
     avatar_version: row.avatar_version ?? null,
     created_at: row.created_at,
@@ -1931,7 +2040,7 @@ export async function getUserByEmail(email: string): Promise<DbUserWithHash | nu
   const p = getPool();
   const res = await p.query(
     `
-    SELECT id, username, groups, password_hash, email, oidc_sub, jellyfin_user_id, jellyfin_username, jellyfin_device_id, jellyfin_auth_token, letterboxd_username, discord_user_id, avatar_url, avatar_version, created_at, last_seen_at, mfa_secret, discover_region, original_language, watchlist_sync_movies, watchlist_sync_tv, request_limit_movie, request_limit_movie_days, request_limit_series, request_limit_series_days, banned, weekly_digest_opt_in
+    SELECT id, username, groups, password_hash, email, oidc_sub, jellyfin_user_id, jellyfin_username, jellyfin_device_id, jellyfin_auth_token, letterboxd_username, discord_user_id, trakt_username, avatar_url, avatar_version, created_at, last_seen_at, mfa_secret, discover_region, original_language, watchlist_sync_movies, watchlist_sync_tv, request_limit_movie, request_limit_movie_days, request_limit_series, request_limit_series_days, banned, weekly_digest_opt_in
     FROM app_user
     WHERE LOWER(email) = LOWER($1)
     LIMIT 1
@@ -1953,6 +2062,7 @@ export async function getUserByEmail(email: string): Promise<DbUserWithHash | nu
     jellyfin_auth_token: row.jellyfin_auth_token ?? null,
     letterboxd_username: row.letterboxd_username ?? null,
     discord_user_id: row.discord_user_id ?? null,
+    trakt_username: row.trakt_username ?? null,
     avatar_url: row.avatar_url ?? null,
     avatar_version: row.avatar_version ?? null,
     created_at: row.created_at,
@@ -1976,7 +2086,7 @@ export async function getUserByUsername(username: string): Promise<DbUserWithHas
   const p = getPool();
   const res = await p.query(
     `
-    SELECT id, username, groups, password_hash, email, oidc_sub, jellyfin_user_id, jellyfin_username, jellyfin_device_id, jellyfin_auth_token, letterboxd_username, discord_user_id, avatar_url, avatar_version, created_at, last_seen_at, mfa_secret, discover_region, original_language, watchlist_sync_movies, watchlist_sync_tv, request_limit_movie, request_limit_movie_days, request_limit_series, request_limit_series_days, banned, weekly_digest_opt_in
+    SELECT id, username, groups, password_hash, email, oidc_sub, jellyfin_user_id, jellyfin_username, jellyfin_device_id, jellyfin_auth_token, letterboxd_username, discord_user_id, trakt_username, avatar_url, avatar_version, created_at, last_seen_at, mfa_secret, discover_region, original_language, watchlist_sync_movies, watchlist_sync_tv, request_limit_movie, request_limit_movie_days, request_limit_series, request_limit_series_days, banned, weekly_digest_opt_in
     FROM app_user
     WHERE username = $1
     LIMIT 1
@@ -1998,6 +2108,7 @@ export async function getUserByUsername(username: string): Promise<DbUserWithHas
     jellyfin_auth_token: row.jellyfin_auth_token ?? null,
     letterboxd_username: row.letterboxd_username ?? null,
     discord_user_id: row.discord_user_id ?? null,
+    trakt_username: row.trakt_username ?? null,
     avatar_url: row.avatar_url ?? null,
     avatar_version: row.avatar_version ?? null,
     created_at: row.created_at,
@@ -2108,7 +2219,7 @@ export async function listUsersWithWatchlistSync(userId?: number) {
   await ensureUserSchema();
   const p = getPool();
   const whereClauses = [
-    "jellyfin_user_id IS NOT NULL",
+    "(jellyfin_user_id IS NOT NULL OR EXISTS (SELECT 1 FROM user_trakt_token utt WHERE utt.user_id = app_user.id))",
     "(watchlist_sync_movies = TRUE OR watchlist_sync_tv = TRUE)"
   ];
   const values: Array<number> = [];
@@ -2118,7 +2229,8 @@ export async function listUsersWithWatchlistSync(userId?: number) {
   }
   const res = await p.query(
     `
-    SELECT id, username, jellyfin_user_id, watchlist_sync_movies, watchlist_sync_tv, groups
+    SELECT id, username, jellyfin_user_id, watchlist_sync_movies, watchlist_sync_tv, groups,
+      EXISTS (SELECT 1 FROM user_trakt_token utt WHERE utt.user_id = app_user.id) AS has_trakt
     FROM app_user
     WHERE ${whereClauses.join(" AND ")}
     `,
@@ -2128,9 +2240,28 @@ export async function listUsersWithWatchlistSync(userId?: number) {
     id: Number(row.id),
     username: row.username as string,
     jellyfinUserId: row.jellyfin_user_id as string,
+    hasTrakt: !!row.has_trakt,
     syncMovies: !!row.watchlist_sync_movies,
     syncTv: !!row.watchlist_sync_tv,
     isAdmin: normalizeGroupList(row.groups as string).includes("administrators")
+  }));
+}
+
+export async function listUsersWithLetterboxd() {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT id, username, letterboxd_username
+    FROM app_user
+    WHERE letterboxd_username IS NOT NULL AND letterboxd_username <> ''
+    ORDER BY letterboxd_username ASC
+    `
+  );
+  return res.rows.map(row => ({
+    id: Number(row.id),
+    username: row.username as string,
+    letterboxdUsername: row.letterboxd_username as string
   }));
 }
 
@@ -2146,7 +2277,7 @@ export async function createOidcUser(input: {
     `
     INSERT INTO app_user (username, groups, email, oidc_sub, last_seen_at)
     VALUES ($1, $2, $3, $4, NOW())
-    RETURNING id, username, groups, password_hash, email, oidc_sub, jellyfin_user_id, jellyfin_username, jellyfin_device_id, jellyfin_auth_token, letterboxd_username, discord_user_id, avatar_url, avatar_version, created_at, last_seen_at, mfa_secret, discover_region, original_language, watchlist_sync_movies, watchlist_sync_tv, request_limit_movie, request_limit_movie_days, request_limit_series, request_limit_series_days, banned, weekly_digest_opt_in
+    RETURNING id, username, groups, password_hash, email, oidc_sub, jellyfin_user_id, jellyfin_username, jellyfin_device_id, jellyfin_auth_token, letterboxd_username, discord_user_id, trakt_username, avatar_url, avatar_version, created_at, last_seen_at, mfa_secret, discover_region, original_language, watchlist_sync_movies, watchlist_sync_tv, request_limit_movie, request_limit_movie_days, request_limit_series, request_limit_series_days, banned, weekly_digest_opt_in
     `,
     [input.username, input.groups.join(","), input.email ?? null, input.oidcSub]
   );
@@ -2164,6 +2295,7 @@ export async function createOidcUser(input: {
     jellyfin_auth_token: row.jellyfin_auth_token ?? null,
     letterboxd_username: row.letterboxd_username ?? null,
     discord_user_id: row.discord_user_id ?? null,
+    trakt_username: row.trakt_username ?? null,
     avatar_url: row.avatar_url ?? null,
     avatar_version: row.avatar_version ?? null,
     created_at: row.created_at,
@@ -2460,6 +2592,7 @@ async function ensureSchema() {
       VALUES
           ('request-sync', '*/5 * * * *', 300, 'system', TRUE),
           ('watchlist-sync', '0 * * * *', 3600, 'system', FALSE),
+          ('letterboxd-import', '0 4 * * *', 86400, 'system', FALSE),
           ('weekly-digest', '0 9 * * 1', 604800, 'system', FALSE),
           ('session-cleanup', '0 * * * *', 3600, 'system', TRUE),
           ('calendar-notifications', '0 */6 * * *', 21600, 'system', FALSE),
@@ -3381,6 +3514,76 @@ export async function getOidcConfig(): Promise<OidcConfig> {
 
 export async function setOidcConfig(input: OidcConfig): Promise<void> {
   await setSetting("oidc_config", JSON.stringify(input));
+}
+
+export type TraktConfig = {
+  enabled: boolean;
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
+  appAuthorizedAt: string | null;
+};
+
+const TraktConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  clientId: z.string().optional(),
+  clientSecret: z.string().optional(),
+  redirectUri: z.string().optional(),
+  appAuthorizedAt: z.string().nullable().optional()
+});
+
+const TraktConfigDefaults: TraktConfig = {
+  enabled: false,
+  clientId: "",
+  clientSecret: "",
+  redirectUri: "",
+  appAuthorizedAt: null
+};
+
+function parseEnvBoolean(value?: string | null): boolean | undefined {
+  if (!value) return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return undefined;
+  if (["1", "true", "yes", "y", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "n", "off"].includes(normalized)) return false;
+  return undefined;
+}
+
+export async function getTraktConfig(): Promise<TraktConfig> {
+  const raw = await getSetting("trakt_config");
+  let parsed: Partial<TraktConfig> = {};
+  if (raw) {
+    try {
+      parsed = TraktConfigSchema.parse(JSON.parse(raw));
+    } catch {
+      parsed = {};
+    }
+  }
+
+  const withEnv: Partial<TraktConfig> = {};
+  const envEnabled = parseEnvBoolean(process.env.TRAKT_ENABLED);
+  const envClientId = process.env.TRAKT_CLIENT_ID?.trim();
+  const envClientSecret = process.env.TRAKT_CLIENT_SECRET?.trim();
+  const envRedirectUri = process.env.TRAKT_REDIRECT_URI?.trim();
+  if (envEnabled !== undefined) withEnv.enabled = envEnabled;
+  if (envClientId) withEnv.clientId = envClientId;
+  if (envClientSecret) withEnv.clientSecret = envClientSecret;
+  if (envRedirectUri) withEnv.redirectUri = envRedirectUri;
+
+  return {
+    ...TraktConfigDefaults,
+    ...withEnv,
+    ...parsed,
+    clientId: parsed.clientId ?? withEnv.clientId ?? TraktConfigDefaults.clientId,
+    clientSecret: parsed.clientSecret ?? withEnv.clientSecret ?? TraktConfigDefaults.clientSecret,
+    redirectUri: parsed.redirectUri ?? withEnv.redirectUri ?? TraktConfigDefaults.redirectUri,
+    enabled: parsed.enabled ?? withEnv.enabled ?? TraktConfigDefaults.enabled,
+    appAuthorizedAt: parsed.appAuthorizedAt ?? TraktConfigDefaults.appAuthorizedAt
+  };
+}
+
+export async function setTraktConfig(input: TraktConfig): Promise<void> {
+  await setSetting("trakt_config", JSON.stringify(input));
 }
 
 export async function createNotificationEndpoint(input: {

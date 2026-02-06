@@ -56,6 +56,8 @@ export async function GET(request: Request) {
         u.groups,
         u.created_at,
         u.discord_user_id,
+        u.letterboxd_username,
+        u.trakt_username,
         u.jellyfin_user_id,
         u.jellyfin_username,
         u.avatar_url,
@@ -65,7 +67,7 @@ export async function GET(request: Request) {
       FROM app_user u
       LEFT JOIN media_request mr ON mr.requested_by = u.id
       ${whereSQL}
-      GROUP BY u.id, u.username, u.email, u.groups, u.created_at, u.jellyfin_user_id, u.jellyfin_username, u.avatar_url, u.banned, u.weekly_digest_opt_in
+      GROUP BY u.id, u.username, u.email, u.groups, u.created_at, u.discord_user_id, u.letterboxd_username, u.trakt_username, u.jellyfin_user_id, u.jellyfin_username, u.avatar_url, u.banned, u.weekly_digest_opt_in
       ORDER BY ${orderBy}
       LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}`,
             queryParams

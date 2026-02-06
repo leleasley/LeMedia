@@ -26,6 +26,8 @@ export async function GET(
         groups,
         created_at,
         discord_user_id,
+        letterboxd_username,
+        trakt_username,
         jellyfin_user_id,
         jellyfin_username,
         avatar_url,
@@ -54,6 +56,8 @@ export async function GET(
             banned: !!user.banned,
             createdAt: user.created_at,
             discordUserId: user.discord_user_id ?? null,
+            letterboxdUsername: user.letterboxd_username ?? null,
+            traktUsername: user.trakt_username ?? null,
             jellyfinUserId: user.jellyfin_user_id,
             jellyfinUsername: user.jellyfin_username,
             avatarUrl: user.avatar_url || (user.jellyfin_user_id ? `/avatarproxy/${user.jellyfin_user_id}` : null),
@@ -116,6 +120,24 @@ export async function PATCH(
                 return NextResponse.json({ error: "Discord User ID must be numeric" }, { status: 400 });
             }
             updates.push(`discord_user_id = $${paramIndex++}`);
+            values.push(trimmed === "" ? null : trimmed);
+        }
+
+        if (body.letterboxdUsername !== undefined) {
+            const trimmed = String(body.letterboxdUsername ?? "").trim();
+            if (trimmed && !/^[a-zA-Z0-9._-]+$/.test(trimmed)) {
+                return NextResponse.json({ error: "Letterboxd username contains invalid characters" }, { status: 400 });
+            }
+            updates.push(`letterboxd_username = $${paramIndex++}`);
+            values.push(trimmed === "" ? null : trimmed);
+        }
+
+        if (body.traktUsername !== undefined) {
+            const trimmed = String(body.traktUsername ?? "").trim();
+            if (trimmed && !/^[a-zA-Z0-9._-]+$/.test(trimmed)) {
+                return NextResponse.json({ error: "Trakt username contains invalid characters" }, { status: 400 });
+            }
+            updates.push(`trakt_username = $${paramIndex++}`);
             values.push(trimmed === "" ? null : trimmed);
         }
 

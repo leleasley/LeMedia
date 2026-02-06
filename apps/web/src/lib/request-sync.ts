@@ -160,33 +160,91 @@ async function syncEpisodeRequest(request: RequestForSync, queueMap: Map<number,
   return null;
 }
 
-import { listUsersWithWatchlistSync, createRequestWithItemsTransaction, findActiveRequestByTmdb } from "@/db";
+import { listUsersWithWatchlistSync, createRequestWithItemsTransaction, findActiveRequestByTmdb, getUserTraktToken, upsertUserTraktToken, getTraktConfig } from "@/db";
 import { getJellyfinWatchlist } from "@/lib/jellyfin";
 import { getMovie as getTmdbMovie, getTv as getTmdbTv } from "@/lib/tmdb";
 import { getMovieByTmdbId } from "@/lib/radarr";
 import { getSeriesByTmdbId, getSeriesByTvdbId } from "@/lib/sonarr";
 import { logger } from "@/lib/logger";
+import { fetchTraktWatchlist, refreshTraktToken } from "@/lib/trakt";
 
 export async function syncWatchlists(options?: { userId?: number }) {
   const users = await listUsersWithWatchlistSync(options?.userId);
   let createdCount = 0;
   let errors = 0;
+  const traktConfig = await getTraktConfig();
+  const traktEnabled = !!(traktConfig.enabled && traktConfig.clientId && traktConfig.clientSecret);
 
   for (const user of users) {
     try {
-      const watchlist = await getJellyfinWatchlist(user.jellyfinUserId);
-      
-      for (const item of watchlist) {
-        const isMovie = item.Type === "Movie";
-        const isSeries = item.Type === "Series";
-        
-        if (!isMovie && !isSeries) continue;
-        if (isMovie && !user.syncMovies) continue;
-        if (isSeries && !user.syncTv) continue;
+      const watchlistItems = new Map<string, { tmdbId: number; mediaType: "movie" | "tv"; titleHint?: string; tvdbId?: number | null }>();
 
-        const tmdbIdStr = item.ProviderIds.Tmdb;
-        const tmdbId = tmdbIdStr ? parseInt(tmdbIdStr, 10) : null;
-        if (!tmdbId || isNaN(tmdbId)) continue;
+      if (user.jellyfinUserId) {
+        const watchlist = await getJellyfinWatchlist(user.jellyfinUserId);
+        for (const item of watchlist) {
+          const isMovie = item.Type === "Movie";
+          const isSeries = item.Type === "Series";
+          if (!isMovie && !isSeries) continue;
+          if (isMovie && !user.syncMovies) continue;
+          if (isSeries && !user.syncTv) continue;
+
+          const tmdbIdStr = item.ProviderIds.Tmdb;
+          const tmdbId = tmdbIdStr ? parseInt(tmdbIdStr, 10) : null;
+          if (!tmdbId || isNaN(tmdbId)) continue;
+
+          const mediaType = isMovie ? "movie" : "tv";
+          const tvdbId = item.ProviderIds?.Tvdb ? parseInt(item.ProviderIds.Tvdb, 10) : null;
+          watchlistItems.set(`${mediaType}:${tmdbId}`, { tmdbId, mediaType, titleHint: item.Name, tvdbId: Number.isNaN(tvdbId) ? null : tvdbId });
+        }
+      }
+
+      if (user.hasTrakt && traktEnabled) {
+        const token = await getUserTraktToken(user.id);
+        if (token?.accessToken) {
+          let accessToken = token.accessToken;
+          let refreshToken = token.refreshToken;
+          let expiresAt = token.expiresAt;
+          const now = Date.now();
+          const expiresAtMs = expiresAt ? new Date(expiresAt).getTime() : null;
+          const isExpired = expiresAtMs ? expiresAtMs - now < 60 * 1000 : false;
+          if (isExpired && refreshToken) {
+            const refreshed = await refreshTraktToken({
+              refreshToken,
+              clientId: traktConfig.clientId,
+              clientSecret: traktConfig.clientSecret
+            });
+            accessToken = refreshed.access_token;
+            refreshToken = refreshed.refresh_token;
+            expiresAt = new Date((refreshed.created_at + refreshed.expires_in) * 1000).toISOString();
+            await upsertUserTraktToken({
+              userId: user.id,
+              accessToken,
+              refreshToken,
+              expiresAt,
+              scope: refreshed.scope ?? null
+            });
+          }
+
+          if (user.syncMovies) {
+            const movies = await fetchTraktWatchlist({ accessToken, clientId: traktConfig.clientId, type: "movies" });
+            for (const item of movies) {
+              watchlistItems.set(`movie:${item.tmdbId}`, { tmdbId: item.tmdbId, mediaType: "movie" });
+            }
+          }
+
+          if (user.syncTv) {
+            const shows = await fetchTraktWatchlist({ accessToken, clientId: traktConfig.clientId, type: "shows" });
+            for (const item of shows) {
+              watchlistItems.set(`tv:${item.tmdbId}`, { tmdbId: item.tmdbId, mediaType: "tv" });
+            }
+          }
+        }
+      }
+
+      for (const entry of watchlistItems.values()) {
+        const isMovie = entry.mediaType === "movie";
+        const isSeries = entry.mediaType === "tv";
+        const tmdbId = entry.tmdbId;
 
         // Check if already requested
         const existing = await findActiveRequestByTmdb({
@@ -205,8 +263,8 @@ export async function syncWatchlists(options?: { userId?: number }) {
           const s = await getSeriesByTmdbId(tmdbId);
           if (s) {
             existsInService = true;
-          } else if (item.ProviderIds.Tvdb) {
-            const tvdbId = parseInt(item.ProviderIds.Tvdb, 10);
+          } else if (entry.tvdbId) {
+            const tvdbId = entry.tvdbId;
             if (!isNaN(tvdbId)) {
               const s2 = await getSeriesByTvdbId(tvdbId);
               if (s2) existsInService = true;
@@ -217,7 +275,7 @@ export async function syncWatchlists(options?: { userId?: number }) {
         if (existsInService) continue;
 
         // Fetch Metadata
-        let title = item.Name;
+        let title = entry.titleHint || (isMovie ? "Unknown Movie" : "Unknown Series");
         let posterPath = null;
         let backdropPath = null;
         let releaseYear = null;

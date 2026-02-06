@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/auth";
-import { getUserByJellyfinUserId } from "@/db";
 import { getJellyfinApiKey, getJellyfinBaseUrl } from "@/lib/jellyfin-admin";
 import { ImageProxy } from "@/lib/imageproxy";
 
@@ -59,17 +58,10 @@ export async function GET(_req: NextRequest, context: Context) {
   const currentUser = await requireUser();
   if (currentUser instanceof NextResponse) return currentUser;
 
-  const [owner, baseUrl, apiKey] = await Promise.all([
-    !currentUser.isAdmin ? getUserByJellyfinUserId(jellyfinUserId) : Promise.resolve(null),
+  const [baseUrl, apiKey] = await Promise.all([
     getJellyfinBaseUrl(),
     getJellyfinApiKey()
   ]);
-
-  if (!currentUser.isAdmin) {
-    if (!owner || owner.username !== currentUser.username) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-  }
 
   if (!baseUrl || !apiKey) {
     return NextResponse.json({ error: "Jellyfin not configured" }, { status: 400 });

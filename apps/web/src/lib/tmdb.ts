@@ -98,6 +98,15 @@ export async function searchMulti(query: string, page = 1) {
   return tmdbGet("/search/multi", { query, page, include_adult: false });
 }
 
+export async function searchMovie(query: string, year?: number) {
+  const params: Record<string, string | number | boolean | undefined> = {
+    query,
+    include_adult: false
+  };
+  if (year) params.year = year;
+  return tmdbGet("/search/movie", params);
+}
+
 export async function searchPerson(query: string, page = 1) {
   return tmdbGet("/search/person", { query, page, include_adult: false });
 }

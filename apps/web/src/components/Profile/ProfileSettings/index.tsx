@@ -19,6 +19,9 @@ type ProfileResponse = {
     jellyfinUsername?: string | null;
     discordUserId?: string | null;
     letterboxdUsername?: string | null;
+    traktUsername?: string | null;
+    traktLinked?: boolean;
+    traktTokenExpiresAt?: string | null;
     avatarUrl?: string | null;
     discoverRegion?: string | null;
     originalLanguage?: string | null;
@@ -37,6 +40,7 @@ type UpdateResponse = {
     email: string | null;
     discordUserId?: string | null;
     letterboxdUsername?: string | null;
+    traktUsername?: string | null;
     discoverRegion?: string | null;
     originalLanguage?: string | null;
     watchlistSyncMovies?: boolean;
@@ -94,6 +98,7 @@ export function ProfileSettings({
   const [initialData, setInitialData] = useState<ProfileResponse['user'] | null>(null);
   const [form, setForm] = useState<FormState>(initialForm);
   const [jellyfinLinked, setJellyfinLinked] = useState(false);
+  const [traktLinked, setTraktLinked] = useState(false);
   const [jellyfinUsername, setJellyfinUsername] = useState<string | null>(null);
   const [jellyfinForm, setJellyfinForm] = useState({ username: "", password: "" });
   const [jellyfinLoading, setJellyfinLoading] = useState(false);
@@ -135,6 +140,7 @@ export function ProfileSettings({
     }));
     setJellyfinLinked(Boolean(data.user.jellyfinUserId));
     setJellyfinUsername(data.user.jellyfinUsername ?? null);
+    setTraktLinked(Boolean(data.user.traktLinked));
   }, [data]);
 
   function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
@@ -264,6 +270,7 @@ export function ProfileSettings({
   const showGeneral = section === "all" || section === "general";
   const showLinked = section === "all" || section === "linked";
   const showPassword = section === "all" || section === "security";
+  const watchlistLinked = jellyfinLinked || traktLinked;
 
   return (
     <div className="space-y-6">
@@ -341,42 +348,6 @@ export function ProfileSettings({
                     </div>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-foreground flex items-center gap-2" htmlFor="profile-discord-id">
-                    <span>Discord User ID</span>
-                    <span className="text-xs text-foreground/50 font-normal">(optional)</span>
-                  </label>
-                  <input
-                    id="profile-discord-id"
-                    value={form.discordUserId}
-                    onChange={e => updateField("discordUserId", e.target.value)}
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    placeholder="18-digit Discord user ID"
-                    className="w-full rounded-xl border border-white/20 bg-white/5 px-4 py-3 md:py-4 text-foreground placeholder:text-foreground/30 outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all text-sm backdrop-blur-sm"
-                  />
-                  <p className="text-xs text-foreground/50">
-                    The multi-digit ID tied to your Discord account. <a href="https://support.discord.com/hc/en-us/articles/206346498-Where-can-I-find-my-User-Server-Message-ID-" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">Find your ID</a>
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-foreground flex items-center gap-2" htmlFor="profile-letterboxd">
-                    <span>Letterboxd Username</span>
-                    <span className="text-xs text-foreground/50 font-normal">(optional)</span>
-                  </label>
-                  <input
-                    id="profile-letterboxd"
-                    value={form.letterboxdUsername}
-                    onChange={e => updateField("letterboxdUsername", e.target.value)}
-                    placeholder="your-letterboxd-username"
-                    className="w-full rounded-xl border border-white/20 bg-white/5 px-4 py-3 md:py-4 text-foreground placeholder:text-foreground/30 outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all text-sm backdrop-blur-sm"
-                  />
-                  <p className="text-xs text-foreground/50">
-                    If you haven&apos;t got one, please create/sign in to retrieve this. <a href="https://letterboxd.com/signup" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">Letterboxd signup</a>
-                  </p>
-                </div>
-
                 <div className="border-t border-white/10 my-6"></div>
                 <h3 className="text-lg font-bold text-foreground mb-4">Discovery Preferences</h3>
                 
@@ -418,14 +389,14 @@ export function ProfileSettings({
                     </div>
                 </div>
 
-                {jellyfinLinked && (
+                {watchlistLinked && (
                     <>
                         <div className="border-t border-white/10 my-6"></div>
                         <div className="flex items-center justify-between mb-4">
                             <div>
                                 <h3 className="text-lg font-bold text-foreground">Watchlist Synchronization</h3>
                                 <p className="text-sm text-foreground/60 mt-1">
-                                    Automatically request items added to your Jellyfin watchlist.
+                                    Automatically request items added to your Jellyfin or Trakt watchlist.
                                     {!roleLabel?.toLowerCase().includes("admin") && !roleLabel?.toLowerCase().includes("owner") && (
                                         <span className="text-amber-400 block mt-1">Note: Requests will require admin approval unless already available.</span>
                                     )}
@@ -528,14 +499,74 @@ export function ProfileSettings({
               <div className="flex items-center gap-3 mb-6 md:mb-8">
                 <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 backdrop-blur-md">
                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-foreground">
-                    <path d="M20 6 9 17l-5-5" />
+                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
                   </svg>
                 </div>
                 <div>
-                  <h2 className="text-2xl md:text-3xl font-bold text-foreground">Jellyfin Link</h2>
-                  <p className="text-sm text-foreground/60 mt-1">Connect your Jellyfin account to sync your profile</p>
+                  <h2 className="text-2xl md:text-3xl font-bold text-foreground">Linked Accounts</h2>
+                  <p className="text-sm text-foreground/60 mt-1">Connect external services to enhance your experience</p>
                 </div>
               </div>
+
+              <form className="space-y-6" onSubmit={handleSubmit}>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-foreground flex items-center gap-2" htmlFor="profile-discord-id-linked">
+                    <span>Discord User ID</span>
+                    <span className="text-xs text-foreground/50 font-normal">(optional)</span>
+                  </label>
+                  <input
+                    id="profile-discord-id-linked"
+                    value={form.discordUserId}
+                    onChange={e => updateField("discordUserId", e.target.value)}
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    placeholder="18-digit Discord user ID"
+                    className="w-full rounded-xl border border-white/20 bg-white/5 px-4 py-3 md:py-4 text-foreground placeholder:text-foreground/30 outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all text-sm backdrop-blur-sm"
+                  />
+                  <p className="text-xs text-foreground/50">
+                    Used for Discord notifications. <a href="https://support.discord.com/hc/en-us/articles/206346498-Where-can-I-find-my-User-Server-Message-ID-" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">Find your ID</a>
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-foreground flex items-center gap-2" htmlFor="profile-letterboxd-linked">
+                    <span>Letterboxd Username</span>
+                    <span className="text-xs text-foreground/50 font-normal">(optional)</span>
+                  </label>
+                  <input
+                    id="profile-letterboxd-linked"
+                    value={form.letterboxdUsername}
+                    onChange={e => updateField("letterboxdUsername", e.target.value)}
+                    placeholder="your-letterboxd-username"
+                    className="w-full rounded-xl border border-white/20 bg-white/5 px-4 py-3 md:py-4 text-foreground placeholder:text-foreground/30 outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all text-sm backdrop-blur-sm"
+                  />
+                  <p className="text-xs text-foreground/50">
+                    Connect your Letterboxd profile. <a href="https://letterboxd.com/signup" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">Create account</a>
+                  </p>
+                </div>
+
+                <div className="flex justify-end pt-4">
+                  <Button
+                    type="submit"
+                    disabled={saving}
+                    variant="secondary"
+                    className="px-6 py-3 rounded-xl font-semibold border border-white/10 bg-white/10 text-white hover:bg-white/20 shadow-lg hover:shadow-xl transition-all"
+                  >
+                    {saving ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      "Save Changes"
+                    )}
+                  </Button>
+                </div>
+              </form>
+
+              <div className="border-t border-white/10 my-6"></div>
+              <h3 className="text-lg font-bold text-foreground mb-4">Jellyfin Connection</h3>
 
               {jellyfinLinked ? (
                 <div className="space-y-4">

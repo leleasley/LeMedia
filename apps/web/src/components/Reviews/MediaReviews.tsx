@@ -7,6 +7,7 @@ import { Star, Loader2, Trash2, EyeOff, Eye } from "lucide-react";
 import { formatDate } from "@/lib/dateFormat";
 import { tmdbImageUrl } from "@/lib/tmdb-images";
 import { cn } from "@/lib/utils";
+import { csrfFetch } from "@/lib/csrf-client";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -95,11 +96,6 @@ export function MediaReviews({ tmdbId, mediaType, title, posterPath, releaseYear
     }
   }, [userReview?.id]);
 
-  const getCsrfToken = () => {
-    const meta = document.querySelector('meta[name="csrf-token"]');
-    return meta?.getAttribute("content") ?? "";
-  };
-
   const averageDisplay = useMemo(() => {
     if (!data?.stats?.total) return null;
     return data.stats.average.toFixed(1);
@@ -111,11 +107,10 @@ export function MediaReviews({ tmdbId, mediaType, title, posterPath, releaseYear
 
     setSubmitting(true);
     try {
-      const response = await fetch("/api/v1/reviews", {
+      const response = await csrfFetch("/api/v1/reviews", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-CSRF-Token": getCsrfToken(),
         },
         body: JSON.stringify({
           mediaType,
@@ -148,11 +143,8 @@ export function MediaReviews({ tmdbId, mediaType, title, posterPath, releaseYear
     if (!userReview) return;
     setSubmitting(true);
     try {
-      const response = await fetch(`/api/v1/reviews/review/${userReview.id}`, {
+      const response = await csrfFetch(`/api/v1/reviews/review/${userReview.id}`, {
         method: "DELETE",
-        headers: {
-          "X-CSRF-Token": getCsrfToken(),
-        },
       });
       if (!response.ok) {
         const error = await response.json();

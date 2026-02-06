@@ -6,6 +6,7 @@ import { checkCalendarSubscriptions } from "@/lib/calendar-notifications";
 import { syncJellyfinAvailability } from "@/lib/jellyfin-availability-sync";
 import { refreshUpgradeHintsForAll } from "@/lib/upgrade-finder";
 import { syncProwlarrIndexers } from "@/lib/prowlarr-sync";
+import { importLetterboxdReviews } from "@/lib/letterboxd";
 
 export type JobHandler = () => Promise<void>;
 
@@ -50,5 +51,10 @@ export const jobHandlers: Record<string, JobHandler> = {
     logger.info("[Job] Starting prowlarr-indexer-sync");
     const result = await syncProwlarrIndexers();
     logger.info(`[Job] prowlarr-indexer-sync completed: created=${result.created} updated=${result.updated} synced=${result.synced}`);
+  },
+  "letterboxd-import": async () => {
+    logger.info("[Job] Starting letterboxd-import");
+    const result = await importLetterboxdReviews();
+    logger.info(`[Job] letterboxd-import completed: imported=${result.imported} skipped=${result.skipped} errors=${result.errors}`);
   },
 };

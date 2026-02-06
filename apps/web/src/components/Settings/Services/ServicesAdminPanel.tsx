@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Modal } from "@/components/Common/Modal";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { csrfFetch } from "@/lib/csrf-client";
@@ -94,6 +95,15 @@ type FormState = {
     animeTags: string;
     seasonFolders: boolean;
     monitoringOption: string;
+};
+
+type TraktConfig = {
+    enabled: boolean;
+    clientId: string;
+    clientSecret: string;
+    redirectUri: string;
+    hasClientSecret?: boolean;
+    appAuthorizedAt?: string | null;
 };
 
 const initialForm: FormState = {
@@ -215,10 +225,109 @@ const monitoringOptions = [
 
 export function ServicesAdminPanel({ initialServices }: { initialServices: MediaService[] }) {
     const toast = useToast();
+    const router = useRouter();
+    const searchParams = useSearchParams();
+    const [traktConfig, setTraktConfig] = useState<TraktConfig>({
+        enabled: false,
+        clientId: "",
+        clientSecret: "",
+        redirectUri: ""
+    });
+    const [traktSaving, setTraktSaving] = useState(false);
     const { data, mutate, isLoading } = useSWR<{ services: MediaService[] }>("/api/v1/admin/services", fetcher, {
         fallbackData: { services: initialServices },
         revalidateOnFocus: false
     });
+    const { data: traktData } = useSWR<{ config: Partial<TraktConfig> }>("/api/v1/admin/settings/trakt", fetcher, {
+        revalidateOnFocus: false
+    });
+
+    useEffect(() => {
+        const cfg = traktData?.config ?? {};
+        setTraktConfig({
+            enabled: !!cfg.enabled,
+            clientId: cfg.clientId ?? "",
+            clientSecret: "",
+            redirectUri: cfg.redirectUri ?? "",
+            hasClientSecret: cfg.hasClientSecret ?? false,
+            appAuthorizedAt: cfg.appAuthorizedAt ?? null
+        });
+    }, [traktData]);
+
+    const hasSecret = Boolean(traktConfig.hasClientSecret || traktConfig.clientSecret.trim());
+    const traktConfigured = traktConfig.enabled && Boolean(traktConfig.clientId.trim()) && hasSecret;
+    const traktAuthorized = traktConfigured && Boolean(traktConfig.appAuthorizedAt);
+    const canStartTraktOAuth = traktConfigured;
+
+    useEffect(() => {
+        const trakt = searchParams.get("trakt");
+        const errorMsg = searchParams.get("error");
+        if (trakt === "linked") {
+            toast.success("Trakt OAuth approved");
+        } else if (errorMsg) {
+            toast.error(errorMsg);
+        }
+        if (trakt || errorMsg) {
+            const url = new URL(window.location.href);
+            url.searchParams.delete("trakt");
+            url.searchParams.delete("error");
+            router.replace(url.pathname + url.search);
+        }
+    }, [searchParams, toast, router]);
+
+    const handleSaveTrakt = async (event: FormEvent) => {
+        event.preventDefault();
+        setTraktSaving(true);
+        const shouldAuthorizeAfterSave =
+            traktConfig.enabled &&
+            Boolean(traktConfig.clientId.trim()) &&
+            Boolean(traktConfig.clientSecret.trim() || traktConfig.hasClientSecret) &&
+            !traktConfig.appAuthorizedAt;
+        try {
+            const payload = {
+                enabled: traktConfig.enabled,
+                clientId: traktConfig.clientId.trim(),
+                clientSecret: traktConfig.clientSecret.trim(),
+                redirectUri: traktConfig.redirectUri.trim()
+            };
+            const res = await csrfFetch("/api/v1/admin/settings/trakt", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+                credentials: "include"
+            });
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(body?.error || "Failed to save Trakt settings");
+            }
+            if (body?.config) {
+                setTraktConfig(prev => ({
+                    ...prev,
+                    enabled: body.config.enabled ?? prev.enabled,
+                    clientId: body.config.clientId ?? prev.clientId,
+                    redirectUri: body.config.redirectUri ?? prev.redirectUri,
+                    clientSecret: "",
+                    hasClientSecret: body.config.hasClientSecret ?? prev.hasClientSecret,
+                    appAuthorizedAt: body.config.appAuthorizedAt ?? prev.appAuthorizedAt
+                }));
+            }
+            toast.success("Trakt settings saved");
+            if (shouldAuthorizeAfterSave) {
+                handleTraktOAuth();
+                return;
+            }
+        } catch (err: any) {
+            toast.error(err?.message ?? "Unable to save Trakt settings");
+        } finally {
+            setTraktSaving(false);
+        }
+    };
+
+    const handleTraktOAuth = () => {
+        if (typeof window === "undefined") return;
+        const returnTo = "/admin/settings/services";
+        window.location.assign(`/api/v1/profile/trakt/connect?returnTo=${encodeURIComponent(returnTo)}`);
+    };
 
     const { data: healthData, mutate: mutateHealth } = useSWR<HealthResponse>("/api/admin/status/health", fetcher, {
         refreshInterval: 30000
@@ -637,6 +746,90 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
 
     return (
         <div className="space-y-6">
+            <div className="glass-strong rounded-2xl border border-white/10 overflow-hidden p-5">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted">Integrations</p>
+                        <h2 className="text-lg font-semibold text-white">Trakt OAuth</h2>
+                        <p className="text-sm text-muted">Connect Trakt to enable watchlist sync and profile linking.</p>
+                    </div>
+                </div>
+                <div className="mt-4 flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm">
+                    {traktAuthorized ? (
+                        <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                    ) : (
+                        <XCircle className="h-4 w-4 text-amber-400" />
+                    )}
+                    <div className="text-gray-300">
+                        <span className="font-semibold text-white">
+                            {traktAuthorized ? "Connected" : "Not connected"}
+                        </span>
+                        {traktAuthorized && traktConfig.appAuthorizedAt ? (
+                            <span className="ml-2 text-xs text-gray-400">
+                                Approved {new Date(traktConfig.appAuthorizedAt).toLocaleString()}
+                            </span>
+                        ) : (
+                            <span className="ml-2 text-xs text-gray-400">
+                                {traktConfigured ? "Approve OAuth to finish setup" : "Save credentials first"}
+                            </span>
+                        )}
+                    </div>
+                </div>
+                <form onSubmit={handleSaveTrakt} className="mt-4 space-y-4">
+                    <label className="flex items-center gap-3 text-sm text-white">
+                        <input
+                            type="checkbox"
+                            checked={traktConfig.enabled}
+                            onChange={(e) => setTraktConfig(prev => ({ ...prev, enabled: e.target.checked }))}
+                            className="h-4 w-4 rounded border-white/20 bg-white/10"
+                        />
+                        Enable Trakt integration
+                    </label>
+                    <div className="grid gap-4 md:grid-cols-2">
+                        <div className="space-y-1 text-sm">
+                            <label className="font-semibold text-white">Client ID</label>
+                            <input
+                                className="w-full input"
+                                value={traktConfig.clientId}
+                                onChange={e => setTraktConfig(prev => ({ ...prev, clientId: e.target.value }))}
+                                placeholder="Paste your Trakt client ID"
+                            />
+                        </div>
+                        <div className="space-y-1 text-sm">
+                            <label className="font-semibold text-white">Client Secret</label>
+                            <input
+                                className="w-full input"
+                                type="password"
+                                value={traktConfig.clientSecret}
+                                onChange={e => setTraktConfig(prev => ({ ...prev, clientSecret: e.target.value }))}
+                                placeholder="Leave blank to keep current"
+                            />
+                        </div>
+                    </div>
+                    <div className="space-y-1 text-sm">
+                        <label className="font-semibold text-white">Redirect URI</label>
+                        <input
+                            className="w-full input"
+                            value={traktConfig.redirectUri}
+                            onChange={e => setTraktConfig(prev => ({ ...prev, redirectUri: e.target.value }))}
+                            placeholder="Leave blank to use the default app URL"
+                        />
+                        <p className="text-xs text-muted">If empty, LeMedia will use `/api/v1/profile/trakt/callback` on the app base URL.</p>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-end gap-3">
+                        <button className="btn" type="submit" disabled={traktSaving}>
+                            {traktSaving ? (
+                                <>
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    Saving...
+                                </>
+                            ) : (
+                                "Save Trakt Settings"
+                            )}
+                        </button>
+                    </div>
+                </form>
+            </div>
             {/* System Status Card */}
             <div className="glass-strong rounded-2xl border border-white/10 overflow-hidden">
                 <button
