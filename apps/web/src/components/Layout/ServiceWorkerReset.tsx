@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { logger } from "@/lib/logger";
 
 // Register service worker for PWA and push notifications
 // This replaces the old "reset" behavior which was breaking push subscriptions
@@ -17,7 +18,7 @@ export function ServiceWorkerReset() {
                 const hasOurSw = existingRegs.some(reg => reg.active?.scriptURL.includes("/sw.js"));
 
                 if (hasOurSw) {
-                    console.log("[SW] Service worker already registered");
+                    logger.debug("[SW] Service worker already registered");
                     // Update existing registration
                     const registration = await navigator.serviceWorker.ready;
                     registration.update();
@@ -29,7 +30,7 @@ export function ServiceWorkerReset() {
                     scope: "/",
                 });
 
-                console.log("[SW] Service Worker registered:", registration.scope);
+                logger.debug("[SW] Service Worker registered", { scope: registration.scope });
 
                 // Handle updates
                 registration.addEventListener("updatefound", () => {
@@ -37,13 +38,13 @@ export function ServiceWorkerReset() {
                     if (newWorker) {
                         newWorker.addEventListener("statechange", () => {
                             if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
-                                console.log("[SW] New service worker available");
+                                logger.debug("[SW] New service worker available");
                             }
                         });
                     }
                 });
             } catch (error) {
-                console.error("[SW] Service Worker registration failed:", error);
+                logger.error("[SW] Service Worker registration failed", error);
             }
         };
 

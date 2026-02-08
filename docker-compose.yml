@@ -24,18 +24,12 @@ services:
       context: /opt/LeMedia/apps/web
       dockerfile: Dockerfile
       args:
-        - DATABASE_URL=${DATABASE_URL}
-        - SESSION_SECRET=${SESSION_SECRET}
-        - SERVICES_SECRET_KEY=${SERVICES_SECRET_KEY}
-        - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY}
-        - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY}
-        - VAPID_EMAIL=${VAPID_EMAIL}
+        # Only NEXT_PUBLIC_ vars need to be build args (inlined into client JS).
+        # All server-only secrets are injected at runtime via env_file below.
         - NEXT_PUBLIC_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_TURNSTILE_SITE_KEY}
     container_name: lemedia-web
     env_file:
       - /opt/LeMedia/.env
-    environment:
-      - DATABASE_URL=${DATABASE_URL}
     ports:
       - "3010:3010"
     depends_on:

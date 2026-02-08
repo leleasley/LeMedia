@@ -4,6 +4,9 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
 import { csrfFetch } from "@/lib/csrf-client";
+import { useToast } from "@/components/Providers/ToastProvider";
+import { ConfirmModal, useConfirm } from "@/components/Common/ConfirmModal";
+import { logger } from "@/lib/logger";
 
 interface NotificationEndpoint {
     id: number;
@@ -36,6 +39,8 @@ export default function NotificationList({
 }: NotificationListProps) {
     const [deleting, setDeleting] = useState<number | null>(null);
     const router = useRouter();
+    const toast = useToast();
+    const { confirm, modalProps } = useConfirm();
 
     const { data: endpoints, mutate, isLoading } = useSWR<NotificationEndpoint[]>(
         `/api/v1/admin/notifications/${type}/list`,
@@ -43,9 +48,8 @@ export default function NotificationList({
     );
 
     async function handleDelete(id: number) {
-        if (!confirm("Are you sure you want to delete this notification endpoint?")) {
-            return;
-        }
+        const ok = await confirm("Are you sure you want to delete this notification endpoint?", { title: "Delete Endpoint", destructive: true, confirmLabel: "Delete" });
+        if (!ok) return;
 
         setDeleting(id);
         try {
@@ -56,11 +60,11 @@ export default function NotificationList({
             if (response.ok) {
                 mutate();
             } else {
-                alert("Failed to delete notification endpoint");
+                toast.error("Failed to delete notification endpoint");
             }
         } catch (error) {
-            console.error("Error deleting endpoint:", error);
-            alert("Failed to delete notification endpoint");
+            logger.error("[Notifications] Error deleting endpoint", error);
+            toast.error("Failed to delete notification endpoint");
         } finally {
             setDeleting(null);
         }
@@ -86,7 +90,7 @@ export default function NotificationList({
                 mutate();
             }
         } catch (error) {
-            console.error("Error toggling endpoint:", error);
+            logger.error("[Notifications] Error toggling endpoint", error);
             mutate();
         }
     }
@@ -103,6 +107,7 @@ export default function NotificationList({
 
     return (
         <div className="space-y-6">
+            <ConfirmModal {...modalProps} />
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <h2 className="text-lg font-semibold text-white">{typeName} Notifications</h2>
                 <button

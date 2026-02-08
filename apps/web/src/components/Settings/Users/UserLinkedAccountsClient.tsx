@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import useSWR from "swr";
 import Image from "next/image";
 import { useToast } from "@/components/Providers/ToastProvider";
+import { logger } from "@/lib/logger";
 
 interface User {
     id: number;
@@ -41,7 +42,7 @@ export function UserLinkedAccountsClient() {
                 toast.error("Failed to unlink account");
             }
         } catch (error) {
-            console.error("Error unlinking account:", error);
+            logger.error("[UserLinkedAccounts] Error unlinking account", error);
             toast.error("Failed to unlink account");
         } finally {
             setUnlinking(false);

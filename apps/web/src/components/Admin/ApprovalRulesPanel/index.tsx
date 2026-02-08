@@ -11,6 +11,8 @@ import {
   Save,
   AlertCircle,
 } from "lucide-react";
+import { ConfirmModal, useConfirm } from "@/components/Common/ConfirmModal";
+import { useToast } from "@/components/Providers/ToastProvider";
 
 interface Rule {
   id: number;
@@ -242,6 +244,8 @@ export function ApprovalRulesPanel() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { confirm, modalProps } = useConfirm();
+  const toast = useToast();
 
   const getCsrfToken = () => {
     const meta = document.querySelector('meta[name="csrf-token"]');
@@ -303,7 +307,8 @@ export function ApprovalRulesPanel() {
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm("Are you sure you want to delete this rule?")) return;
+    const ok = await confirm("Are you sure you want to delete this rule?", { title: "Delete Rule", destructive: true, confirmLabel: "Delete" });
+    if (!ok) return;
 
     try {
       const response = await fetch(`/api/admin/approval-rules/${id}`, {
@@ -316,10 +321,10 @@ export function ApprovalRulesPanel() {
       if (response.ok) {
         mutate();
       } else {
-        alert("Failed to delete rule");
+        toast.error("Failed to delete rule");
       }
     } catch (err) {
-      alert("Failed to delete rule");
+      toast.error("Failed to delete rule");
     }
   };
 
@@ -328,6 +333,7 @@ export function ApprovalRulesPanel() {
 
   return (
     <div className="space-y-6">
+      <ConfirmModal {...modalProps} />
       {error && (
         <div className="flex gap-3 p-4 bg-red-500/20 border border-red-500/50 rounded-lg text-red-200">
           <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />

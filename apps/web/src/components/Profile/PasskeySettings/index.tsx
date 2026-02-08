@@ -6,6 +6,7 @@ import { Fingerprint, Plus, Trash2, ShieldCheck, Loader2, Pencil } from "lucide-
 import { csrfFetch } from "@/lib/csrf-client";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { ConfirmationModal } from "@/components/Common/ConfirmationModal";
+import { logger } from "@/lib/logger";
 
 interface Credential {
   id: string;
@@ -39,7 +40,7 @@ export function PasskeySettings() {
         setCredentials(data);
       }
     } catch (err) {
-      console.error("Failed to fetch credentials", err);
+      logger.error("[Passkeys] Failed to fetch credentials", err);
     } finally {
       setLoading(false);
     }
@@ -72,7 +73,7 @@ export function PasskeySettings() {
         throw new Error(verification.error || "Verification failed");
       }
     } catch (err: any) {
-      console.error(err);
+      logger.error("[Passkeys] Registration failed", err);
       setError(err.message || "Failed to register passkey");
     } finally {
       setRegistering(false);
@@ -95,7 +96,7 @@ export function PasskeySettings() {
             toast.error("Failed to remove passkey");
           }
         } catch (err) {
-          console.error("Failed to delete credential", err);
+          logger.error("[Passkeys] Failed to delete credential", err);
           toast.error("An error occurred while removing the passkey");
         }
       }
@@ -123,7 +124,7 @@ export function PasskeySettings() {
         toast.error("Failed to rename passkey");
       }
     } catch (err) {
-      console.error("Failed to update credential", err);
+      logger.error("[Passkeys] Failed to update credential", err);
       toast.error("An error occurred while renaming the passkey");
     }
   };

@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import useSWR from "swr";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { csrfFetch } from "@/lib/csrf-client";
+import { logger } from "@/lib/logger";
 import { RequestLimitSelector } from "@/components/Common/RequestLimitSelector";
 import { AuthResetModal } from "@/components/Settings/Users/AuthResetModal";
 import {
@@ -146,7 +147,7 @@ export function UserGeneralSettingsClient() {
                 toast.error(data.error || "Failed to save settings");
             }
         } catch (error) {
-            console.error("Error saving settings:", error);
+            logger.error("[UserSettings] Error saving settings", error);
             toast.error("Failed to save settings");
         } finally {
             setSaving(false);
@@ -246,7 +247,7 @@ export function UserGeneralSettingsClient() {
                 toast.error("Failed to reset MFA");
             }
         } catch (error) {
-            console.error("Error resetting MFA:", error);
+            logger.error("[UserSettings] Error resetting MFA", error);
             toast.error("Failed to reset MFA");
         } finally {
             setResettingMfa(false);

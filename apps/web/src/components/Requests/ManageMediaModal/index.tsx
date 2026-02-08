@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { csrfFetch } from "@/lib/csrf-client";
 import { ExternalLink, Trash2, Eraser, Eye, Check, X } from "lucide-react";
 import { ReleaseSearchModal } from "@/components/Media/ReleaseSearchModal";
+import { ConfirmModal, useConfirm } from "@/components/Common/ConfirmModal";
 import { Modal } from "@/components/Common/Modal";
 import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 
@@ -37,6 +38,7 @@ export function ManageMediaModal(props: {
     backdropUrl,
     prowlarrEnabled = false
   } = props;
+  const { confirm, modalProps } = useConfirm();
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rawOpen, setRawOpen] = useState(false);
@@ -121,11 +123,11 @@ export function ManageMediaModal(props: {
   const runAction = async (action: "remove" | "clear") => {
     if (working) return;
     if (action === "remove") {
-      if (!confirm(`Remove ${title} from ${mediaType === "movie" ? "Radarr" : "Sonarr"}? This will delete files.`)) {
-        return;
-      }
-    } else if (!confirm(`Clear all data for ${title}?`)) {
-      return;
+      const ok = await confirm(`Remove ${title} from ${mediaType === "movie" ? "Radarr" : "Sonarr"}? This will delete files.`, { title: "Remove Media", destructive: true, confirmLabel: "Remove" });
+      if (!ok) return;
+    } else {
+      const ok = await confirm(`Clear all data for ${title}?`, { title: "Clear Data", destructive: true, confirmLabel: "Clear" });
+      if (!ok) return;
     }
     setWorking(true);
     setError(null);

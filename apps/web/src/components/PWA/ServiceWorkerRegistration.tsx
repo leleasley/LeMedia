@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { logger } from "@/lib/logger";
 
 export function ServiceWorkerRegistration() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -12,7 +13,7 @@ export function ServiceWorkerRegistration() {
       navigator.serviceWorker
         .register("/sw.js")
         .then((registration) => {
-          console.log("[SW] Service Worker registered:", registration.scope);
+          logger.debug("[SW] Service Worker registered", { scope: registration.scope });
 
           // Check for updates periodically - store ref for cleanup
           intervalRef.current = setInterval(() => {
@@ -20,7 +21,7 @@ export function ServiceWorkerRegistration() {
           }, 60 * 60 * 1000); // Check every hour
         })
         .catch((error) => {
-          console.error("[SW] Service Worker registration failed:", error);
+          logger.error("[SW] Service Worker registration failed", error);
         });
     };
 

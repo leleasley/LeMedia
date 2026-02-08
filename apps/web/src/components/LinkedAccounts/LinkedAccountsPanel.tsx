@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Image from "next/image";
 import useSWR from "swr";
 import { useToast } from "@/components/Providers/ToastProvider";
+import { ConfirmModal, useConfirm } from "@/components/Common/ConfirmModal";
 import { csrfFetch } from "@/lib/csrf-client";
 
 type LinkedAccountsMode = "self" | "admin";
@@ -45,6 +46,7 @@ export function LinkedAccountsPanel({
   userId?: string | number;
 }) {
   const toast = useToast();
+  const { confirm, modalProps } = useConfirm();
   const [unlinking, setUnlinking] = useState(false);
   const [showLinkForm, setShowLinkForm] = useState(false);
   const [linking, setLinking] = useState(false);
@@ -115,7 +117,8 @@ export function LinkedAccountsPanel({
 
   const handleUnlink = async () => {
     if (!normalized?.jellyfinUserId) return;
-    if (!confirm("Are you sure you want to unlink this Jellyfin account?")) return;
+    const ok = await confirm("Are you sure you want to unlink this Jellyfin account?", { title: "Unlink Jellyfin", destructive: true, confirmLabel: "Unlink" });
+    if (!ok) return;
 
     setUnlinking(true);
     try {
@@ -241,7 +244,8 @@ export function LinkedAccountsPanel({
   };
 
   const handleDeleteDiscord = async () => {
-    if (!confirm("Are you sure you want to unlink your Discord account?")) return;
+    const ok = await confirm("Are you sure you want to unlink your Discord account?", { title: "Unlink Discord", destructive: true, confirmLabel: "Unlink" });
+    if (!ok) return;
     
     setDiscordDeleting(true);
     try {
@@ -270,7 +274,8 @@ export function LinkedAccountsPanel({
   };
 
   const handleDeleteLetterboxd = async () => {
-    if (!confirm("Are you sure you want to unlink your Letterboxd account?")) return;
+    const ok = await confirm("Are you sure you want to unlink your Letterboxd account?", { title: "Unlink Letterboxd", destructive: true, confirmLabel: "Unlink" });
+    if (!ok) return;
     
     setLetterboxdDeleting(true);
     try {
@@ -343,7 +348,8 @@ export function LinkedAccountsPanel({
   };
 
   const handleDeleteTrakt = async () => {
-    if (!confirm("Are you sure you want to unlink your Trakt account?")) return;
+    const ok = await confirm("Are you sure you want to unlink your Trakt account?", { title: "Unlink Trakt", destructive: true, confirmLabel: "Unlink" });
+    if (!ok) return;
     
     setTraktDeleting(true);
     try {
@@ -397,6 +403,7 @@ export function LinkedAccountsPanel({
 
   return (
     <div className="space-y-6">
+      <ConfirmModal {...modalProps} />
       <div>
         <h3 className="text-lg font-semibold text-white mb-1">Linked Accounts</h3>
         <p className="text-sm text-gray-400">View and manage connected external accounts</p>

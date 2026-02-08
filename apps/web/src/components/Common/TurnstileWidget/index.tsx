@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { logger } from "@/lib/logger";
 
 interface TurnstileWidgetProps {
   onSuccess: (token: string) => void;
@@ -54,7 +55,7 @@ export function TurnstileWidget({ onSuccess, onError, onExpire }: TurnstileWidge
           },
         });
       } catch (error) {
-        console.error("TurnstileWidget: Failed to render:", error);
+        logger.error("[TurnstileWidget] Failed to render", error);
       }
     };
 

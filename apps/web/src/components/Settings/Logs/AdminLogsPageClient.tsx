@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { csrfFetch } from "@/lib/csrf-client";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { ConfirmationModal } from "@/components/Common/ConfirmationModal";
+import { logger } from "@/lib/logger";
 
 type AuditRow = {
   id: number;
@@ -118,7 +119,7 @@ export function AdminLogsPageClient({
       router.replace("/admin/settings/logs?page=1");
       await mutate(`/api/admin/logs?page=1`);
     } catch (error) {
-      console.error("Failed to clear logs:", error);
+      logger.error("[AdminLogs] Failed to clear logs", error);
       toast.error("Failed to clear audit logs. Please try again.");
     } finally {
       setIsClearing(false);

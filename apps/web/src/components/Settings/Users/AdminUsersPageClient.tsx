@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import useSWR from "swr";
 import { PrefetchLink } from "@/components/Layout/PrefetchLink";
 import Image from "next/image";
+import { logger } from "@/lib/logger";
 import { 
   PencilIcon, 
   UserPlusIcon, 
@@ -163,7 +164,7 @@ export function AdminUsersPageClient() {
               toast.error(data.error || "Failed to update user status");
           }
       } catch (error) {
-          console.error("Error updating user ban status:", error);
+          logger.error("[AdminUsers] Error updating user ban status", error);
           toast.error("Failed to update user status");
       }
   };
@@ -180,7 +181,7 @@ export function AdminUsersPageClient() {
       }
       toast.success("All sessions revoked for user");
     } catch (error) {
-      console.error("Error logging out sessions:", error);
+      logger.error("[AdminUsers] Error logging out sessions", error);
       toast.error("Failed to revoke sessions");
     }
   };
@@ -207,7 +208,7 @@ export function AdminUsersPageClient() {
       }
       toast.success("Calendar feed rotated");
     } catch (error) {
-      console.error("Error rotating feed:", error);
+      logger.error("[AdminUsers] Error rotating feed", error);
       toast.error("Failed to rotate feed link");
     }
   };
@@ -223,7 +224,7 @@ export function AdminUsersPageClient() {
         setDeleteModal({ isOpen: false });
       }
     } catch (error) {
-      console.error("Error deleting user:", error);
+      logger.error("[AdminUsers] Error deleting user", error);
     }
   };
 

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { X, ChevronDown } from "lucide-react";
 import { clsx } from "clsx";
+import { logger } from "@/lib/logger";
 
 interface Genre {
   id: number;
@@ -63,7 +64,7 @@ export function GenreFilterDropdown({
         allGenres.sort((a, b) => a.name.localeCompare(b.name));
         setGenres(allGenres);
       } catch (error) {
-        console.error("Failed to load genres:", error);
+        logger.error("[GenreFilter] Failed to load genres", error);
       } finally {
         if (!cancelled) {
           setIsLoading(false);

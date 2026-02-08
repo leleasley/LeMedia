@@ -3,6 +3,8 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { TrashIcon, ClockIcon, EyeIcon, ArrowPathIcon, CheckIcon } from "@heroicons/react/24/outline";
 import { Dialog, Transition } from "@headlessui/react";
+import { useToast } from "@/components/Providers/ToastProvider";
+import { logger } from "@/lib/logger";
 
 interface MediaShare {
   id: number;
@@ -33,6 +35,7 @@ export function AdminSharesPageClient() {
   const [loadingTitles, setLoadingTitles] = useState(false);
   const [shareBaseUrl, setShareBaseUrl] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<MediaShare | null>(null);
+  const toast = useToast();
 
   const normalizeBaseUrl = (value: string | null | undefined) => {
     if (!value) return null;
@@ -59,7 +62,7 @@ export function AdminSharesPageClient() {
             };
           }
         } catch (error) {
-          console.error(`Failed to fetch title for ${share.mediaType} ${share.tmdbId}:`, error);
+          logger.error(`[Shares] Failed to fetch title for ${share.mediaType} ${share.tmdbId}`, error);
         }
         return { ...share, title: `TMDB ID: ${share.tmdbId}` };
       })
@@ -80,7 +83,7 @@ export function AdminSharesPageClient() {
         await fetchTitlesForShares(data.shares);
       }
     } catch (error) {
-      console.error("Failed to load shares:", error);
+      logger.error("[Shares] Failed to load shares", error);
     } finally {
       setLoading(false);
     }
@@ -107,11 +110,11 @@ export function AdminSharesPageClient() {
         setShares(shares.filter((s) => s.id !== id));
         closeDeleteModal();
       } else {
-        alert("Failed to delete share link");
+        toast.error("Failed to delete share link");
       }
     } catch (error) {
-      console.error("Failed to delete share:", error);
-      alert("Failed to delete share link");
+      logger.error("[Shares] Failed to delete share", error);
+      toast.error("Failed to delete share link");
     } finally {
       setDeleting(null);
     }

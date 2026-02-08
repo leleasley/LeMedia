@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { logger } from "@/lib/logger";
+import { useToast } from "@/components/Providers/ToastProvider";
 
 type LoginPageClientProps = {
   csrfToken?: string;
@@ -27,6 +28,7 @@ const loginFormId = "lemedia-login-form";
 
 export function LoginPageClient({ csrfToken, from, oidcEnabled, jellyfinEnabled }: LoginPageClientProps) {
   const router = useRouter();
+  const toast = useToast();
   const [showJellyfinLogin, setShowJellyfinLogin] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState("");
   const isTurnstileEnabled = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
@@ -37,7 +39,7 @@ export function LoginPageClient({ csrfToken, from, oidcEnabled, jellyfinEnabled 
 
   const handlePasskeyLogin = async () => {
     if (isTurnstileEnabled && !turnstileToken) {
-      alert("Complete the security check before signing in.");
+      toast.error("Complete the security check before signing in.");
       return;
     }
     try {
@@ -65,7 +67,7 @@ export function LoginPageClient({ csrfToken, from, oidcEnabled, jellyfinEnabled 
       }
     } catch (err) {
       logger.error("Passkey login failed", err);
-      alert("Passkey login failed. Please try your password.");
+      toast.error("Passkey login failed. Please try your password.");
     }
   };
 

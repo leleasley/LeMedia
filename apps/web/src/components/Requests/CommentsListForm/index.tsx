@@ -5,6 +5,8 @@ import useSWR from "swr";
 import { Send, Loader2 } from "lucide-react";
 import Image from "next/image";
 import { formatDate } from "@/lib/dateFormat";
+import { useToast } from "@/components/Providers/ToastProvider";
+import { logger } from "@/lib/logger";
 
 interface Comment {
   id: number;
@@ -29,6 +31,7 @@ export function CommentsListForm({ requestId }: CommentsListFormProps) {
   );
   const [comment, setComment] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const toast = useToast();
 
   const getCsrfToken = () => {
     const meta = document.querySelector('meta[name="csrf-token"]');
@@ -55,11 +58,11 @@ export function CommentsListForm({ requestId }: CommentsListFormProps) {
         mutate();
       } else {
         const error = await response.json();
-        alert(error.error || "Failed to add comment");
+        toast.error(error.error || "Failed to add comment");
       }
     } catch (err) {
-      console.error("Error submitting comment:", err);
-      alert("Failed to add comment");
+      logger.error("[Comments] Error submitting comment", err);
+      toast.error("Failed to add comment");
     } finally {
       setIsSubmitting(false);
     }

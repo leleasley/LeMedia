@@ -8,6 +8,8 @@ import { formatDate } from "@/lib/dateFormat";
 import { tmdbImageUrl } from "@/lib/tmdb-images";
 import { cn } from "@/lib/utils";
 import { csrfFetch } from "@/lib/csrf-client";
+import { useToast } from "@/components/Providers/ToastProvider";
+import { logger } from "@/lib/logger";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -81,6 +83,7 @@ export function MediaReviews({ tmdbId, mediaType, title, posterPath, releaseYear
   const [spoiler, setSpoiler] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [revealed, setRevealed] = useState<Record<number, boolean>>({});
+  const toast = useToast();
 
   const userReview = data?.userReview ?? null;
 
@@ -126,14 +129,14 @@ export function MediaReviews({ tmdbId, mediaType, title, posterPath, releaseYear
 
       if (!response.ok) {
         const error = await response.json();
-        alert(error.error || "Failed to save review");
+        toast.error(error.error || "Failed to save review");
         return;
       }
 
       await mutate();
     } catch (err) {
-      console.error("Error saving review:", err);
-      alert("Failed to save review");
+      logger.error("[Reviews] Error saving review", err);
+      toast.error("Failed to save review");
     } finally {
       setSubmitting(false);
     }
@@ -148,13 +151,13 @@ export function MediaReviews({ tmdbId, mediaType, title, posterPath, releaseYear
       });
       if (!response.ok) {
         const error = await response.json();
-        alert(error.error || "Failed to delete review");
+        toast.error(error.error || "Failed to delete review");
         return;
       }
       await mutate();
     } catch (err) {
-      console.error("Error deleting review:", err);
-      alert("Failed to delete review");
+      logger.error("[Reviews] Error deleting review", err);
+      toast.error("Failed to delete review");
     } finally {
       setSubmitting(false);
     }

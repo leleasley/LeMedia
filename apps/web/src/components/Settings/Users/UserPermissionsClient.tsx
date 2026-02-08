@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import useSWR from "swr";
 import { AnimatedCheckbox } from "@/components/Common/AnimatedCheckbox";
 import { useToast } from "@/components/Providers/ToastProvider";
+import { logger } from "@/lib/logger";
 
 interface User {
     id: number;
@@ -108,7 +109,7 @@ export function UserPermissionsClient({ userId: userIdProp, editable, variant }:
                 toast.error(data.error || "Failed to save permissions");
             }
         } catch (error) {
-            console.error("Error saving permissions:", error);
+            logger.error("[UserPermissions] Error saving permissions", error);
             toast.error("Failed to save permissions");
         } finally {
             setSaving(false);

@@ -5,6 +5,7 @@ import { Bell, X, AlertCircle } from 'lucide-react';
 import { useToast } from '@/components/Providers/ToastProvider';
 import { isIOSSafari } from '@/lib/ios-detect';
 import { csrfFetch } from '@/lib/csrf-client';
+import { logger } from '@/lib/logger';
 
 export function WebPushPrompt() {
   const [shown, setShown] = useState(false);
@@ -47,7 +48,7 @@ export function WebPushPrompt() {
           // If granted but no subscription, show prompt to re-subscribe
           setShown(true);
         } catch (err) {
-          console.error('Error checking subscription:', err);
+          logger.error('[WebPush] Error checking subscription', err);
         }
         return;
       }
@@ -63,7 +64,7 @@ export function WebPushPrompt() {
         setShown(true);
       }
     } catch (error) {
-      console.error('Error checking web push status:', error);
+      logger.error('[WebPush] Error checking status', error);
     }
   };
 
@@ -93,9 +94,9 @@ export function WebPushPrompt() {
       }
 
       // Request permission
-      console.log('Requesting notification permission...');
+      logger.debug('[WebPush] Requesting notification permission');
       const permission = await Notification.requestPermission();
-      console.log('Permission result:', permission);
+      logger.debug('[WebPush] Permission result', { permission });
       
       if (permission !== 'granted') {
         // User denied - mark as disabled
@@ -116,7 +117,7 @@ export function WebPushPrompt() {
       }
 
       // Convert the VAPID key from URL-safe base64 to Uint8Array
-      console.log('Subscribing to push with VAPID key...');
+      logger.debug('[WebPush] Subscribing to push with VAPID key');
       let vapidKeyArray;
       try {
         // URL-safe base64 to regular base64
@@ -127,7 +128,7 @@ export function WebPushPrompt() {
           vapidKeyArray[i] = rawData.charCodeAt(i);
         }
       } catch (error) {
-        console.error('Failed to decode VAPID key:', error);
+        logger.error('[WebPush] Failed to decode VAPID key', error);
         toast.error('Invalid VAPID key format');
         setIsLoading(false);
         return;
@@ -138,7 +139,7 @@ export function WebPushPrompt() {
         userVisibleOnly: true,
         applicationServerKey: vapidKeyArray,
       });
-      console.log('Push subscription successful:', subscription);
+      logger.debug('[WebPush] Push subscription successful');
 
       // Save subscription to server
       const saveRes = await csrfFetch('/api/push/subscribe', {

@@ -8,20 +8,17 @@ RUN --mount=type=cache,target=/root/.npm npm install --legacy-peer-deps
 FROM node:22-alpine AS build
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
-ARG DATABASE_URL
-ARG SESSION_SECRET
-ARG SERVICES_SECRET_KEY
-ARG VAPID_PUBLIC_KEY
-ARG VAPID_PRIVATE_KEY
-ARG VAPID_EMAIL
+# Only NEXT_PUBLIC_ vars need real values at build time (inlined into client JS).
+# Server-only secrets use placeholders during build and are injected at runtime via env_file.
 ARG NEXT_PUBLIC_TURNSTILE_SITE_KEY
-ENV DATABASE_URL=${DATABASE_URL}
-ENV SESSION_SECRET=${SESSION_SECRET}
-ENV SERVICES_SECRET_KEY=${SERVICES_SECRET_KEY}
-ENV VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY}
-ENV VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY}
-ENV VAPID_EMAIL=${VAPID_EMAIL}
 ENV NEXT_PUBLIC_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_TURNSTILE_SITE_KEY}
+# Placeholder values so next build doesn't fail when server code references these
+ENV DATABASE_URL=postgres://build:build@localhost:5432/build
+ENV SESSION_SECRET=build-placeholder-secret-not-used-at-runtime-32chars
+ENV SERVICES_SECRET_KEY=build-placeholder
+ENV VAPID_PUBLIC_KEY=build-placeholder
+ENV VAPID_PRIVATE_KEY=build-placeholder
+ENV VAPID_EMAIL=build@placeholder.local
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # Ensure public directory exists even if repo has no assets yet

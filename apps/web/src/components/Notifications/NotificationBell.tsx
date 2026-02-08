@@ -6,6 +6,7 @@ import useSWR from "swr";
 import { formatDistanceToNow } from "date-fns";
 import { PrefetchLink } from "@/components/Layout/PrefetchLink";
 import { csrfFetch } from "@/lib/csrf-client";
+import { logger } from "@/lib/logger";
 
 type Notification = {
   id: number;
@@ -59,7 +60,7 @@ export function NotificationBell() {
       });
       mutate();
     } catch (error) {
-      console.error("Failed to mark notification as read:", error);
+      logger.error("[Notifications] Failed to mark as read", error);
     }
   };
 
@@ -70,7 +71,7 @@ export function NotificationBell() {
       });
       mutate();
     } catch (error) {
-      console.error("Failed to mark all as read:", error);
+      logger.error("[Notifications] Failed to mark all as read", error);
     }
   };
 

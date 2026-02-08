@@ -5,6 +5,7 @@ import { Dialog, Transition } from "@headlessui/react";
 import { ShieldExclamationIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import { Loader2 } from "lucide-react";
 import { useToast } from "@/components/Providers/ToastProvider";
+import { logger } from "@/lib/logger";
 import { csrfFetch } from "@/lib/csrf-client";
 
 interface AuthResetModalProps {
@@ -55,7 +56,7 @@ export function AuthResetModal({ userId, isOpen, onClose }: AuthResetModalProps)
       onClose();
       setOptions({ unlinkSso: false, resetOtp: false, removePasskeys: false, logoutSessions: false });
     } catch (error) {
-      console.error(error);
+      logger.error("[AuthReset] Failed to apply selected actions", error);
       toast.error("Failed to apply selected actions");
     } finally {
       setResetting(false);
