@@ -98,7 +98,7 @@ export function useConfirm() {
     destructive?: boolean;
     confirmLabel?: string;
   }>({ open: false, message: "" });
-  const resolveRef = useRef<(value: boolean) => void>();
+  const resolveRef = useRef<((value: boolean) => void) | null>(null);
 
   const confirm = useCallback(
     (message: string, opts?: ConfirmOptions) => {
