@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { ArrowDownTrayIcon, CheckCircleIcon, ExclamationTriangleIcon } from "@heroicons/react/24/solid";
 import { Loader2 } from "lucide-react";
+import { logger } from "@/lib/logger";
 
 interface DownloadProgressBarProps {
   type: "movie" | "tv";
@@ -95,7 +96,8 @@ export function DownloadProgressBar({ type, tmdbId, onComplete }: DownloadProgre
           setDownload(null);
         }
       } catch (error) {
-        console.error("[Download Progress] Fetch error:", error);
+        logger.error("Failed to fetch download progress", error);
+        // Don't show toast as this is a background polling operation
       }
     };
 

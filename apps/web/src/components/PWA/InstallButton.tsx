@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Download, X, Loader2 } from "lucide-react";
+import { useToast } from "@/components/Providers/ToastProvider";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -10,6 +11,7 @@ interface BeforeInstallPromptEvent extends Event {
 }
 
 export function PWAInstallButton({ mobileMenu = false }: { mobileMenu?: boolean } = {}) {
+  const toast = useToast();
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstallable, setIsInstallable] = useState(false);
   const [isPrompting, setIsPrompting] = useState(false);
@@ -64,9 +66,10 @@ export function PWAInstallButton({ mobileMenu = false }: { mobileMenu?: boolean 
         setIsInstallable(false);
         setShowSuccess(true);
         setTimeout(() => setShowSuccess(false), 3000);
+        toast.success("App installed successfully!");
       }
     } catch (error) {
-      console.error("Installation failed:", error);
+      toast.error("Installation failed. Please try again.");
     } finally {
       setIsPrompting(false);
       setDeferredPrompt(null);

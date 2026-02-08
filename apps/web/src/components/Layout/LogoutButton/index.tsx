@@ -2,6 +2,7 @@
 
 import { LogOut } from "lucide-react";
 import { useState } from "react";
+import { useToast } from "@/components/Providers/ToastProvider";
 
 interface LogoutButtonProps {
     className?: string;
@@ -11,6 +12,7 @@ interface LogoutButtonProps {
 
 export function LogoutButton({ className, variant = 'default', onClick }: LogoutButtonProps) {
     const [isLoading, setIsLoading] = useState(false);
+    const toast = useToast();
 
     const handleLogout = async () => {
         // Use a full navigation to the logout route so cookies and redirects are handled by the browser
@@ -21,7 +23,7 @@ export function LogoutButton({ className, variant = 'default', onClick }: Logout
             // Force a top-level navigation so the server can set/clear cookies and redirect to /login
             window.location.href = '/logout';
         } catch (error) {
-            console.error('Logout navigation failed:', error);
+            toast.error('Logout failed. Redirecting to login...');
             window.location.href = '/login';
         }
     };

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useReducer } from "react";
 import Image from "next/image";
 import useSWR from "swr";
 import { useToast } from "@/components/Providers/ToastProvider";
@@ -38,6 +38,145 @@ type ProfileResponse = {
   };
 };
 
+// Reducer state and actions for managing complex UI state
+type AccountsState = {
+  // Jellyfin state
+  unlinking: boolean;
+  showLinkForm: boolean;
+  linking: boolean;
+  linkError: string | null;
+  linkForm: { username: string; password: string };
+  
+  // Discord state
+  editingDiscord: boolean;
+  discordInput: string;
+  discordValidating: boolean;
+  discordError: string | null;
+  discordDeleting: boolean;
+  
+  // Letterboxd state
+  editingLetterboxd: boolean;
+  letterboxdInput: string;
+  letterboxdValidating: boolean;
+  letterboxdError: string | null;
+  letterboxdDeleting: boolean;
+  letterboxdImporting: boolean;
+  
+  // Trakt state
+  editingTrakt: boolean;
+  traktInput: string;
+  traktValidating: boolean;
+  traktError: string | null;
+  traktDeleting: boolean;
+  traktConnecting: boolean;
+};
+
+type AccountsAction =
+  | { type: 'SET_UNLINKING'; payload: boolean }
+  | { type: 'SET_SHOW_LINK_FORM'; payload: boolean }
+  | { type: 'SET_LINKING'; payload: boolean }
+  | { type: 'SET_LINK_ERROR'; payload: string | null }
+  | { type: 'SET_LINK_FORM'; payload: { username: string; password: string } }
+  | { type: 'UPDATE_LINK_FORM_FIELD'; field: 'username' | 'password'; value: string }
+  | { type: 'SET_EDITING_DISCORD'; payload: boolean }
+  | { type: 'SET_DISCORD_INPUT'; payload: string }
+  | { type: 'SET_DISCORD_VALIDATING'; payload: boolean }
+  | { type: 'SET_DISCORD_ERROR'; payload: string | null }
+  | { type: 'SET_DISCORD_DELETING'; payload: boolean }
+  | { type: 'SET_EDITING_LETTERBOXD'; payload: boolean }
+  | { type: 'SET_LETTERBOXD_INPUT'; payload: string }
+  | { type: 'SET_LETTERBOXD_VALIDATING'; payload: boolean }
+  | { type: 'SET_LETTERBOXD_ERROR'; payload: string | null }
+  | { type: 'SET_LETTERBOXD_DELETING'; payload: boolean }
+  | { type: 'SET_LETTERBOXD_IMPORTING'; payload: boolean }
+  | { type: 'SET_EDITING_TRAKT'; payload: boolean }
+  | { type: 'SET_TRAKT_INPUT'; payload: string }
+  | { type: 'SET_TRAKT_VALIDATING'; payload: boolean }
+  | { type: 'SET_TRAKT_ERROR'; payload: string | null }
+  | { type: 'SET_TRAKT_DELETING'; payload: boolean }
+  | { type: 'SET_TRAKT_CONNECTING'; payload: boolean }
+  | { type: 'RESET_LINK_FORM' };
+
+const initialState: AccountsState = {
+  unlinking: false,
+  showLinkForm: false,
+  linking: false,
+  linkError: null,
+  linkForm: { username: "", password: "" },
+  editingDiscord: false,
+  discordInput: "",
+  discordValidating: false,
+  discordError: null,
+  discordDeleting: false,
+  editingLetterboxd: false,
+  letterboxdInput: "",
+  letterboxdValidating: false,
+  letterboxdError: null,
+  letterboxdDeleting: false,
+  letterboxdImporting: false,
+  editingTrakt: false,
+  traktInput: "",
+  traktValidating: false,
+  traktError: null,
+  traktDeleting: false,
+  traktConnecting: false,
+};
+
+function accountsReducer(state: AccountsState, action: AccountsAction): AccountsState {
+  switch (action.type) {
+    case 'SET_UNLINKING':
+      return { ...state, unlinking: action.payload };
+    case 'SET_SHOW_LINK_FORM':
+      return { ...state, showLinkForm: action.payload };
+    case 'SET_LINKING':
+      return { ...state, linking: action.payload };
+    case 'SET_LINK_ERROR':
+      return { ...state, linkError: action.payload };
+    case 'SET_LINK_FORM':
+      return { ...state, linkForm: action.payload };
+    case 'UPDATE_LINK_FORM_FIELD':
+      return { ...state, linkForm: { ...state.linkForm, [action.field]: action.value } };
+    case 'SET_EDITING_DISCORD':
+      return { ...state, editingDiscord: action.payload };
+    case 'SET_DISCORD_INPUT':
+      return { ...state, discordInput: action.payload };
+    case 'SET_DISCORD_VALIDATING':
+      return { ...state, discordValidating: action.payload };
+    case 'SET_DISCORD_ERROR':
+      return { ...state, discordError: action.payload };
+    case 'SET_DISCORD_DELETING':
+      return { ...state, discordDeleting: action.payload };
+    case 'SET_EDITING_LETTERBOXD':
+      return { ...state, editingLetterboxd: action.payload };
+    case 'SET_LETTERBOXD_INPUT':
+      return { ...state, letterboxdInput: action.payload };
+    case 'SET_LETTERBOXD_VALIDATING':
+      return { ...state, letterboxdValidating: action.payload };
+    case 'SET_LETTERBOXD_ERROR':
+      return { ...state, letterboxdError: action.payload };
+    case 'SET_LETTERBOXD_DELETING':
+      return { ...state, letterboxdDeleting: action.payload };
+    case 'SET_LETTERBOXD_IMPORTING':
+      return { ...state, letterboxdImporting: action.payload };
+    case 'SET_EDITING_TRAKT':
+      return { ...state, editingTrakt: action.payload };
+    case 'SET_TRAKT_INPUT':
+      return { ...state, traktInput: action.payload };
+    case 'SET_TRAKT_VALIDATING':
+      return { ...state, traktValidating: action.payload };
+    case 'SET_TRAKT_ERROR':
+      return { ...state, traktError: action.payload };
+    case 'SET_TRAKT_DELETING':
+      return { ...state, traktDeleting: action.payload };
+    case 'SET_TRAKT_CONNECTING':
+      return { ...state, traktConnecting: action.payload };
+    case 'RESET_LINK_FORM':
+      return { ...state, linkForm: { username: "", password: "" }, linkError: null };
+    default:
+      return state;
+  }
+}
+
 export function LinkedAccountsPanel({
   mode,
   userId
@@ -47,35 +186,7 @@ export function LinkedAccountsPanel({
 }) {
   const toast = useToast();
   const { confirm, modalProps } = useConfirm();
-  const [unlinking, setUnlinking] = useState(false);
-  const [showLinkForm, setShowLinkForm] = useState(false);
-  const [linking, setLinking] = useState(false);
-  const [linkError, setLinkError] = useState<string | null>(null);
-  const [linkForm, setLinkForm] = useState({ username: "", password: "" });
-  
-  // Discord state
-  const [editingDiscord, setEditingDiscord] = useState(false);
-  const [discordInput, setDiscordInput] = useState("");
-  const [discordValidating, setDiscordValidating] = useState(false);
-  const [discordError, setDiscordError] = useState<string | null>(null);
-  
-  // Letterboxd state
-  const [editingLetterboxd, setEditingLetterboxd] = useState(false);
-  const [letterboxdInput, setLetterboxdInput] = useState("");
-  const [letterboxdValidating, setLetterboxdValidating] = useState(false);
-  const [letterboxdError, setLetterboxdError] = useState<string | null>(null);
-  
-  // Trakt state
-  const [editingTrakt, setEditingTrakt] = useState(false);
-  const [traktInput, setTraktInput] = useState("");
-  const [traktValidating, setTraktValidating] = useState(false);
-  const [traktError, setTraktError] = useState<string | null>(null);
-  
-  const [discordDeleting, setDiscordDeleting] = useState(false);
-  const [letterboxdDeleting, setLetterboxdDeleting] = useState(false);
-  const [traktDeleting, setTraktDeleting] = useState(false);
-  const [traktConnecting, setTraktConnecting] = useState(false);
-  const [letterboxdImporting, setLetterboxdImporting] = useState(false);
+  const [state, dispatch] = useReducer(accountsReducer, initialState);
 
   const adminUrl = userId ? `/api/v1/admin/users/${userId}` : null;
   const profileUrl = "/api/v1/profile";
@@ -120,7 +231,7 @@ export function LinkedAccountsPanel({
     const ok = await confirm("Are you sure you want to unlink this Jellyfin account?", { title: "Unlink Jellyfin", destructive: true, confirmLabel: "Unlink" });
     if (!ok) return;
 
-    setUnlinking(true);
+    dispatch({ type: 'SET_UNLINKING', payload: true });
     try {
       const res = await csrfFetch(
         mode === "admin"
@@ -133,51 +244,51 @@ export function LinkedAccountsPanel({
         throw new Error(body?.error || "Failed to unlink account");
       }
       toast.success("Jellyfin account unlinked successfully");
-      setShowLinkForm(false);
+      dispatch({ type: 'SET_SHOW_LINK_FORM', payload: false });
       mutate();
     } catch (err: any) {
       toast.error(err?.message ?? "Failed to unlink account");
     } finally {
-      setUnlinking(false);
+      dispatch({ type: 'SET_UNLINKING', payload: false });
     }
   };
 
   const handleLink = async (event: React.FormEvent) => {
     event.preventDefault();
     if (mode !== "self") return;
-    setLinkError(null);
-    setLinking(true);
+    dispatch({ type: 'SET_LINK_ERROR', payload: null });
+    dispatch({ type: 'SET_LINKING', payload: true });
     try {
       const res = await csrfFetch("/api/v1/profile/jellyfin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(linkForm)
+        body: JSON.stringify(state.linkForm)
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(body?.error || "Failed to link account");
       }
       toast.success("Jellyfin account linked");
-      setLinkForm({ username: "", password: "" });
-      setShowLinkForm(false);
+      dispatch({ type: 'RESET_LINK_FORM' });
+      dispatch({ type: 'SET_SHOW_LINK_FORM', payload: false });
       mutate();
     } catch (err: any) {
-      setLinkError(err?.message ?? "Failed to link account");
+      dispatch({ type: 'SET_LINK_ERROR', payload: err?.message ?? "Failed to link account" });
       toast.error(err?.message ?? "Failed to link account");
     } finally {
-      setLinking(false);
+      dispatch({ type: 'SET_LINKING', payload: false });
     }
   };
 
   const handleSaveDiscord = async () => {
-    setDiscordError(null);
-    setDiscordValidating(true);
+    dispatch({ type: 'SET_DISCORD_ERROR', payload: null });
+    dispatch({ type: 'SET_DISCORD_VALIDATING', payload: true });
     try {
       // Validate Discord ID format first
       const res = await csrfFetch("/api/v1/profile/validate-discord", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ discordUserId: discordInput })
+        body: JSON.stringify({ discordUserId: state.discordInput })
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -188,7 +299,7 @@ export function LinkedAccountsPanel({
       const updateRes = await csrfFetch("/api/v1/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ discordUserId: discordInput.trim() })
+        body: JSON.stringify({ discordUserId: state.discordInput.trim() })
       });
       const updateBody = await updateRes.json().catch(() => ({}));
       if (!updateRes.ok) {
@@ -196,25 +307,25 @@ export function LinkedAccountsPanel({
       }
 
       toast.success("Discord ID saved successfully");
-      setEditingDiscord(false);
+      dispatch({ type: 'SET_EDITING_DISCORD', payload: false });
       mutate();
     } catch (err: any) {
-      setDiscordError(err?.message ?? "Failed to save Discord ID");
+      dispatch({ type: 'SET_DISCORD_ERROR', payload: err?.message ?? "Failed to save Discord ID" });
       toast.error(err?.message ?? "Failed to save Discord ID");
     } finally {
-      setDiscordValidating(false);
+      dispatch({ type: 'SET_DISCORD_VALIDATING', payload: false });
     }
   };
 
   const handleSaveLetterboxd = async () => {
-    setLetterboxdError(null);
-    setLetterboxdValidating(true);
+    dispatch({ type: 'SET_LETTERBOXD_ERROR', payload: null });
+    dispatch({ type: 'SET_LETTERBOXD_VALIDATING', payload: true });
     try {
       // Validate Letterboxd username
       const res = await csrfFetch("/api/v1/profile/validate-letterboxd", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ letterboxdUsername: letterboxdInput })
+        body: JSON.stringify({ letterboxdUsername: state.letterboxdInput })
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -225,7 +336,7 @@ export function LinkedAccountsPanel({
       const updateRes = await csrfFetch("/api/v1/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ letterboxdUsername: letterboxdInput.trim() })
+        body: JSON.stringify({ letterboxdUsername: state.letterboxdInput.trim() })
       });
       const updateBody = await updateRes.json().catch(() => ({}));
       if (!updateRes.ok) {
@@ -233,13 +344,13 @@ export function LinkedAccountsPanel({
       }
 
       toast.success("Letterboxd username saved successfully");
-      setEditingLetterboxd(false);
+      dispatch({ type: 'SET_EDITING_LETTERBOXD', payload: false });
       mutate();
     } catch (err: any) {
-      setLetterboxdError(err?.message ?? "Failed to save Letterboxd username");
+      dispatch({ type: 'SET_LETTERBOXD_ERROR', payload: err?.message ?? "Failed to save Letterboxd username" });
       toast.error(err?.message ?? "Failed to save Letterboxd username");
     } finally {
-      setLetterboxdValidating(false);
+      dispatch({ type: 'SET_LETTERBOXD_VALIDATING', payload: false });
     }
   };
 
@@ -247,7 +358,7 @@ export function LinkedAccountsPanel({
     const ok = await confirm("Are you sure you want to unlink your Discord account?", { title: "Unlink Discord", destructive: true, confirmLabel: "Unlink" });
     if (!ok) return;
     
-    setDiscordDeleting(true);
+    dispatch({ type: 'SET_DISCORD_DELETING', payload: true });
     try {
       const endpoint = mode === "admin" 
         ? `/api/v1/admin/users/${userId}`
@@ -264,12 +375,12 @@ export function LinkedAccountsPanel({
       }
 
       toast.success("Discord account unlinked successfully");
-      setEditingDiscord(false);
+      dispatch({ type: 'SET_EDITING_DISCORD', payload: false });
       mutate();
     } catch (err: any) {
       toast.error(err?.message ?? "Failed to unlink Discord");
     } finally {
-      setDiscordDeleting(false);
+      dispatch({ type: 'SET_DISCORD_DELETING', payload: false });
     }
   };
 
@@ -277,7 +388,7 @@ export function LinkedAccountsPanel({
     const ok = await confirm("Are you sure you want to unlink your Letterboxd account?", { title: "Unlink Letterboxd", destructive: true, confirmLabel: "Unlink" });
     if (!ok) return;
     
-    setLetterboxdDeleting(true);
+    dispatch({ type: 'SET_LETTERBOXD_DELETING', payload: true });
     try {
       const endpoint = mode === "admin" 
         ? `/api/v1/admin/users/${userId}`
@@ -294,24 +405,24 @@ export function LinkedAccountsPanel({
       }
 
       toast.success("Letterboxd account unlinked successfully");
-      setEditingLetterboxd(false);
+      dispatch({ type: 'SET_EDITING_LETTERBOXD', payload: false });
       mutate();
     } catch (err: any) {
       toast.error(err?.message ?? "Failed to unlink Letterboxd");
     } finally {
-      setLetterboxdDeleting(false);
+      dispatch({ type: 'SET_LETTERBOXD_DELETING', payload: false });
     }
   };
 
   const handleSaveTrakt = async () => {
-    setTraktError(null);
-    setTraktValidating(true);
+    dispatch({ type: 'SET_TRAKT_ERROR', payload: null });
+    dispatch({ type: 'SET_TRAKT_VALIDATING', payload: true });
     try {
       // Validate Trakt username
       const res = await csrfFetch("/api/v1/profile/validate-trakt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ traktUsername: traktInput })
+        body: JSON.stringify({ traktUsername: state.traktInput })
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -322,7 +433,7 @@ export function LinkedAccountsPanel({
       const updateRes = await csrfFetch("/api/v1/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ traktUsername: traktInput.trim() })
+        body: JSON.stringify({ traktUsername: state.traktInput.trim() })
       });
       const updateBody = await updateRes.json().catch(() => ({}));
       if (!updateRes.ok) {
@@ -330,19 +441,19 @@ export function LinkedAccountsPanel({
       }
 
       toast.success("Trakt username saved successfully");
-      setEditingTrakt(false);
+      dispatch({ type: 'SET_EDITING_TRAKT', payload: false });
       mutate();
     } catch (err: any) {
-      setTraktError(err?.message ?? "Failed to save Trakt username");
+      dispatch({ type: 'SET_TRAKT_ERROR', payload: err?.message ?? "Failed to save Trakt username" });
       toast.error(err?.message ?? "Failed to save Trakt username");
     } finally {
-      setTraktValidating(false);
+      dispatch({ type: 'SET_TRAKT_VALIDATING', payload: false });
     }
   };
 
   const handleConnectTrakt = () => {
     if (typeof window === "undefined") return;
-    setTraktConnecting(true);
+    dispatch({ type: 'SET_TRAKT_CONNECTING', payload: true });
     const returnTo = window.location.pathname + window.location.search;
     window.location.assign(`/api/v1/profile/trakt/connect?returnTo=${encodeURIComponent(returnTo)}`);
   };
@@ -351,7 +462,7 @@ export function LinkedAccountsPanel({
     const ok = await confirm("Are you sure you want to unlink your Trakt account?", { title: "Unlink Trakt", destructive: true, confirmLabel: "Unlink" });
     if (!ok) return;
     
-    setTraktDeleting(true);
+    dispatch({ type: 'SET_TRAKT_DELETING', payload: true });
     try {
       let res: Response;
       if (mode === "self") {
@@ -370,12 +481,12 @@ export function LinkedAccountsPanel({
       }
 
       toast.success("Trakt account unlinked successfully");
-      setEditingTrakt(false);
+      dispatch({ type: 'SET_EDITING_TRAKT', payload: false });
       mutate();
     } catch (err: any) {
       toast.error(err?.message ?? "Failed to unlink Trakt");
     } finally {
-      setTraktDeleting(false);
+      dispatch({ type: 'SET_TRAKT_DELETING', payload: false });
     }
   };
 
@@ -418,7 +529,7 @@ export function LinkedAccountsPanel({
       <div className="relative overflow-hidden rounded-2xl border border-indigo-500/20 bg-gradient-to-br from-indigo-950/40 via-slate-900/60 to-slate-900/40 p-6 backdrop-blur-md hover:border-indigo-500/40 transition-all">
         <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-transparent pointer-events-none"></div>
         <div className="relative">
-          {editingDiscord ? (
+          {state.editingDiscord ? (
             <div className="space-y-4">
               <div className="flex items-center gap-3 mb-4">
                 <div className="h-14 w-14 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center shadow-lg">
@@ -435,15 +546,15 @@ export function LinkedAccountsPanel({
                   <p className="text-xs text-indigo-300">Link your Discord profile for notifications & community features</p>
                 </div>
               </div>
-              {discordError && (
+              {state.discordError && (
                 <div className="rounded-lg border border-red-400/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-                  {discordError}
+                  {state.discordError}
                 </div>
               )}
               <input
                 type="text"
-                value={discordInput}
-                onChange={e => setDiscordInput(e.target.value)}
+                value={state.discordInput}
+                onChange={e => dispatch({ type: 'SET_DISCORD_INPUT', payload: e.target.value })}
                 placeholder="Enter your Discord user ID (17-19 digits)"
                 inputMode="numeric"
                 pattern="[0-9]*"
@@ -455,9 +566,9 @@ export function LinkedAccountsPanel({
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   onClick={() => {
-                    setEditingDiscord(false);
-                    setDiscordError(null);
-                    setDiscordInput("");
+                    dispatch({ type: 'SET_EDITING_DISCORD', payload: false });
+                    dispatch({ type: 'SET_DISCORD_ERROR', payload: null });
+                    dispatch({ type: 'SET_DISCORD_INPUT', payload: "" });
                   }}
                   className="px-4 py-2 rounded-lg border border-white/20 text-white hover:bg-white/10 transition text-sm font-medium"
                 >
@@ -465,10 +576,10 @@ export function LinkedAccountsPanel({
                 </button>
                 <button
                   onClick={handleSaveDiscord}
-                  disabled={discordValidating || !discordInput.trim()}
+                  disabled={state.discordValidating || !state.discordInput.trim()}
                   className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {discordValidating ? "Verifying..." : "Verify & Save"}
+                  {state.discordValidating ? "Verifying..." : "Verify & Save"}
                 </button>
               </div>
             </div>
@@ -501,8 +612,8 @@ export function LinkedAccountsPanel({
                   <div className="flex gap-2">
                     <button
                       onClick={() => {
-                        setEditingDiscord(true);
-                        setDiscordInput(normalized.discordUserId ?? "");
+                        dispatch({ type: 'SET_EDITING_DISCORD', payload: true });
+                        dispatch({ type: 'SET_DISCORD_INPUT', payload: normalized.discordUserId ?? "" });
                       }}
                       className="px-4 py-2 rounded-lg bg-indigo-600/80 text-white hover:bg-indigo-600 transition text-sm font-medium"
                     >
@@ -511,10 +622,10 @@ export function LinkedAccountsPanel({
                     {hasDiscord && (
                       <button
                         onClick={handleDeleteDiscord}
-                        disabled={discordDeleting}
+                        disabled={state.discordDeleting}
                         className="px-4 py-2 rounded-lg bg-red-600/80 text-white hover:bg-red-600 transition text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        {discordDeleting ? "Removing..." : "Unlink"}
+                        {state.discordDeleting ? "Removing..." : "Unlink"}
                       </button>
                     )}
                   </div>
@@ -529,7 +640,7 @@ export function LinkedAccountsPanel({
       <div className="relative overflow-hidden rounded-2xl border border-emerald-500/20 bg-gradient-to-br from-emerald-950/40 via-slate-900/60 to-slate-900/40 p-6 backdrop-blur-md hover:border-emerald-500/40 transition-all">
         <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-transparent pointer-events-none"></div>
         <div className="relative">
-          {editingLetterboxd ? (
+          {state.editingLetterboxd ? (
             <div className="space-y-4">
               <div className="flex items-center gap-3 mb-4">
                 <div className="h-14 w-14 rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shadow-lg">
@@ -546,15 +657,15 @@ export function LinkedAccountsPanel({
                   <p className="text-xs text-emerald-300">Link your profile to sync movies & track viewing history</p>
                 </div>
               </div>
-              {letterboxdError && (
+              {state.letterboxdError && (
                 <div className="rounded-lg border border-red-400/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-                  {letterboxdError}
+                  {state.letterboxdError}
                 </div>
               )}
               <input
                 type="text"
-                value={letterboxdInput}
-                onChange={e => setLetterboxdInput(e.target.value)}
+                value={state.letterboxdInput}
+                onChange={e => dispatch({ type: 'SET_LETTERBOXD_INPUT', payload: e.target.value })}
                 placeholder="Enter your Letterboxd username"
                 className="w-full rounded-xl border border-emerald-500/30 bg-emerald-950/20 px-4 py-3 text-white placeholder:text-white/40 outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all text-sm"
               />
@@ -564,9 +675,9 @@ export function LinkedAccountsPanel({
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   onClick={() => {
-                    setEditingLetterboxd(false);
-                    setLetterboxdError(null);
-                    setLetterboxdInput("");
+                    dispatch({ type: 'SET_EDITING_LETTERBOXD', payload: false });
+                    dispatch({ type: 'SET_LETTERBOXD_ERROR', payload: null });
+                    dispatch({ type: 'SET_LETTERBOXD_INPUT', payload: "" });
                   }}
                   className="px-4 py-2 rounded-lg border border-white/20 text-white hover:bg-white/10 transition text-sm font-medium"
                 >
@@ -574,10 +685,10 @@ export function LinkedAccountsPanel({
                 </button>
                 <button
                   onClick={handleSaveLetterboxd}
-                  disabled={letterboxdValidating || !letterboxdInput.trim()}
+                  disabled={state.letterboxdValidating || !state.letterboxdInput.trim()}
                   className="px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {letterboxdValidating ? "Verifying..." : "Verify & Save"}
+                  {state.letterboxdValidating ? "Verifying..." : "Verify & Save"}
                 </button>
               </div>
             </div>
@@ -610,8 +721,8 @@ export function LinkedAccountsPanel({
                   <div className="flex gap-2">
                     <button
                       onClick={() => {
-                        setEditingLetterboxd(true);
-                        setLetterboxdInput(normalized.letterboxdUsername ?? "");
+                        dispatch({ type: 'SET_EDITING_LETTERBOXD', payload: true });
+                        dispatch({ type: 'SET_LETTERBOXD_INPUT', payload: normalized.letterboxdUsername ?? "" });
                       }}
                       className="px-4 py-2 rounded-lg bg-emerald-600/80 text-white hover:bg-emerald-600 transition text-sm font-medium"
                     >
@@ -620,10 +731,10 @@ export function LinkedAccountsPanel({
                     {hasLetterboxd && (
                       <button
                         onClick={handleDeleteLetterboxd}
-                        disabled={letterboxdDeleting}
+                        disabled={state.letterboxdDeleting}
                         className="px-4 py-2 rounded-lg bg-red-600/80 text-white hover:bg-red-600 transition text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        {letterboxdDeleting ? "Removing..." : "Unlink"}
+                        {state.letterboxdDeleting ? "Removing..." : "Unlink"}
                       </button>
                     )}
                   </div>
@@ -638,7 +749,7 @@ export function LinkedAccountsPanel({
       <div className="relative overflow-hidden rounded-2xl border border-red-500/20 bg-gradient-to-br from-red-950/40 via-slate-900/60 to-slate-900/40 p-6 backdrop-blur-md hover:border-red-500/40 transition-all">
         <div className="absolute inset-0 bg-gradient-to-br from-red-500/5 to-transparent pointer-events-none"></div>
         <div className="relative">
-          {editingTrakt ? (
+          {state.editingTrakt ? (
             <div className="space-y-4">
               <div className="flex items-center gap-3 mb-4">
                 <div className="h-14 w-14 rounded-xl bg-gradient-to-br from-red-500 to-red-600 flex items-center justify-center shadow-lg">
@@ -655,15 +766,15 @@ export function LinkedAccountsPanel({
                   <p className="text-xs text-red-300">Link your profile to track shows & movies</p>
                 </div>
               </div>
-              {traktError && (
+              {state.traktError && (
                 <div className="rounded-lg border border-red-400/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-                  {traktError}
+                  {state.traktError}
                 </div>
               )}
               <input
                 type="text"
-                value={traktInput}
-                onChange={e => setTraktInput(e.target.value)}
+                value={state.traktInput}
+                onChange={e => dispatch({ type: 'SET_TRAKT_INPUT', payload: e.target.value })}
                 placeholder="Enter your Trakt username"
                 className="w-full rounded-xl border border-red-500/30 bg-red-950/20 px-4 py-3 text-white placeholder:text-white/40 outline-none focus:ring-2 focus:ring-red-500/50 focus:border-red-500 transition-all text-sm"
               />
@@ -673,9 +784,9 @@ export function LinkedAccountsPanel({
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   onClick={() => {
-                    setEditingTrakt(false);
-                    setTraktError(null);
-                    setTraktInput("");
+                    dispatch({ type: 'SET_EDITING_TRAKT', payload: false });
+                    dispatch({ type: 'SET_TRAKT_ERROR', payload: null });
+                    dispatch({ type: 'SET_TRAKT_INPUT', payload: "" });
                   }}
                   className="px-4 py-2 rounded-lg border border-white/20 text-white hover:bg-white/10 transition text-sm font-medium"
                 >
@@ -683,10 +794,10 @@ export function LinkedAccountsPanel({
                 </button>
                 <button
                   onClick={handleSaveTrakt}
-                  disabled={traktValidating || !traktInput.trim()}
+                  disabled={state.traktValidating || !state.traktInput.trim()}
                   className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {traktValidating ? "Verifying..." : "Verify & Save"}
+                  {state.traktValidating ? "Verifying..." : "Verify & Save"}
                 </button>
               </div>
             </div>
@@ -722,17 +833,17 @@ export function LinkedAccountsPanel({
                         <button
                           onClick={handleConnectTrakt}
                           className="px-4 py-2 rounded-lg bg-red-600/80 text-white hover:bg-red-600 transition text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                          disabled={traktConnecting}
+                          disabled={state.traktConnecting}
                         >
-                          {traktConnecting ? "Redirecting..." : (hasTraktOauth ? "Reconnect" : "Connect")}
+                          {state.traktConnecting ? "Redirecting..." : (hasTraktOauth ? "Reconnect" : "Connect")}
                         </button>
                         {(hasTrakt || hasTraktOauth) && (
                           <button
                             onClick={handleDeleteTrakt}
-                            disabled={traktDeleting}
+                            disabled={state.traktDeleting}
                             className="px-4 py-2 rounded-lg bg-red-600/80 text-white hover:bg-red-600 transition text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            {traktDeleting ? "Removing..." : "Unlink"}
+                            {state.traktDeleting ? "Removing..." : "Unlink"}
                           </button>
                         )}
                       </>
@@ -740,8 +851,8 @@ export function LinkedAccountsPanel({
                       <>
                         <button
                           onClick={() => {
-                            setEditingTrakt(true);
-                            setTraktInput(normalized?.traktUsername ?? "");
+                            dispatch({ type: 'SET_EDITING_TRAKT', payload: true });
+                            dispatch({ type: 'SET_TRAKT_INPUT', payload: normalized?.traktUsername ?? "" });
                           }}
                           className="px-4 py-2 rounded-lg bg-red-600/80 text-white hover:bg-red-600 transition text-sm font-medium"
                         >
@@ -750,10 +861,10 @@ export function LinkedAccountsPanel({
                         {normalized?.traktUsername && (
                           <button
                             onClick={handleDeleteTrakt}
-                            disabled={traktDeleting}
+                            disabled={state.traktDeleting}
                             className="px-4 py-2 rounded-lg bg-red-600/80 text-white hover:bg-red-600 transition text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            {traktDeleting ? "Removing..." : "Unlink"}
+                            {state.traktDeleting ? "Removing..." : "Unlink"}
                           </button>
                         )}
                       </>
@@ -793,10 +904,10 @@ export function LinkedAccountsPanel({
                 </div>
                 <button
                   onClick={handleUnlink}
-                  disabled={unlinking}
+                  disabled={state.unlinking}
                   className="px-4 py-2 rounded-lg bg-red-600/80 text-white hover:bg-red-600 transition text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {unlinking ? "Unlinking..." : "Unlink"}
+                  {state.unlinking ? "Unlinking..." : "Unlink"}
                 </button>
               </div>
             </div>
@@ -810,20 +921,20 @@ export function LinkedAccountsPanel({
               </p>
               {mode === "self" ? (
                 <button
-                  onClick={() => setShowLinkForm(prev => !prev)}
+                  onClick={() => dispatch({ type: 'SET_SHOW_LINK_FORM', payload: !state.showLinkForm })}
                   className="inline-flex items-center rounded-lg bg-purple-600/80 text-white px-4 py-2 text-sm font-medium hover:bg-purple-600 transition"
                 >
-                  {showLinkForm ? "Cancel" : "Connect Jellyfin"}
+                  {state.showLinkForm ? "Cancel" : "Connect Jellyfin"}
                 </button>
               ) : null}
             </div>
           )}
 
-          {mode === "self" && !linked && showLinkForm ? (
+          {mode === "self" && !linked && state.showLinkForm ? (
             <form className="mt-6 space-y-4" onSubmit={handleLink}>
-              {linkError ? (
+              {state.linkError ? (
                 <div className="rounded-lg border border-red-400/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-                  {linkError}
+                  {state.linkError}
                 </div>
               ) : null}
               <div className="grid gap-4 md:grid-cols-2">
@@ -833,8 +944,8 @@ export function LinkedAccountsPanel({
                   </label>
                   <input
                     id="jellyfin-username"
-                    value={linkForm.username}
-                    onChange={event => setLinkForm(prev => ({ ...prev, username: event.target.value }))}
+                    value={state.linkForm.username}
+                    onChange={event => dispatch({ type: 'UPDATE_LINK_FORM_FIELD', field: 'username', value: event.target.value })}
                     className="w-full rounded-xl border border-purple-500/30 bg-purple-950/20 px-4 py-3 text-white placeholder:text-white/40 outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500 transition-all text-sm"
                     placeholder="Jellyfin username"
                   />
@@ -846,8 +957,8 @@ export function LinkedAccountsPanel({
                   <input
                     id="jellyfin-password"
                     type="password"
-                    value={linkForm.password}
-                    onChange={event => setLinkForm(prev => ({ ...prev, password: event.target.value }))}
+                    value={state.linkForm.password}
+                    onChange={event => dispatch({ type: 'UPDATE_LINK_FORM_FIELD', field: 'password', value: event.target.value })}
                     className="w-full rounded-xl border border-purple-500/30 bg-purple-950/20 px-4 py-3 text-white placeholder:text-white/40 outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500 transition-all text-sm"
                     placeholder="Password"
                   />
@@ -856,17 +967,17 @@ export function LinkedAccountsPanel({
               <div className="flex justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setShowLinkForm(false)}
+                  onClick={() => dispatch({ type: 'SET_SHOW_LINK_FORM', payload: false })}
                   className="px-6 py-3 rounded-xl border border-white/20 text-white hover:bg-white/10 transition font-semibold"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={linking}
+                  disabled={state.linking}
                   className="px-6 py-3 rounded-xl bg-purple-600 text-white hover:bg-purple-700 transition font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {linking ? "Linking..." : "Link Jellyfin"}
+                  {state.linking ? "Linking..." : "Link Jellyfin"}
                 </button>
               </div>
             </form>

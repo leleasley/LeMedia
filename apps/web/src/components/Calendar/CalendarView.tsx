@@ -46,6 +46,8 @@ import {
 import { clsx } from "clsx";
 import { GenreFilterDropdown } from "./GenreFilterDropdown";
 import { logger } from "@/lib/logger";
+import { swrFetcher } from "@/lib/swr-fetcher";
+import { useToast } from "@/components/Providers/ToastProvider";
 
 interface CalendarEvent {
   id: string;
@@ -80,11 +82,19 @@ interface CalendarEvent {
   };
 }
 
-const fetcher = (url: string) => fetch(url).then(r => r.json());
+interface CalendarResponse {
+  events: CalendarEvent[];
+}
+
+interface FeedResponse {
+  httpsUrl: string;
+  webcalUrl: string;
+}
 
 type ViewMode = "month" | "week" | "list" | "agenda";
 
 export function CalendarView() {
+  const toast = useToast();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>("month");
   const [includeJellyfin, setIncludeJellyfin] = useState(false);
@@ -125,16 +135,28 @@ export function CalendarView() {
   const { start: calendarStart, end: calendarEnd } = getDateRange();
 
   // Fetch data for the visible range with error handling
-  const { data, isLoading, error, mutate } = useSWR<{ events: CalendarEvent[] }>(
+  const { data, isLoading, error, mutate } = useSWR<CalendarResponse>(
     `/api/calendar?start=${format(calendarStart, 'yyyy-MM-dd')}&end=${format(calendarEnd, 'yyyy-MM-dd')}&jellyfin=${includeJellyfin}`,
-    fetcher,
-    { revalidateOnFocus: false } // Don't revalidate on tab focus
+    swrFetcher,
+    {
+      revalidateOnFocus: false,
+      onError: (err) => {
+        logger.error("Failed to load calendar events", err);
+        toast.error("Unable to load calendar events");
+      }
+    }
   );
 
-  const { data: feedData, error: feedError } = useSWR<{ httpsUrl: string; webcalUrl: string }>(
+  const { data: feedData, error: feedError } = useSWR<FeedResponse>(
     "/api/calendar/feed",
-    fetcher,
-    { revalidateOnFocus: false }
+    swrFetcher,
+    {
+      revalidateOnFocus: false,
+      onError: (err) => {
+        logger.error("Failed to load calendar feed URL", err);
+        // Don't show toast for feed errors as it's not critical
+      }
+    }
   );
 
   const isIOS = () => {

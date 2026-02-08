@@ -10,8 +10,7 @@ import { cn } from "@/lib/utils";
 import { csrfFetch } from "@/lib/csrf-client";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { logger } from "@/lib/logger";
-
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
+import { swrFetcher } from "@/lib/swr-fetcher";
 
 interface MediaReviewsProps {
   tmdbId: number;
@@ -58,11 +57,31 @@ interface ReviewsResponse {
   } | null;
 }
 
+interface LetterboxdReviewsResponse {
+  reviews: {
+    username: string;
+    title: string;
+    year: number | null;
+    link: string;
+    publishedAt: string;
+    rating: number | null;
+    reviewText: string | null;
+  }[];
+}
+
 export function MediaReviews({ tmdbId, mediaType, title, posterPath, releaseYear, imageProxyEnabled }: MediaReviewsProps) {
+  const toast = useToast();
   const { data, isLoading, mutate } = useSWR<ReviewsResponse>(
     `/api/v1/reviews/${mediaType}/${tmdbId}`,
-    fetcher
+    swrFetcher,
+    {
+      onError: (err) => {
+        logger.error("Failed to load reviews", err);
+        toast.error("Unable to load reviews");
+      }
+    }
   );
+
   const letterboxdUrl = useMemo(() => {
     if (mediaType !== "movie") return null;
     const params = new URLSearchParams();
@@ -74,16 +93,23 @@ export function MediaReviews({ tmdbId, mediaType, title, posterPath, releaseYear
     }
     return `/api/v1/letterboxd/recent?${params.toString()}`;
   }, [mediaType, releaseYear, title]);
-  const { data: letterboxdData } = useSWR<{ reviews: { username: string; title: string; year: number | null; link: string; publishedAt: string; rating: number | null; reviewText: string | null; }[] }>(
+
+  const { data: letterboxdData } = useSWR<LetterboxdReviewsResponse>(
     letterboxdUrl,
-    fetcher
+    swrFetcher,
+    {
+      onError: (err) => {
+        logger.error("Failed to load Letterboxd reviews", err);
+        // Don't show toast for Letterboxd errors as they're supplementary
+      }
+    }
   );
+
   const [rating, setRating] = useState(0);
   const [reviewText, setReviewText] = useState("");
   const [spoiler, setSpoiler] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [revealed, setRevealed] = useState<Record<number, boolean>>({});
-  const toast = useToast();
 
   const userReview = data?.userReview ?? null;
 

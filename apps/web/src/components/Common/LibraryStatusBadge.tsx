@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { HardDrive, Loader2 } from "lucide-react";
+import { logger } from "@/lib/logger";
 
 interface LibraryStatusBadgeProps {
   type: "movie" | "tv";
@@ -25,7 +26,8 @@ export function LibraryStatusBadge({ type, tmdbId }: LibraryStatusBadgeProps) {
         const data = await response.json();
         setStatus(data);
       } catch (err) {
-        console.error("Error checking library status:", err);
+        logger.error("Failed to check library status", err);
+        // Don't show toast as this is a non-critical background check
       } finally {
         setIsLoading(false);
       }
