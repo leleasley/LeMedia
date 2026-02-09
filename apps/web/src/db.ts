@@ -2606,6 +2606,7 @@ async function ensureSchema() {
           ('session-cleanup', '0 * * * *', 3600, 'system', TRUE),
           ('calendar-notifications', '0 */6 * * *', 21600, 'system', FALSE),
           ('jellyfin-availability-sync', '0 */4 * * *', 14400, 'system', FALSE),
+          ('plex-availability-sync', '0 */4 * * *', 14400, 'system', FALSE),
           ('upgrade-finder-4k', '0 3 * * *', 86400, 'system', FALSE),
           ('prowlarr-indexer-sync', '*/5 * * * *', 300, 'system', TRUE)
       ON CONFLICT (name) DO NOTHING;
@@ -3426,6 +3427,92 @@ export async function getJellyfinConfig(): Promise<JellyfinConfig> {
 
 export async function setJellyfinConfig(input: JellyfinConfig): Promise<void> {
   await setSetting("jellyfin_config", JSON.stringify(input));
+}
+
+export type PlexConfig = {
+  enabled: boolean;
+  name: string;
+  hostname: string;
+  port: number;
+  useSsl: boolean;
+  urlBase: string;
+  externalUrl: string;
+  libraries: Array<{
+    id: string;
+    name: string;
+    type: "movie" | "show";
+    enabled: boolean;
+    lastScan?: number;
+  }>;
+  serverId: string;
+  tokenEncrypted: string;
+};
+
+const PlexConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  name: z.string().optional(),
+  hostname: z.string().optional(),
+  port: z.number().optional(),
+  useSsl: z.boolean().optional(),
+  urlBase: z.string().optional(),
+  externalUrl: z.string().optional(),
+  libraries: z
+    .array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        type: z.enum(["movie", "show"]),
+        enabled: z.boolean(),
+        lastScan: z.number().optional()
+      })
+    )
+    .optional(),
+  serverId: z.string().optional(),
+  tokenEncrypted: z.string().optional(),
+});
+
+const PlexConfigDefaults: PlexConfig = {
+  enabled: false,
+  name: "",
+  hostname: "",
+  port: 32400,
+  useSsl: false,
+  urlBase: "",
+  externalUrl: "",
+  libraries: [],
+  serverId: "",
+  tokenEncrypted: "",
+};
+
+export async function getPlexConfig(): Promise<PlexConfig> {
+  const raw = await getSetting("plex_config");
+  let parsed: Partial<PlexConfig> = {};
+  if (raw) {
+    try {
+      parsed = PlexConfigSchema.parse(JSON.parse(raw));
+    } catch {
+      parsed = {};
+    }
+  }
+
+  return {
+    ...PlexConfigDefaults,
+    ...parsed,
+    enabled: parsed.enabled ?? PlexConfigDefaults.enabled,
+    name: parsed.name ?? PlexConfigDefaults.name,
+    hostname: parsed.hostname ?? PlexConfigDefaults.hostname,
+    port: typeof parsed.port === "number" ? parsed.port : PlexConfigDefaults.port,
+    useSsl: parsed.useSsl ?? PlexConfigDefaults.useSsl,
+    urlBase: parsed.urlBase ?? PlexConfigDefaults.urlBase,
+    externalUrl: parsed.externalUrl ?? PlexConfigDefaults.externalUrl,
+    libraries: parsed.libraries ?? PlexConfigDefaults.libraries,
+    serverId: parsed.serverId ?? PlexConfigDefaults.serverId,
+    tokenEncrypted: parsed.tokenEncrypted ?? PlexConfigDefaults.tokenEncrypted,
+  };
+}
+
+export async function setPlexConfig(input: PlexConfig): Promise<void> {
+  await setSetting("plex_config", JSON.stringify(input));
 }
 
 export type OidcConfig = {
@@ -5477,6 +5564,183 @@ export async function getRecentJellyfinScans(limit = 10): Promise<JellyfinScanLo
             scan_completed_at as "scanCompletedAt", scan_status as "scanStatus",
             error_message as "errorMessage"
      FROM jellyfin_scan_log
+     ORDER BY scan_started_at DESC
+     LIMIT $1`,
+    [limit]
+  );
+  return res.rows;
+}
+
+// ===== Plex Availability Cache =====
+
+export type PlexAvailabilityItem = {
+  id: number;
+  tmdbId: number | null;
+  tvdbId: number | null;
+  imdbId: string | null;
+  mediaType: 'movie' | 'episode' | 'season' | 'series';
+  title: string | null;
+  seasonNumber: number | null;
+  episodeNumber: number | null;
+  airDate: string | null;
+  plexItemId: string;
+  plexLibraryId: string | null;
+  lastScannedAt: string;
+  createdAt: string;
+};
+
+export type PlexScanLog = {
+  id: number;
+  libraryId: string | null;
+  libraryName: string | null;
+  itemsScanned: number;
+  itemsAdded: number;
+  itemsRemoved: number;
+  scanStartedAt: string;
+  scanCompletedAt: string | null;
+  scanStatus: 'running' | 'completed' | 'failed';
+  errorMessage: string | null;
+};
+
+export type NewPlexItem = {
+  plexItemId: string;
+  title: string | null;
+  mediaType: 'movie' | 'episode' | 'season' | 'series';
+  tmdbId: number | null;
+  addedAt: string;
+};
+
+export async function upsertPlexAvailability(params: {
+  tmdbId?: number | null;
+  tvdbId?: number | null;
+  imdbId?: string | null;
+  mediaType: 'movie' | 'episode' | 'season' | 'series';
+  title?: string | null;
+  seasonNumber?: number | null;
+  episodeNumber?: number | null;
+  airDate?: string | null;
+  plexItemId: string;
+  plexLibraryId?: string | null;
+}): Promise<{ isNew: boolean }> {
+  const p = getPool();
+  const res = await p.query(
+    `INSERT INTO plex_availability
+      (tmdb_id, tvdb_id, imdb_id, media_type, title, season_number, episode_number, air_date, plex_item_id, plex_library_id, last_scanned_at, created_at)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+    ON CONFLICT (plex_item_id)
+    DO UPDATE SET
+      last_scanned_at = NOW(),
+      title = COALESCE($5, plex_availability.title),
+      tmdb_id = COALESCE($1, plex_availability.tmdb_id),
+      tvdb_id = COALESCE($2, plex_availability.tvdb_id),
+      imdb_id = COALESCE($3, plex_availability.imdb_id),
+      air_date = COALESCE($8, plex_availability.air_date)
+    RETURNING (xmax = 0) AS is_new`,
+    [
+      params.tmdbId ?? null,
+      params.tvdbId ?? null,
+      params.imdbId ?? null,
+      params.mediaType,
+      params.title ?? null,
+      params.seasonNumber ?? null,
+      params.episodeNumber ?? null,
+      params.airDate ?? null,
+      params.plexItemId,
+      params.plexLibraryId ?? null
+    ]
+  );
+  return { isNew: res.rows[0]?.is_new ?? false };
+}
+
+export async function getNewPlexItems(sinceDate?: Date, limit = 100): Promise<NewPlexItem[]> {
+  const p = getPool();
+  const query = sinceDate
+    ? `SELECT plex_item_id as "plexItemId", title, media_type as "mediaType",
+              tmdb_id as "tmdbId", created_at as "addedAt"
+       FROM plex_availability
+       WHERE created_at > $1
+       ORDER BY created_at DESC
+       LIMIT $2`
+    : `SELECT plex_item_id as "plexItemId", title, media_type as "mediaType",
+              tmdb_id as "tmdbId", created_at as "addedAt"
+       FROM plex_availability
+       ORDER BY created_at DESC
+       LIMIT $1`;
+
+  const params = sinceDate ? [sinceDate, limit] : [limit];
+  const res = await p.query(query, params);
+  return res.rows;
+}
+
+export async function startPlexScan(params: {
+  libraryId?: string | null;
+  libraryName?: string | null;
+}): Promise<number> {
+  const p = getPool();
+  const res = await p.query(
+    `INSERT INTO plex_scan_log
+      (library_id, library_name, items_scanned, items_added, items_removed, scan_started_at, scan_status)
+    VALUES ($1, $2, 0, 0, 0, NOW(), 'running')
+    RETURNING id`,
+    [params.libraryId ?? null, params.libraryName ?? null]
+  );
+  return res.rows[0].id;
+}
+
+export async function updatePlexScan(scanId: number, params: {
+  itemsScanned?: number;
+  itemsAdded?: number;
+  itemsRemoved?: number;
+  scanStatus?: 'running' | 'completed' | 'failed';
+  errorMessage?: string | null;
+}): Promise<void> {
+  const p = getPool();
+  const updates: string[] = [];
+  const values: any[] = [];
+  let paramIdx = 1;
+
+  if (params.itemsScanned !== undefined) {
+    updates.push(`items_scanned = $${paramIdx++}`);
+    values.push(params.itemsScanned);
+  }
+  if (params.itemsAdded !== undefined) {
+    updates.push(`items_added = $${paramIdx++}`);
+    values.push(params.itemsAdded);
+  }
+  if (params.itemsRemoved !== undefined) {
+    updates.push(`items_removed = $${paramIdx++}`);
+    values.push(params.itemsRemoved);
+  }
+  if (params.scanStatus) {
+    updates.push(`scan_status = $${paramIdx++}`);
+    values.push(params.scanStatus);
+    if (params.scanStatus === 'completed' || params.scanStatus === 'failed') {
+      updates.push(`scan_completed_at = NOW()`);
+    }
+  }
+  if (params.errorMessage !== undefined) {
+    updates.push(`error_message = $${paramIdx++}`);
+    values.push(params.errorMessage);
+  }
+
+  if (updates.length === 0) return;
+
+  values.push(scanId);
+  await p.query(
+    `UPDATE plex_scan_log SET ${updates.join(', ')} WHERE id = $${paramIdx}`,
+    values
+  );
+}
+
+export async function getRecentPlexScans(limit = 10): Promise<PlexScanLog[]> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, library_id as "libraryId", library_name as "libraryName",
+            items_scanned as "itemsScanned", items_added as "itemsAdded",
+            items_removed as "itemsRemoved", scan_started_at as "scanStartedAt",
+            scan_completed_at as "scanCompletedAt", scan_status as "scanStatus",
+            error_message as "errorMessage"
+     FROM plex_scan_log
      ORDER BY scan_started_at DESC
      LIMIT $1`,
     [limit]

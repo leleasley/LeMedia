@@ -19,6 +19,7 @@ interface CalendarEvent {
   metadata?: {
     isAvailable?: boolean;
     jellyfinItemId?: string | null;
+    plexItemId?: string | null;
     requestId?: string;
     status?: string;
     seasonNumber?: number;
@@ -40,6 +41,7 @@ export function QuickActionsMenu({ event, onActionComplete }: QuickActionsMenuPr
   const canAddToWatchlist = event.tmdbId && event.mediaType;
   const canNotify = event.tmdbId && event.mediaType && !event.metadata?.isAvailable;
   const canWatchInJellyfin = event.metadata?.isAvailable && event.metadata?.jellyfinItemId;
+  const canWatchInPlex = event.metadata?.isAvailable && event.metadata?.plexItemId;
 
   const handleRequest = async () => {
     if (!event.tmdbId || !event.mediaType) return;
@@ -149,6 +151,18 @@ export function QuickActionsMenu({ event, onActionComplete }: QuickActionsMenuPr
     window.open(`${jellyfinUrl}/web/index.html#!/details?id=${itemId}`, "_blank");
   };
 
+  const handleWatchInPlex = () => {
+    const plexUrl = process.env.NEXT_PUBLIC_PLEX_URL || "";
+    const itemId = event.metadata?.plexItemId;
+
+    if (!plexUrl || !itemId) {
+      toast.error("Plex not configured");
+      return;
+    }
+
+    window.open(`${plexUrl}/web/index.html#!/details?key=/library/metadata/${itemId}`, "_blank");
+  };
+
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
@@ -237,21 +251,36 @@ export function QuickActionsMenu({ event, onActionComplete }: QuickActionsMenuPr
               </DropdownMenu.Item>
             )}
 
+            {(canWatchInPlex || canWatchInJellyfin) && (
+              <DropdownMenu.Separator className="my-1 h-px bg-gray-700" />
+            )}
+
+            {canWatchInPlex && (
+              <DropdownMenu.Item asChild>
+                <button
+                  type="button"
+                  onClick={handleWatchInPlex}
+                  className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-gray-300 hover:bg-gray-700/50 hover:text-white transition-colors"
+                >
+                  <Play className="h-4 w-4 text-amber-400" />
+                  <span>Watch in Plex</span>
+                  <ExternalLink className="ml-auto h-3 w-3 text-gray-500" />
+                </button>
+              </DropdownMenu.Item>
+            )}
+
             {canWatchInJellyfin && (
-              <>
-                <DropdownMenu.Separator className="my-1 h-px bg-gray-700" />
-                <DropdownMenu.Item asChild>
-                  <button
-                    type="button"
-                    onClick={handleWatchInJellyfin}
-                    className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-gray-300 hover:bg-gray-700/50 hover:text-white transition-colors"
-                  >
-                    <Play className="h-4 w-4 text-green-400" />
-                    <span>Watch in Jellyfin</span>
-                    <ExternalLink className="ml-auto h-3 w-3 text-gray-500" />
-                  </button>
-                </DropdownMenu.Item>
-              </>
+              <DropdownMenu.Item asChild>
+                <button
+                  type="button"
+                  onClick={handleWatchInJellyfin}
+                  className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-gray-300 hover:bg-gray-700/50 hover:text-white transition-colors"
+                >
+                  <Play className="h-4 w-4 text-green-400" />
+                  <span>Watch in Jellyfin</span>
+                  <ExternalLink className="ml-auto h-3 w-3 text-gray-500" />
+                </button>
+              </DropdownMenu.Item>
             )}
           </div>
         </DropdownMenu.Content>

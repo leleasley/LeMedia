@@ -79,7 +79,8 @@ export async function GET(
       requestStatus: requestInfo?.status ?? null,
       requestId: requestInfo?.requestId ?? null,
       available: availabilityInfo?.available ?? false,
-      jellyfinItemId: availabilityInfo?.jellyfinItemId ?? null
+      jellyfinItemId: availabilityInfo?.jellyfinItemId ?? null,
+      plexItemId: availabilityInfo?.plexItemId ?? null
     };
   });
 

@@ -30,6 +30,7 @@ export interface CalendarEvent {
     monitored?: boolean;
     isAvailable?: boolean;
     jellyfinItemId?: string | null;
+    plexItemId?: string | null;
     sonarrSeriesId?: number;
     sonarrEpisodeId?: number;
     tvdbEpisodeId?: number;
@@ -528,8 +529,8 @@ async function enrichWithJellyfinAvailability(events: CalendarEvent[]): Promise<
   const episodeAvailabilityCache = new Map<
     string,
     Promise<{
-      byEpisode: Map<number, { available: boolean; jellyfinItemId: string | null }>;
-      byAirDate: Map<string, { available: boolean; jellyfinItemId: string | null }>;
+      byEpisode: Map<number, { available: boolean; jellyfinItemId: string | null; plexItemId: string | null }>;
+      byAirDate: Map<string, { available: boolean; jellyfinItemId: string | null; plexItemId: string | null }>;
     }>
   >();
 
@@ -599,6 +600,9 @@ async function enrichWithJellyfinAvailability(events: CalendarEvent[]): Promise<
                   event.metadata.isAvailable = true;
                   if (cachedHit.jellyfinItemId) {
                     event.metadata.jellyfinItemId = cachedHit.jellyfinItemId;
+                  }
+                  if (cachedHit.plexItemId) {
+                    event.metadata.plexItemId = cachedHit.plexItemId;
                   }
                   return;
                 }

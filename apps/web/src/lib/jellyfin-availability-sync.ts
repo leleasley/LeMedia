@@ -304,8 +304,8 @@ export async function getCachedEpisodeAvailability(
   seasonNumber: number,
   tvdbId?: number | null
 ): Promise<{
-  byEpisode: Map<number, { available: boolean; jellyfinItemId: string | null }>;
-  byAirDate: Map<string, { available: boolean; jellyfinItemId: string | null }>;
+  byEpisode: Map<number, { available: boolean; jellyfinItemId: string | null; plexItemId: string | null }>;
+  byAirDate: Map<string, { available: boolean; jellyfinItemId: string | null; plexItemId: string | null }>;
 }> {
   const pool = getPool();
   const hasTvdbId = Number(tvdbId ?? 0) > 0;
@@ -325,22 +325,67 @@ export async function getCachedEpisodeAvailability(
   const params = hasTvdbId ? [tmdbId, tvdbId, seasonNumber] : [tmdbId, seasonNumber];
   const res = await pool.query(query, params);
 
-  const byEpisode = new Map<number, { available: boolean; jellyfinItemId: string | null }>();
-  const byAirDate = new Map<string, { available: boolean; jellyfinItemId: string | null }>();
+  const byEpisode = new Map<number, { available: boolean; jellyfinItemId: string | null; plexItemId: string | null }>();
+  const byAirDate = new Map<string, { available: boolean; jellyfinItemId: string | null; plexItemId: string | null }>();
 
   for (const row of res.rows) {
     if (row.episode_number !== null) {
       byEpisode.set(row.episode_number, {
         available: true,
-        jellyfinItemId: row.jellyfin_item_id
+        jellyfinItemId: row.jellyfin_item_id,
+        plexItemId: null
       });
     }
     if (row.air_date) {
       const dateKey = String(row.air_date).slice(0, 10);
       byAirDate.set(dateKey, {
         available: true,
-        jellyfinItemId: row.jellyfin_item_id
+        jellyfinItemId: row.jellyfin_item_id,
+        plexItemId: null
       });
+    }
+  }
+
+  const plexQuery = hasTvdbId
+    ? `SELECT episode_number, air_date, plex_item_id
+       FROM plex_availability
+       WHERE media_type = 'episode'
+         AND season_number = $3
+         AND (episode_number IS NOT NULL OR air_date IS NOT NULL)
+         AND (tmdb_id = $1 OR tvdb_id = $2)`
+    : `SELECT episode_number, air_date, plex_item_id
+       FROM plex_availability
+       WHERE tmdb_id = $1
+         AND media_type = 'episode'
+         AND season_number = $2
+         AND (episode_number IS NOT NULL OR air_date IS NOT NULL)`;
+
+  const plexRes = await pool.query(plexQuery, params);
+  for (const row of plexRes.rows) {
+    if (row.episode_number !== null) {
+      const existing = byEpisode.get(row.episode_number);
+      if (existing) {
+        existing.plexItemId = row.plex_item_id;
+      } else {
+        byEpisode.set(row.episode_number, {
+          available: true,
+          jellyfinItemId: null,
+          plexItemId: row.plex_item_id
+        });
+      }
+    }
+    if (row.air_date) {
+      const dateKey = String(row.air_date).slice(0, 10);
+      const existing = byAirDate.get(dateKey);
+      if (existing) {
+        existing.plexItemId = row.plex_item_id;
+      } else {
+        byAirDate.set(dateKey, {
+          available: true,
+          jellyfinItemId: null,
+          plexItemId: row.plex_item_id
+        });
+      }
     }
   }
 

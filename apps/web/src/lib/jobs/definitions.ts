@@ -4,6 +4,7 @@ import { sendWeeklyDigest } from "@/notifications/weekly-digest";
 import { purgeExpiredSessions } from "@/db";
 import { checkCalendarSubscriptions } from "@/lib/calendar-notifications";
 import { syncJellyfinAvailability } from "@/lib/jellyfin-availability-sync";
+import { syncPlexAvailability } from "@/lib/plex-availability-sync";
 import { refreshUpgradeHintsForAll } from "@/lib/upgrade-finder";
 import { syncProwlarrIndexers } from "@/lib/prowlarr-sync";
 import { importLetterboxdReviews } from "@/lib/letterboxd";
@@ -41,6 +42,11 @@ export const jobHandlers: Record<string, JobHandler> = {
     logger.info("[Job] Starting jellyfin-availability-sync");
     const result = await syncJellyfinAvailability();
     logger.info(`[Job] jellyfin-availability-sync completed: ${result.scanned} scanned, ${result.added} added, ${result.updated} updated`);
+  },
+  "plex-availability-sync": async () => {
+    logger.info("[Job] Starting plex-availability-sync");
+    const result = await syncPlexAvailability();
+    logger.info(`[Job] plex-availability-sync completed: ${result.scanned} scanned, ${result.added} added, ${result.updated} updated`);
   },
   "upgrade-finder-4k": async () => {
     logger.info("[Job] Starting upgrade-finder-4k");
