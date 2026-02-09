@@ -13,6 +13,10 @@ const COOKIE_NAMES = [
   "lemedia_csrf",
   "lemedia_oidc_state",
   "lemedia_oidc_nonce",
+  "lemedia_oidc_provider",
+  "lemedia_duo_state",
+  "lemedia_duo_username",
+  "lemedia_duo_provider",
   "lemedia_session_reset"
 ];
 

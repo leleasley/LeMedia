@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useLockBodyScroll } from "@/hooks/useLockBodyScroll";
 
@@ -10,9 +10,19 @@ export function Modal(props: {
   children: React.ReactNode;
   onClose: () => void;
   backgroundImage?: string;
+  forceCenter?: boolean;
 }) {
-  const { open, title, children, onClose, backgroundImage } = props;
+  const { open, title, children, onClose, backgroundImage, forceCenter } = props;
   const contentRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  const handleClose = useCallback(() => {
+    onCloseRef.current();
+  }, []);
 
   // Lock body scroll when modal is open
   useLockBodyScroll(open);
@@ -21,7 +31,7 @@ export function Modal(props: {
     if (!open) return;
 
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") onCloseRef.current();
     };
 
     window.addEventListener("keydown", onKeyDown);
@@ -41,7 +51,7 @@ export function Modal(props: {
       window.removeEventListener("keydown", onKeyDown);
       clearTimeout(timer);
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
@@ -55,12 +65,12 @@ export function Modal(props: {
 
   const overlay = (
     <div
-      className="fixed inset-0 z-[1000] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4 overflow-y-auto animate-in fade-in duration-200"
+      className={`fixed inset-0 z-[1000] flex ${forceCenter ? "items-center" : "items-end sm:items-center"} justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4 overflow-y-auto animate-in fade-in duration-200`}
       role="dialog"
       aria-modal="true"
       aria-label={title}
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) handleClose();
       }}
     >
       <div
@@ -74,7 +84,7 @@ export function Modal(props: {
           <button
             type="button"
             className="text-muted hover:text-text transition-colors p-1"
-            onClick={onClose}
+            onClick={handleClose}
             aria-label="Close"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

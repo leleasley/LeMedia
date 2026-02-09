@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createRemoteJWKSet, jwtVerify, decodeJwt, decodeProtectedHeader } from "jose";
 import {
   createOidcUser,
-  getOidcConfig,
+  getActiveOidcProvider,
+  getOidcProviderById,
   getSettingInt,
   getUserByEmail,
   getUserByOidcSub,
@@ -53,6 +54,7 @@ function redirectToLogin(
   res.cookies.set("lemedia_oidc_state", "", { ...cookieBase, maxAge: 0 });
   res.cookies.set("lemedia_oidc_nonce", "", { ...cookieBase, maxAge: 0 });
   res.cookies.set("lemedia_login_redirect", "", { ...cookieBase, maxAge: 0 });
+  res.cookies.set("lemedia_oidc_provider", "", { ...cookieBase, maxAge: 0 });
   return res;
 }
 
@@ -103,15 +105,27 @@ export async function GET(req: NextRequest) {
   const state = req.nextUrl.searchParams.get("state") ?? "";
   const storedState = req.cookies.get("lemedia_oidc_state")?.value ?? "";
   const storedNonce = req.cookies.get("lemedia_oidc_nonce")?.value ?? "";
+  const storedProviderId = req.cookies.get("lemedia_oidc_provider")?.value ?? "";
   const from = sanitizeRelativePath(req.cookies.get("lemedia_login_redirect")?.value);
 
   if (!code || !state || !storedState || state !== storedState) {
     return ensureCsrfCookie(req, redirectToLogin(base, "SSO session expired. Please try again.", cookieBase), ctx).res;
   }
 
-  const config = await getOidcConfig();
-  if (!config.enabled || !config.issuer || !config.clientId) {
+  let config = storedProviderId ? await getOidcProviderById(storedProviderId) : null;
+  if (storedProviderId && (!config || !config.enabled || !config.issuer || !config.clientId)) {
+    return ensureCsrfCookie(req, redirectToLogin(base, "SSO session expired. Please try again.", cookieBase), ctx).res;
+  }
+  if (!config) {
+    config = await getActiveOidcProvider();
+  }
+  if (!config) {
     return ensureCsrfCookie(req, redirectToLogin(base, "SSO is not configured", cookieBase), ctx).res;
+  }
+
+  const isDuoProvider = config.providerType === "duo_websdk" || /duo/i.test(config.name ?? "") || !!config.duoApiHostname;
+  if (isDuoProvider) {
+    return ensureCsrfCookie(req, redirectToLogin(base, "Duo Web SDK is configured, but the login flow is not wired yet.", cookieBase), ctx).res;
   }
 
   let discovery: OidcDiscovery | null = null;
@@ -304,6 +318,7 @@ export async function GET(req: NextRequest) {
   res.cookies.set("lemedia_login_redirect", "", { ...cookieBase, maxAge: 0 });
   res.cookies.set("lemedia_oidc_state", "", { ...cookieBase, maxAge: 0 });
   res.cookies.set("lemedia_oidc_nonce", "", { ...cookieBase, maxAge: 0 });
+  res.cookies.set("lemedia_oidc_provider", "", { ...cookieBase, maxAge: 0 });
   res.cookies.set("lemedia_force_login", "", { ...cookieBase, maxAge: 0 });
   res.cookies.set("lemedia_mfa_token", "", { ...cookieBase, maxAge: 0 });
   res.cookies.set("lemedia_session_reset", "", { ...cookieBase, httpOnly: false, maxAge: 0 });

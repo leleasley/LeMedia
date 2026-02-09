@@ -7,6 +7,7 @@ import { ModeToggle } from "@/components/ui/mode-toggle";
 import { LoginForm } from "@/components/auth/LoginForm";
 import { SessionResetModal } from "@/components/auth/SessionResetModal";
 import { ImageFader } from "@/components/Common/ImageFader";
+import { Modal } from "@/components/Common/Modal";
 import { startAuthentication } from "@simplewebauthn/browser";
 import { ChevronDown, Fingerprint, KeyRound } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -20,17 +21,20 @@ type LoginPageClientProps = {
   from: string;
   oidcEnabled: boolean;
   jellyfinEnabled: boolean;
+  ssoProviderType?: "oidc" | "duo_websdk";
 };
 
 const fetcher = (url: string) => fetch(url, { credentials: "include" }).then((res) => res.json());
 
 const loginFormId = "lemedia-login-form";
 
-export function LoginPageClient({ csrfToken, from, oidcEnabled, jellyfinEnabled }: LoginPageClientProps) {
+export function LoginPageClient({ csrfToken, from, oidcEnabled, jellyfinEnabled, ssoProviderType }: LoginPageClientProps) {
   const router = useRouter();
   const toast = useToast();
   const [showJellyfinLogin, setShowJellyfinLogin] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState("");
+  const [showDuoModal, setShowDuoModal] = useState(false);
+  const [duoUsername, setDuoUsername] = useState("");
   const isTurnstileEnabled = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
   const { data: backdrops } = useSWR<string[]>("/api/v1/backdrops", fetcher, {
     revalidateOnFocus: false,
@@ -158,6 +162,10 @@ export function LoginPageClient({ csrfToken, from, oidcEnabled, jellyfinEnabled 
                       <DropdownMenuItem
                         onSelect={() => {
                           if (isTurnstileEnabled && !turnstileToken) return;
+                          if (ssoProviderType === "duo_websdk") {
+                            setShowDuoModal(true);
+                            return;
+                          }
                           window.location.href = `/api/v1/auth/oidc/login?from=${encodeURIComponent(from)}&turnstile_token=${encodeURIComponent(turnstileToken)}`;
                         }}
                         disabled={isTurnstileEnabled && !turnstileToken}
@@ -183,6 +191,45 @@ export function LoginPageClient({ csrfToken, from, oidcEnabled, jellyfinEnabled 
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
+
+              <Modal
+                open={showDuoModal}
+                title="Duo sign-in"
+                onClose={() => setShowDuoModal(false)}
+                forceCenter
+              >
+                <form
+                  className="space-y-4"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const username = duoUsername.trim();
+                    if (!username) {
+                      toast.error("Enter your Duo username to continue.");
+                      return;
+                    }
+                    window.location.href = `/api/v1/auth/duo/login?from=${encodeURIComponent(from)}&turnstile_token=${encodeURIComponent(turnstileToken)}&username=${encodeURIComponent(username)}`;
+                  }}
+                >
+                  <div className="space-y-1 text-sm">
+                    <label className="font-semibold text-white">Username or email</label>
+                    <input
+                      className="w-full input"
+                      placeholder="you@example.com"
+                      value={duoUsername}
+                      onChange={(e) => setDuoUsername(e.target.value)}
+                    />
+                    <p className="text-xs text-muted">Use the same username registered in Duo.</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button type="button" className="btn" onClick={() => setShowDuoModal(false)}>
+                      Cancel
+                    </button>
+                    <button type="submit" className="btn btn-primary">
+                      Continue
+                    </button>
+                  </div>
+                </form>
+              </Modal>
             </>
           )}
         </div>

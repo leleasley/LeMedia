@@ -5,7 +5,7 @@ import { LoginPageClient } from "@/components/auth/LoginPageClient";
 export const metadata = {
   title: "Login - LeMedia",
 };
-import { getJellyfinConfig, getOidcConfig, getSetting, isSetupComplete } from "@/db";
+import { getActiveOidcProvider, getJellyfinConfig, getSetting, isSetupComplete } from "@/db";
 import { verifySessionToken } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -29,10 +29,11 @@ export default async function LoginPage() {
   const existingSession = sessionToken ? await verifySessionToken(sessionToken) : null;
   const loginRedirectCookie = cookieStore.get("lemedia_login_redirect")?.value;
   const from = sanitizeFrom(loginRedirectCookie);
-  const oidcConfig = await getOidcConfig();
+  const oidcConfig = await getActiveOidcProvider();
   const rawSsoEnabled = await getSetting("auth.sso_enabled");
   const ssoEnabledSetting = rawSsoEnabled === null || rawSsoEnabled === "1" || rawSsoEnabled === "true";
-  const oidcEnabled = Boolean(oidcConfig.enabled && oidcConfig.issuer && oidcConfig.clientId && ssoEnabledSetting);
+  const oidcEnabled = Boolean(oidcConfig && ssoEnabledSetting);
+  const ssoProviderType = oidcConfig?.providerType ?? (oidcConfig?.duoApiHostname ? "duo_websdk" : "oidc");
   const jellyfinConfig = await getJellyfinConfig();
   const jellyfinEnabled = Boolean(jellyfinConfig.hostname?.trim());
 
@@ -40,5 +41,13 @@ export default async function LoginPage() {
     redirect(from || "/");
   }
 
-  return <LoginPageClient csrfToken={csrfToken} from={from} oidcEnabled={oidcEnabled} jellyfinEnabled={jellyfinEnabled} />;
+  return (
+    <LoginPageClient
+      csrfToken={csrfToken}
+      from={from}
+      oidcEnabled={oidcEnabled}
+      jellyfinEnabled={jellyfinEnabled}
+      ssoProviderType={ssoProviderType}
+    />
+  );
 }

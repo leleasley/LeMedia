@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
-import { getOidcConfig } from "@/db";
+import { getActiveOidcProvider } from "@/db";
 import { getCookieBase, getRequestContext, sanitizeRelativePath } from "@/lib/proxy";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { verifyTurnstileToken } from "@/lib/turnstile";
@@ -33,7 +33,7 @@ function randomString(bytes = 32): string {
 }
 
 export async function GET(req: NextRequest) {
-  const config = await getOidcConfig();
+  const config = await getActiveOidcProvider();
   const ctx = getRequestContext(req);
   const base = ctx.base;
   const from = sanitizeRelativePath(req.nextUrl.searchParams.get("from"));
@@ -54,9 +54,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (!config.enabled || !config.issuer || !config.clientId) {
+  if (!config) {
     const url = new URL("/login", base);
     url.searchParams.set("error", "SSO is not configured");
+    return NextResponse.redirect(url);
+  }
+
+  const isDuoProvider = config.providerType === "duo_websdk" || /duo/i.test(config.name ?? "") || !!config.duoApiHostname;
+  if (isDuoProvider) {
+    const url = new URL("/login", base);
+    url.searchParams.set("error", "Duo Web SDK is configured, but the login flow is not wired yet.");
     return NextResponse.redirect(url);
   }
 
@@ -87,6 +94,7 @@ export async function GET(req: NextRequest) {
   const cookieBase = getCookieBase(ctx, true);
   res.cookies.set("lemedia_oidc_state", state, { ...cookieBase, maxAge: 60 * 10 });
   res.cookies.set("lemedia_oidc_nonce", nonce, { ...cookieBase, maxAge: 60 * 10 });
+  res.cookies.set("lemedia_oidc_provider", config.id, { ...cookieBase, maxAge: 60 * 30 });
   res.cookies.set("lemedia_login_redirect", from, { ...cookieBase, maxAge: 60 * 30 });
   return res;
 }

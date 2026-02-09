@@ -2136,6 +2136,52 @@ export async function getUserByUsername(username: string): Promise<DbUserWithHas
   };
 }
 
+export async function getUserByUsernameInsensitive(username: string): Promise<DbUserWithHash | null> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT id, username, groups, password_hash, email, oidc_sub, jellyfin_user_id, jellyfin_username, jellyfin_device_id, jellyfin_auth_token, letterboxd_username, discord_user_id, trakt_username, avatar_url, avatar_version, created_at, last_seen_at, mfa_secret, discover_region, original_language, watchlist_sync_movies, watchlist_sync_tv, request_limit_movie, request_limit_movie_days, request_limit_series, request_limit_series_days, banned, weekly_digest_opt_in
+    FROM app_user
+    WHERE LOWER(username) = LOWER($1)
+    LIMIT 1
+    `,
+    [username]
+  );
+  if (!res.rows.length) return null;
+  const row = res.rows[0];
+  return {
+    id: Number(row.id),
+    username: row.username,
+    groups: normalizeGroupList(row.groups as string),
+    password_hash: row.password_hash,
+    email: row.email ?? null,
+    oidc_sub: row.oidc_sub ?? null,
+    jellyfin_user_id: row.jellyfin_user_id ?? null,
+    jellyfin_username: row.jellyfin_username ?? null,
+    jellyfin_device_id: row.jellyfin_device_id ?? null,
+    jellyfin_auth_token: row.jellyfin_auth_token ?? null,
+    letterboxd_username: row.letterboxd_username ?? null,
+    discord_user_id: row.discord_user_id ?? null,
+    trakt_username: row.trakt_username ?? null,
+    avatar_url: row.avatar_url ?? null,
+    avatar_version: row.avatar_version ?? null,
+    created_at: row.created_at,
+    last_seen_at: row.last_seen_at,
+    mfa_secret: row.mfa_secret ?? null,
+    discover_region: row.discover_region ?? null,
+    original_language: row.original_language ?? null,
+    watchlist_sync_movies: !!row.watchlist_sync_movies,
+    watchlist_sync_tv: !!row.watchlist_sync_tv,
+    request_limit_movie: row.request_limit_movie ?? null,
+    request_limit_movie_days: row.request_limit_movie_days ?? null,
+    request_limit_series: row.request_limit_series ?? null,
+    request_limit_series_days: row.request_limit_series_days ?? null,
+    banned: !!row.banned,
+    weekly_digest_opt_in: !!row.weekly_digest_opt_in,
+  };
+}
+
 export type UserMediaListType = "favorite" | "watchlist";
 
 export type UserMediaListItem = {
@@ -3515,7 +3561,11 @@ export async function setPlexConfig(input: PlexConfig): Promise<void> {
   await setSetting("plex_config", JSON.stringify(input));
 }
 
-export type OidcConfig = {
+export type OidcProviderConfig = {
+  id: string;
+  name: string;
+  providerType?: "oidc" | "duo_websdk";
+  duoApiHostname?: string;
   enabled: boolean;
   issuer: string;
   clientId: string;
@@ -3536,7 +3586,16 @@ export type OidcConfig = {
   syncGroups: boolean;
 };
 
-const OidcConfigSchema = z.object({
+export type OidcSettings = {
+  activeProviderId: string | null;
+  providers: OidcProviderConfig[];
+};
+
+const OidcProviderSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().optional(),
+  providerType: z.enum(["oidc", "duo_websdk"]).optional(),
+  duoApiHostname: z.string().optional(),
   enabled: z.boolean().optional(),
   issuer: z.string().optional(),
   clientId: z.string().optional(),
@@ -3557,7 +3616,37 @@ const OidcConfigSchema = z.object({
   syncGroups: z.boolean().optional()
 });
 
-const OidcConfigDefaults: OidcConfig = {
+const OidcSettingsSchema = z.object({
+  activeProviderId: z.string().nullable().optional(),
+  providers: z.array(OidcProviderSchema).optional()
+});
+
+const OidcLegacySchema = z.object({
+  enabled: z.boolean().optional(),
+  issuer: z.string().optional(),
+  clientId: z.string().optional(),
+  clientSecret: z.string().optional(),
+  redirectUri: z.string().optional(),
+  authorizationUrl: z.string().optional(),
+  tokenUrl: z.string().optional(),
+  userinfoUrl: z.string().optional(),
+  jwksUrl: z.string().optional(),
+  logoutUrl: z.string().optional(),
+  scopes: z.array(z.string()).optional(),
+  usernameClaim: z.string().optional(),
+  emailClaim: z.string().optional(),
+  groupsClaim: z.string().optional(),
+  allowAutoCreate: z.boolean().optional(),
+  matchByEmail: z.boolean().optional(),
+  matchByUsername: z.boolean().optional(),
+  syncGroups: z.boolean().optional()
+});
+
+const OidcProviderDefaults: OidcProviderConfig = {
+  id: "default",
+  name: "PocketID",
+  providerType: "oidc",
+  duoApiHostname: "",
   enabled: false,
   issuer: "",
   clientId: "",
@@ -3578,37 +3667,140 @@ const OidcConfigDefaults: OidcConfig = {
   syncGroups: false
 };
 
-export async function getOidcConfig(): Promise<OidcConfig> {
-  const raw = await getSetting("oidc_config");
-  let parsed: Partial<OidcConfig> = {};
-  if (raw) {
-    try {
-      parsed = OidcConfigSchema.parse(JSON.parse(raw));
-    } catch {
-      parsed = {};
-    }
-  }
+function applyOidcDefaults(input: Partial<OidcProviderConfig> & { id: string }): OidcProviderConfig {
+  return {
+    ...OidcProviderDefaults,
+    ...input,
+    id: input.id,
+    name: input.name ?? OidcProviderDefaults.name,
+    providerType: input.providerType ?? OidcProviderDefaults.providerType,
+    duoApiHostname: input.duoApiHostname ?? OidcProviderDefaults.duoApiHostname,
+    enabled: input.enabled ?? OidcProviderDefaults.enabled,
+    issuer: input.issuer ?? OidcProviderDefaults.issuer,
+    clientId: input.clientId ?? OidcProviderDefaults.clientId,
+    clientSecret: input.clientSecret ?? OidcProviderDefaults.clientSecret,
+    redirectUri: input.redirectUri ?? OidcProviderDefaults.redirectUri,
+    authorizationUrl: input.authorizationUrl ?? OidcProviderDefaults.authorizationUrl,
+    tokenUrl: input.tokenUrl ?? OidcProviderDefaults.tokenUrl,
+    userinfoUrl: input.userinfoUrl ?? OidcProviderDefaults.userinfoUrl,
+    jwksUrl: input.jwksUrl ?? OidcProviderDefaults.jwksUrl,
+    logoutUrl: input.logoutUrl ?? OidcProviderDefaults.logoutUrl,
+    scopes: Array.isArray(input.scopes) && input.scopes.length ? input.scopes : OidcProviderDefaults.scopes,
+    usernameClaim: input.usernameClaim ?? OidcProviderDefaults.usernameClaim,
+    emailClaim: input.emailClaim ?? OidcProviderDefaults.emailClaim,
+    groupsClaim: input.groupsClaim ?? OidcProviderDefaults.groupsClaim,
+    allowAutoCreate: input.allowAutoCreate ?? OidcProviderDefaults.allowAutoCreate,
+    matchByEmail: input.matchByEmail ?? OidcProviderDefaults.matchByEmail,
+    matchByUsername: input.matchByUsername ?? OidcProviderDefaults.matchByUsername,
+    syncGroups: input.syncGroups ?? OidcProviderDefaults.syncGroups
+  };
+}
 
-  const withEnv: Partial<OidcConfig> = {};
+function applyEnvOverrides(provider: OidcProviderConfig): OidcProviderConfig {
   const envIssuer = process.env.OIDC_ISSUER?.trim();
   const envClientId = process.env.OIDC_CLIENT_ID?.trim();
   const envClientSecret = process.env.OIDC_CLIENT_SECRET?.trim();
   const envRedirectUri = process.env.OIDC_REDIRECT_URI?.trim();
-  if (envIssuer) withEnv.issuer = envIssuer;
-  if (envClientId) withEnv.clientId = envClientId;
-  if (envClientSecret) withEnv.clientSecret = envClientSecret;
-  if (envRedirectUri) withEnv.redirectUri = envRedirectUri;
-
   return {
-    ...OidcConfigDefaults,
-    ...withEnv,
-    ...parsed,
-    scopes: Array.isArray(parsed.scopes) && parsed.scopes.length ? parsed.scopes : OidcConfigDefaults.scopes,
-    redirectUri: parsed.redirectUri ?? withEnv.redirectUri ?? OidcConfigDefaults.redirectUri
+    ...provider,
+    issuer: provider.issuer || envIssuer || provider.issuer,
+    clientId: provider.clientId || envClientId || provider.clientId,
+    clientSecret: provider.clientSecret || envClientSecret || provider.clientSecret,
+    redirectUri: provider.redirectUri || envRedirectUri || provider.redirectUri
   };
 }
 
-export async function setOidcConfig(input: OidcConfig): Promise<void> {
+export async function getOidcSettings(): Promise<OidcSettings> {
+  const raw = await getSetting("oidc_config");
+  let providers: OidcProviderConfig[] = [];
+  let activeProviderId: string | null = null;
+
+  if (raw) {
+    try {
+      const parsed = OidcSettingsSchema.parse(JSON.parse(raw));
+      providers = (parsed.providers ?? []).map((p) => applyOidcDefaults(p));
+      activeProviderId = parsed.activeProviderId ?? null;
+    } catch {
+      try {
+        const legacy = OidcLegacySchema.parse(JSON.parse(raw));
+        const legacyProvider = applyOidcDefaults({
+          id: "default",
+          name: "PocketID",
+          enabled: legacy.enabled ?? false,
+          issuer: legacy.issuer ?? "",
+          clientId: legacy.clientId ?? "",
+          clientSecret: legacy.clientSecret ?? "",
+          redirectUri: legacy.redirectUri ?? "",
+          authorizationUrl: legacy.authorizationUrl ?? "",
+          tokenUrl: legacy.tokenUrl ?? "",
+          userinfoUrl: legacy.userinfoUrl ?? "",
+          jwksUrl: legacy.jwksUrl ?? "",
+          logoutUrl: legacy.logoutUrl ?? "",
+          scopes: legacy.scopes ?? OidcProviderDefaults.scopes,
+          usernameClaim: legacy.usernameClaim ?? OidcProviderDefaults.usernameClaim,
+          emailClaim: legacy.emailClaim ?? OidcProviderDefaults.emailClaim,
+          groupsClaim: legacy.groupsClaim ?? OidcProviderDefaults.groupsClaim,
+          allowAutoCreate: legacy.allowAutoCreate ?? OidcProviderDefaults.allowAutoCreate,
+          matchByEmail: legacy.matchByEmail ?? OidcProviderDefaults.matchByEmail,
+          matchByUsername: legacy.matchByUsername ?? OidcProviderDefaults.matchByUsername,
+          syncGroups: legacy.syncGroups ?? OidcProviderDefaults.syncGroups
+        });
+        providers = [legacyProvider];
+        activeProviderId = legacyProvider.enabled ? legacyProvider.id : null;
+      } catch {
+        providers = [];
+        activeProviderId = null;
+      }
+    }
+  }
+
+  if (!providers.length) {
+    const fallback = applyOidcDefaults({ id: "default", name: "PocketID" });
+    providers = [applyEnvOverrides(fallback)];
+  } else if (providers.length === 1) {
+    providers = [applyEnvOverrides(providers[0])];
+  }
+
+  if (activeProviderId && !providers.some((p) => p.id === activeProviderId)) {
+    activeProviderId = null;
+  }
+
+  if (!activeProviderId) {
+    const enabled = providers.find((p) => p.enabled);
+    activeProviderId = enabled ? enabled.id : null;
+  }
+
+  return { activeProviderId, providers };
+}
+
+export async function getOidcProviderById(providerId: string): Promise<OidcProviderConfig | null> {
+  if (!providerId) return null;
+  const settings = await getOidcSettings();
+  return settings.providers.find((p) => p.id === providerId) ?? null;
+}
+
+export async function getActiveOidcProvider(): Promise<OidcProviderConfig | null> {
+  const settings = await getOidcSettings();
+  const provider = settings.activeProviderId
+    ? settings.providers.find((p) => p.id === settings.activeProviderId)
+    : settings.providers.length === 1 && settings.providers[0].enabled
+      ? settings.providers[0]
+      : null;
+
+  if (!provider) return null;
+  if (!provider.enabled) return null;
+
+  const isDuo = provider.providerType === "duo_websdk" || /duo/i.test(provider.name ?? "") || !!provider.duoApiHostname;
+  if (isDuo) {
+    if (!provider.clientId || !provider.clientSecret || !provider.duoApiHostname) return null;
+    return provider;
+  }
+
+  if (!provider.issuer || !provider.clientId) return null;
+  return provider;
+}
+
+export async function setOidcSettings(input: OidcSettings): Promise<void> {
   await setSetting("oidc_config", JSON.stringify(input));
 }
 

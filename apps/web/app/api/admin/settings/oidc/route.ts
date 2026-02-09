@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdmin } from "@/auth";
-import { getOidcConfig, setOidcConfig, OidcConfig } from "@/db";
+import { getOidcSettings, setOidcSettings, type OidcProviderConfig, type OidcSettings } from "@/db";
 import { requireCsrf } from "@/lib/csrf";
 import { jsonResponseWithETag } from "@/lib/api-optimization";
 import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/rate-limit";
 
-const inputSchema = z.object({
+const providerSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().optional(),
+  providerType: z.enum(["oidc", "duo_websdk"]).optional(),
+  duoApiHostname: z.string().optional(),
   enabled: z.boolean().optional(),
   issuer: z.string().optional(),
   clientId: z.string().optional(),
@@ -28,6 +32,11 @@ const inputSchema = z.object({
   syncGroups: z.boolean().optional()
 });
 
+const inputSchema = z.object({
+  activeProviderId: z.string().nullable().optional(),
+  providers: z.array(providerSchema).optional()
+});
+
 function normalizeScopes(scopes: string[] | string | undefined): string[] {
   if (!scopes) return [];
   if (Array.isArray(scopes)) return scopes.map(s => s.trim()).filter(Boolean);
@@ -38,9 +47,9 @@ export async function GET(req: NextRequest) {
   const user = await requireAdmin();
   if (user instanceof NextResponse) return user;
 
-  const config = await getOidcConfig();
-  const { clientSecret, ...safeConfig } = config;
-  return jsonResponseWithETag(req, { config: safeConfig });
+  const settings = await getOidcSettings();
+  const safeProviders = settings.providers.map(({ clientSecret, ...safe }) => safe);
+  return jsonResponseWithETag(req, { settings: { ...settings, providers: safeProviders } });
 }
 
 export async function PUT(req: NextRequest) {
@@ -63,30 +72,55 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: "Invalid input", details: err?.issues ?? [] }, { status: 400 });
   }
 
-  const current = await getOidcConfig();
-  const next: OidcConfig = {
-    ...current,
-    enabled: parsed.enabled ?? current.enabled,
-    issuer: parsed.issuer?.trim() ?? current.issuer,
-    clientId: parsed.clientId?.trim() ?? current.clientId,
-    clientSecret: parsed.clientSecret?.trim() || current.clientSecret,
-    redirectUri: parsed.redirectUri?.trim() ?? current.redirectUri,
-    authorizationUrl: parsed.authorizationUrl?.trim() ?? current.authorizationUrl,
-    tokenUrl: parsed.tokenUrl?.trim() ?? current.tokenUrl,
-    userinfoUrl: parsed.userinfoUrl?.trim() ?? current.userinfoUrl,
-    jwksUrl: parsed.jwksUrl?.trim() ?? current.jwksUrl,
-    logoutUrl: parsed.logoutUrl?.trim() ?? current.logoutUrl,
-    scopes: normalizeScopes(parsed.scopes).length ? normalizeScopes(parsed.scopes) : current.scopes,
-    usernameClaim: parsed.usernameClaim?.trim() || current.usernameClaim,
-    emailClaim: parsed.emailClaim?.trim() || current.emailClaim,
-    groupsClaim: parsed.groupsClaim?.trim() || current.groupsClaim,
-    allowAutoCreate: parsed.allowAutoCreate ?? current.allowAutoCreate,
-    matchByEmail: parsed.matchByEmail ?? current.matchByEmail,
-    matchByUsername: parsed.matchByUsername ?? current.matchByUsername,
-    syncGroups: parsed.syncGroups ?? current.syncGroups
+  const current = await getOidcSettings();
+  const incomingProviders = parsed.providers ?? current.providers;
+
+  const nextProviders: OidcProviderConfig[] = incomingProviders.map((provider) => {
+    const existing = current.providers.find((p) => p.id === provider.id);
+    const normalizedScopes = normalizeScopes(provider.scopes);
+    return {
+      id: provider.id,
+      name: provider.name?.trim() || existing?.name || "OIDC Provider",
+      providerType: provider.providerType ?? existing?.providerType ?? "oidc",
+      duoApiHostname: provider.duoApiHostname?.trim() ?? existing?.duoApiHostname ?? "",
+      enabled: provider.enabled ?? existing?.enabled ?? false,
+      issuer: provider.issuer?.trim() ?? existing?.issuer ?? "",
+      clientId: provider.clientId?.trim() ?? existing?.clientId ?? "",
+      clientSecret: provider.clientSecret?.trim() || existing?.clientSecret || "",
+      redirectUri: provider.redirectUri?.trim() ?? existing?.redirectUri ?? "",
+      authorizationUrl: provider.authorizationUrl?.trim() ?? existing?.authorizationUrl ?? "",
+      tokenUrl: provider.tokenUrl?.trim() ?? existing?.tokenUrl ?? "",
+      userinfoUrl: provider.userinfoUrl?.trim() ?? existing?.userinfoUrl ?? "",
+      jwksUrl: provider.jwksUrl?.trim() ?? existing?.jwksUrl ?? "",
+      logoutUrl: provider.logoutUrl?.trim() ?? existing?.logoutUrl ?? "",
+      scopes: normalizedScopes.length ? normalizedScopes : existing?.scopes ?? ["openid", "profile", "email"],
+      usernameClaim: provider.usernameClaim?.trim() || existing?.usernameClaim || "preferred_username",
+      emailClaim: provider.emailClaim?.trim() || existing?.emailClaim || "email",
+      groupsClaim: provider.groupsClaim?.trim() || existing?.groupsClaim || "groups",
+      allowAutoCreate: provider.allowAutoCreate ?? existing?.allowAutoCreate ?? false,
+      matchByEmail: provider.matchByEmail ?? existing?.matchByEmail ?? true,
+      matchByUsername: provider.matchByUsername ?? existing?.matchByUsername ?? true,
+      syncGroups: provider.syncGroups ?? existing?.syncGroups ?? false
+    };
+  });
+
+  let activeProviderId = parsed.activeProviderId ?? current.activeProviderId ?? null;
+  if (activeProviderId && !nextProviders.some((p) => p.id === activeProviderId)) {
+    return NextResponse.json({ error: "Active provider not found" }, { status: 400 });
+  }
+
+  // Enforce single active provider
+  const updatedProviders = nextProviders.map((provider) => ({
+    ...provider,
+    enabled: activeProviderId ? provider.id === activeProviderId : false
+  }));
+
+  const next: OidcSettings = {
+    activeProviderId,
+    providers: updatedProviders
   };
 
-  await setOidcConfig(next);
+  await setOidcSettings(next);
 
   await logAuditEvent({
     action: "admin.settings_changed",
@@ -95,5 +129,5 @@ export async function PUT(req: NextRequest) {
     ip: getClientIp(req)
   });
 
-  return NextResponse.json({ ok: true, config: next });
+  return NextResponse.json({ ok: true, settings: next });
 }

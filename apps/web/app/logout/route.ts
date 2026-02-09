@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getOidcConfig, getSetting, revokeSessionByJti } from "@/db";
+import { getActiveOidcProvider, getSetting, revokeSessionByJti } from "@/db";
 import { getCookieBase, getRequestContext, isSameOriginRequest } from "@/lib/proxy";
 import { verifySessionToken } from "@/lib/session";
 
@@ -20,7 +20,7 @@ function sanitizeFrom(base: string, raw: string | null): string {
 export async function GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   const base = ctx.base;
-  const oidcConfig = await getOidcConfig();
+  const oidcConfig = await getActiveOidcProvider();
   const rawSession = req.cookies.get("lemedia_session")?.value;
   if (rawSession) {
     try {
@@ -62,7 +62,7 @@ export async function GET(req: NextRequest) {
     }
   }
   // Priority 2: OIDC logout if configured
-  else if (oidcConfig.enabled && oidcConfig.logoutUrl) {
+  else if (oidcConfig?.logoutUrl) {
     try {
       const logoutUrl = new URL(oidcConfig.logoutUrl);
       logoutUrl.searchParams.set("post_logout_redirect_uri", redirectTarget.toString());
@@ -105,6 +105,10 @@ export async function GET(req: NextRequest) {
     "lemedia_mfa_token",
     "lemedia_oidc_state",
     "lemedia_oidc_nonce",
+    "lemedia_oidc_provider",
+    "lemedia_duo_state",
+    "lemedia_duo_username",
+    "lemedia_duo_provider",
     "lemedia_oidc_id_token",
     "lemedia_oidc_access_token",
     "lemedia_expires",
