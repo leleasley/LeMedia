@@ -376,7 +376,12 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
       availableSeasons,
       playUrl,
       request: request
-        ? { id: request.id, status: request.status, createdAt: request.created_at }
+        ? {
+            id: request.id,
+            status: request.status,
+            createdAt: request.createdAt,
+            requestedBy: request.requestedBy
+          }
         : null,
       requestedSeasons,
       manage: {

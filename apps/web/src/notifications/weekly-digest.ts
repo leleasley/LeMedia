@@ -1,6 +1,6 @@
 import "server-only";
 import { listWeeklyDigestRecipients } from "@/db";
-import { tmdbImageUrl, getUpcomingMoviesAccurateCombined, getUpcomingTvAccurate } from "@/lib/tmdb";
+import { tmdbImageUrl, getUpcomingMoviesAccurateCombined, getUpcomingTvAccurate, getTrendingAll } from "@/lib/tmdb";
 import { sendEmail } from "@/notifications/email";
 import { createUnsubscribeToken } from "@/lib/unsubscribe";
 import { logger } from "@/lib/logger";
@@ -16,6 +16,8 @@ type DigestItem = {
   date: string;
   posterUrl: string | null;
   type: "movie" | "tv";
+  genres?: string[];
+  rating?: number;
 };
 
 function getBaseUrl() {
@@ -56,7 +58,9 @@ function mapMovie(item: any): DigestItem | null {
     title: item.title,
     date: item.release_date,
     posterUrl: tmdbImageUrl(item.poster_path, "w500"),
-    type: "movie"
+    type: "movie",
+    genres: (item.genre_ids || []).slice(0, 2).map((id: number) => getGenreName(id)),
+    rating: item.vote_average ? Math.round(item.vote_average * 10) / 10 : undefined
   };
 }
 
@@ -67,8 +71,23 @@ function mapTv(item: any): DigestItem | null {
     title: item.name,
     date: item.first_air_date,
     posterUrl: tmdbImageUrl(item.poster_path, "w500"),
-    type: "tv"
+    type: "tv",
+    genres: (item.genre_ids || []).slice(0, 2).map((id: number) => getGenreName(id)),
+    rating: item.vote_average ? Math.round(item.vote_average * 10) / 10 : undefined
   };
+}
+
+// Map genre IDs to names (common ones)
+function getGenreName(id: number): string {
+  const genreMap: Record<number, string> = {
+    28: "Action", 12: "Adventure", 16: "Animation", 35: "Comedy", 80: "Crime",
+    99: "Documentary", 18: "Drama", 10751: "Family", 14: "Fantasy", 36: "History",
+    27: "Horror", 10402: "Music", 9648: "Mystery", 10749: "Romance", 878: "Sci-Fi",
+    10770: "TV Movie", 53: "Thriller", 10752: "War", 37: "Western",
+    10759: "Action & Adventure", 10762: "Kids", 10763: "News", 10764: "Reality",
+    10765: "Sci-Fi & Fantasy", 10766: "Soap", 10767: "Talk", 10768: "War & Politics"
+  };
+  return genreMap[id] || "";
 }
 
 function buildSection(title: string, items: DigestItem[], baseUrl: string, emptyMessage: string) {
@@ -82,9 +101,15 @@ function buildSection(title: string, items: DigestItem[], baseUrl: string, empty
   const gridItems = items.map((item) => {
     const link = `${baseUrl}/${item.type}/${item.id}`;
     const dateLabel = formatDate(item.date);
+    const genreTags = item.genres?.filter(Boolean).map((genre) => 
+      `<span style="display:inline-block;padding:3px 8px;background:rgba(168,85,247,0.2);border:1px solid rgba(168,85,247,0.3);border-radius:4px;font-size:10px;color:#c084fc;margin-right:4px;margin-top:4px;">${genre}</span>`
+    ).join('') || '';
+    const ratingBadge = item.rating ? 
+      `<span style="display:inline-block;padding:3px 8px;background:rgba(34,197,94,0.2);border:1px solid rgba(34,197,94,0.3);border-radius:4px;font-size:10px;color:#4ade80;margin-left:4px;">⭐ ${item.rating}</span>` 
+      : '';
     return `
       <td style="width:50%;padding:8px;vertical-align:top;" width="50%">
-        <table cellpadding="0" cellspacing="0" width="100%" style="background:#1e293b;border-radius:12px;overflow:hidden;">
+        <table cellpadding="0" cellspacing="0" width="100%" style="background:linear-gradient(135deg, #1e293b 0%, #334155 100%);border-radius:12px;overflow:hidden;border:1px solid rgba(148,163,184,0.1);">
           <tr>
             <td style="padding:0;">
               ${item.posterUrl ? `
@@ -97,8 +122,9 @@ function buildSection(title: string, items: DigestItem[], baseUrl: string, empty
           <tr>
             <td style="padding:14px;">
               <div style="font-size:15px;font-weight:700;color:#f8fafc;margin-bottom:6px;line-height:1.3;">${item.title}</div>
-              <div style="font-size:12px;color:#94a3b8;margin-bottom:12px;">${dateLabel}</div>
-              <a href="${link}" style="display:inline-block;padding:8px 16px;border-radius:8px;background:#2563eb;color:#fff;text-decoration:none;font-size:13px;font-weight:600;">View Details</a>
+              <div style="font-size:12px;color:#94a3b8;margin-bottom:8px;">${dateLabel}${ratingBadge}</div>
+              <div style="margin-top:8px;line-height:1.5;">${genreTags}</div>
+              <a href="${link}" style="display:inline-block;margin-top:12px;padding:8px 16px;background:linear-gradient(135deg, #9333ea 0%, #7e22ce 100%);color:#ffffff;text-decoration:none;border-radius:6px;font-size:13px;font-weight:600;border:1px solid rgba(147,51,234,0.3);">View Details</a>
             </td>
           </tr>
         </table>
@@ -106,22 +132,21 @@ function buildSection(title: string, items: DigestItem[], baseUrl: string, empty
     `;
   });
 
-  // Create rows with 2 items each
+  // Build rows with 2 items per row
   let rows = "";
   for (let i = 0; i < gridItems.length; i += 2) {
-    const item1 = gridItems[i] || "";
-    const item2 = gridItems[i + 1] || `<td style="width:50%;padding:8px;" width="50%"></td>`;
-    rows += `<tr>${item1}${item2}</tr>`;
+    rows += `<tr>${gridItems[i]}${gridItems[i + 1] || '<td style="width:50%;"></td>'}</tr>`;
   }
 
   return `
-    <table cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;">
+    <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="padding:0 8px;">
       ${rows}
     </table>
   `;
 }
 
 function buildEmailHtml(params: {
+  trending: DigestItem[];
   weekMovies: DigestItem[];
   weekTv: DigestItem[];
   soonMovies: DigestItem[];
@@ -176,6 +201,17 @@ function buildEmailHtml(params: {
             <tr>
               <td style="padding:24px 16px;">
                 <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
+                  <!-- Trending This Week -->
+                  <tr>
+                    <td style="padding:8px;">
+                      <div style="font-size:22px;font-weight:700;background:linear-gradient(135deg, #f59e0b 0%, #ef4444 50%, #ec4899 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:16px;padding:0 8px;">🔥 Trending This Week</div>
+                      ${buildSection("Trending", params.trending, params.baseUrl, "No trending content this week.")}
+                    </td>
+                  </tr>
+
+                  <!-- Divider -->
+                  <tr><td style="height:32px;padding:0 8px;"><div style="border-bottom:2px solid rgba(148,163,184,0.2);"></div></td></tr>
+
                   <!-- Out this week - Movies -->
                   <tr>
                     <td style="padding:8px;">
@@ -248,6 +284,7 @@ function buildEmailHtml(params: {
 }
 
 function buildTextDigest(params: {
+  trending: DigestItem[];
   weekMovies: DigestItem[];
   weekTv: DigestItem[];
   soonMovies: DigestItem[];
@@ -265,6 +302,7 @@ function buildTextDigest(params: {
   return [
     "LeMedia Weekly Coming Soon",
     "",
+    renderList("Trending this week", params.trending),
     renderList("Out this week — Movies", params.weekMovies),
     renderList("Out this week — TV", params.weekTv),
     renderList("Coming soon — Movies", params.soonMovies),
@@ -289,13 +327,33 @@ async function buildDigestContent() {
     })
     .sort((a: any, b: any) => String(a.release_date).localeCompare(String(b.release_date)));
 
-  const tvData = await getUpcomingTvAccurate(1);
+  const [tvData, trendingData] = await Promise.all([
+    getUpcomingTvAccurate(1),
+    getTrendingAll(1)
+  ]);
 
   const movies = movieResults
     .map(mapMovie)
     .filter(Boolean) as DigestItem[];
   const tv = (tvData.results ?? [])
     .map(mapTv)
+    .filter(Boolean) as DigestItem[];
+  
+  // Process trending items (mix of movies and TV)
+  const trendingSeen = new Set<string>();
+  const trending = (trendingData.results ?? [])
+    .filter((item: any) => {
+      const key = `${item.media_type}-${item.id}`;
+      if (trendingSeen.has(key)) return false;
+      trendingSeen.add(key);
+      return item.media_type === 'movie' || item.media_type === 'tv';
+    })
+    .slice(0, 6)
+    .map((item: any) => {
+      if (item.media_type === 'movie') return mapMovie(item);
+      if (item.media_type === 'tv') return mapTv(item);
+      return null;
+    })
     .filter(Boolean) as DigestItem[];
 
   const today = new Date();
@@ -304,6 +362,7 @@ async function buildDigestContent() {
   const soonEnd = daysFromNow(SOON_DAYS);
 
   return {
+    trending,
     weekMovies: filterByWindow(movies, today, weekEnd).slice(0, MAX_ITEMS),
     weekTv: filterByWindow(tv, today, weekEnd).slice(0, MAX_ITEMS),
     soonMovies: filterByWindow(movies, soonStart, soonEnd).slice(0, MAX_ITEMS),

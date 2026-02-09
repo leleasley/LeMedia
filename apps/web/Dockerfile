@@ -11,7 +11,9 @@ WORKDIR /app
 # Only NEXT_PUBLIC_ vars need real values at build time (inlined into client JS).
 # Server-only secrets use placeholders during build and are injected at runtime via env_file.
 ARG NEXT_PUBLIC_TURNSTILE_SITE_KEY
+ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY
 ENV NEXT_PUBLIC_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_TURNSTILE_SITE_KEY}
+ENV NEXT_PUBLIC_VAPID_PUBLIC_KEY=${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
 # Placeholder values so next build doesn't fail when server code references these
 ENV DATABASE_URL=postgres://build:build@localhost:5432/build
 ENV SESSION_SECRET=build-placeholder-secret-not-used-at-runtime-32chars

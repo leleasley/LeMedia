@@ -332,12 +332,14 @@ export async function findActiveRequestByTmdb(input: { requestType: "movie" | "e
   const p = getPool();
   const res = await p.query(
     `
-    SELECT id, status, created_at
-    FROM media_request
-    WHERE request_type = $1
-      AND tmdb_id = $2
-      AND status IN ('queued','pending','submitted')
-    ORDER BY created_at DESC
+    SELECT mr.id, mr.status, mr.created_at, mr.requested_by,
+           u.username, u.avatar_url
+    FROM media_request mr
+    LEFT JOIN app_user u ON u.id = mr.requested_by
+    WHERE mr.request_type = $1
+      AND mr.tmdb_id = $2
+      AND mr.status IN ('queued','pending','submitted')
+    ORDER BY mr.created_at DESC
     LIMIT 1
     `,
     [input.requestType, input.tmdbId]
@@ -346,7 +348,12 @@ export async function findActiveRequestByTmdb(input: { requestType: "movie" | "e
   return {
     id: res.rows[0].id as string,
     status: res.rows[0].status as string,
-    created_at: res.rows[0].created_at as string
+    createdAt: res.rows[0].created_at as string,
+    requestedBy: {
+      id: res.rows[0].requested_by as number,
+      username: res.rows[0].username as string,
+      avatarUrl: res.rows[0].avatar_url as string | null
+    }
   };
 }
 

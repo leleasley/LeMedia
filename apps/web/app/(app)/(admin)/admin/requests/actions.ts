@@ -1,6 +1,6 @@
 "use server";
 
-import { redirect } from "next/navigation";
+import { redirect, unstable_rethrow } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { getUser } from "@/auth";
@@ -235,6 +235,7 @@ export async function approveRequest(formData: FormData) {
 
     throw new Error(`Unsupported request type: ${data.request.request_type}`);
   } catch (e: any) {
+    unstable_rethrow(e);
     await markRequestStatus(requestId, "failed");
     await setRequestItemsStatus(requestId, "failed");
     const ctx = await getRequestNotificationContext(requestId);

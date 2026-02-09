@@ -7,6 +7,7 @@ const VapidPrivateKeySchema = z.string().min(1);
 const VapidEmailSchema = z.string().email();
 
 let vapidConfigured = false;
+const isBuildPhase = () => process.env.NEXT_PHASE === "phase-production-build";
 
 export function configureWebPush() {
   if (vapidConfigured) return;
@@ -19,7 +20,9 @@ export function configureWebPush() {
     webpush.setVapidDetails(`mailto:${email}`, publicKey, privateKey);
     vapidConfigured = true;
   } catch (err) {
-    console.warn("[WebPush] VAPID keys not configured. Push notifications will not work.");
+    if (!isBuildPhase()) {
+      console.warn("[WebPush] VAPID keys not configured. Push notifications will not work.");
+    }
   }
 }
 

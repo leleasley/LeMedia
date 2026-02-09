@@ -316,7 +316,12 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
       availableInLibrary: jellyfinAvailable || Boolean(radarrMovieSummary?.hasFile),
       playUrl,
       request: request
-        ? { id: request.id, status: request.status, createdAt: request.created_at }
+        ? {
+            id: request.id,
+            status: request.status,
+            createdAt: request.createdAt,
+            requestedBy: request.requestedBy
+          }
         : null,
       manage: {
         itemId: isAdmin ? radarrMovieSummary?.id ?? null : null,

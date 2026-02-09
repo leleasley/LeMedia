@@ -400,7 +400,7 @@ export async function POST(req: NextRequest) {
             tmdbId: body.data.mediaId,
             title,
             user,
-            createdAt: existing.created_at
+            createdAt: existing.createdAt
           }),
           { status: 409 }
         );
@@ -501,7 +501,7 @@ export async function POST(req: NextRequest) {
                 tmdbId: body.data.mediaId,
                 title,
                 user,
-                createdAt: existing.created_at
+                createdAt: existing.createdAt
               }),
               { status: 409 }
             );
@@ -591,7 +591,7 @@ export async function POST(req: NextRequest) {
                 tmdbId: body.data.mediaId,
                 title,
                 user,
-                createdAt: existing.created_at
+                createdAt: existing.createdAt
               }),
               { status: 409 }
             );
@@ -676,7 +676,7 @@ export async function POST(req: NextRequest) {
               tmdbId: body.data.mediaId,
               title,
               user,
-              createdAt: existing.created_at
+              createdAt: existing.createdAt
             }),
             { status: 409 }
           );

@@ -103,6 +103,7 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
         const isSearchPage = pathname === "/search";
         if (!isSearchPage) return;
         if (q.trim().length < 2) return;
+        if (inputRef.current === document.activeElement) return;
         addRecent(q);
     }, [pathname, searchParams]);
 
@@ -145,6 +146,7 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
         const q = searchQuery.trim();
         if (q.length >= 2) {
             router.push(`/search?q=${encodeURIComponent(q)}&type=all`);
+            addRecent(q);
         }
     };
 

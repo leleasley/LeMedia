@@ -102,7 +102,16 @@ type TvAggregateResponse = {
     availableSeasons?: number[];
     isAdmin?: boolean;
     playUrl?: string | null;
-    request?: { id: string; status: string; createdAt: string } | null;
+    request?: {
+        id: string;
+        status: string;
+        createdAt: string;
+        requestedBy: {
+            id: number;
+            username: string;
+            avatarUrl: string | null;
+        };
+    } | null;
     requestedSeasons?: Record<number, { requested: number }>;
     manage?: { itemId?: number | string | null; slug?: string | null; baseUrl?: string | null };
 };
@@ -977,9 +986,16 @@ export function TvDetailClientNew({
                             </div>
                         )}
                         {showRequestBadge && requestLabel && (
-                            <div className="inline-flex h-7 items-center gap-1.5 rounded-full border border-sky-400 bg-sky-500 px-3 text-xs font-semibold text-white shadow-sm">
-                                <CheckCircle className="h-4 w-4" />
-                                {requestLabel}
+                            <div className="inline-flex flex-col gap-0.5">
+                                <div className="inline-flex h-7 items-center gap-1.5 rounded-full border border-sky-400 bg-sky-500 px-3 text-xs font-semibold text-white shadow-sm">
+                                    <CheckCircle className="h-4 w-4" />
+                                    {requestLabel}
+                                </div>
+                                {aggregate?.request?.requestedBy?.username && (
+                                    <div className="ml-1 text-xs text-gray-400">
+                                        Requested by <span className="font-medium text-gray-300">{aggregate.request.requestedBy.username}</span>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
