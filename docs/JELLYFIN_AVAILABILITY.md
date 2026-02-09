@@ -24,7 +24,7 @@ This cache is used by the fast TV season endpoint so the UI stays snappy.
 ## Setup checklist
 
 1. **Configure Jellyfin in Admin**
-   - `/admin/settings/jellyfin`
+   - `/admin/settings/media-servers`
    - Set host, port, SSL, and API key
    - Use "Sync libraries" and enable the libraries you want to scan
 

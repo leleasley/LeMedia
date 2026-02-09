@@ -44,7 +44,7 @@ export function AdminSettingsNav() {
     const pathname = usePathname();
     const router = useRouter();
     const mediaServerLabel = "Media Servers";
-    const mediaServerRoute = "/admin/settings/jellyfin";
+    const mediaServerRoute = "/admin/settings/media-servers";
 
     const groups: SettingsGroup[] = [
         {
@@ -66,7 +66,7 @@ export function AdminSettingsNav() {
             color: "purple",
             gradient: "from-purple-500/20 to-violet-500/20",
             routes: [
-                { id: "media-server", label: mediaServerLabel, href: mediaServerRoute, match: /^\/admin\/settings\/jellyfin/, icon: ServerIcon },
+                { id: "media-server", label: mediaServerLabel, href: mediaServerRoute, match: /^\/admin\/setings\/media-servers/, icon: ServerIcon },
                 { id: "services", label: "Services", href: "/admin/settings/services", match: /^\/admin\/settings\/services/, icon: RectangleStackIcon },
                 { id: "metadata", label: "Metadata", href: "/admin/settings/metadata", match: /^\/admin\/settings\/metadata/, icon: FilmIcon },
                 { id: "upgrade-finder", label: "Upgrade Finder", href: "/admin/settings/upgrade-finder", match: /^\/admin\/settings\/upgrade-finder/, icon: ArrowUpCircleIcon },

@@ -32,8 +32,8 @@ const settingsRoutes: SettingsRoute[] = [
     },
     {
         text: "Media Servers",
-        route: "/admin/settings/jellyfin",
-        regex: /^\/admin\/settings\/jellyfin/,
+        route: "/admin/settings/media-servers",
+        regex: /^\/admin\/settings\/media-servers/,
         icon: ServerIcon,
     },
     {
