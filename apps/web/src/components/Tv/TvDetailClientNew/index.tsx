@@ -20,6 +20,8 @@ import { useToast } from "@/components/Providers/ToastProvider";
 import { logger } from "@/lib/logger";
 import CachedImage from "@/components/Common/CachedImage";
 import { tmdbImageUrl } from "@/lib/tmdb-images";
+import tmdbLogo from "@/assets/tmdb_logo.svg";
+import Image from "next/image";
 import {
     Select,
     SelectContent,
@@ -916,7 +918,7 @@ export function TvDetailClientNew({
                 </div>
             </Modal>
 
-            {/* Backdrop with Seerr-style gradient overlay */}
+            {/* Backdrop with gradient overlay */}
             {(backdrop || poster) && (
                 <div className="media-page-bg-image" style={{ height: 493 }}>
                     <CachedImage
@@ -932,7 +934,7 @@ export function TvDetailClientNew({
                 </div>
             )}
 
-            {/* Media Header - Poster + Title (Seerr Style) */}
+            {/* Media Header - Poster + Title */}
             <div className="media-header">
                 {/* Poster */}
                 <div className="media-poster relative">
@@ -945,7 +947,7 @@ export function TvDetailClientNew({
                             height={900}
                             className="w-full h-auto"
                             priority
-                            sizes="(max-width: 768px) 128px, (max-width: 1024px) 176px, 208px"
+                            sizes="(max-width: 768px) 128px, (max-width: 1024px) 192px, 224px"
                             style={{ width: "100%", height: "auto" }}
                         />
                     ) : (
@@ -1006,6 +1008,25 @@ export function TvDetailClientNew({
                         )}
                     </h1>
 
+                    {/* Inline Ratings */}
+                    <div className="media-ratings-inline">
+                        {tv.vote_average && tv.vote_average > 0 && (
+                            <Link
+                                href={`https://www.themoviedb.org/tv/${tv.id}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="media-rating"
+                                title={`TMDB: ${(tv.vote_average * 10).toFixed(0)}%`}
+                            >
+                                <div className="w-4 h-4 sm:w-5 sm:h-5 relative">
+                                    <Image src={tmdbLogo} alt="TMDB" fill className="object-contain" />
+                                </div>
+                                <span className="text-xs sm:text-sm font-bold text-white">{(tv.vote_average * 10).toFixed(0)}%</span>
+                            </Link>
+                        )}
+                        {externalRatingsSlot}
+                    </div>
+
                     {/* Attributes */}
                     <span className="media-attributes">
                         {Number(tv.number_of_seasons ?? 0) > 0 && (
@@ -1018,257 +1039,211 @@ export function TvDetailClientNew({
                         ))}
                     </span>
 
+                    {/* Tagline in header */}
+                    {tv.tagline && (
+                        <div className="media-tagline">&ldquo;{tv.tagline}&rdquo;</div>
+                    )}
+
                     {/* Action Buttons */}
                     <div className="media-actions">
-                        {hasAnyAvailable ? (
+                        <MediaListButtons tmdbId={tv.id} mediaType="tv" />
+                        <ShareButton
+                            mediaType="tv"
+                            tmdbId={tv.id}
+                            title={tv.name ?? tv.title ?? "Unknown"}
+                            backdropPath={backdrop ?? null}
+                            posterUrl={poster ?? null}
+                        />
+                        {actionMenu}
+                        {canRequestSeries && (
                             <>
-                                <MediaListButtons tmdbId={tv.id} mediaType="tv" />
-                                <ShareButton
-                                    mediaType="tv"
-                                    tmdbId={tv.id}
-                                    title={tv.name ?? tv.title ?? "Unknown"}
-                                    backdropPath={backdrop ?? null}
-                                    posterUrl={poster ?? null}
+                                <ButtonWithDropdown
+                                    text={
+                                        <>
+                                            <ArrowDownTrayIcon />
+                                            <span>Request</span>
+                                        </>
+                                    }
+                                    onClick={() => setRequestModalOpen(true)}
                                 />
-                                {actionMenu}
-                                {canRequestSeries && (
-                                    <>
-                                        <ButtonWithDropdown
-                                            text={
-                                                <>
-                                                    <ArrowDownTrayIcon />
-                                                    <span>Request</span>
-                                                </>
-                                            }
-                                            onClick={() => setRequestModalOpen(true)}
-                                        />
-                                        <SeriesRequestModal
-                                            open={requestModalOpen}
-                                            onClose={() => setRequestModalOpen(false)}
-                                            tmdbId={tv.id}
-                                            tvdbId={tvdbId ?? undefined}
-                                            qualityProfiles={qualityProfilesState}
-                                            defaultQualityProfileId={selectedQualityProfileId}
-                                            requestsBlocked={requestsBlockedState}
-                                            title={tv.name ?? tv.title ?? "Unknown"}
-                                            posterUrl={poster}
-                                            backdropUrl={backdrop}
-                                            isLoading={!requestInfoLoaded}
-                                            isAdmin={isAdminState}
-                                            prowlarrEnabled={prowlarrEnabledState}
-                                            serviceItemId={existingSeriesState?.id ?? null}
-                                            onRequestPlaced={() => {
-                                                setRequestModalOpen(false);
-                                                router.refresh();
-                                            }}
-                                        />
-                                    </>
-                                )}
-                            </>
-                        ) : (
-                            <>
-                                <MediaListButtons tmdbId={tv.id} mediaType="tv" />
-                                <ShareButton
-                                    mediaType="tv"
+                                <SeriesRequestModal
+                                    open={requestModalOpen}
+                                    onClose={() => setRequestModalOpen(false)}
                                     tmdbId={tv.id}
+                                    tvdbId={tvdbId ?? undefined}
+                                    qualityProfiles={qualityProfilesState}
+                                    defaultQualityProfileId={selectedQualityProfileId}
+                                    requestsBlocked={requestsBlockedState}
                                     title={tv.name ?? tv.title ?? "Unknown"}
-                                    backdropPath={backdrop ?? null}
-                                    posterUrl={poster ?? null}
+                                    posterUrl={poster}
+                                    backdropUrl={backdrop}
+                                    isLoading={!requestInfoLoaded}
+                                    isAdmin={isAdminState}
+                                    prowlarrEnabled={prowlarrEnabledState}
+                                    serviceItemId={existingSeriesState?.id ?? null}
+                                    onRequestPlaced={() => {
+                                        setRequestModalOpen(false);
+                                        router.refresh();
+                                    }}
                                 />
-                                {actionMenu}
-                                {canRequestSeries && (
-                                    <>
-                                        <ButtonWithDropdown
-                                            text={
-                                                <>
-                                                    <ArrowDownTrayIcon />
-                                                    <span>Request</span>
-                                                </>
-                                            }
-                                            onClick={() => setRequestModalOpen(true)}
-                                        />
-                                        <SeriesRequestModal
-                                            open={requestModalOpen}
-                                            onClose={() => setRequestModalOpen(false)}
-                                            tmdbId={tv.id}
-                                            tvdbId={tvdbId ?? undefined}
-                                            qualityProfiles={qualityProfilesState}
-                                            defaultQualityProfileId={selectedQualityProfileId}
-                                            requestsBlocked={requestsBlockedState}
-                                            title={tv.name ?? tv.title ?? "Unknown"}
-                                            posterUrl={poster}
-                                            backdropUrl={backdrop}
-                                            isLoading={!requestInfoLoaded}
-                                            isAdmin={isAdminState}
-                                            prowlarrEnabled={prowlarrEnabledState}
-                                            serviceItemId={existingSeriesState?.id ?? null}
-                                            onRequestPlaced={() => {
-                                                setRequestModalOpen(false);
-                                                router.refresh();
-                                            }}
-                                        />
-                                    </>
-                                )}
-                                {!isExisting && qualityProfilesState.length === 0 && requestInfoLoaded && (
-                                    <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-2 text-amber-200 text-sm">
-                                        ⚠️ Configure Sonarr first
-                                    </div>
-                                )}
                             </>
+                        )}
+                        {!isExisting && qualityProfilesState.length === 0 && requestInfoLoaded && !hasAnyAvailable && (
+                            <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-2 text-amber-200 text-sm">
+                                Configure Sonarr first
+                            </div>
                         )}
                     </div>
                 </div>
             </div>
 
+            {/* Overview Section - Full Width */}
             <div className="media-overview">
-                {/* Left Column - Seasons */}
                 <div className="media-overview-left">
-                    <div className="mb-8">
-                        {tv.tagline && <div className="tagline">{tv.tagline}</div>}
-                        <h2>Overview</h2>
-                        <p>{tv.overview || "No overview available."}</p>
-                        {crewEntries.length > 0 && (
-                            <div className="mt-6">
-                                <ul className="media-crew">
-                                    {crewEntries.map(({ job, person }) => (
-                                        <li key={`${job}-${person.id}`}>
-                                            <span className="crew-job">{job}</span>
-                                            <Link href={`/person/${person.id}`} className="crew-name">
-                                                {person.name}
-                                            </Link>
-                                        </li>
-                                    ))}
-                                </ul>
-                                <div className="mt-2 flex justify-end">
-                                    <a
-                                        href={`https://www.themoviedb.org/tv/${tv.id}/cast`}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="inline-flex items-center gap-2 text-sm text-gray-300 hover:text-white"
-                                    >
-                                        View Full Crew
-                                        <svg viewBox="0 0 20 20" aria-hidden="true" className="h-4 w-4">
-                                            <path
-                                                fill="currentColor"
-                                                d="M7.2 5.7a1 1 0 0 1 1.4 0l4.4 4.4a1 1 0 0 1 0 1.4l-4.4 4.4a1 1 0 1 1-1.4-1.4l3.7-3.7-3.7-3.7a1 1 0 0 1 0-1.4z"
-                                            />
-                                        </svg>
-                                    </a>
-                                </div>
-                            </div>
-                        )}
-                        {keywordsSlot || (keywords.length > 0 && (
-                            <div className="mt-4 flex flex-wrap items-center gap-2">
-                                <span className="inline-flex items-center justify-center rounded-full border border-white/10 bg-white/5 p-1.5 text-gray-300">
-                                    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-3.5 w-3.5">
+                    <h2>Overview</h2>
+                    <p>{tv.overview || "No overview available."}</p>
+
+                    {/* Crew */}
+                    {crewEntries.length > 0 && (
+                        <div className="mt-6">
+                            <ul className="media-crew">
+                                {crewEntries.map(({ job, person }) => (
+                                    <li key={`${job}-${person.id}`}>
+                                        <span className="crew-job">{job}</span>
+                                        <Link href={`/person/${person.id}`} className="crew-name">
+                                            {person.name}
+                                        </Link>
+                                    </li>
+                                ))}
+                            </ul>
+                            <div className="mt-2 flex justify-end">
+                                <a
+                                    href={`https://www.themoviedb.org/tv/${tv.id}/cast`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-2 text-sm text-gray-300 hover:text-white"
+                                >
+                                    View Full Crew
+                                    <svg viewBox="0 0 20 20" aria-hidden="true" className="h-4 w-4">
                                         <path
                                             fill="currentColor"
-                                            d="M21 11l-9.2 9.2a2 2 0 0 1-2.8 0L3 14.2a2 2 0 0 1 0-2.8L12.2 2H19a2 2 0 0 1 2 2v7zM7.5 12a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"
+                                            d="M7.2 5.7a1 1 0 0 1 1.4 0l4.4 4.4a1 1 0 0 1 0 1.4l-4.4 4.4a1 1 0 1 1-1.4-1.4l3.7-3.7-3.7-3.7a1 1 0 0 1 0-1.4z"
                                         />
                                     </svg>
-                                </span>
-                                {keywords.map((keyword) => (
-                                    <span
-                                        key={keyword.id}
-                                        className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-gray-200"
-                                    >
-                                        {keyword.name}
-                                    </span>
-                                ))}
+                                </a>
                             </div>
-                        ))}
-                    </div>
-                    <h2>Seasons</h2>
-                    <div className="space-y-4">
-                        {seasons.length === 0 ? (
-                            <div className="p-8 rounded-xl border border-white/5 bg-white/5 text-center text-gray-400">No seasons available for this show.</div>
-                        ) : (
-                            seasons.map((season) => (
-                                <TvSeasonItem
-                                    key={season.season_number}
-                                    season={season}
-                                    isExpanded={expandedSeasons.has(season.season_number)}
-                                    isLoading={loadingSeasons.has(season.season_number)}
-                                    episodes={seasonEpisodes[season.season_number] || []}
-                                    checkedEpisodes={checkedEpisodes[season.season_number] ?? new Set()}
-                                    availabilityCounts={seasonAvailabilityCounts[season.season_number]}
-                                    requestCounts={requestedSeasonsState[season.season_number]}
-                                    onToggleSeason={toggleSeason}
-                                    onToggleAllInSeason={toggleAllInSeason}
-                                    onToggleEpisode={toggleEpisode}
-                                    onRequestEpisodes={(seasonNumber) => setEpisodeRequestModal({ open: true, seasonNumber })}
-                                    monitorEpisodes={monitorEpisodes}
-                                    onToggleMonitorEpisodes={setMonitorEpisodes}
-                                    hasQualityProfiles={hasQualityProfiles}
-                                    isSubmitting={isSubmitting}
-                                    getAiringBadge={getAiringBadge}
-                                    formatDate={formatDate}
-                                    formatRating={formatRating}
-                                    imageProxyEnabled={imageProxyEnabled}
-                                />
-                            ))
-                        )}
-                    </div>
-                </div>
+                        </div>
+                    )}
 
-                {/* Right Column - Info Box */}
-                <div className="media-overview-right">
-                    <MediaInfoBox
-                        status={tv.status ?? undefined}
-                        firstAirDate={tv.first_air_date ?? undefined}
-                        originalLanguage={tv.original_language ?? undefined}
-                        productionCountries={
-                            tv.production_countries
-                                ? tv.production_countries
-                                      .filter((country) => Boolean(country?.name))
-                                      .map((country) => ({ name: String(country?.name) }))
-                                : undefined
-                        }
-                        networks={
-                            tv.networks
-                                ? tv.networks
-                                      .filter((network) => Boolean(network?.name))
-                                      .map((network) => ({
-                                          name: String(network?.name),
-                                          logo_path: network?.logo_path ?? undefined
-                                      }))
-                                : undefined
-                        }
-                        streamingProviders={
-                            Array.isArray(streamingProviders)
-                                ? streamingProviders
-                                      .filter((provider) => Boolean(provider?.provider_name) && Boolean(provider?.logo_path))
-                                      .map((provider) => ({
-                                          logo_path: String(provider.logo_path),
-                                          provider_id: Number(provider.provider_id),
-                                          provider_name: String(provider.provider_name),
-                                          display_priority: provider.display_priority
-                                      }))
-                                : undefined
-                        }
-                        voteAverage={tv.vote_average ?? undefined}
-                        tmdbId={tv.id}
-                        imdbId={tv.external_ids?.imdb_id ?? null}
-                        imdbRating={imdbRating ?? null}
-                        rtCriticsScore={rtCriticsScore ?? null}
-                        rtCriticsRating={rtCriticsRating ?? null}
-                        rtAudienceScore={rtAudienceScore ?? null}
-                        rtAudienceRating={rtAudienceRating ?? null}
-                        rtUrl={rtUrl ?? null}
-                        metacriticScore={metacriticScore ?? null}
-                        type="tv"
-                        tvdbId={tvdbId}
-                        jellyfinUrl={playUrlState ?? null}
-                        externalRatingsSlot={externalRatingsSlot}
-                    />
+                    {/* Keywords */}
+                    {keywordsSlot || (keywords.length > 0 && (
+                        <div className="mt-4 flex flex-wrap items-center gap-2">
+                            <span className="inline-flex items-center justify-center rounded-full border border-white/10 bg-white/5 p-1.5 text-gray-300">
+                                <svg viewBox="0 0 24 24" aria-hidden="true" className="h-3.5 w-3.5">
+                                    <path
+                                        fill="currentColor"
+                                        d="M21 11l-9.2 9.2a2 2 0 0 1-2.8 0L3 14.2a2 2 0 0 1 0-2.8L12.2 2H19a2 2 0 0 1 2 2v7zM7.5 12a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"
+                                    />
+                                </svg>
+                            </span>
+                            {keywords.map((keyword) => (
+                                <span
+                                    key={keyword.id}
+                                    className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-gray-200"
+                                >
+                                    {keyword.name}
+                                </span>
+                            ))}
+                        </div>
+                    ))}
                 </div>
             </div>
 
-            {/* Cast Section - At the Bottom */}
+            {/* Details Section - Full Width Glass Card */}
+            <div className="media-section">
+                <MediaInfoBox
+                    status={tv.status ?? undefined}
+                    firstAirDate={tv.first_air_date ?? undefined}
+                    originalLanguage={tv.original_language ?? undefined}
+                    productionCountries={
+                        tv.production_countries
+                            ? tv.production_countries
+                                  .filter((country) => Boolean(country?.name))
+                                  .map((country) => ({ name: String(country?.name) }))
+                            : undefined
+                    }
+                    networks={
+                        tv.networks
+                            ? tv.networks
+                                  .filter((network) => Boolean(network?.name))
+                                  .map((network) => ({
+                                      name: String(network?.name),
+                                      logo_path: network?.logo_path ?? undefined
+                                  }))
+                            : undefined
+                    }
+                    streamingProviders={
+                        Array.isArray(streamingProviders)
+                            ? streamingProviders
+                                  .filter((provider) => Boolean(provider?.provider_name) && Boolean(provider?.logo_path))
+                                  .map((provider) => ({
+                                      logo_path: String(provider.logo_path),
+                                      provider_id: Number(provider.provider_id),
+                                      provider_name: String(provider.provider_name),
+                                      display_priority: provider.display_priority
+                                  }))
+                            : undefined
+                    }
+                    type="tv"
+                />
+            </div>
+
+            {/* Seasons Section */}
+            <div className="media-section">
+                <h2 className="media-section-title">
+                    <Tv className="h-4 w-4 sm:h-5 sm:w-5" />
+                    Seasons
+                </h2>
+                <div className="space-y-4">
+                    {seasons.length === 0 ? (
+                        <div className="p-8 rounded-xl border border-white/5 bg-white/5 text-center text-gray-400">No seasons available for this show.</div>
+                    ) : (
+                        seasons.map((season) => (
+                            <TvSeasonItem
+                                key={season.season_number}
+                                season={season}
+                                isExpanded={expandedSeasons.has(season.season_number)}
+                                isLoading={loadingSeasons.has(season.season_number)}
+                                episodes={seasonEpisodes[season.season_number] || []}
+                                checkedEpisodes={checkedEpisodes[season.season_number] ?? new Set()}
+                                availabilityCounts={seasonAvailabilityCounts[season.season_number]}
+                                requestCounts={requestedSeasonsState[season.season_number]}
+                                onToggleSeason={toggleSeason}
+                                onToggleAllInSeason={toggleAllInSeason}
+                                onToggleEpisode={toggleEpisode}
+                                onRequestEpisodes={(seasonNumber) => setEpisodeRequestModal({ open: true, seasonNumber })}
+                                monitorEpisodes={monitorEpisodes}
+                                onToggleMonitorEpisodes={setMonitorEpisodes}
+                                hasQualityProfiles={hasQualityProfiles}
+                                isSubmitting={isSubmitting}
+                                getAiringBadge={getAiringBadge}
+                                formatDate={formatDate}
+                                formatRating={formatRating}
+                                imageProxyEnabled={imageProxyEnabled}
+                            />
+                        ))
+                    )}
+                </div>
+            </div>
+
+            {/* Cast Section - Horizontal Scroll */}
             {cast.length > 0 && (
-                <div className="mt-10 sm:mt-16 md:mt-24">
-                    <h2 className="text-xl sm:text-2xl font-bold text-white tracking-wide mb-4 sm:mb-6">Cast</h2>
-                    <div className="grid grid-cols-4 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-1.5 sm:gap-3">
+                <div className="media-section">
+                    <h2 className="media-section-title">
+                        <Users className="h-4 w-4 sm:h-5 sm:w-5" />
+                        Cast
+                    </h2>
+                    <div className="media-cast-scroll">
                         {cast.map((person) => {
                             const img = getTmdbImage(person.profile_path, "w300");
                             const name = person.name ?? "Unknown";
@@ -1280,25 +1255,26 @@ export function TvDetailClientNew({
                                     key={person.id}
                                     href={`/person/${person.id}`}
                                     aria-label={`View ${label}`}
-                                    className="group block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900"
+                                    className="media-cast-card group"
                                 >
-                                    <div className="relative aspect-[2/3] overflow-hidden rounded-md sm:rounded-lg border border-white/10 bg-white/5 transition-transform duration-300 group-hover:scale-105 group-hover:border-white/20">
+                                    <div className="cast-image">
                                         {img ? (
                                             <CachedImage
                                                 type="tmdb"
                                                 src={img}
                                                 alt={name}
                                                 fill
-                                                className="object-cover transition-transform duration-300 group-hover:scale-110"
+                                                className="object-cover"
                                             />
                                         ) : (
                                             <div className="absolute inset-0 flex items-center justify-center text-gray-500 font-semibold text-xs sm:text-sm">{initials(name)}</div>
                                         )}
-                                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-70" />
-                                    </div>
-                                    <div className="mt-1 text-center">
-                                        <div className="text-[10px] sm:text-xs font-semibold text-white truncate">{name}</div>
-                                        <div className="text-[9px] sm:text-[11px] text-gray-400 truncate">{character}{episodeCount && <span className="opacity-70"> • {episodeCount} eps</span>}</div>
+                                        <div className="cast-overlay">
+                                            <span className="cast-name">{name}</span>
+                                            <span className="cast-character">
+                                                {character}{episodeCount ? ` \u00B7 ${episodeCount} eps` : ""}
+                                            </span>
+                                        </div>
                                     </div>
                                 </Link>
                             );

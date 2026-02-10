@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 import { PrefetchLink } from "@/components/Layout/PrefetchLink";
 import { z } from "zod";
 import { getMovie, tmdbImageUrl } from "@/lib/tmdb";
@@ -12,6 +13,7 @@ import { headers } from "next/headers";
 import { RecentlyViewedTracker } from "@/components/Media/RecentlyViewedTracker";
 import { ExternalRatings } from "@/components/Media/ExternalRatings";
 import { MediaReviews } from "@/components/Reviews/MediaReviews";
+import tmdbLogo from "@/assets/tmdb_logo.svg";
 
 const Params = z.object({ id: z.coerce.number().int() });
 type ParamsInput = { id: string } | Promise<{ id: string }>;
@@ -60,8 +62,6 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
   try {
     const { id } = Params.parse(await resolveParams(params));
 
-    // Fetch only fast data - no slow external APIs (OMDB, Rotten Tomatoes)
-    // This makes the page show instantly
     const [details, aggregate] = await Promise.all([
       getMovieDetailAggregateFast(id),
       fetchMovieAggregate(id, "")
@@ -87,7 +87,9 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
     // Movie attributes for display
     const movieAttributes = [];
     if (movie.runtime > 0) {
-      movieAttributes.push(`${movie.runtime} minutes`);
+      const hours = Math.floor(movie.runtime / 60);
+      const mins = movie.runtime % 60;
+      movieAttributes.push(hours > 0 ? `${hours}h ${mins}m` : `${mins}m`);
     }
     if (movie.genres && movie.genres.length > 0) {
       movieAttributes.push(...movie.genres.map((g: any) => g.name));
@@ -101,7 +103,8 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
         title={movie.title}
         posterPath={movie.poster_path}
       />
-      {/* Backdrop with Seerr-style gradient overlay */}
+
+      {/* Backdrop with gradient overlay */}
       {backdropImage && (
         <div className="media-page-bg-image" style={{ height: 493 }}>
           <Image
@@ -116,7 +119,7 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
         </div>
       )}
 
-      {/* Media Header - Poster + Title (Seerr Style) */}
+      {/* Media Header - Poster + Title */}
       <div className="media-header">
         {/* Poster */}
         <div className="media-poster relative">
@@ -128,7 +131,7 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
               height={900}
               className="w-full h-auto"
               priority
-              sizes="(max-width: 768px) 128px, (max-width: 1024px) 176px, 208px"
+              sizes="(max-width: 768px) 128px, (max-width: 1024px) 192px, 224px"
             />
           ) : (
             <div className="w-full aspect-[2/3] bg-gray-800 flex items-center justify-center">
@@ -156,16 +159,37 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
             )}
           </h1>
 
+          {/* Inline Ratings */}
+          <div className="media-ratings-inline">
+            {movie.vote_average > 0 && (
+              <Link
+                href={`https://www.themoviedb.org/movie/${movie.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="media-rating"
+                title={`TMDB: ${(movie.vote_average * 10).toFixed(0)}%`}
+              >
+                <div className="w-4 h-4 sm:w-5 sm:h-5 relative">
+                  <Image src={tmdbLogo} alt="TMDB" fill className="object-contain" />
+                </div>
+                <span className="text-xs sm:text-sm font-bold text-white">{(movie.vote_average * 10).toFixed(0)}%</span>
+              </Link>
+            )}
+            <ExternalRatings tmdbId={movie.id} mediaType="movie" imdbId={imdbId} />
+          </div>
+
           {/* Attributes */}
           {movieAttributes.length > 0 && (
             <span className="media-attributes">
               {movieAttributes.map((attr, idx) => (
-                <span key={idx}>
-                  {idx > 0 && <span>|</span>}
-                  <span>{attr}</span>
-                </span>
+                <span key={idx}>{attr}</span>
               ))}
             </span>
+          )}
+
+          {/* Tagline in header */}
+          {movie.tagline && (
+            <div className="media-tagline">&ldquo;{movie.tagline}&rdquo;</div>
           )}
 
           {/* Action Buttons */}
@@ -183,13 +207,27 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
         </div>
       </div>
 
-      {/* Media Overview - Left (Overview + Crew) & Right (Facts) */}
+      {/* Overview Section - Full Width */}
       <div className="media-overview">
         <div className="media-overview-left">
-          {movie.tagline && <div className="tagline">{movie.tagline}</div>}
           <h2>Overview</h2>
           <p>{movie.overview || "No overview available."}</p>
 
+          {/* Crew */}
+          {crew.length > 0 && (
+            <ul className="media-crew">
+              {crew.map((person: any) => (
+                <li key={`${person.id}-${person.job}`}>
+                  <span className="crew-job">{person.job}</span>
+                  <PrefetchLink href={`/person/${person.id}`} className="crew-name">
+                    {person.name}
+                  </PrefetchLink>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {/* Keywords */}
           {keywords.length > 0 && (
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center justify-center rounded-full border border-white/10 bg-white/5 p-1.5 text-gray-300">
@@ -210,97 +248,74 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
               ))}
             </div>
           )}
-
-          {/* Crew - Seerr Style */}
-          {crew.length > 0 && (
-            <ul className="media-crew">
-              {crew.map((person: any) => (
-                <li key={`${person.id}-${person.job}`}>
-                  <span className="crew-job">{person.job}</span>
-                  <PrefetchLink href={`/person/${person.id}`} className="crew-name">
-                    {person.name}
-                  </PrefetchLink>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        {/* Right side: Collection + Media Facts */}
-        <div className="media-overview-right">
-          {collection && (
-            <div className="group relative z-0 mb-4 h-24 scale-100 transform-gpu cursor-pointer overflow-hidden rounded-lg bg-gray-800 bg-cover bg-center shadow-md ring-1 ring-gray-700 transition duration-300 hover:scale-105 hover:ring-gray-500">
-              <div className="absolute inset-0 z-0">
-                {collectionBackdrop && (
-                  <Image
-                    src={collectionBackdrop}
-                    alt={collection.name}
-                    fill
-                    className="object-cover"
-                  />
-                )}
-                <div
-                  className="absolute inset-0"
-                  style={{
-                    backgroundImage:
-                      "linear-gradient(180deg, rgba(31, 41, 55, 0.47) 0%, rgba(31, 41, 55, 0.80) 100%)",
-                  }}
-                />
-              </div>
-              <div className="relative z-10 flex h-full items-center justify-between p-4 text-gray-200 transition duration-300 group-hover:text-white">
-                <div>{collection.name}</div>
-                <PrefetchLink
-                  href={`/collection/${collection.id}`}
-                  className="inline-flex items-center rounded-md border border-gray-700 px-2.5 py-1.5 text-xs font-medium text-gray-200 transition duration-300 hover:text-white"
-                >
-                  View
-                </PrefetchLink>
-              </div>
-            </div>
-          )}
-          <MediaInfoBox
-            releaseDate={movie.release_date}
-            digitalReleaseDate={undefined}
-            runtime={movie.runtime}
-            voteAverage={movie.vote_average}
-            tmdbId={movie.id}
-            imdbId={imdbId}
-            rtCriticsScore={null}
-            rtCriticsRating={null}
-            rtAudienceScore={null}
-            rtAudienceRating={null}
-            rtUrl={null}
-            imdbRating={null}
-            metacriticScore={null}
-            streamingProviders={streamingProviders}
-            genres={movie.genres ?? []}
-            status={movie.status}
-            originalLanguage={movie.original_language}
-            productionCountries={movie.production_countries ?? []}
-            releaseDates={null}
-            type="movie"
-            externalRatingsSlot={<ExternalRatings tmdbId={movie.id} mediaType="movie" imdbId={imdbId} />}
-          />
         </div>
       </div>
 
-      <MediaReviews
-        tmdbId={movie.id}
-        mediaType="movie"
-        title={movie.title}
-        posterPath={movie.poster_path}
-        releaseYear={releaseYear}
-        imageProxyEnabled={imageProxyEnabled}
-      />
+      {/* Details Section - Full Width Glass Card */}
+      <div className="media-section">
+        {collection && (
+          <div className="group relative z-0 mb-6 h-24 scale-100 transform-gpu cursor-pointer overflow-hidden rounded-xl bg-gray-800 bg-cover bg-center shadow-md ring-1 ring-white/10 transition duration-300 hover:scale-[1.02] hover:ring-white/20">
+            <div className="absolute inset-0 z-0">
+              {collectionBackdrop && (
+                <Image
+                  src={collectionBackdrop}
+                  alt={collection.name}
+                  fill
+                  className="object-cover"
+                />
+              )}
+              <div
+                className="absolute inset-0"
+                style={{
+                  backgroundImage:
+                    "linear-gradient(180deg, rgba(31, 41, 55, 0.47) 0%, rgba(31, 41, 55, 0.80) 100%)",
+                }}
+              />
+            </div>
+            <div className="relative z-10 flex h-full items-center justify-between p-4 text-gray-200 transition duration-300 group-hover:text-white">
+              <div className="font-semibold">{collection.name}</div>
+              <PrefetchLink
+                href={`/collection/${collection.id}`}
+                className="inline-flex items-center rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-medium text-white transition duration-300 hover:bg-white/20"
+              >
+                View Collection
+              </PrefetchLink>
+            </div>
+          </div>
+        )}
 
-      {/* Cast Section */}
+        <MediaInfoBox
+          releaseDate={movie.release_date}
+          digitalReleaseDate={undefined}
+          runtime={movie.runtime}
+          voteAverage={movie.vote_average}
+          tmdbId={movie.id}
+          imdbId={imdbId}
+          rtCriticsScore={null}
+          rtCriticsRating={null}
+          rtAudienceScore={null}
+          rtAudienceRating={null}
+          rtUrl={null}
+          imdbRating={null}
+          metacriticScore={null}
+          streamingProviders={streamingProviders}
+          genres={movie.genres ?? []}
+          status={movie.status}
+          originalLanguage={movie.original_language}
+          productionCountries={movie.production_countries ?? []}
+          releaseDates={null}
+          type="movie"
+        />
+      </div>
+
+      {/* Cast Section - Horizontal Scroll */}
       {cast.length > 0 && (
-        <div className="mt-6 sm:mt-10">
-          <h3 className="text-base sm:text-lg font-semibold text-white mb-3 sm:mb-4 flex items-center gap-2">
-            <Users className="h-4 w-4" />
-            Top Cast
+        <div className="media-section">
+          <h3 className="media-section-title">
+            <Users className="h-4 w-4 sm:h-5 sm:w-5" />
+            Cast
           </h3>
-          <div className="grid grid-cols-4 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-1.5 sm:gap-3">
+          <div className="media-cast-scroll">
             {cast.map((person: any) => {
               const name = person.name ?? "Unknown";
               const character = person.character ?? "";
@@ -310,26 +325,26 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
                   key={person.id}
                   href={`/person/${person.id}`}
                   aria-label={`View ${label}`}
-                  className="group block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900"
+                  className="media-cast-card group"
                 >
-                  <div className="relative aspect-[2/3] overflow-hidden rounded-md sm:rounded-lg border border-white/10 bg-white/5 transition-transform duration-300 group-hover:scale-105 group-hover:border-white/20">
+                  <div className="cast-image">
                     {person.profile_path ? (
                       <Image
                         src={tmdbImageUrl(person.profile_path, "w300", imageProxyEnabled) || ""}
                         alt={name}
-                        width={300}
-                        height={450}
-                        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-110"
+                        fill
+                        className="object-cover"
                       />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center">
-                        <Users className="h-4 w-4 sm:h-6 sm:w-6 text-gray-600" />
+                        <Users className="h-6 w-6 text-gray-600" />
                       </div>
                     )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-70" />
+                    <div className="cast-overlay">
+                      <span className="cast-name">{name}</span>
+                      {character && <span className="cast-character">{character}</span>}
+                    </div>
                   </div>
-                  <p className="mt-1 text-[10px] sm:text-xs text-white font-semibold line-clamp-1 text-center">{name}</p>
-                  <p className="text-[9px] sm:text-[11px] text-gray-400 line-clamp-1 text-center">{character}</p>
                 </PrefetchLink>
               );
             })}
@@ -337,8 +352,20 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
         </div>
       )}
 
+      {/* Reviews */}
+      <div className="media-section">
+        <MediaReviews
+          tmdbId={movie.id}
+          mediaType="movie"
+          title={movie.title}
+          posterPath={movie.poster_path}
+          releaseYear={releaseYear}
+          imageProxyEnabled={imageProxyEnabled}
+        />
+      </div>
+
       {/* Recommendations & Similar */}
-      <div className="mt-8 sm:mt-12 space-y-6 sm:space-y-10">
+      <div className="media-section space-y-6 sm:space-y-10">
         <MediaSlider
           title="Recommendations"
           url={`/api/v1/tmdb/movie/${movie.id}/recommendations`}

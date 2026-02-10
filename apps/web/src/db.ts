@@ -4608,6 +4608,7 @@ export async function getReviewsForMedia(mediaType: "movie" | "tv", tmdbId: numb
         r.updated_at,
         u.username,
         u.avatar_url,
+        u.jellyfin_user_id,
         u.groups
      FROM user_review r
      JOIN app_user u ON r.user_id = u.id
@@ -4633,6 +4634,7 @@ export async function getReviewsForMedia(mediaType: "movie" | "tv", tmdbId: numb
       id: r.user_id as number,
       username: r.username as string,
       avatarUrl: r.avatar_url as string | null,
+      jellyfinUserId: r.jellyfin_user_id as string | null,
       groups: normalizeGroupList(r.groups as string),
     },
   }));
@@ -4656,6 +4658,7 @@ export async function getRecentReviews(limit = 20) {
         r.updated_at,
         u.username,
         u.avatar_url,
+        u.jellyfin_user_id,
         u.groups
      FROM user_review r
      JOIN app_user u ON r.user_id = u.id
@@ -4680,6 +4683,7 @@ export async function getRecentReviews(limit = 20) {
       id: r.user_id as number,
       username: r.username as string,
       avatarUrl: r.avatar_url as string | null,
+      jellyfinUserId: r.jellyfin_user_id as string | null,
       groups: normalizeGroupList(r.groups as string),
     },
   }));

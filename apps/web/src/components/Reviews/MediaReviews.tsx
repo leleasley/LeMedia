@@ -11,6 +11,7 @@ import { csrfFetch } from "@/lib/csrf-client";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { logger } from "@/lib/logger";
 import { swrFetcher } from "@/lib/swr-fetcher";
+import { getAvatarAlt, getAvatarSrc, shouldBypassNextImage } from "@/lib/avatar";
 
 interface MediaReviewsProps {
   tmdbId: number;
@@ -25,6 +26,7 @@ interface ReviewUser {
   id: number;
   username: string;
   avatarUrl: string | null;
+  jellyfinUserId?: string | null;
   groups: string[];
 }
 
@@ -302,18 +304,24 @@ export function MediaReviews({ tmdbId, mediaType, title, posterPath, releaseYear
           ) : (
             reviews.map((review) => {
               const isSpoilerHidden = review.spoiler && !revealed[review.id];
+              const avatarSrc = getAvatarSrc({
+                avatarUrl: review.user.avatarUrl,
+                jellyfinUserId: review.user.jellyfinUserId,
+                username: review.user.username
+              });
+              const avatarAlt = getAvatarAlt({ username: review.user.username });
               return (
                 <div key={review.id} className="glass-strong rounded-xl border border-white/10 p-4">
                   <div className="flex items-center gap-3">
-                    {review.user.avatarUrl ? (
-                      <div className="relative h-9 w-9 overflow-hidden rounded-full">
-                        <Image src={review.user.avatarUrl} alt={review.user.username} fill className="object-cover" />
-                      </div>
-                    ) : (
-                      <div className="h-9 w-9 rounded-full bg-gray-700 flex items-center justify-center text-xs font-bold">
-                        {review.user.username.charAt(0).toUpperCase()}
-                      </div>
-                    )}
+                    <div className="relative h-9 w-9 overflow-hidden rounded-full">
+                      <Image
+                        src={avatarSrc}
+                        alt={avatarAlt}
+                        fill
+                        className="object-cover"
+                        unoptimized={shouldBypassNextImage(avatarSrc)}
+                      />
+                    </div>
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-semibold text-white">{review.user.username}</span>
