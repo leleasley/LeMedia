@@ -8,6 +8,7 @@ import { jsonResponseWithETag } from "@/lib/api-optimization";
 import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/rate-limit";
 import { fetchPlexServerInfo } from "@/lib/plex-admin";
+import { logger } from "@/lib/logger";
 
 const payloadSchema = z.object({
     enabled: z.boolean(),
@@ -67,7 +68,7 @@ export async function PUT(req: NextRequest) {
 
     const parsed = payloadSchema.safeParse(body);
     if (!parsed.success) {
-        console.warn("[API] Invalid Plex settings payload", { issues: parsed.error.issues });
+        logger.warn("[API] Invalid Plex settings payload", { issues: parsed.error.issues });
         return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
     }
 

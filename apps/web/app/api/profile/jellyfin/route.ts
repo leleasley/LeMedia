@@ -5,6 +5,7 @@ import { getJellyfinBaseUrl, jellyfinLogin } from "@/lib/jellyfin-admin";
 import { z } from "zod";
 import { requireCsrf } from "@/lib/csrf";
 import { jsonResponseWithETag } from "@/lib/api-optimization";
+import { logger } from "@/lib/logger";
 
 const linkSchema = z.object({
   username: z.string().min(1),
@@ -41,9 +42,9 @@ export async function POST(req: NextRequest) {
     body = linkSchema.parse(await req.json());
   } catch (err) {
     if (err instanceof z.ZodError) {
-      console.warn("[API] Invalid Jellyfin profile payload", { issues: err.issues });
+      logger.warn("[API] Invalid Jellyfin profile payload", { issues: err.issues });
     } else {
-      console.warn("[API] Invalid Jellyfin profile payload", { err });
+      logger.warn("[API] Invalid Jellyfin profile payload", { err });
     }
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }

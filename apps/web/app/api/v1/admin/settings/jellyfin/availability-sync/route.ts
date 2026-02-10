@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/auth";
 import { triggerManualAvailabilitySync } from "@/lib/jellyfin-availability-sync";
 import { requireCsrf } from "@/lib/csrf";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,7 @@ export async function POST(req: NextRequest) {
   try {
     // Trigger the sync in the background
     triggerManualAvailabilitySync().catch((err) => {
-      console.error("[Jellyfin Availability Sync] Manual sync failed", err);
+      logger.error("[Jellyfin Availability Sync] Manual sync failed", err);
     });
 
     return NextResponse.json(

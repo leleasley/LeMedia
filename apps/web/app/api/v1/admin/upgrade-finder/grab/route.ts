@@ -4,6 +4,7 @@ import { requireAdmin } from "@/auth";
 import { requireCsrf } from "@/lib/csrf";
 import { getActiveMediaService } from "@/lib/media-services";
 import { createRadarrFetcher } from "@/lib/radarr";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +47,7 @@ export async function POST(req: NextRequest) {
 
   const parsed = GrabSchema.safeParse(body);
   if (!parsed.success) {
-    console.warn("[API] Invalid upgrade-finder grab payload", { issues: parsed.error.issues });
+    logger.warn("[API] Invalid upgrade-finder grab payload", { issues: parsed.error.issues });
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
 
@@ -113,7 +114,7 @@ export async function POST(req: NextRequest) {
               })
             });
           } catch (restoreErr) {
-            console.warn("Could not restore original quality profile:", restoreErr);
+            logger.warn("Could not restore original quality profile", { error: restoreErr });
           }
         }
 
@@ -130,7 +131,7 @@ export async function POST(req: NextRequest) {
               })
             });
           } catch (restoreErr) {
-            console.warn("Could not restore original quality profile after error:", restoreErr);
+            logger.warn("Could not restore original quality profile after error", { error: restoreErr });
           }
         }
         throw grabErr;

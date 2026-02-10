@@ -5,6 +5,7 @@ import { requireCsrf } from "@/lib/csrf";
 import { getMaintenanceState, setMaintenanceState } from "@/lib/maintenance";
 import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/rate-limit";
+import { logger } from "@/lib/logger";
 
 const payloadSchema = z.object({
   enabled: z.boolean(),
@@ -30,9 +31,9 @@ export async function PUT(req: NextRequest) {
     parsed = payloadSchema.parse(await req.json());
   } catch (error: any) {
     if (error?.issues) {
-      console.warn("[API] Invalid maintenance payload", { issues: error.issues });
+      logger.warn("[API] Invalid maintenance payload", { issues: error.issues });
     } else {
-      console.warn("[API] Invalid maintenance payload", { error });
+      logger.warn("[API] Invalid maintenance payload", { error });
     }
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }

@@ -4,6 +4,7 @@ import { requireAdmin } from "@/auth";
 import { deleteNotificationEndpoint, getNotificationEndpointByIdFull, updateNotificationEndpoint } from "@/db";
 import { requireCsrf } from "@/lib/csrf";
 import { jsonResponseWithETag } from "@/lib/api-optimization";
+import { logger } from "@/lib/logger";
 
 const idSchema = z.object({ id: z.coerce.number().int().positive() });
 type ParamsInput = { id: string } | Promise<{ id: string }>;
@@ -74,9 +75,9 @@ export async function PATCH(req: NextRequest, { params }: { params: ParamsInput 
     body = UpdateBodySchema.parse(await req.json());
   } catch (err) {
     if (err instanceof z.ZodError) {
-      console.warn("[API] Invalid notification endpoint payload", { issues: err.issues });
+      logger.warn("[API] Invalid notification endpoint payload", { issues: err.issues });
     } else {
-      console.warn("[API] Invalid notification endpoint payload", { err });
+      logger.warn("[API] Invalid notification endpoint payload", { err });
     }
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }

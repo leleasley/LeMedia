@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireUser } from "@/auth";
 import { addCalendarSubscription, removeCalendarSubscription, listCalendarSubscriptions } from "@/db";
 import { requireCsrf } from "@/lib/csrf";
+import { logger } from "@/lib/logger";
 
 const SubscribeSchema = z.object({
   eventType: z.enum(["movie_release", "tv_premiere", "tv_episode", "season_premiere"]),
@@ -69,10 +70,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    console.error("[Calendar Subscribe] POST Error:", error);
+    logger.error("[Calendar Subscribe] POST Error", error);
 
     if (error instanceof z.ZodError) {
-      console.warn("[Calendar Subscribe] Invalid request payload", { issues: error.issues });
+      logger.warn("[Calendar Subscribe] Invalid request payload", { issues: error.issues });
       return NextResponse.json(
         { error: "Invalid request data" },
         { status: 400 }
@@ -113,10 +114,10 @@ export async function DELETE(req: NextRequest) {
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    console.error("[Calendar Subscribe] DELETE Error:", error);
+    logger.error("[Calendar Subscribe] DELETE Error", error);
 
     if (error instanceof z.ZodError) {
-      console.warn("[Calendar Subscribe] Invalid request payload", { issues: error.issues });
+      logger.warn("[Calendar Subscribe] Invalid request payload", { issues: error.issues });
       return NextResponse.json(
         { error: "Invalid request data" },
         { status: 400 }

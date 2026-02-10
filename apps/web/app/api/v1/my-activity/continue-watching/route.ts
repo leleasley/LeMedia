@@ -4,6 +4,7 @@ import { getUserWithHash } from "@/db";
 import { getContinueWatching } from "@/lib/jellyfin-watch";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
 import { getImageProxyEnabled } from "@/lib/app-settings";
+import { logger } from "@/lib/logger";
 import { getMovie, getTv, tmdbImageUrl } from "@/lib/tmdb";
 
 export const dynamic = "force-dynamic";
@@ -51,7 +52,7 @@ export async function GET(req: NextRequest) {
           }
         } catch (err) {
           // Fallback to null poster if TMDB fetch fails
-          console.error(`[Continue Watching] Failed to fetch TMDB data for ${tmdbId}:`, err);
+          logger.error(`[Continue Watching] Failed to fetch TMDB data for ${tmdbId}`, err);
         }
       }
 
@@ -76,7 +77,7 @@ export async function GET(req: NextRequest) {
       items: mapped.filter(item => item.tmdbId) // Only return items with TMDB IDs
     }, { maxAge: 120 }); // Cache for 2 minutes
   } catch (error) {
-    console.error("[Continue Watching] Error:", error);
+    logger.error("[Continue Watching] Error", error);
     return cacheableJsonResponseWithETag(req, {
       items: [],
       error: "Failed to fetch continue watching"

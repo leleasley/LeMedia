@@ -5,6 +5,7 @@ import { decryptSecret } from "@/lib/encryption";
 import { createRadarrFetcher } from "@/lib/radarr";
 import { createSonarrFetcher } from "@/lib/sonarr";
 import { requireCsrf } from "@/lib/csrf";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -53,7 +54,7 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({ ok: true });
     } catch (error: any) {
-        console.error("Failed to trigger download retry", error);
+        logger.error("Failed to trigger download retry", error);
         return NextResponse.json({ error: "Failed to trigger retry" }, { status: 500 });
     }
 }

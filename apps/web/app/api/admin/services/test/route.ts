@@ -4,6 +4,7 @@ import { z } from "zod";
 import { requireCsrf } from "@/lib/csrf";
 import { getMediaServiceSecretById } from "@/lib/service-config";
 import { decryptSecret } from "@/lib/encryption";
+import { logger } from "@/lib/logger";
 
 const bodySchema = z.object({
   id: z.number().optional(),
@@ -116,7 +117,7 @@ export async function POST(req: NextRequest) {
 
   const parsed = bodySchema.safeParse(body);
   if (!parsed.success) {
-    console.warn("[API] Invalid service test payload", { issues: parsed.error.issues });
+    logger.warn("[API] Invalid service test payload", { issues: parsed.error.issues });
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
 

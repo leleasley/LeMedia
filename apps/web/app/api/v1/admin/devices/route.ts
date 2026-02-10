@@ -3,6 +3,7 @@ import { requireAdmin } from "@/auth";
 import { listAllUserSessions, deleteUserSessionByJti } from "@/db";
 import { requireCsrf } from "@/lib/csrf";
 import { z } from "zod";
+import { logger } from "@/lib/logger";
 
 const DeleteSchema = z.object({
   jti: z.string().trim().min(1)
@@ -29,9 +30,9 @@ export async function DELETE(req: Request) {
     body = DeleteSchema.parse(await req.json());
   } catch (error) {
     if (error instanceof z.ZodError) {
-      console.warn("[API] Invalid devices payload", { issues: error.issues });
+      logger.warn("[API] Invalid devices payload", { issues: error.issues });
     } else {
-      console.warn("[API] Invalid devices payload", { error });
+      logger.warn("[API] Invalid devices payload", { error });
     }
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }

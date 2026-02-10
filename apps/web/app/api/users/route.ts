@@ -9,6 +9,7 @@ import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/rate-limit";
 import { normalizeGroupList } from "@/lib/groups";
 import { getPasswordPolicyResult } from "@/lib/password-policy";
+import { logger } from "@/lib/logger";
 
 const createSchema = z.object({
   username: z.string().trim().min(1).transform(u => u.toLowerCase()),
@@ -30,9 +31,9 @@ function forbidden() {
 
 function validationError(error: unknown) {
   if (error instanceof z.ZodError) {
-    console.warn("[API] Invalid user payload", { issues: error.issues });
+    logger.warn("[API] Invalid user payload", { issues: error.issues });
   } else {
-    console.warn("[API] Invalid user payload", { error });
+    logger.warn("[API] Invalid user payload", { error });
   }
   return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
 }

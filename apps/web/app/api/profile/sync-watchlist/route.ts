@@ -4,6 +4,7 @@ import { getUserWithHash } from "@/db";
 import { syncWatchlists } from "@/lib/request-sync";
 import { jsonResponseWithETag } from "@/lib/api-optimization";
 import { requireCsrf } from "@/lib/csrf";
+import { logger } from "@/lib/logger";
 
 export const dynamic = 'force-dynamic';
 
@@ -36,7 +37,7 @@ export async function POST(req: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error("Manual sync failed:", error);
+    logger.error("Manual sync failed", error);
     return NextResponse.json({ error: error?.message ?? "Failed to sync watchlist" }, { status: 500 });
   }
 }

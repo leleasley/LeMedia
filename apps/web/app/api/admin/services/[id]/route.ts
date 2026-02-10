@@ -5,6 +5,7 @@ import { z } from "zod";
 import { requireCsrf } from "@/lib/csrf";
 import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/rate-limit";
+import { logger } from "@/lib/logger";
 
 const updateSchema = z.object({
     name: z.string().min(1).optional(),
@@ -53,7 +54,7 @@ export async function PATCH(req: NextRequest, context: MediaServiceRouteContext)
         return NextResponse.json({ service });
     } catch (err: any) {
         if (err?.issues) {
-            console.warn("[API] Invalid media service update", { issues: err.issues });
+            logger.warn("[API] Invalid media service update", { issues: err.issues });
             return NextResponse.json({ error: "Invalid input" }, { status: 400 });
         }
         return NextResponse.json({ error: err?.message ?? "Failed to update" }, { status: 500 });

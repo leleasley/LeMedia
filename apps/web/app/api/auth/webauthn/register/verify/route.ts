@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyRegistrationResponse } from "@simplewebauthn/server";
 import { getUser } from "@/auth";
+import { logger } from "@/lib/logger";
 import { getWebAuthnChallenge, deleteWebAuthnChallenge, addUserCredential, getUserWithHash } from "@/db";
 import { getRequestContext } from "@/lib/proxy";
 
@@ -23,11 +24,11 @@ export async function POST(req: NextRequest) {
 
     const storedChallenge = await getWebAuthnChallenge(challengeId);
     if (!storedChallenge) {
-      console.error(`[WebAuthn] Challenge not found or expired: ${challengeId}`);
+      logger.warn("[WebAuthn] Challenge not found or expired", { challengeId });
       return NextResponse.json({ error: "Challenge expired or invalid" }, { status: 400 });
     }
     if (storedChallenge.user_id !== dbUser.id) {
-      console.error(`[WebAuthn] User mismatch: challenge user ${storedChallenge.user_id} vs session user ${dbUser.id}`);
+      logger.warn("[WebAuthn] User mismatch during verification", { challengeUserId: storedChallenge.user_id, sessionUserId: dbUser.id });
       return NextResponse.json({ error: "User mismatch during verification" }, { status: 400 });
     }
 
@@ -58,7 +59,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ error: "Verification failed" }, { status: 400 });
   } catch (error) {
-    console.error("[WebAuthn] Register verify error:", error);
+    logger.error("[WebAuthn] Register verify error", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }

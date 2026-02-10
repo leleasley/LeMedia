@@ -3,6 +3,7 @@ import { requireUser } from "@/auth";
 import { getUserWithHash } from "@/db";
 import { getRecentlyWatchedWithDetails } from "@/lib/jellyfin-watch";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,7 @@ export async function GET(req: NextRequest) {
       items
     }, { maxAge: 120 }); // Cache for 2 minutes
   } catch (error) {
-    console.error("[Recently Watched Timeline] Error:", error);
+    logger.error("[Recently Watched Timeline] Error", error);
     return cacheableJsonResponseWithETag(req, {
       items: [],
       error: "Failed to fetch recently watched"

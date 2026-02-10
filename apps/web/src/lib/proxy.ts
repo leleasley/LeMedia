@@ -47,7 +47,7 @@ export function ensureCsrfCookie(req: NextRequest, res: NextResponse, ctx: Reque
   const existing = req.cookies.get("lemedia_csrf")?.value;
   if (existing) return { res, token: existing };
   const token = createCsrfToken();
-  res.cookies.set("lemedia_csrf", token, { ...getCookieBase(ctx, false), maxAge: 60 * 60 * 24 * 30 });
+  res.cookies.set("lemedia_csrf", token, { ...getCookieBase(ctx, false), maxAge: 60 * 60 * 24 });
   return { res, token };
 }
 

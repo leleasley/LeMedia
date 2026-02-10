@@ -7,6 +7,7 @@ import { createSonarrFetcher, getSeriesByTmdbId, getSeriesByTvdbId } from "@/lib
 import { mapReleaseToRow } from "@/lib/upgrade-finder";
 import { mapProwlarrResultToRow, searchProwlarr } from "@/lib/prowlarr";
 import { getMovieExternalIds } from "@/lib/tmdb";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -197,7 +198,7 @@ export async function GET(req: NextRequest) {
   });
 
   if (!parsed.success) {
-    console.warn("[API] Invalid media releases query", { issues: parsed.error.issues });
+    logger.warn("[API] Invalid media releases query", { issues: parsed.error.issues });
     return NextResponse.json({ error: "Invalid query" }, { status: 400 });
   }
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAuthenticationResponse } from "@simplewebauthn/server";
 import type { AuthenticatorTransport } from "@simplewebauthn/server";
+import { logger } from "@/lib/logger";
 import {
   getWebAuthnChallenge,
   deleteWebAuthnChallenge,
@@ -47,7 +48,7 @@ export async function POST(req: NextRequest) {
 
     const storedChallenge = await getWebAuthnChallenge(challengeId);
     if (!storedChallenge) {
-      console.error(`[WebAuthn] Challenge not found or expired: ${challengeId}`);
+      logger.warn("[WebAuthn] Challenge not found or expired", { challengeId });
       return NextResponse.json({ error: "Challenge expired or invalid" }, { status: 400 });
     }
 
@@ -60,7 +61,7 @@ export async function POST(req: NextRequest) {
 
     // If challenge was tied to a specific user, verify it matches the credential's owner
     if (storedChallenge.user_id && storedChallenge.user_id !== credential.userId) {
-      console.error(`[WebAuthn] User mismatch: challenge user ${storedChallenge.user_id} vs credential user ${credential.userId}`);
+      logger.warn("[WebAuthn] User mismatch during verification", { challengeUserId: storedChallenge.user_id, credentialUserId: credential.userId });
       return NextResponse.json({ error: "User mismatch" }, { status: 400 });
     }
 
@@ -130,7 +131,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ error: "Verification failed" }, { status: 400 });
   } catch (error) {
-    console.error("[WebAuthn] Login verify error:", error);
+    logger.error("[WebAuthn] Login verify error", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }

@@ -18,6 +18,7 @@ import { getActiveMediaService, getMediaServiceByIdWithKey } from "@/lib/media-s
 import asyncLock from "@/lib/async-lock";
 import { isAdminGroup } from "@/lib/groups";
 import { extractExternalApiKey, verifyExternalApiKey } from "@/lib/external-api";
+import { logger } from "@/lib/logger";
 import { POST as requestPost } from "../../v1/request/route";
 
 const Body = z.object({
@@ -253,7 +254,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Request failed" }, { status: 500 });
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      console.warn("[API] Invalid TV request payload", { issues: error.issues });
+      logger.warn("[API] Invalid TV request payload", { issues: error.issues });
       return NextResponse.json({ ok: false, error: "Invalid request data" }, { status: 400 });
     }
     const message = error?.message ?? String(error);

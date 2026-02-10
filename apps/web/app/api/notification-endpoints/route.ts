@@ -4,6 +4,7 @@ import { requireAdmin, requireUser } from "@/auth";
 import { createNotificationEndpoint, listNotificationEndpoints, NotificationEndpointType } from "@/db";
 import { requireCsrf } from "@/lib/csrf";
 import { jsonResponseWithETag } from "@/lib/api-optimization";
+import { logger } from "@/lib/logger";
 
 const typeSchema = z.enum(["telegram", "discord", "email", "webhook"]);
 
@@ -75,9 +76,9 @@ export async function POST(req: NextRequest) {
     payload = createSchema.parse(await req.json());
   } catch (err) {
     if (err instanceof z.ZodError) {
-      console.warn("[API] Invalid notification endpoint payload", { issues: err.issues });
+      logger.warn("[API] Invalid notification endpoint payload", { issues: err.issues });
     } else {
-      console.warn("[API] Invalid notification endpoint payload", { err });
+      logger.warn("[API] Invalid notification endpoint payload", { err });
     }
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }

@@ -4,6 +4,7 @@ import { requireUser } from "@/auth";
 import { listDashboardSlidersForUser, updateDashboardSlidersForUser, upsertUser } from "@/db";
 import { cacheableJsonResponseWithETag, jsonResponseWithETag } from "@/lib/api-optimization";
 import { requireCsrf } from "@/lib/csrf";
+import { logger } from "@/lib/logger";
 
 const sliderSchema = z.object({
   id: z.coerce.number().int().positive().optional(),
@@ -50,7 +51,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(sliders);
   } catch (e) {
     if (e instanceof z.ZodError) {
-      console.warn("[API] Invalid dashboard settings payload", { issues: e.issues });
+      logger.warn("[API] Invalid dashboard settings payload", { issues: e.issues });
       return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
     }
     return NextResponse.json({ error: "Failed to update dashboard settings" }, { status: 500 });

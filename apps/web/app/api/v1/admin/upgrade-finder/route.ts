@@ -7,6 +7,7 @@ import { listUpgradeFinderItems, checkUpgradeHintForItem } from "@/lib/upgrade-f
 import { getActiveMediaService } from "@/lib/media-services";
 import { createRadarrFetcher } from "@/lib/radarr";
 import { listUpgradeFinderHints, listUpgradeFinderOverrides, upsertUpgradeFinderOverride } from "@/db";
+import { logger } from "@/lib/logger";
 
 const actionSchema = z.object({
   mediaType: z.enum(["movie", "tv"]),
@@ -75,7 +76,7 @@ export async function POST(req: NextRequest) {
 
   const parsed = actionSchema.safeParse(body);
   if (!parsed.success) {
-    console.warn("[API] Invalid upgrade-finder payload", { issues: parsed.error.issues });
+    logger.warn("[API] Invalid upgrade-finder payload", { issues: parsed.error.issues });
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
 

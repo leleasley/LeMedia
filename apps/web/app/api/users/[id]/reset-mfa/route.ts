@@ -5,6 +5,7 @@ import { z } from "zod";
 import { requireCsrf } from "@/lib/csrf";
 import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/rate-limit";
+import { logger } from "@/lib/logger";
 
 const idSchema = z.object({ id: z.coerce.number().int().positive() });
 type ParamsInput = { id: string } | Promise<{ id: string }>;
@@ -20,9 +21,9 @@ function forbidden() {
 
 function validationError(error: unknown) {
   if (error instanceof z.ZodError) {
-    console.warn("[API] Invalid reset MFA request", { issues: error.issues });
+    logger.warn("[API] Invalid reset MFA request", { issues: error.issues });
   } else {
-    console.warn("[API] Invalid reset MFA request", { error });
+    logger.warn("[API] Invalid reset MFA request", { error });
   }
   return NextResponse.json({ error: "Invalid request" }, { status: 400 });
 }

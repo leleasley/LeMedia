@@ -4,6 +4,7 @@ import { requireAdmin } from "@/auth";
 import { getUpgradeFinderReleases, mapReleaseToRow } from "@/lib/upgrade-finder";
 import { getActiveMediaService } from "@/lib/media-services";
 import { createRadarrFetcher } from "@/lib/radarr";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +59,7 @@ export async function GET(req: NextRequest) {
   });
 
   if (!parsed.success) {
-    console.warn("[API] Invalid upgrade-finder releases query", { issues: parsed.error.issues });
+    logger.warn("[API] Invalid upgrade-finder releases query", { issues: parsed.error.issues });
     return NextResponse.json({ error: "Invalid query" }, { status: 400 });
   }
 
@@ -137,7 +138,7 @@ export async function GET(req: NextRequest) {
             })
           });
         } catch (restoreErr) {
-          console.error("Failed to restore profile:", restoreErr);
+          logger.error("Failed to restore profile", restoreErr);
         }
       }
       throw err;

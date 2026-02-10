@@ -5,6 +5,7 @@ import { requireCsrf } from "@/lib/csrf";
 import { getActiveMediaService } from "@/lib/media-services";
 import { createProwlarrFetcher, listProwlarrIndexers } from "@/lib/prowlarr";
 import { ServiceHttpError } from "@/lib/fetch-utils";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +42,7 @@ export async function PATCH(req: NextRequest) {
 
   const parsed = UpdateSchema.safeParse(body);
   if (!parsed.success) {
-    console.warn("[API] Invalid prowlarr indexers payload", { issues: parsed.error.issues });
+    logger.warn("[API] Invalid prowlarr indexers payload", { issues: parsed.error.issues });
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
 

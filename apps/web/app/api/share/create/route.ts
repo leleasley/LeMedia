@@ -8,6 +8,7 @@ import { getClientIp } from "@/lib/rate-limit";
 import { resolvePublicBaseUrl } from "@/lib/server-utils";
 import { hashSharePassword } from "@/lib/share-auth";
 import { requireCsrf } from "@/lib/csrf";
+import { logger } from "@/lib/logger";
 
 const createShareSchema = z.object({
   mediaType: z.enum(["movie", "tv"]),
@@ -106,7 +107,7 @@ export async function POST(req: NextRequest) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: "Invalid request data" }, { status: 400 });
     }
-    console.error("Error creating share:", error);
+    logger.error("Error creating share", error);
     return NextResponse.json({ error: "Failed to create share" }, { status: 500 });
   }
 }

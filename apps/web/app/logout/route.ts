@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getActiveOidcProvider, getSetting, revokeSessionByJti } from "@/db";
 import { getCookieBase, getRequestContext, isSameOriginRequest } from "@/lib/proxy";
 import { verifySessionToken } from "@/lib/session";
+import { logger } from "@/lib/logger";
 
 function sanitizeFrom(base: string, raw: string | null): string {
   if (!raw) return "/";
@@ -38,15 +39,10 @@ export async function GET(req: NextRequest) {
   const autheliaLogoutUrl = await getSetting("authelia_logout_url");
 
   // Debug logging
-  console.log("[LOGOUT] Context:", JSON.stringify({
-    base: ctx.base,
-    secure: ctx.secure,
-    cookieDomain: ctx.cookieDomain,
-    sameSite: ctx.sameSite,
-  }));
-  console.log("[LOGOUT] Incoming cookies:", req.cookies.getAll().map(c => c.name));
-  console.log("[LOGOUT] Authelia session present:", !!autheliaSession);
-  console.log("[LOGOUT] Authelia logout URL configured:", autheliaLogoutUrl || "(none)");
+  logger.debug("[LOGOUT] Context", { base: ctx.base, secure: ctx.secure, cookieDomain: ctx.cookieDomain, sameSite: ctx.sameSite });
+  logger.debug("[LOGOUT] Incoming cookies", { cookies: req.cookies.getAll().map(c => c.name) });
+  logger.debug("[LOGOUT] Authelia session present", { present: !!autheliaSession });
+  logger.debug("[LOGOUT] Authelia logout URL configured", { url: autheliaLogoutUrl || "(none)" });
 
   const fromPath = isSameOriginRequest(req, base) ? sanitizeFrom(base, req.headers.get("referer")) : "/";
   let redirectTarget = new URL("/login", base);
@@ -165,11 +161,7 @@ export async function GET(req: NextRequest) {
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
 
-  // Debug: log all Set-Cookie headers being sent
-  console.log("[LOGOUT] Set-Cookie headers being sent:");
-  res.headers.getSetCookie().forEach((cookie, i) => {
-    console.log(`[LOGOUT]   ${i}: ${cookie}`);
-  });
+  logger.debug("[LOGOUT] Set-Cookie headers being sent", { cookies: res.headers.getSetCookie() });
   
   return res;
 }

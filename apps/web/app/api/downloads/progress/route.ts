@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/auth";
 import { radarrQueue } from "@/lib/radarr";
 import { sonarrQueue } from "@/lib/sonarr";
+import { logger } from "@/lib/logger";
 
 export interface DownloadProgress {
   id: number;
@@ -58,7 +59,7 @@ async function getRadarrDownloads(): Promise<DownloadProgress[]> {
         };
       });
   } catch (error) {
-    console.error("[Download Progress] Radarr error:", error);
+    logger.error("[Download Progress] Radarr error", error);
     return [];
   }
 }
@@ -100,7 +101,7 @@ async function getSonarrDownloads(): Promise<DownloadProgress[]> {
         };
       });
   } catch (error) {
-    console.error("[Download Progress] Sonarr error:", error);
+    logger.error("[Download Progress] Sonarr error", error);
     return [];
   }
 }
@@ -154,7 +155,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ downloads: redactedDownloads });
   } catch (error) {
-    console.error("[Download Progress] Error:", error);
+    logger.error("[Download Progress] Error", error);
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 }

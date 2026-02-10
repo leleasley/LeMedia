@@ -13,6 +13,7 @@ import { requireCsrf } from "@/lib/csrf";
 import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/rate-limit";
 import { invalidateJellyfinCaches } from "@/lib/jellyfin";
+import { logger } from "@/lib/logger";
 
 const authPayloadSchema = z.object({
   username: z.string().trim().min(1),
@@ -58,7 +59,7 @@ export async function POST(req: NextRequest) {
 
   const parsed = authPayloadSchema.safeParse(body);
   if (!parsed.success) {
-    console.warn("[API] Invalid Jellyfin auth payload", { issues: parsed.error.issues });
+    logger.warn("[API] Invalid Jellyfin auth payload", { issues: parsed.error.issues });
     return NextResponse.json(
       { error: "Invalid payload" },
       { status: 400 }

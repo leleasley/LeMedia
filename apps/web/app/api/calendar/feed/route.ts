@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/auth";
 import { getCalendarFeedToken, rotateCalendarFeedToken } from "@/db";
 import { requireCsrf } from "@/lib/csrf";
+import { logger } from "@/lib/logger";
 
 function resolvePublicBaseUrl(origin: string) {
   return process.env.APP_BASE_URL?.replace(/\/+$/, "") || origin;
@@ -24,7 +25,7 @@ export async function GET(req: NextRequest) {
     const { httpsUrl, webcalUrl } = buildFeedUrls(req.nextUrl.origin, token);
     return NextResponse.json({ token, httpsUrl, webcalUrl });
   } catch (error) {
-    console.error("[Calendar Feed] GET Error:", error);
+    logger.error("[Calendar Feed] GET Error", error);
     return NextResponse.json({ error: "Failed to fetch calendar feed" }, { status: 500 });
   }
 }
@@ -43,7 +44,7 @@ export async function POST(req: NextRequest) {
     const { httpsUrl, webcalUrl } = buildFeedUrls(req.nextUrl.origin, token);
     return NextResponse.json({ token, httpsUrl, webcalUrl });
   } catch (error) {
-    console.error("[Calendar Feed] POST Error:", error);
+    logger.error("[Calendar Feed] POST Error", error);
     return NextResponse.json({ error: "Failed to rotate calendar feed" }, { status: 500 });
   }
 }

@@ -4,6 +4,7 @@ import { getMediaShareById } from "@/db";
 import { getCookieBase, getRequestContext } from "@/lib/proxy";
 import { signShareAccess, verifySharePassword } from "@/lib/share-auth";
 import { checkLockout, clearFailures, getClientIp, recordFailure, rateLimitResponse } from "@/lib/rate-limit";
+import { logger } from "@/lib/logger";
 
 const authSchema = z.object({
   id: z.number().int().positive(),
@@ -67,7 +68,7 @@ export async function POST(req: NextRequest) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: "Invalid request data" }, { status: 400 });
     }
-    console.error("Error validating share password:", error);
+    logger.error("Error validating share password", error);
     return NextResponse.json({ error: "Failed to validate share password" }, { status: 500 });
   }
 }

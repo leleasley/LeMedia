@@ -6,6 +6,7 @@ import { requireCsrf } from "@/lib/csrf";
 import { jsonResponseWithETag } from "@/lib/api-optimization";
 import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/rate-limit";
+import { logger } from "@/lib/logger";
 
 const inputSchema = z.object({
   enabled: z.boolean().optional(),
@@ -41,9 +42,9 @@ export async function PUT(req: NextRequest) {
     parsed = inputSchema.parse(body);
   } catch (err: any) {
     if (err?.issues) {
-      console.warn("[API] Invalid Trakt settings payload", { issues: err.issues });
+      logger.warn("[API] Invalid Trakt settings payload", { issues: err.issues });
     } else {
-      console.warn("[API] Invalid Trakt settings payload", { err });
+      logger.warn("[API] Invalid Trakt settings payload", { err });
     }
     return NextResponse.json({ error: "Invalid input" }, { status: 400 });
   }

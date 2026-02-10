@@ -3,6 +3,7 @@ import { requireAdmin } from "@/auth";
 import { triggerManualPlexAvailabilitySync } from "@/lib/plex-availability-sync";
 import { requireCsrf } from "@/lib/csrf";
 import { getPlexConfig } from "@/db";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,7 @@ export async function POST(req: NextRequest) {
 
   try {
     triggerManualPlexAvailabilitySync().catch((err) => {
-      console.error("[Plex Availability Sync] Manual sync failed", err);
+      logger.error("[Plex Availability Sync] Manual sync failed", err);
     });
 
     return NextResponse.json(

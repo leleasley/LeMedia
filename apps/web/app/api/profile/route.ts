@@ -8,6 +8,7 @@ import { cacheableJsonResponseWithETag, jsonResponseWithETag } from "@/lib/api-o
 import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/rate-limit";
 import { getPasswordPolicyResult } from "@/lib/password-policy";
+import { logger } from "@/lib/logger";
 
 const UpdateSchema = z.object({
   username: z.string().trim().min(1).optional(),
@@ -79,9 +80,9 @@ export async function PATCH(req: NextRequest) {
       body = UpdateSchema.parse(await req.json());
     } catch (error) {
       if (error instanceof z.ZodError) {
-        console.warn("[API] Invalid profile update payload", { issues: error.issues });
+        logger.warn("[API] Invalid profile update payload", { issues: error.issues });
       } else {
-        console.warn("[API] Invalid profile update payload", { error });
+        logger.warn("[API] Invalid profile update payload", { error });
       }
       return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
     }

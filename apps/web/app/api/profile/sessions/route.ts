@@ -6,6 +6,7 @@ import { requireCsrf } from "@/lib/csrf";
 import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/rate-limit";
 import { z } from "zod";
+import { logger } from "@/lib/logger";
 
 const RevokeSchema = z.object({
   jti: z.string().trim().min(1)
@@ -51,9 +52,9 @@ export async function DELETE(req: NextRequest) {
     body = RevokeSchema.parse(await req.json());
   } catch (error) {
     if (error instanceof z.ZodError) {
-      console.warn("[API] Invalid sessions payload", { issues: error.issues });
+      logger.warn("[API] Invalid sessions payload", { issues: error.issues });
     } else {
-      console.warn("[API] Invalid sessions payload", { error });
+      logger.warn("[API] Invalid sessions payload", { error });
     }
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
@@ -89,9 +90,9 @@ export async function POST(req: NextRequest) {
     body = RevokeSchema.parse(await req.json());
   } catch (error) {
     if (error instanceof z.ZodError) {
-      console.warn("[API] Invalid sessions payload", { issues: error.issues });
+      logger.warn("[API] Invalid sessions payload", { issues: error.issues });
     } else {
-      console.warn("[API] Invalid sessions payload", { error });
+      logger.warn("[API] Invalid sessions payload", { error });
     }
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }

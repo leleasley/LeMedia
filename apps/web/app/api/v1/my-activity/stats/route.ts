@@ -3,6 +3,7 @@ import { requireUser } from "@/auth";
 import { getUserWithHash } from "@/db";
 import { getWatchStats } from "@/lib/jellyfin-watch";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +34,7 @@ export async function GET(req: NextRequest) {
 
     return cacheableJsonResponseWithETag(req, stats, { maxAge: 300 }); // Cache for 5 minutes
   } catch (error) {
-    console.error("[Watch Stats] Error:", error);
+    logger.error("[Watch Stats] Error", error);
     return cacheableJsonResponseWithETag(req, {
       totalMoviesWatched: 0,
       totalEpisodesWatched: 0,

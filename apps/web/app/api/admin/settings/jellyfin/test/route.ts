@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/auth";
 import { z } from "zod";
 import { requireCsrf } from "@/lib/csrf";
+import { logger } from "@/lib/logger";
 
 const payloadSchema = z.object({
     hostname: z.string().trim(),
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
 
     const parsed = payloadSchema.safeParse(body);
     if (!parsed.success) {
-        console.warn("[API] Invalid Jellyfin test payload", { issues: parsed.error.issues });
+        logger.warn("[API] Invalid Jellyfin test payload", { issues: parsed.error.issues });
         return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
     }
 

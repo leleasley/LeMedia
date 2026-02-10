@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/auth";
 import { getCalendarFeedUserByToken } from "@/db";
+import { logger } from "@/lib/logger";
 import ical, { ICalCalendar, ICalCategoryData, ICalEventData, ICalEventStatus } from "ical-generator";
 import { CalendarEvent } from "../route";
 import { format, addDays } from "date-fns";
@@ -125,7 +126,7 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("[Calendar Export] Error:", error);
+    logger.error("[Calendar Export] Error", error);
     return NextResponse.json(
       { error: "Failed to export calendar" },
       { status: 500 }

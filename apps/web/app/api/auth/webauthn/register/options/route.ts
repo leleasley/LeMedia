@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { generateRegistrationOptions } from "@simplewebauthn/server";
 import type { AuthenticatorTransport } from "@simplewebauthn/server";
 import { getUser } from "@/auth";
+import { logger } from "@/lib/logger";
 import { createWebAuthnChallenge, listUserCredentials, getUserWithHash } from "@/db";
 import { getCookieBase, getRequestContext } from "@/lib/proxy";
 import { getClientIp, checkRateLimit } from "@/lib/rate-limit";
@@ -57,7 +58,7 @@ export async function GET(req: NextRequest) {
 
     return res;
   } catch (error) {
-    console.error("[WebAuthn] Register options error:", error);
+    logger.error("[WebAuthn] Register options error", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/auth";
 import { getUserWithHash, getJellyfinConfig } from "@/db";
+import { logger } from "@/lib/logger";
 
 type WatchStats = {
   totalMoviesWatched: number;
@@ -66,7 +67,7 @@ async function getJellyfinStats(jellyfinUserId: string): Promise<WatchStats | nu
       recentEpisodes,
     };
   } catch (e) {
-    console.error("Jellyfin stats error:", e);
+    logger.error("Jellyfin stats error", e);
     return null;
   }
 }

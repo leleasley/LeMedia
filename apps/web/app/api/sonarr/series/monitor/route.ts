@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireUser } from "@/auth";
 import { setSeriesMonitoringOption } from "@/lib/sonarr";
 import { requireCsrf } from "@/lib/csrf";
+import { logger } from "@/lib/logger";
 
 const Body = z.object({
   seriesId: z.coerce.number().int().positive(),
@@ -36,7 +37,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      console.warn("[API] Invalid sonarr monitoring request", { issues: error.issues });
+      logger.warn("[API] Invalid sonarr monitoring request", { issues: error.issues });
       return NextResponse.json({ ok: false, error: "Invalid request data" }, { status: 400 });
     }
     const message = error?.message ?? String(error);

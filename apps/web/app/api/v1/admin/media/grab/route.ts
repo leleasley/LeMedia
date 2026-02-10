@@ -4,6 +4,7 @@ import { requireAdmin } from "@/auth";
 import { requireCsrf } from "@/lib/csrf";
 import { getActiveMediaService } from "@/lib/media-services";
 import { createProwlarrFetcher } from "@/lib/prowlarr";
+import { logger } from "@/lib/logger";
 import { addMovie, createRadarrFetcher, getMovieByTmdbId } from "@/lib/radarr";
 import { addSeriesFromLookup, createSonarrFetcher, getSeriesByTmdbId, getSeriesByTvdbId, lookupSeriesByTvdb } from "@/lib/sonarr";
 
@@ -53,7 +54,7 @@ export async function POST(req: NextRequest) {
 
   const parsed = GrabSchema.safeParse(body);
   if (!parsed.success) {
-    console.warn("[API] Invalid media grab payload", { issues: parsed.error.issues });
+    logger.warn("[API] Invalid media grab payload", { issues: parsed.error.issues });
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
 

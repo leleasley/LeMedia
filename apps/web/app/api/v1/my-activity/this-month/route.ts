@@ -3,6 +3,7 @@ import { requireUser } from "@/auth";
 import { getUserWithHash } from "@/db";
 import { getThisMonthStats } from "@/lib/jellyfin-watch";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +31,7 @@ export async function GET(req: NextRequest) {
 
     return cacheableJsonResponseWithETag(req, stats, { maxAge: 300 }); // Cache for 5 minutes
   } catch (error) {
-    console.error("[This Month Stats] Error:", error);
+    logger.error("[This Month Stats] Error", error);
     return cacheableJsonResponseWithETag(req, {
       moviesThisMonth: 0,
       episodesThisMonth: 0,

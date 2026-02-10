@@ -4,6 +4,7 @@ import { requireAdmin } from "@/auth";
 import { deleteMediaIssueById, getMediaIssueById, updateMediaIssueStatus } from "@/db";
 import { notifyIssueEvent } from "@/notifications/issue-events";
 import { requireCsrf } from "@/lib/csrf";
+import { logger } from "@/lib/logger";
 
 const ParamsSchema = z.object({ id: z.string().uuid() });
 const BodySchema = z.object({ status: z.enum(["resolved"]) });
@@ -30,9 +31,9 @@ export async function PATCH(req: NextRequest, { params }: { params: ParamsInput 
     body = BodySchema.parse(await req.json());
   } catch (error) {
     if (error instanceof z.ZodError) {
-      console.warn("[API] Invalid issue status payload", { issues: error.issues });
+      logger.warn("[API] Invalid issue status payload", { issues: error.issues });
     } else {
-      console.warn("[API] Invalid issue status payload", { error });
+      logger.warn("[API] Invalid issue status payload", { error });
     }
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }

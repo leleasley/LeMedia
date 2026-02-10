@@ -3,6 +3,7 @@ import { requireAdmin } from "@/auth";
 import { getJellyfinConfig, setJellyfinConfig } from "@/db";
 import { fetchJellyfinServerInfo, getJellyfinBaseUrl, getJellyfinApiKey } from "@/lib/jellyfin-admin";
 import { invalidateJellyfinCaches } from "@/lib/jellyfin";
+import { logger } from "@/lib/logger";
 
 /**
  * Admin endpoint to fetch and populate missing Jellyfin serverId
@@ -59,7 +60,7 @@ export async function GET(req: NextRequest) {
       serverName: serverInfo.name
     });
   } catch (error) {
-    console.error("[Jellyfin Fix ServerId] Error:", error);
+    logger.error("[Jellyfin Fix ServerId] Error", error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

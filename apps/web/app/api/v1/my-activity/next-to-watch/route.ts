@@ -4,6 +4,7 @@ import { getUserWithHash } from "@/db";
 import { getContinueWatching } from "@/lib/jellyfin-watch";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
 import { getImageProxyEnabled } from "@/lib/app-settings";
+import { logger } from "@/lib/logger";
 import { getMovie, getTv, tmdbImageUrl } from "@/lib/tmdb";
 
 export const dynamic = "force-dynamic";
@@ -50,7 +51,7 @@ export async function GET(req: NextRequest) {
               name = tv?.name || item.Name;
             }
           } catch (err) {
-            console.error(`[Next to Watch] Failed to fetch TMDB data for ${tmdbId}:`, err);
+            logger.error(`[Next to Watch] Failed to fetch TMDB data for ${tmdbId}`, err);
           }
         }
 
@@ -72,7 +73,7 @@ export async function GET(req: NextRequest) {
       items: mapped.filter(item => item.mediaType && item.tmdbId)
     }, { maxAge: 120 }); // Cache for 2 minutes
   } catch (error) {
-    console.error("[Next to Watch] Error:", error);
+    logger.error("[Next to Watch] Error", error);
     return cacheableJsonResponseWithETag(req, {
       items: [],
       error: "Failed to fetch next to watch"

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireUser } from "@/auth";
 import { createDashboardSliderForUser, upsertUser } from "@/db";
 import { requireCsrf } from "@/lib/csrf";
+import { logger } from "@/lib/logger";
 
 const bodySchema = z.object({
   type: z.coerce.number().int(),
@@ -23,7 +24,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(slider);
   } catch (e) {
     if (e instanceof z.ZodError) {
-      console.warn("[API] Invalid dashboard slider payload", { issues: e.issues });
+      logger.warn("[API] Invalid dashboard slider payload", { issues: e.issues });
       return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
     }
     return NextResponse.json({ error: "Failed to create slider" }, { status: 500 });

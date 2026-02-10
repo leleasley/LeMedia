@@ -4,6 +4,7 @@ import { requireAdmin } from "@/auth";
 import { getActiveMediaService } from "@/lib/media-services";
 import { createRadarrFetcher } from "@/lib/radarr";
 import { createSonarrFetcher } from "@/lib/sonarr";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +37,7 @@ export async function GET(req: NextRequest) {
   });
 
   if (!parsed.success) {
-    console.warn("[API] Invalid media info query", { issues: parsed.error.issues });
+    logger.warn("[API] Invalid media info query", { issues: parsed.error.issues });
     return NextResponse.json({ error: "Invalid query" }, { status: 400 });
   }
 

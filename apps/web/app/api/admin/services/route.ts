@@ -6,6 +6,7 @@ import { requireCsrf } from "@/lib/csrf";
 import { jsonResponseWithETag } from "@/lib/api-optimization";
 import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/rate-limit";
+import { logger } from "@/lib/logger";
 
 const createSchema = z.object({
     name: z.string().min(1),
@@ -52,7 +53,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ service }, { status: 201 });
     } catch (err: any) {
         if (err?.issues) {
-            console.warn("[API] Invalid media service payload", { issues: err.issues });
+            logger.warn("[API] Invalid media service payload", { issues: err.issues });
             return NextResponse.json({ error: "Invalid input" }, { status: 400 });
         }
         return NextResponse.json({ error: err?.message ?? "Failed to create service" }, { status: 500 });

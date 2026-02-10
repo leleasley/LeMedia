@@ -3,6 +3,7 @@ import { requireUser } from "@/auth";
 import { getUserWithHash, getWeeklyDigestPreference, setWeeklyDigestPreference } from "@/db";
 import { requireCsrf } from "@/lib/csrf";
 import { z } from "zod";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -34,9 +35,9 @@ export async function POST(req: NextRequest) {
     body = UpdateSchema.parse(await req.json());
   } catch (error) {
     if (error instanceof z.ZodError) {
-      console.warn("[API] Invalid weekly digest payload", { issues: error.issues });
+      logger.warn("[API] Invalid weekly digest payload", { issues: error.issues });
     } else {
-      console.warn("[API] Invalid weekly digest payload", { error });
+      logger.warn("[API] Invalid weekly digest payload", { error });
     }
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }

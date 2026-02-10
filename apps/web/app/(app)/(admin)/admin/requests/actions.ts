@@ -27,6 +27,7 @@ import {
 } from "@/lib/sonarr";
 import { notifyRequestEvent } from "@/notifications/request-events";
 import { syncPendingRequests } from "@/lib/request-sync";
+import { logger } from "@/lib/logger";
 
 async function setFlash(type: "success" | "error", message: string) {
   const store = await cookies();
@@ -148,7 +149,7 @@ export async function approveRequest(formData: FormData) {
         }
       } catch (notifError) {
         // Log but don't fail - notification errors shouldn't mark request as failed
-        console.error("Failed to send notification:", notifError);
+        logger.error("Failed to send notification", notifError);
       }
 
       await setFlash("success", "Request approved and submitted to Radarr");
@@ -225,7 +226,7 @@ export async function approveRequest(formData: FormData) {
         }
       } catch (notifError) {
         // Log but don't fail - notification errors shouldn't mark request as failed
-        console.error("Failed to send notification:", notifError);
+        logger.error("Failed to send notification", notifError);
       }
 
       await setFlash("success", "Request approved and submitted to Sonarr");

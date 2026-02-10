@@ -5,6 +5,7 @@ import { getCookieBase, getRequestContext } from "@/lib/proxy";
 import { verifyTurnstileToken } from "@/lib/turnstile";
 import { getClientIp } from "@/lib/rate-limit";
 import { z } from "zod";
+import { logger } from "@/lib/logger";
 
 const TurnstileSchema = z.object({
   turnstileToken: z.string().trim().min(1).optional()
@@ -49,7 +50,7 @@ export async function GET(req: NextRequest) {
 
     return res;
   } catch (error) {
-    console.error("[WebAuthn] Login options error:", error);
+    logger.error("[WebAuthn] Login options error", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }
@@ -100,7 +101,7 @@ export async function POST(req: NextRequest) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
-    console.error("[WebAuthn] Login options error:", error);
+    logger.error("[WebAuthn] Login options error", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }

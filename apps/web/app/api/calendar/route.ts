@@ -68,7 +68,7 @@ async function fetchTvMetadata(tmdbIds: Set<number>, tvdbIds: Set<number>) {
             tmdbIds.add(matchedTmdb);
           }
         } catch (error) {
-          console.error(`[Calendar] Error resolving TMDB ID for TVDB ${tvdbId}:`, error);
+          logger.error(`[Calendar] Error resolving TMDB ID for TVDB ${tvdbId}`, error);
         }
       })
     );
@@ -84,7 +84,7 @@ async function fetchTvMetadata(tmdbIds: Set<number>, tvdbIds: Set<number>) {
         );
         return { tmdbId, show };
       } catch (error) {
-        console.error(`[Calendar] Error fetching TMDB TV metadata for ${tmdbId}:`, error);
+        logger.error(`[Calendar] Error fetching TMDB TV metadata for ${tmdbId}`, error);
         return { tmdbId, show: null };
       }
     })
@@ -109,7 +109,7 @@ async function fetchMovieMetadata(tmdbIds: Set<number>) {
         );
         return { tmdbId, movie };
       } catch (error) {
-        console.error(`[Calendar] Error fetching TMDB movie metadata for ${tmdbId}:`, error);
+        logger.error(`[Calendar] Error fetching TMDB movie metadata for ${tmdbId}`, error);
         return { tmdbId, movie: null };
       }
     })
@@ -194,7 +194,7 @@ async function getTmdbReleasesInRange(start: string, end: string): Promise<Calen
       });
     }
   } catch (error) {
-    console.error("[Calendar] Error fetching TMDB releases:", error);
+    logger.error("[Calendar] Error fetching TMDB releases", error);
   }
 
   return events;
@@ -299,7 +299,7 @@ async function getSonarrCalendarEvents(start: string, end: string): Promise<Cale
       });
     }
   } catch (error) {
-    console.error("[Calendar] Error fetching Sonarr calendar:", error);
+    logger.error("[Calendar] Error fetching Sonarr calendar", error);
     // Non-fatal: continue without Sonarr events
   }
 
@@ -370,7 +370,7 @@ async function getRadarrCalendarEvents(start: string, end: string): Promise<Cale
       });
     }
   } catch (error) {
-    console.error("[Calendar] Error fetching Radarr calendar:", error);
+    logger.error("[Calendar] Error fetching Radarr calendar", error);
     // Non-fatal: continue without Radarr events
   }
 
@@ -445,7 +445,7 @@ async function getSeasonPremieres(userId: number, start: string, end: string): P
 
         return seasonEvents;
       } catch (error) {
-        console.error(`[Calendar] Error fetching season data for TMDB ${row.tmdb_id}:`, error);
+        logger.error(`[Calendar] Error fetching season data for TMDB ${row.tmdb_id}`, error);
         return [];
       }
     });
@@ -453,7 +453,7 @@ async function getSeasonPremieres(userId: number, start: string, end: string): P
     const allSeasonEvents = await Promise.all(showPromises);
     events.push(...allSeasonEvents.flat());
   } catch (error) {
-    console.error("[Calendar] Error fetching season premieres:", error);
+    logger.error("[Calendar] Error fetching season premieres", error);
   }
 
   return events;
@@ -515,7 +515,7 @@ async function getRequestsWithReleaseDate(userId: number): Promise<CalendarEvent
       });
     });
   } catch (error) {
-    console.error("[Calendar] Error fetching requests:", error);
+    logger.error("[Calendar] Error fetching requests", error);
   }
 
   return events;
@@ -577,7 +577,7 @@ async function enrichWithJellyfinAvailability(events: CalendarEvent[]): Promise<
                 event.metadata.tmdbEpisodeId = matchedEpisode.id;
               }
             } catch (tmdbError) {
-              console.error("[Calendar] Error fetching TMDB episode id", {
+              logger.error("[Calendar] Error fetching TMDB episode id", undefined, {
                 tmdbId: event.tmdbId,
                 seasonNumber,
                 episodeNumber,
@@ -716,7 +716,7 @@ async function enrichWithJellyfinAvailability(events: CalendarEvent[]): Promise<
           }
         } catch (error) {
           // Non-fatal: Jellyfin down or item not found
-          console.error(`[Calendar] Error checking Jellyfin availability for ${event.title}:`, error);
+          logger.error(`[Calendar] Error checking Jellyfin availability for ${event.title}`, error);
         }
           })
         ),
@@ -833,7 +833,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ events: allEvents });
   } catch (error) {
-    console.error("[Calendar] Error:", error);
+    logger.error("[Calendar] Error", error);
     return NextResponse.json({ error: "Failed to fetch calendar events" }, { status: 500 });
   }
 }

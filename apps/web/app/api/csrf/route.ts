@@ -11,6 +11,6 @@ export async function GET(req: NextRequest) {
 
   const token = createCsrfToken();
   const res = jsonResponseWithETag(req, { ok: true, token });
-  res.cookies.set("lemedia_csrf", token, { ...getCookieBase(ctx, false), maxAge: 60 * 60 * 24 * 30 });
+  res.cookies.set("lemedia_csrf", token, { ...getCookieBase(ctx, false), maxAge: 60 * 60 * 24 });
   return res;
 }

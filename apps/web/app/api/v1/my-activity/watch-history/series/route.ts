@@ -3,6 +3,7 @@ import { requireUser } from "@/auth";
 import { getUserWithHash } from "@/db";
 import { getSeriesWatchHistory } from "@/lib/jellyfin-watch";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,7 @@ export async function GET(req: NextRequest) {
       items: history
     }, { maxAge: 120 });
   } catch (error) {
-    console.error("[Series Watch History] Error:", error);
+    logger.error("[Series Watch History] Error", error);
     return cacheableJsonResponseWithETag(req, {
       items: [],
       error: "Failed to fetch series history"

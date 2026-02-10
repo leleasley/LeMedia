@@ -3,6 +3,7 @@ import { requireUser } from "@/auth";
 import { getUserPushSubscriptions, upsertUser, deletePushSubscription } from "@/db";
 import { requireCsrf } from "@/lib/csrf";
 import webpush from "web-push";
+import { logger } from "@/lib/logger";
 
 // Only available in production with proper VAPID keys
 export async function POST(req: NextRequest) {
@@ -59,7 +60,7 @@ export async function POST(req: NextRequest) {
   const results = await Promise.allSettled(
     subscriptions.map((sub) => {
       // Log endpoint type for debugging
-      console.log("[Push Test] Sending to:", sub.endpoint.substring(0, 50) + "...");
+      logger.debug("[Push Test] Sending to endpoint", { endpoint: sub.endpoint.substring(0, 50) });
 
       return webpush.sendNotification(
         {
@@ -88,9 +89,9 @@ export async function POST(req: NextRequest) {
   for (const { sub } of staleSubscriptions) {
     try {
       await deletePushSubscription(dbUser.id, sub.endpoint);
-      console.log("[Push Test] Deleted stale subscription:", sub.endpoint.substring(0, 50) + "...");
+      logger.debug("[Push Test] Deleted stale subscription", { endpoint: sub.endpoint.substring(0, 50) });
     } catch (err) {
-      console.error("[Push Test] Failed to delete stale subscription:", err);
+      logger.error("[Push Test] Failed to delete stale subscription", err);
     }
   }
 
@@ -106,7 +107,7 @@ export async function POST(req: NextRequest) {
         "Unknown error";
       const statusCode = reason?.statusCode;
 
-      console.error("[Push Test] Error:", { statusCode, message });
+      logger.error("[Push Test] Push send error", undefined, { statusCode, message });
 
       return {
         endpoint: x.sub.endpoint,

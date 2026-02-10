@@ -24,6 +24,7 @@ import { randomUUID } from "crypto";
 import { summarizeUserAgent } from "@/lib/device-info";
 import { normalizeGroupList } from "@/lib/groups";
 import { getPasswordPolicyResult } from "@/lib/password-policy";
+import { logger } from "@/lib/logger";
 
 const updateSchema = z.object({
   username: z.string().trim().min(1).optional(),
@@ -47,9 +48,9 @@ function forbidden() {
 
 function validationError(error: unknown) {
   if (error instanceof z.ZodError) {
-    console.warn("[API] Invalid user update payload", { issues: error.issues });
+    logger.warn("[API] Invalid user update payload", { issues: error.issues });
   } else {
-    console.warn("[API] Invalid user update payload", { error });
+    logger.warn("[API] Invalid user update payload", { error });
   }
   return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
 }

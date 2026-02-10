@@ -4,6 +4,7 @@ import { getUserWithHash } from "@/db";
 import { getPersonalizedRecommendations } from "@/lib/jellyfin-watch";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
 import { getImageProxyEnabled } from "@/lib/app-settings";
+import { logger } from "@/lib/logger";
 import { getMovie, getTv, getMovieRecommendations, getTvRecommendations, tmdbImageUrl } from "@/lib/tmdb";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +31,7 @@ const getRecentlyWatched = async (userId: string, limit = 10) => {
     const data = await response.json();
     return data?.Items || [];
   } catch (error) {
-    console.error("[getRecentlyWatched] Error:", error);
+    logger.error("[getRecentlyWatched] Error", error);
     return [];
   }
 };
@@ -80,7 +81,7 @@ export async function GET(req: NextRequest) {
           }
         }
       } catch (err) {
-        console.error(`[Recommendations] TMDB recommendations failed for ${tmdbId}:`, err);
+        logger.error(`[Recommendations] TMDB recommendations failed for ${tmdbId}`, err);
       }
       return [];
     });
@@ -149,7 +150,7 @@ export async function GET(req: NextRequest) {
           });
         }
       } catch (err) {
-        console.error(`[Recommendations] Failed to fetch TMDB data for ${tmdbId}:`, err);
+        logger.error(`[Recommendations] Failed to fetch TMDB data for ${tmdbId}`, err);
       }
     }
 
@@ -192,7 +193,7 @@ export async function GET(req: NextRequest) {
           }
         }
       } catch (err) {
-        console.error(`[Recommendations] Failed to fetch TMDB rec ${rec.tmdbId}:`, err);
+        logger.error(`[Recommendations] Failed to fetch TMDB rec ${rec.tmdbId}`, err);
       }
     }
 
@@ -206,7 +207,7 @@ export async function GET(req: NextRequest) {
       items: finalRecommendations
     }, { maxAge: 300 }); // Cache for 5 minutes (reduced for variety)
   } catch (error) {
-    console.error("[Recommendations] Error:", error);
+    logger.error("[Recommendations] Error", error);
     return cacheableJsonResponseWithETag(req, {
       items: [],
       error: "Failed to fetch recommendations"
