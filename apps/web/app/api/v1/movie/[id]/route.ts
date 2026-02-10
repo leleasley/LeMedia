@@ -10,7 +10,7 @@ import { getJellyfinPlayUrl } from "@/lib/jellyfin-links";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
 import { withCache } from "@/lib/local-cache";
 import { getMovieDetailAggregate } from "@/lib/media-aggregate";
-import { verifyExternalApiKey } from "@/lib/external-api";
+import { extractExternalApiKey, verifyExternalApiKey } from "@/lib/external-api";
 
 const ParamsSchema = z.object({ id: z.coerce.number().int().positive() });
 type ParamsInput = { id: string } | Promise<{ id: string }>;
@@ -27,7 +27,7 @@ function extractApiKey(req: NextRequest) {
   return req.headers.get("x-api-key")
     || req.headers.get("X-Api-Key")
     || req.headers.get("authorization")?.replace(/^Bearer\s+/i, "")
-    || req.nextUrl.searchParams.get("api_key")
+    || extractExternalApiKey(req)
     || "";
 }
 

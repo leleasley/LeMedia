@@ -30,7 +30,7 @@ export async function verifySessionToken(token: string): Promise<SessionData | n
   try {
     const { payload } = await jwtVerify(token, getSessionSecret(), {
       algorithms: ["HS256"],
-      clockTolerance: 120
+      clockTolerance: 30
     });
     const username = typeof payload.username === "string" ? payload.username : "";
     const groups = Array.isArray(payload.groups) ? payload.groups.map(String).filter(Boolean) : [];

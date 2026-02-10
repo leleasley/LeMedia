@@ -40,7 +40,8 @@ export async function POST(req: NextRequest) {
 
     const parsed = payloadSchema.safeParse(body);
     if (!parsed.success) {
-        return NextResponse.json({ error: "Invalid payload", details: parsed.error.issues }, { status: 400 });
+        console.warn("[API] Invalid Jellyfin test payload", { issues: parsed.error.issues });
+        return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
     }
 
     const baseUrl = buildBaseUrl(parsed.data).replace(/\/+$/, "");

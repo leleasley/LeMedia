@@ -66,7 +66,8 @@ export async function PUT(req: NextRequest) {
     } catch (error) {
         logger.error("Failed to save Ntfy settings:", error);
         if (error instanceof z.ZodError) {
-            return NextResponse.json({ error: "Invalid settings", details: error.issues }, { status: 400 });
+            logger.warn("Invalid Ntfy settings payload", { issues: error.issues });
+            return NextResponse.json({ error: "Invalid settings" }, { status: 400 });
         }
         return NextResponse.json({ error: "Failed to save settings" }, { status: 500 });
     }

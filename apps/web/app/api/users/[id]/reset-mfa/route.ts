@@ -19,8 +19,12 @@ function forbidden() {
 }
 
 function validationError(error: unknown) {
-  const message = error instanceof z.ZodError ? error.issues.map(issue => issue.message).join(", ") : "Invalid request";
-  return NextResponse.json({ error: message }, { status: 400 });
+  if (error instanceof z.ZodError) {
+    console.warn("[API] Invalid reset MFA request", { issues: error.issues });
+  } else {
+    console.warn("[API] Invalid reset MFA request", { error });
+  }
+  return NextResponse.json({ error: "Invalid request" }, { status: 400 });
 }
 
 export async function POST(req: NextRequest, { params }: { params: ParamsInput }) {

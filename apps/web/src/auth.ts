@@ -11,6 +11,14 @@ if (process.env.NODE_ENV === "production" && process.env.AUTH_DEBUG === "1") {
   logger.warn("⚠️  AUTH_DEBUG is enabled in production! This may leak sensitive information.");
 }
 
+if (process.env.NODE_ENV === "production") {
+  const devUser = process.env.DEV_USER?.trim();
+  const allowDevBypass = process.env.ALLOW_DEV_BYPASS === "1";
+  if (devUser || allowDevBypass) {
+    throw new Error("DEV_USER / ALLOW_DEV_BYPASS must not be set in production.");
+  }
+}
+
 export type AppUser = {
   id: number;
   username: string;
@@ -95,7 +103,7 @@ export async function requireUser(): Promise<AppUser | NextResponse> {
       path: "/",
       sameSite: "lax",
       secure,
-      httpOnly: false,
+      httpOnly: true,
       maxAge: 300
     });
     res.cookies.set("lemedia_session", "", {

@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
   }
 
   const user = await getUserWithHash(usernameInput);
-  if (!user || !verifyPassword(password, user.password_hash)) {
+  if (!user || !(await verifyPassword(password, user.password_hash))) {
     const failure = recordFailure(lockKey, { windowMs: 15 * 60 * 1000, max: 5, banMs: 15 * 60 * 1000 });
     if (failure.locked) {
       return redirectToLogin(formatRetry(failure.retryAfterSec));

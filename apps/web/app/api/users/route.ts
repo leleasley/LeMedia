@@ -1,6 +1,6 @@
-import { hashPassword } from "@/lib/auth-utils";
+import { hashPassword, verifyPassword } from "@/lib/auth-utils";
 import { requireAdmin } from "@/auth";
-import { getUserById, listNotificationEndpoints, listUsers, setUserPassword, setUserNotificationEndpointIds } from "@/db";
+import { addUserPasswordHistory, getUserById, getUserPasswordHistory, getUserWithHash, listNotificationEndpoints, listUsers, setUserPassword, setUserNotificationEndpointIds } from "@/db";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireCsrf } from "@/lib/csrf";
@@ -8,10 +8,11 @@ import { jsonResponseWithETag } from "@/lib/api-optimization";
 import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/rate-limit";
 import { normalizeGroupList } from "@/lib/groups";
+import { getPasswordPolicyResult } from "@/lib/password-policy";
 
 const createSchema = z.object({
   username: z.string().trim().min(1).transform(u => u.toLowerCase()),
-  password: z.string().min(6),
+  password: z.string().min(8),
   email: z.union([z.string().trim().email(), z.literal("")]).optional(),
   groups: z.array(z.string()).optional(),
   notificationEndpointIds: z.array(z.coerce.number().int().positive()).optional()
@@ -28,8 +29,12 @@ function forbidden() {
 }
 
 function validationError(error: unknown) {
-  const message = error instanceof z.ZodError ? error.issues.map(err => err.message).join(", ") : "Invalid request body";
-  return NextResponse.json({ error: message }, { status: 400 });
+  if (error instanceof z.ZodError) {
+    console.warn("[API] Invalid user payload", { issues: error.issues });
+  } else {
+    console.warn("[API] Invalid user payload", { error });
+  }
+  return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
 }
 
 export async function GET(req: NextRequest) {
@@ -55,9 +60,26 @@ export async function POST(req: NextRequest) {
 
   const groups = normalizeGroupList(payload.groups);
   const email = normalizeEmail(payload.email);
-  const passwordHash = hashPassword(payload.password);
+  const policy = getPasswordPolicyResult({ password: payload.password, username: payload.username });
+  if (policy.errors.length) {
+    return NextResponse.json({ error: policy.errors[0] }, { status: 400 });
+  }
+
+  const existing = await getUserWithHash(payload.username);
+  if (existing?.password_hash) {
+    const history = await getUserPasswordHistory(existing.id);
+    const hashes = [existing.password_hash, ...history].filter((hash): hash is string => typeof hash === "string" && hash.length > 0);
+    const checks = await Promise.all(hashes.map(hash => verifyPassword(payload.password, hash)));
+    const reused = checks.some(Boolean);
+    if (reused) {
+      return NextResponse.json({ error: "Password cannot be reused" }, { status: 400 });
+    }
+  }
+
+  const passwordHash = await hashPassword(payload.password);
 
   const created = await setUserPassword(payload.username, groups, passwordHash, email);
+  await addUserPasswordHistory(created.id, passwordHash);
   if (payload.notificationEndpointIds !== undefined) {
     const endpoints = await listNotificationEndpoints();
     const available = new Set(endpoints.map(endpoint => endpoint.id));

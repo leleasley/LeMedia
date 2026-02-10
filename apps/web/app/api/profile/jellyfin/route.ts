@@ -40,8 +40,12 @@ export async function POST(req: NextRequest) {
   try {
     body = linkSchema.parse(await req.json());
   } catch (err) {
-    const message = err instanceof z.ZodError ? err.issues.map(issue => issue.message).join(", ") : "Invalid payload";
-    return NextResponse.json({ error: message }, { status: 400 });
+    if (err instanceof z.ZodError) {
+      console.warn("[API] Invalid Jellyfin profile payload", { issues: err.issues });
+    } else {
+      console.warn("[API] Invalid Jellyfin profile payload", { err });
+    }
+    return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
 
   const dbUser = await getUserWithHash(user.username);

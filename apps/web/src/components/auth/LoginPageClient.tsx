@@ -35,6 +35,7 @@ export function LoginPageClient({ csrfToken, from, oidcEnabled, jellyfinEnabled,
   const [turnstileToken, setTurnstileToken] = useState("");
   const [showDuoModal, setShowDuoModal] = useState(false);
   const [duoUsername, setDuoUsername] = useState("");
+  const [redirectingToSso, setRedirectingToSso] = useState(false);
   const isTurnstileEnabled = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
   const { data: backdrops } = useSWR<string[]>("/api/v1/backdrops", fetcher, {
     revalidateOnFocus: false,
@@ -78,6 +79,11 @@ export function LoginPageClient({ csrfToken, from, oidcEnabled, jellyfinEnabled,
   const backgroundImages = Array.isArray(backdrops)
     ? backdrops.map((path) => `https://image.tmdb.org/t/p/w1280${path}`)
     : [];
+
+  const redirectToSso = (url: string) => {
+    setRedirectingToSso(true);
+    window.location.href = url;
+  };
 
   return (
     <main className="relative flex min-h-[100dvh] items-center justify-center overflow-auto bg-gray-900 px-4 py-6 sm:py-12">
@@ -166,7 +172,7 @@ export function LoginPageClient({ csrfToken, from, oidcEnabled, jellyfinEnabled,
                             setShowDuoModal(true);
                             return;
                           }
-                          window.location.href = `/api/v1/auth/oidc/login?from=${encodeURIComponent(from)}&turnstile_token=${encodeURIComponent(turnstileToken)}`;
+                          redirectToSso(`/api/v1/auth/oidc/login?from=${encodeURIComponent(from)}&turnstile_token=${encodeURIComponent(turnstileToken)}`);
                         }}
                         disabled={isTurnstileEnabled && !turnstileToken}
                         className={`cursor-pointer gap-2 px-3 py-2 text-sm ${isTurnstileEnabled && !turnstileToken ? "opacity-50" : ""}`}
@@ -207,7 +213,7 @@ export function LoginPageClient({ csrfToken, from, oidcEnabled, jellyfinEnabled,
                       toast.error("Enter your Duo username to continue.");
                       return;
                     }
-                    window.location.href = `/api/v1/auth/duo/login?from=${encodeURIComponent(from)}&turnstile_token=${encodeURIComponent(turnstileToken)}&username=${encodeURIComponent(username)}`;
+                    redirectToSso(`/api/v1/auth/duo/login?from=${encodeURIComponent(from)}&turnstile_token=${encodeURIComponent(turnstileToken)}&username=${encodeURIComponent(username)}`);
                   }}
                 >
                   <div className="space-y-1 text-sm">
@@ -229,6 +235,17 @@ export function LoginPageClient({ csrfToken, from, oidcEnabled, jellyfinEnabled,
                     </button>
                   </div>
                 </form>
+              </Modal>
+              <Modal
+                open={redirectingToSso}
+                title="Redirecting to SSO"
+                onClose={() => setRedirectingToSso(false)}
+                forceCenter
+              >
+                <div className="space-y-2 text-sm text-muted">
+                  <p>Taking you to your identity provider to finish sign-in.</p>
+                  <p>If nothing happens, disable pop-up blockers and try again.</p>
+                </div>
               </Modal>
             </>
           )}

@@ -40,7 +40,12 @@ export async function PUT(req: NextRequest) {
   try {
     parsed = inputSchema.parse(body);
   } catch (err: any) {
-    return NextResponse.json({ error: "Invalid input", details: err?.issues ?? [] }, { status: 400 });
+    if (err?.issues) {
+      console.warn("[API] Invalid Trakt settings payload", { issues: err.issues });
+    } else {
+      console.warn("[API] Invalid Trakt settings payload", { err });
+    }
+    return NextResponse.json({ error: "Invalid input" }, { status: 400 });
   }
 
   const current = await getTraktConfig();

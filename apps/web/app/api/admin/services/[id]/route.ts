@@ -53,7 +53,8 @@ export async function PATCH(req: NextRequest, context: MediaServiceRouteContext)
         return NextResponse.json({ service });
     } catch (err: any) {
         if (err?.issues) {
-            return NextResponse.json({ error: "Invalid input", details: err.issues }, { status: 400 });
+            console.warn("[API] Invalid media service update", { issues: err.issues });
+            return NextResponse.json({ error: "Invalid input" }, { status: 400 });
         }
         return NextResponse.json({ error: err?.message ?? "Failed to update" }, { status: 500 });
     }

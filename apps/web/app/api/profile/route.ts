@@ -1,17 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/auth";
-import { getUserTraktTokenStatus, getUserWithHash, updateUserPasswordById, updateUserProfile } from "@/db";
+import { addUserPasswordHistory, getUserPasswordHistory, getUserTraktTokenStatus, getUserWithHash, updateUserPasswordById, updateUserProfile } from "@/db";
 import { hashPassword, verifyPassword } from "@/lib/auth-utils";
 import { z } from "zod";
 import { requireCsrf } from "@/lib/csrf";
 import { cacheableJsonResponseWithETag, jsonResponseWithETag } from "@/lib/api-optimization";
 import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/rate-limit";
+import { getPasswordPolicyResult } from "@/lib/password-policy";
 
 const UpdateSchema = z.object({
   username: z.string().trim().min(1).optional(),
   email: z.union([z.string().trim().email(), z.literal("")]).optional(),
-  newPassword: z.string().min(6).optional(),
+  newPassword: z.string().min(8).optional(),
   currentPassword: z.string().min(1).optional(),
   discordUserId: z
     .union([z.string().trim().regex(/^\d+$/), z.literal("")])
@@ -77,8 +78,12 @@ export async function PATCH(req: NextRequest) {
     try {
       body = UpdateSchema.parse(await req.json());
     } catch (error) {
-      const message = error instanceof z.ZodError ? error.issues.map(e => e.message).join(", ") : "Invalid request body";
-      return NextResponse.json({ error: message }, { status: 400 });
+      if (error instanceof z.ZodError) {
+        console.warn("[API] Invalid profile update payload", { issues: error.issues });
+      } else {
+        console.warn("[API] Invalid profile update payload", { error });
+      }
+      return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
     }
 
     if (!body.username && body.username !== "" && !body.email && !body.newPassword && body.discordUserId === undefined && body.letterboxdUsername === undefined && body.traktUsername === undefined && body.discoverRegion === undefined && body.originalLanguage === undefined && body.watchlistSyncMovies === undefined && body.watchlistSyncTv === undefined) {
@@ -125,10 +130,24 @@ export async function PATCH(req: NextRequest) {
       if (!body.currentPassword) {
         return NextResponse.json({ error: "Enter your current password to change it" }, { status: 400 });
       }
-      if (!dbUser.password_hash || !verifyPassword(body.currentPassword, dbUser.password_hash)) {
+      if (!dbUser.password_hash || !(await verifyPassword(body.currentPassword, dbUser.password_hash))) {
         return NextResponse.json({ error: "Current password is incorrect" }, { status: 400 });
       }
-      await updateUserPasswordById(dbUser.id, hashPassword(body.newPassword));
+      const newPassword = body.newPassword ?? "";
+      const policy = getPasswordPolicyResult({ password: newPassword, username: dbUser.username });
+      if (policy.errors.length) {
+        return NextResponse.json({ error: policy.errors[0] }, { status: 400 });
+      }
+      const history = await getUserPasswordHistory(dbUser.id);
+      const hashes = [dbUser.password_hash, ...history].filter((hash): hash is string => typeof hash === "string" && hash.length > 0);
+      const checks = await Promise.all(hashes.map(hash => verifyPassword(newPassword, hash)));
+      const reused = checks.some(Boolean);
+      if (reused) {
+        return NextResponse.json({ error: "Password cannot be reused" }, { status: 400 });
+      }
+      const passwordHash = await hashPassword(newPassword);
+      await updateUserPasswordById(dbUser.id, passwordHash);
+      await addUserPasswordHistory(dbUser.id, passwordHash);
       
       // Log password change
       await logAuditEvent({

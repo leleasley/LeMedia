@@ -4,6 +4,8 @@ import { useState } from "react";
 import { Modal } from "@/components/Common/Modal";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { csrfFetch } from "@/lib/csrf-client";
+import { PasswordPolicyChecklist } from "@/components/Common/PasswordPolicyChecklist";
+import { getPasswordPolicyResult } from "@/lib/password-policy";
 
 type CreateLocalUserModalProps = {
     open: boolean;
@@ -36,8 +38,11 @@ export function CreateLocalUserModal({ open, onClose, onComplete }: CreateLocalU
 
         if (!formData.password) {
             newErrors.password = "Password is required";
-        } else if (formData.password.length < 8) {
-            newErrors.password = "Password must be at least 8 characters";
+        } else {
+            const policy = getPasswordPolicyResult({ password: formData.password, username: formData.username });
+            if (policy.errors.length) {
+                newErrors.password = policy.errors[0];
+            }
         }
 
         setErrors(newErrors);
@@ -125,6 +130,11 @@ export function CreateLocalUserModal({ open, onClose, onComplete }: CreateLocalU
                         onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                         className="w-full rounded-lg border border-gray-600 bg-gray-800 px-3 py-2 text-white focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         placeholder="Enter password (min 8 characters)"
+                    />
+                    <PasswordPolicyChecklist
+                        password={formData.password}
+                        username={formData.username}
+                        className="mt-2"
                     />
                     {errors.password && (
                         <p className="mt-1 text-xs text-red-400">{errors.password}</p>

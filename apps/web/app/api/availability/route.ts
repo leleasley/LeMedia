@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getAvailabilityByTmdbIds, getAvailabilityStatusByTmdbIds } from "@/lib/library-availability";
 import { requireUser } from "@/auth";
-import { verifyExternalApiKey } from "@/lib/external-api";
+import { extractExternalApiKey, verifyExternalApiKey } from "@/lib/external-api";
 import { jsonResponseWithETag } from "@/lib/api-optimization";
 
 const TypeSchema = z.enum(["movie", "tv"]);
@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
       req.headers.get("x-api-key")
       || req.headers.get("X-Api-Key")
       || req.headers.get("authorization")?.replace(/^Bearer\\s+/i, "")
-      || req.nextUrl.searchParams.get("api_key")
+      || extractExternalApiKey(req)
       || "";
     const allowPublic = process.env.ALLOW_PUBLIC_AVAILABILITY === "1";
     const apiKeyOk = apiKey ? await verifyExternalApiKey(apiKey) : false;

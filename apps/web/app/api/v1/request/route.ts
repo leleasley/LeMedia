@@ -25,7 +25,7 @@ import {
 } from "@/lib/sonarr";
 import { notifyRequestEvent } from "@/notifications/request-events";
 import { hasAssignedNotificationEndpoints } from "@/lib/notifications";
-import { getExternalApiAuth } from "@/lib/external-api";
+import { extractExternalApiKey, getExternalApiAuth } from "@/lib/external-api";
 import { rejectIfMaintenance } from "@/lib/maintenance";
 import { randomUUID } from "crypto";
 import asyncLock from "@/lib/async-lock";
@@ -33,11 +33,7 @@ import { isAdminGroup } from "@/lib/groups";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
 
 function extractApiKey(req: NextRequest) {
-  return req.headers.get("x-api-key")
-    || req.headers.get("X-Api-Key")
-    || req.headers.get("authorization")?.replace(/^Bearer\s+/i, "")
-    || req.nextUrl.searchParams.get("api_key")
-    || "";
+  return extractExternalApiKey(req);
 }
 
 function mapFilter(filter: string | null) {

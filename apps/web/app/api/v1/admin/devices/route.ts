@@ -28,8 +28,12 @@ export async function DELETE(req: Request) {
   try {
     body = DeleteSchema.parse(await req.json());
   } catch (error) {
-    const message = error instanceof z.ZodError ? error.issues.map(e => e.message).join(", ") : "Invalid request body";
-    return NextResponse.json({ error: message }, { status: 400 });
+    if (error instanceof z.ZodError) {
+      console.warn("[API] Invalid devices payload", { issues: error.issues });
+    } else {
+      console.warn("[API] Invalid devices payload", { error });
+    }
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 
   const sessions = await listAllUserSessions();

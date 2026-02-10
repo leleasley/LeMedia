@@ -68,7 +68,8 @@ export async function PUT(req: NextRequest) {
 
     const parsed = payloadSchema.safeParse(body);
     if (!parsed.success) {
-        return NextResponse.json({ error: "Invalid payload", details: parsed.error.issues }, { status: 400 });
+        console.warn("[API] Invalid Jellyfin settings payload", { issues: parsed.error.issues });
+        return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
     }
 
     const current = await getJellyfinConfig();

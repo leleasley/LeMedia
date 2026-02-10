@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { timingSafeEqual } from "crypto";
 import { getRequestCacheStats } from "@/lib/request-cache";
 import { requireAdmin } from "@/auth";
 import { jsonResponseWithETag } from "@/lib/api-optimization";
@@ -32,7 +33,11 @@ export async function GET(req: NextRequest) {
 
     // If DEBUG_API_KEY is set, require it; otherwise require admin session
     if (expectedKey) {
-        if (apiKey !== expectedKey) {
+        if (
+            !apiKey
+            || apiKey.length !== expectedKey.length
+            || !timingSafeEqual(Buffer.from(apiKey, "utf8"), Buffer.from(expectedKey, "utf8"))
+        ) {
             return jsonResponseWithETag(req, { error: "Unauthorized" }, { status: 401 });
         }
     } else {

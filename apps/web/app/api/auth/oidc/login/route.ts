@@ -69,8 +69,14 @@ export async function GET(req: NextRequest) {
 
   let authorizationUrl = config.authorizationUrl;
   if (!authorizationUrl) {
+    const issuer = config.issuer ?? "";
+    if (!issuer) {
+      const url = new URL("/login", base);
+      url.searchParams.set("error", "SSO issuer is not configured");
+      return NextResponse.redirect(url);
+    }
     try {
-      const discovery = await getDiscovery(config.issuer);
+      const discovery = await getDiscovery(issuer);
       authorizationUrl = discovery.authorization_endpoint;
     } catch {
       const url = new URL("/login", base);
@@ -82,11 +88,18 @@ export async function GET(req: NextRequest) {
   const state = randomString(16);
   const nonce = randomString(16);
   const redirectUri = config.redirectUri || `${base}/api/auth/oidc/callback`;
+  if (!config.clientId) {
+    const url = new URL("/login", base);
+    url.searchParams.set("error", "SSO client ID is not configured");
+    return NextResponse.redirect(url);
+  }
+
   const authUrl = new URL(authorizationUrl);
   authUrl.searchParams.set("response_type", "code");
   authUrl.searchParams.set("client_id", config.clientId);
   authUrl.searchParams.set("redirect_uri", redirectUri);
-  authUrl.searchParams.set("scope", config.scopes.join(" "));
+  const scopes = Array.isArray(config.scopes) && config.scopes.length ? config.scopes : ["openid", "profile", "email"];
+  authUrl.searchParams.set("scope", scopes.join(" "));
   authUrl.searchParams.set("state", state);
   authUrl.searchParams.set("nonce", nonce);
 

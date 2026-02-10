@@ -17,7 +17,7 @@ import { requireCsrf } from "@/lib/csrf";
 import { getActiveMediaService, getMediaServiceByIdWithKey } from "@/lib/media-services";
 import asyncLock from "@/lib/async-lock";
 import { isAdminGroup } from "@/lib/groups";
-import { verifyExternalApiKey } from "@/lib/external-api";
+import { extractExternalApiKey, verifyExternalApiKey } from "@/lib/external-api";
 import { POST as requestPost } from "../../v1/request/route";
 
 const Body = z.object({
@@ -53,7 +53,7 @@ function extractApiKey(req: NextRequest) {
   return req.headers.get("x-api-key")
     || req.headers.get("X-Api-Key")
     || req.headers.get("authorization")?.replace(/^Bearer\s+/i, "")
-    || req.nextUrl.searchParams.get("api_key")
+    || extractExternalApiKey(req)
     || "";
 }
 
@@ -253,7 +253,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Request failed" }, { status: 500 });
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ ok: false, error: "Invalid request data", details: error.issues }, { status: 400 });
+      console.warn("[API] Invalid TV request payload", { issues: error.issues });
+      return NextResponse.json({ ok: false, error: "Invalid request data" }, { status: 400 });
     }
     const message = error?.message ?? String(error);
     return NextResponse.json({ ok: false, error: message }, { status: 500 });

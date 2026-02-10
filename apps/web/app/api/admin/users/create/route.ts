@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/auth";
-import { getPool } from "@/db";
+import { addUserPasswordHistory, getPool } from "@/db";
 import { hashPassword } from "@/lib/auth-utils";
 import { requireCsrf } from "@/lib/csrf";
 import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/rate-limit";
 import { logger } from "@/lib/logger";
 import { serializeGroups } from "@/lib/groups";
+import { getPasswordPolicyResult } from "@/lib/password-policy";
 
 export async function POST(request: NextRequest) {
     try {
@@ -40,8 +41,13 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        const policy = getPasswordPolicyResult({ password, username });
+        if (policy.errors.length) {
+            return NextResponse.json({ error: policy.errors[0] }, { status: 400 });
+        }
+
         // Hash password
-        const passwordHash = hashPassword(password);
+        const passwordHash = await hashPassword(password);
 
         // Create user
         const result = await db.query(
@@ -50,6 +56,7 @@ export async function POST(request: NextRequest) {
        RETURNING id`,
             [username, email, passwordHash, serializeGroups(["users"])]
         );
+        await addUserPasswordHistory(result.rows[0].id, passwordHash);
 
         await logAuditEvent({
             action: "user.created",

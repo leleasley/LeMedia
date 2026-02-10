@@ -46,7 +46,8 @@ export async function POST(req: NextRequest) {
 
   const parsed = GrabSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid payload", details: parsed.error.issues }, { status: 400 });
+    console.warn("[API] Invalid upgrade-finder grab payload", { issues: parsed.error.issues });
+    return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
 
   if (!parsed.data.guid && !parsed.data.downloadUrl) {

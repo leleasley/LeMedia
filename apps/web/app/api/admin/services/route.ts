@@ -52,7 +52,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ service }, { status: 201 });
     } catch (err: any) {
         if (err?.issues) {
-            return NextResponse.json({ error: "Invalid input", details: err.issues }, { status: 400 });
+            console.warn("[API] Invalid media service payload", { issues: err.issues });
+            return NextResponse.json({ error: "Invalid input" }, { status: 400 });
         }
         return NextResponse.json({ error: err?.message ?? "Failed to create service" }, { status: 500 });
     }

@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getPool, isSetupComplete, markSetupComplete } from "@/db";
+import { addUserPasswordHistory, getPool, isSetupComplete, markSetupComplete } from "@/db";
 import { hashPassword } from "@/lib/auth-utils";
 import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/rate-limit";
 import { logger } from "@/lib/logger";
 import { serializeGroups } from "@/lib/groups";
+import { getPasswordPolicyResult } from "@/lib/password-policy";
 
 export const dynamic = "force-dynamic";
 
@@ -48,12 +49,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate password strength
-    if (password.length < 8) {
-      return NextResponse.json(
-        { error: "Password must be at least 8 characters" },
-        { status: 400 }
-      );
+    const policy = getPasswordPolicyResult({ password, username: usernameClean });
+    if (policy.errors.length) {
+      return NextResponse.json({ error: policy.errors[0] }, { status: 400 });
     }
 
     const db = getPool();
@@ -72,7 +70,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Hash password and create admin user
-    const passwordHash = hashPassword(password);
+    const passwordHash = await hashPassword(password);
 
     const result = await db.query(
       `INSERT INTO app_user (username, email, password_hash, groups, created_at, last_seen_at)
@@ -80,6 +78,7 @@ export async function POST(request: NextRequest) {
        RETURNING id`,
       [usernameClean, email.trim(), passwordHash, serializeGroups(["administrators"])]
     );
+    await addUserPasswordHistory(result.rows[0].id, passwordHash);
 
     // Mark setup as complete
     await markSetupComplete();

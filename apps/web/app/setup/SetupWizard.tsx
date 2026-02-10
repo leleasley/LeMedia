@@ -5,6 +5,8 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { ModeToggle } from "@/components/ui/mode-toggle";
 import { Film, Bell, Download, ArrowRight, ArrowLeft, Loader2 } from "lucide-react";
+import { PasswordPolicyChecklist } from "@/components/Common/PasswordPolicyChecklist";
+import { getPasswordPolicyResult } from "@/lib/password-policy";
 
 type Step = "welcome" | "create-admin";
 
@@ -30,8 +32,9 @@ export function SetupWizard() {
       return;
     }
 
-    if (formData.password.length < 8) {
-      setError("Password must be at least 8 characters");
+    const policy = getPasswordPolicyResult({ password: formData.password, username: formData.username });
+    if (policy.errors.length) {
+      setError(policy.errors[0]);
       return;
     }
 
@@ -193,6 +196,11 @@ export function SetupWizard() {
                   className="w-full px-4 py-3 rounded-lg bg-gray-900/50 border border-gray-700 text-white placeholder:text-gray-500 focus:bg-gray-900 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all duration-200"
                   placeholder="Minimum 8 characters"
                   autoComplete="new-password"
+                />
+                <PasswordPolicyChecklist
+                  password={formData.password}
+                  username={formData.username}
+                  className="mt-3"
                 />
               </div>
 

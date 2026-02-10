@@ -10,7 +10,7 @@ import { rejectIfMaintenance } from "@/lib/maintenance";
 import { randomUUID } from "crypto";
 import { requireCsrf } from "@/lib/csrf";
 import asyncLock from "@/lib/async-lock";
-import { verifyExternalApiKey } from "@/lib/external-api";
+import { extractExternalApiKey, verifyExternalApiKey } from "@/lib/external-api";
 import { POST as requestPost } from "../../v1/request/route";
 
 const Body = z.object({
@@ -22,7 +22,7 @@ function extractApiKey(req: NextRequest) {
   return req.headers.get("x-api-key")
     || req.headers.get("X-Api-Key")
     || req.headers.get("authorization")?.replace(/^Bearer\s+/i, "")
-    || req.nextUrl.searchParams.get("api_key")
+    || extractExternalApiKey(req)
     || "";
 }
 

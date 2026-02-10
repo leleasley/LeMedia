@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { getSimilarMovies } from "@/lib/tmdb";
-import { verifyExternalApiKey } from "@/lib/external-api";
+import { extractExternalApiKey, verifyExternalApiKey } from "@/lib/external-api";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
 import { getJellyfinItemIdByTmdb, isAvailableByTmdb } from "@/lib/jellyfin";
 
@@ -9,7 +9,7 @@ function extractApiKey(req: NextRequest) {
   return req.headers.get("x-api-key")
     || req.headers.get("X-Api-Key")
     || req.headers.get("authorization")?.replace(/^Bearer\s+/i, "")
-    || req.nextUrl.searchParams.get("api_key")
+    || extractExternalApiKey(req)
     || "";
 }
 

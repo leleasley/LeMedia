@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/auth";
-import { getPool } from "@/db";
+import { getPool, resetUserMfaById } from "@/db";
 import { requireCsrf } from "@/lib/csrf";
 import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/rate-limit";
@@ -25,11 +25,7 @@ export async function POST(
         const targetRes = await db.query("SELECT username FROM app_user WHERE id = $1", [userId]);
         const targetUsername = targetRes.rows[0]?.username as string | undefined;
 
-        // Reset MFA by clearing the mfa_secret
-        await db.query(
-            "UPDATE app_user SET mfa_secret = NULL WHERE id = $1",
-            [userId]
-        );
+        await resetUserMfaById(userId);
 
         await logAuditEvent({
             action: "user.mfa_reset",

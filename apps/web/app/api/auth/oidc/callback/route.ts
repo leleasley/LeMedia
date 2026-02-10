@@ -131,8 +131,12 @@ export async function GET(req: NextRequest) {
   let discovery: OidcDiscovery | null = null;
   const needsDiscovery = !config.tokenUrl || !config.jwksUrl || !config.userinfoUrl;
   if (needsDiscovery) {
+    const issuer = config.issuer ?? "";
+    if (!issuer) {
+      return ensureCsrfCookie(req, redirectToLogin(base, "SSO issuer is not configured", cookieBase), ctx).res;
+    }
     try {
-      discovery = await getDiscovery(config.issuer);
+      discovery = await getDiscovery(issuer);
     } catch {
       return ensureCsrfCookie(req, redirectToLogin(base, "Unable to contact OIDC provider", cookieBase), ctx).res;
     }
@@ -142,6 +146,9 @@ export async function GET(req: NextRequest) {
   const tokenEndpoint = config.tokenUrl || discovery?.token_endpoint;
   if (!tokenEndpoint) {
     return ensureCsrfCookie(req, redirectToLogin(base, "SSO token endpoint is not configured", cookieBase), ctx).res;
+  }
+  if (!config.clientId) {
+    return ensureCsrfCookie(req, redirectToLogin(base, "SSO client ID is not configured", cookieBase), ctx).res;
   }
   let tokenData: any;
   try {
@@ -226,10 +233,13 @@ export async function GET(req: NextRequest) {
     return ensureCsrfCookie(req, redirectToLogin(base, "SSO response missing subject", cookieBase), ctx).res;
   }
 
-  const email = getClaimValue(claims, config.emailClaim)?.toLowerCase();
-  const rawUsername = getClaimValue(claims, config.usernameClaim);
+  const emailClaim = config.emailClaim || "email";
+  const usernameClaim = config.usernameClaim || "preferred_username";
+  const groupsClaim = config.groupsClaim || "groups";
+  const email = getClaimValue(claims, emailClaim)?.toLowerCase();
+  const rawUsername = getClaimValue(claims, usernameClaim);
   const username = rawUsername ? rawUsername.toLowerCase() : "";
-  const groupsFromClaims = config.syncGroups ? parseGroupClaim(claims, config.groupsClaim) : [];
+  const groupsFromClaims = config.syncGroups ? parseGroupClaim(claims, groupsClaim) : [];
   const safeGroups = normalizeGroupList(groupsFromClaims, { fallbackToDefault: false })
     .filter(group => group !== "administrators");
 

@@ -10,6 +10,20 @@ import { normalizeGroupList } from "@/lib/groups";
 import { decryptSecret, encryptSecret } from "@/lib/encryption";
 import { hashUserApiToken } from "@/lib/api-tokens";
 
+function decryptOptionalSecret(value?: string | null): string | null {
+  if (!value) return null;
+  try {
+    return decryptSecret(value);
+  } catch {
+    return value;
+  }
+}
+
+function encryptOptionalSecret(value?: string | null): string | null {
+  if (!value) return null;
+  return encryptSecret(value);
+}
+
 const DatabaseUrlSchema = z.string().min(1);
 let cachedDatabaseUrl: string | null = null;
 
@@ -1079,7 +1093,7 @@ export async function getUserWithHash(username: string): Promise<DbUserWithHash 
     jellyfin_user_id: row.jellyfin_user_id ?? null,
     jellyfin_username: row.jellyfin_username ?? null,
     jellyfin_device_id: row.jellyfin_device_id ?? null,
-    jellyfin_auth_token: row.jellyfin_auth_token ?? null,
+    jellyfin_auth_token: decryptOptionalSecret(row.jellyfin_auth_token),
     letterboxd_username: row.letterboxd_username ?? null,
     discord_user_id: row.discord_user_id ?? null,
     trakt_username: row.trakt_username ?? null,
@@ -1087,7 +1101,7 @@ export async function getUserWithHash(username: string): Promise<DbUserWithHash 
     avatar_version: row.avatar_version ?? null,
     created_at: row.created_at,
     last_seen_at: row.last_seen_at,
-    mfa_secret: row.mfa_secret ?? null,
+    mfa_secret: decryptOptionalSecret(row.mfa_secret),
     discover_region: row.discover_region ?? null,
     original_language: row.original_language ?? null,
     watchlist_sync_movies: !!row.watchlist_sync_movies,
@@ -1165,11 +1179,40 @@ export async function getUserById(id: number) {
   };
 }
 
+export type UserApiTokenRecord = {
+  id: number;
+  name: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export async function listUserApiTokens(userId: number): Promise<UserApiTokenRecord[]> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, name, created_at, updated_at
+     FROM user_api_token_v2
+     WHERE user_id = $1
+     ORDER BY created_at DESC`,
+    [userId]
+  );
+  return res.rows.map(row => ({
+    id: Number(row.id),
+    name: row.name as string,
+    createdAt: row.created_at ?? null,
+    updatedAt: row.updated_at ?? null
+  }));
+}
+
 export async function getUserApiToken(userId: number): Promise<{ token: string; createdAt: string | null; updatedAt: string | null } | null> {
   await ensureUserSchema();
   const p = getPool();
   const res = await p.query(
-    `SELECT token_encrypted, created_at, updated_at FROM user_api_token WHERE user_id = $1 LIMIT 1`,
+    `SELECT token_encrypted, created_at, updated_at
+     FROM user_api_token_v2
+     WHERE user_id = $1
+     ORDER BY created_at DESC
+     LIMIT 1`,
     [userId]
   );
   if (!res.rows.length) return null;
@@ -1188,23 +1231,23 @@ export async function getUserApiToken(userId: number): Promise<{ token: string; 
   };
 }
 
-export async function upsertUserApiToken(userId: number, token: string): Promise<{ token: string; createdAt: string | null; updatedAt: string | null }> {
+export async function createUserApiToken(userId: number, name: string, token: string): Promise<{ id: number; name: string; token: string; createdAt: string | null; updatedAt: string | null }> {
   await ensureUserSchema();
   const p = getPool();
   const tokenHash = hashUserApiToken(token);
   const tokenEncrypted = encryptSecret(token);
   const res = await p.query(
     `
-    INSERT INTO user_api_token (user_id, token_hash, token_encrypted, created_at, updated_at)
-    VALUES ($1, $2, $3, NOW(), NOW())
-    ON CONFLICT (user_id)
-    DO UPDATE SET token_hash = EXCLUDED.token_hash, token_encrypted = EXCLUDED.token_encrypted, updated_at = NOW()
-    RETURNING token_encrypted, created_at, updated_at
+    INSERT INTO user_api_token_v2 (user_id, name, token_hash, token_encrypted, created_at, updated_at)
+    VALUES ($1, $2, $3, $4, NOW(), NOW())
+    RETURNING id, created_at, updated_at
     `,
-    [userId, tokenHash, tokenEncrypted]
+    [userId, name, tokenHash, tokenEncrypted]
   );
   const row = res.rows[0];
   return {
+    id: Number(row.id),
+    name,
     token,
     createdAt: row?.created_at ?? null,
     updatedAt: row?.updated_at ?? null
@@ -1214,7 +1257,14 @@ export async function upsertUserApiToken(userId: number, token: string): Promise
 export async function revokeUserApiToken(userId: number): Promise<boolean> {
   await ensureUserSchema();
   const p = getPool();
-  const res = await p.query(`DELETE FROM user_api_token WHERE user_id = $1`, [userId]);
+  const res = await p.query(`DELETE FROM user_api_token_v2 WHERE user_id = $1`, [userId]);
+  return Number(res.rowCount ?? 0) > 0;
+}
+
+export async function revokeUserApiTokenById(userId: number, tokenId: number): Promise<boolean> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(`DELETE FROM user_api_token_v2 WHERE id = $1 AND user_id = $2`, [tokenId, userId]);
   return Number(res.rowCount ?? 0) > 0;
 }
 
@@ -1222,9 +1272,12 @@ export async function findUserIdByApiToken(token: string): Promise<number | null
   await ensureUserSchema();
   const p = getPool();
   const tokenHash = hashUserApiToken(token);
-  const res = await p.query(`SELECT user_id FROM user_api_token WHERE token_hash = $1 LIMIT 1`, [tokenHash]);
-  if (!res.rows.length) return null;
-  return Number(res.rows[0].user_id);
+  const res = await p.query(`SELECT user_id FROM user_api_token_v2 WHERE token_hash = $1 LIMIT 1`, [tokenHash]);
+  if (res.rows.length) return Number(res.rows[0].user_id);
+
+  const legacy = await p.query(`SELECT user_id FROM user_api_token WHERE token_hash = $1 LIMIT 1`, [tokenHash]);
+  if (!legacy.rows.length) return null;
+  return Number(legacy.rows[0].user_id);
 }
 
 export async function getUserTraktTokenStatus(userId: number): Promise<{ linked: boolean; expiresAt: string | null }> {
@@ -1336,7 +1389,7 @@ export async function setUserPassword(username: string, groups: string[], passwo
     jellyfin_user_id: row.jellyfin_user_id ?? null,
     jellyfin_username: row.jellyfin_username ?? null,
     jellyfin_device_id: row.jellyfin_device_id ?? null,
-    jellyfin_auth_token: row.jellyfin_auth_token ?? null,
+    jellyfin_auth_token: decryptOptionalSecret(row.jellyfin_auth_token),
     letterboxd_username: row.letterboxd_username ?? null,
     discord_user_id: row.discord_user_id ?? null,
     trakt_username: row.trakt_username ?? null,
@@ -1344,7 +1397,7 @@ export async function setUserPassword(username: string, groups: string[], passwo
     avatar_version: row.avatar_version ?? null,
     created_at: row.created_at,
     last_seen_at: row.last_seen_at,
-    mfa_secret: row.mfa_secret ?? null,
+    mfa_secret: decryptOptionalSecret(row.mfa_secret),
     discover_region: row.discover_region ?? null,
     original_language: row.original_language ?? null,
     watchlist_sync_movies: !!row.watchlist_sync_movies,
@@ -1368,6 +1421,79 @@ export async function updateUserPasswordById(id: number, passwordHash: string) {
     `,
     [passwordHash, id]
   );
+}
+
+export async function getUserWithHashById(id: number): Promise<DbUserWithHash | null> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT id, username, groups, password_hash, email, oidc_sub, jellyfin_user_id, jellyfin_username, jellyfin_device_id, jellyfin_auth_token, letterboxd_username, discord_user_id, trakt_username, avatar_url, avatar_version, created_at, last_seen_at, mfa_secret, discover_region, original_language, watchlist_sync_movies, watchlist_sync_tv, request_limit_movie, request_limit_movie_days, request_limit_series, request_limit_series_days, banned, weekly_digest_opt_in
+    FROM app_user
+    WHERE id = $1
+    LIMIT 1
+    `,
+    [id]
+  );
+  if (!res.rows.length) return null;
+  const row = res.rows[0];
+  return {
+    id: Number(row.id),
+    username: row.username,
+    groups: normalizeGroupList(row.groups as string),
+    password_hash: row.password_hash,
+    email: row.email ?? null,
+    oidc_sub: row.oidc_sub ?? null,
+    jellyfin_user_id: row.jellyfin_user_id ?? null,
+    jellyfin_username: row.jellyfin_username ?? null,
+    jellyfin_device_id: row.jellyfin_device_id ?? null,
+    jellyfin_auth_token: decryptOptionalSecret(row.jellyfin_auth_token),
+    letterboxd_username: row.letterboxd_username ?? null,
+    discord_user_id: row.discord_user_id ?? null,
+    trakt_username: row.trakt_username ?? null,
+    avatar_url: row.avatar_url ?? null,
+    avatar_version: row.avatar_version ?? null,
+    created_at: row.created_at,
+    last_seen_at: row.last_seen_at,
+    mfa_secret: decryptOptionalSecret(row.mfa_secret),
+    discover_region: row.discover_region ?? null,
+    original_language: row.original_language ?? null,
+    watchlist_sync_movies: !!row.watchlist_sync_movies,
+    watchlist_sync_tv: !!row.watchlist_sync_tv,
+    request_limit_movie: row.request_limit_movie ?? null,
+    request_limit_movie_days: row.request_limit_movie_days ?? null,
+    request_limit_series: row.request_limit_series ?? null,
+    request_limit_series_days: row.request_limit_series_days ?? null,
+    banned: !!row.banned,
+    weekly_digest_opt_in: !!row.weekly_digest_opt_in,
+  };
+}
+
+export async function addUserPasswordHistory(userId: number, passwordHash: string): Promise<void> {
+  await ensureUserSchema();
+  const p = getPool();
+  await p.query(
+    `
+    INSERT INTO user_password_history (user_id, password_hash, created_at)
+    VALUES ($1, $2, NOW())
+    `,
+    [userId, passwordHash]
+  );
+}
+
+export async function getUserPasswordHistory(userId: number): Promise<string[]> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT password_hash
+    FROM user_password_history
+    WHERE user_id = $1
+    ORDER BY created_at DESC
+    `,
+    [userId]
+  );
+  return res.rows.map(row => row.password_hash as string);
 }
 
 export async function deleteUserById(id: number) {
@@ -1574,7 +1700,7 @@ export async function getUserByJellyfinUserId(jellyfinUserId: string): Promise<D
     jellyfin_user_id: row.jellyfin_user_id ?? null,
     jellyfin_username: row.jellyfin_username ?? null,
     jellyfin_device_id: row.jellyfin_device_id ?? null,
-    jellyfin_auth_token: row.jellyfin_auth_token ?? null,
+    jellyfin_auth_token: decryptOptionalSecret(row.jellyfin_auth_token),
     letterboxd_username: row.letterboxd_username ?? null,
     discord_user_id: row.discord_user_id ?? null,
     trakt_username: row.trakt_username ?? null,
@@ -1582,7 +1708,7 @@ export async function getUserByJellyfinUserId(jellyfinUserId: string): Promise<D
     avatar_version: row.avatar_version ?? null,
     created_at: row.created_at,
     last_seen_at: row.last_seen_at,
-    mfa_secret: row.mfa_secret ?? null,
+    mfa_secret: decryptOptionalSecret(row.mfa_secret),
     discover_region: row.discover_region ?? null,
     original_language: row.original_language ?? null,
     watchlist_sync_movies: !!row.watchlist_sync_movies,
@@ -1620,7 +1746,7 @@ export async function getUserByEmailOrUsername(email: string | null, username: s
     jellyfin_user_id: row.jellyfin_user_id ?? null,
     jellyfin_username: row.jellyfin_username ?? null,
     jellyfin_device_id: row.jellyfin_device_id ?? null,
-    jellyfin_auth_token: row.jellyfin_auth_token ?? null,
+    jellyfin_auth_token: decryptOptionalSecret(row.jellyfin_auth_token),
     letterboxd_username: row.letterboxd_username ?? null,
     discord_user_id: row.discord_user_id ?? null,
     trakt_username: row.trakt_username ?? null,
@@ -1628,7 +1754,7 @@ export async function getUserByEmailOrUsername(email: string | null, username: s
     avatar_version: row.avatar_version ?? null,
     created_at: row.created_at,
     last_seen_at: row.last_seen_at,
-    mfa_secret: row.mfa_secret ?? null,
+    mfa_secret: decryptOptionalSecret(row.mfa_secret),
     discover_region: row.discover_region ?? null,
     original_language: row.original_language ?? null,
     watchlist_sync_movies: !!row.watchlist_sync_movies,
@@ -1652,6 +1778,7 @@ export async function linkUserToJellyfin(input: {
 }) {
   await ensureUserSchema();
   const p = getPool();
+  const tokenEncrypted = encryptOptionalSecret(input.jellyfinAuthToken);
   await p.query(
     `
     UPDATE app_user
@@ -1668,7 +1795,7 @@ export async function linkUserToJellyfin(input: {
       input.jellyfinUserId,
       input.jellyfinUsername,
       input.jellyfinDeviceId,
-      input.jellyfinAuthToken ?? null,
+      tokenEncrypted,
       input.avatarUrl ?? null,
       input.userId
     ]
@@ -1732,7 +1859,7 @@ export async function createJellyfinUser(input: {
     jellyfin_user_id: row.jellyfin_user_id ?? null,
     jellyfin_username: row.jellyfin_username ?? null,
     jellyfin_device_id: row.jellyfin_device_id ?? null,
-    jellyfin_auth_token: row.jellyfin_auth_token ?? null,
+    jellyfin_auth_token: decryptOptionalSecret(row.jellyfin_auth_token),
     letterboxd_username: row.letterboxd_username ?? null,
     discord_user_id: row.discord_user_id ?? null,
     trakt_username: row.trakt_username ?? null,
@@ -1740,7 +1867,7 @@ export async function createJellyfinUser(input: {
     avatar_version: row.avatar_version ?? null,
     created_at: row.created_at,
     last_seen_at: row.last_seen_at,
-    mfa_secret: row.mfa_secret ?? null,
+    mfa_secret: decryptOptionalSecret(row.mfa_secret),
     discover_region: row.discover_region ?? null,
     original_language: row.original_language ?? null,
     watchlist_sync_movies: !!row.watchlist_sync_movies,
@@ -1829,6 +1956,38 @@ async function ensureUserSchema() {
       );
     `);
     await p.query(`CREATE INDEX IF NOT EXISTS idx_user_api_token_hash ON user_api_token(token_hash);`);
+
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS user_api_token_v2 (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        token_hash TEXT UNIQUE NOT NULL,
+        token_encrypted TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_user_api_token_v2_user_id ON user_api_token_v2(user_id);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_user_api_token_v2_hash ON user_api_token_v2(token_hash);`);
+    await p.query(`
+      INSERT INTO user_api_token_v2 (user_id, name, token_hash, token_encrypted, created_at, updated_at)
+      SELECT user_id, 'Default', token_hash, token_encrypted, created_at, updated_at
+      FROM user_api_token
+      WHERE NOT EXISTS (
+        SELECT 1 FROM user_api_token_v2 v2 WHERE v2.token_hash = user_api_token.token_hash
+      )
+    `);
+
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS user_password_history (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+        password_hash TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_user_password_history_user_id ON user_password_history(user_id);`);
 
     await p.query(`
       CREATE TABLE IF NOT EXISTS user_trakt_token (
@@ -2022,7 +2181,7 @@ export async function getUserByOidcSub(oidcSub: string): Promise<DbUserWithHash 
     jellyfin_user_id: row.jellyfin_user_id ?? null,
     jellyfin_username: row.jellyfin_username ?? null,
     jellyfin_device_id: row.jellyfin_device_id ?? null,
-    jellyfin_auth_token: row.jellyfin_auth_token ?? null,
+    jellyfin_auth_token: decryptOptionalSecret(row.jellyfin_auth_token),
     letterboxd_username: row.letterboxd_username ?? null,
     discord_user_id: row.discord_user_id ?? null,
     trakt_username: row.trakt_username ?? null,
@@ -2030,7 +2189,7 @@ export async function getUserByOidcSub(oidcSub: string): Promise<DbUserWithHash 
     avatar_version: row.avatar_version ?? null,
     created_at: row.created_at,
     last_seen_at: row.last_seen_at,
-    mfa_secret: row.mfa_secret ?? null,
+    mfa_secret: decryptOptionalSecret(row.mfa_secret),
     discover_region: row.discover_region ?? null,
     original_language: row.original_language ?? null,
     watchlist_sync_movies: !!row.watchlist_sync_movies,
@@ -2068,7 +2227,7 @@ export async function getUserByEmail(email: string): Promise<DbUserWithHash | nu
     jellyfin_user_id: row.jellyfin_user_id ?? null,
     jellyfin_username: row.jellyfin_username ?? null,
     jellyfin_device_id: row.jellyfin_device_id ?? null,
-    jellyfin_auth_token: row.jellyfin_auth_token ?? null,
+    jellyfin_auth_token: decryptOptionalSecret(row.jellyfin_auth_token),
     letterboxd_username: row.letterboxd_username ?? null,
     discord_user_id: row.discord_user_id ?? null,
     trakt_username: row.trakt_username ?? null,
@@ -2076,7 +2235,7 @@ export async function getUserByEmail(email: string): Promise<DbUserWithHash | nu
     avatar_version: row.avatar_version ?? null,
     created_at: row.created_at,
     last_seen_at: row.last_seen_at,
-    mfa_secret: row.mfa_secret ?? null,
+    mfa_secret: decryptOptionalSecret(row.mfa_secret),
     discover_region: row.discover_region ?? null,
     original_language: row.original_language ?? null,
     watchlist_sync_movies: !!row.watchlist_sync_movies,
@@ -2114,7 +2273,7 @@ export async function getUserByUsername(username: string): Promise<DbUserWithHas
     jellyfin_user_id: row.jellyfin_user_id ?? null,
     jellyfin_username: row.jellyfin_username ?? null,
     jellyfin_device_id: row.jellyfin_device_id ?? null,
-    jellyfin_auth_token: row.jellyfin_auth_token ?? null,
+    jellyfin_auth_token: decryptOptionalSecret(row.jellyfin_auth_token),
     letterboxd_username: row.letterboxd_username ?? null,
     discord_user_id: row.discord_user_id ?? null,
     trakt_username: row.trakt_username ?? null,
@@ -2122,53 +2281,7 @@ export async function getUserByUsername(username: string): Promise<DbUserWithHas
     avatar_version: row.avatar_version ?? null,
     created_at: row.created_at,
     last_seen_at: row.last_seen_at,
-    mfa_secret: row.mfa_secret ?? null,
-    discover_region: row.discover_region ?? null,
-    original_language: row.original_language ?? null,
-    watchlist_sync_movies: !!row.watchlist_sync_movies,
-    watchlist_sync_tv: !!row.watchlist_sync_tv,
-    request_limit_movie: row.request_limit_movie ?? null,
-    request_limit_movie_days: row.request_limit_movie_days ?? null,
-    request_limit_series: row.request_limit_series ?? null,
-    request_limit_series_days: row.request_limit_series_days ?? null,
-    banned: !!row.banned,
-    weekly_digest_opt_in: !!row.weekly_digest_opt_in,
-  };
-}
-
-export async function getUserByUsernameInsensitive(username: string): Promise<DbUserWithHash | null> {
-  await ensureUserSchema();
-  const p = getPool();
-  const res = await p.query(
-    `
-    SELECT id, username, groups, password_hash, email, oidc_sub, jellyfin_user_id, jellyfin_username, jellyfin_device_id, jellyfin_auth_token, letterboxd_username, discord_user_id, trakt_username, avatar_url, avatar_version, created_at, last_seen_at, mfa_secret, discover_region, original_language, watchlist_sync_movies, watchlist_sync_tv, request_limit_movie, request_limit_movie_days, request_limit_series, request_limit_series_days, banned, weekly_digest_opt_in
-    FROM app_user
-    WHERE LOWER(username) = LOWER($1)
-    LIMIT 1
-    `,
-    [username]
-  );
-  if (!res.rows.length) return null;
-  const row = res.rows[0];
-  return {
-    id: Number(row.id),
-    username: row.username,
-    groups: normalizeGroupList(row.groups as string),
-    password_hash: row.password_hash,
-    email: row.email ?? null,
-    oidc_sub: row.oidc_sub ?? null,
-    jellyfin_user_id: row.jellyfin_user_id ?? null,
-    jellyfin_username: row.jellyfin_username ?? null,
-    jellyfin_device_id: row.jellyfin_device_id ?? null,
-    jellyfin_auth_token: row.jellyfin_auth_token ?? null,
-    letterboxd_username: row.letterboxd_username ?? null,
-    discord_user_id: row.discord_user_id ?? null,
-    trakt_username: row.trakt_username ?? null,
-    avatar_url: row.avatar_url ?? null,
-    avatar_version: row.avatar_version ?? null,
-    created_at: row.created_at,
-    last_seen_at: row.last_seen_at,
-    mfa_secret: row.mfa_secret ?? null,
+    mfa_secret: decryptOptionalSecret(row.mfa_secret),
     discover_region: row.discover_region ?? null,
     original_language: row.original_language ?? null,
     watchlist_sync_movies: !!row.watchlist_sync_movies,
@@ -2347,7 +2460,7 @@ export async function createOidcUser(input: {
     jellyfin_user_id: row.jellyfin_user_id ?? null,
     jellyfin_username: row.jellyfin_username ?? null,
     jellyfin_device_id: row.jellyfin_device_id ?? null,
-    jellyfin_auth_token: row.jellyfin_auth_token ?? null,
+    jellyfin_auth_token: decryptOptionalSecret(row.jellyfin_auth_token),
     letterboxd_username: row.letterboxd_username ?? null,
     discord_user_id: row.discord_user_id ?? null,
     trakt_username: row.trakt_username ?? null,
@@ -2355,7 +2468,7 @@ export async function createOidcUser(input: {
     avatar_version: row.avatar_version ?? null,
     created_at: row.created_at,
     last_seen_at: row.last_seen_at,
-    mfa_secret: row.mfa_secret ?? null,
+    mfa_secret: decryptOptionalSecret(row.mfa_secret),
     discover_region: row.discover_region ?? null,
     original_language: row.original_language ?? null,
     watchlist_sync_movies: !!row.watchlist_sync_movies,
@@ -2468,13 +2581,14 @@ export async function getUserMfaSecretById(userId: number): Promise<string | nul
   const p = getPool();
   const res = await p.query(`SELECT mfa_secret FROM app_user WHERE id = $1 LIMIT 1`, [userId]);
   if (!res.rows.length) return null;
-  return res.rows[0].mfa_secret ?? null;
+  return decryptOptionalSecret(res.rows[0].mfa_secret ?? null);
 }
 
 export async function setUserMfaSecretById(userId: number, secret: string) {
   await ensureUserSchema();
   const p = getPool();
-  await p.query(`UPDATE app_user SET mfa_secret = $1, last_seen_at = NOW() WHERE id = $2`, [secret, userId]);
+  const encrypted = encryptOptionalSecret(secret);
+  await p.query(`UPDATE app_user SET mfa_secret = $1, last_seen_at = NOW() WHERE id = $2`, [encrypted, userId]);
 }
 
 export async function resetUserMfaById(userId: number) {
@@ -2652,7 +2766,6 @@ async function ensureSchema() {
           ('session-cleanup', '0 * * * *', 3600, 'system', TRUE),
           ('calendar-notifications', '0 */6 * * *', 21600, 'system', FALSE),
           ('jellyfin-availability-sync', '0 */4 * * *', 14400, 'system', FALSE),
-          ('plex-availability-sync', '0 */4 * * *', 14400, 'system', FALSE),
           ('upgrade-finder-4k', '0 3 * * *', 86400, 'system', FALSE),
           ('prowlarr-indexer-sync', '*/5 * * * *', 300, 'system', TRUE)
       ON CONFLICT (name) DO NOTHING;
@@ -3475,97 +3588,7 @@ export async function setJellyfinConfig(input: JellyfinConfig): Promise<void> {
   await setSetting("jellyfin_config", JSON.stringify(input));
 }
 
-export type PlexConfig = {
-  enabled: boolean;
-  name: string;
-  hostname: string;
-  port: number;
-  useSsl: boolean;
-  urlBase: string;
-  externalUrl: string;
-  libraries: Array<{
-    id: string;
-    name: string;
-    type: "movie" | "show";
-    enabled: boolean;
-    lastScan?: number;
-  }>;
-  serverId: string;
-  tokenEncrypted: string;
-};
-
-const PlexConfigSchema = z.object({
-  enabled: z.boolean().optional(),
-  name: z.string().optional(),
-  hostname: z.string().optional(),
-  port: z.number().optional(),
-  useSsl: z.boolean().optional(),
-  urlBase: z.string().optional(),
-  externalUrl: z.string().optional(),
-  libraries: z
-    .array(
-      z.object({
-        id: z.string(),
-        name: z.string(),
-        type: z.enum(["movie", "show"]),
-        enabled: z.boolean(),
-        lastScan: z.number().optional()
-      })
-    )
-    .optional(),
-  serverId: z.string().optional(),
-  tokenEncrypted: z.string().optional(),
-});
-
-const PlexConfigDefaults: PlexConfig = {
-  enabled: false,
-  name: "",
-  hostname: "",
-  port: 32400,
-  useSsl: false,
-  urlBase: "",
-  externalUrl: "",
-  libraries: [],
-  serverId: "",
-  tokenEncrypted: "",
-};
-
-export async function getPlexConfig(): Promise<PlexConfig> {
-  const raw = await getSetting("plex_config");
-  let parsed: Partial<PlexConfig> = {};
-  if (raw) {
-    try {
-      parsed = PlexConfigSchema.parse(JSON.parse(raw));
-    } catch {
-      parsed = {};
-    }
-  }
-
-  return {
-    ...PlexConfigDefaults,
-    ...parsed,
-    enabled: parsed.enabled ?? PlexConfigDefaults.enabled,
-    name: parsed.name ?? PlexConfigDefaults.name,
-    hostname: parsed.hostname ?? PlexConfigDefaults.hostname,
-    port: typeof parsed.port === "number" ? parsed.port : PlexConfigDefaults.port,
-    useSsl: parsed.useSsl ?? PlexConfigDefaults.useSsl,
-    urlBase: parsed.urlBase ?? PlexConfigDefaults.urlBase,
-    externalUrl: parsed.externalUrl ?? PlexConfigDefaults.externalUrl,
-    libraries: parsed.libraries ?? PlexConfigDefaults.libraries,
-    serverId: parsed.serverId ?? PlexConfigDefaults.serverId,
-    tokenEncrypted: parsed.tokenEncrypted ?? PlexConfigDefaults.tokenEncrypted,
-  };
-}
-
-export async function setPlexConfig(input: PlexConfig): Promise<void> {
-  await setSetting("plex_config", JSON.stringify(input));
-}
-
-export type OidcProviderConfig = {
-  id: string;
-  name: string;
-  providerType?: "oidc" | "duo_websdk";
-  duoApiHostname?: string;
+export type OidcConfig = {
   enabled: boolean;
   issuer: string;
   clientId: string;
@@ -3586,65 +3609,115 @@ export type OidcProviderConfig = {
   syncGroups: boolean;
 };
 
+const OidcConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  issuer: z.string().optional(),
+  clientId: z.string().optional(),
+  clientSecret: z.string().optional(),
+  redirectUri: z.string().optional(),
+  authorizationUrl: z.string().optional(),
+  tokenUrl: z.string().optional(),
+  userinfoUrl: z.string().optional(),
+  jwksUrl: z.string().optional(),
+  logoutUrl: z.string().optional(),
+  scopes: z.array(z.string()).optional(),
+  usernameClaim: z.string().optional(),
+  emailClaim: z.string().optional(),
+  groupsClaim: z.string().optional(),
+  allowAutoCreate: z.boolean().optional(),
+  matchByEmail: z.boolean().optional(),
+  matchByUsername: z.boolean().optional(),
+  syncGroups: z.boolean().optional()
+});
+
+const OidcConfigDefaults: OidcConfig = {
+  enabled: false,
+  issuer: "",
+  clientId: "",
+  clientSecret: "",
+  redirectUri: "",
+  authorizationUrl: "",
+  tokenUrl: "",
+  userinfoUrl: "",
+  jwksUrl: "",
+  logoutUrl: "",
+  scopes: ["openid", "profile", "email"],
+  usernameClaim: "preferred_username",
+  emailClaim: "email",
+  groupsClaim: "groups",
+  allowAutoCreate: false,
+  matchByEmail: true,
+  matchByUsername: true,
+  syncGroups: false
+};
+
+export async function getOidcConfig(): Promise<OidcConfig> {
+  const raw = await getSetting("oidc_config");
+  let parsed: Partial<OidcConfig> = {};
+  if (raw) {
+    try {
+      parsed = OidcConfigSchema.parse(JSON.parse(raw));
+    } catch {
+      parsed = {};
+    }
+  }
+
+  const withEnv: Partial<OidcConfig> = {};
+  const envIssuer = process.env.OIDC_ISSUER?.trim();
+  const envClientId = process.env.OIDC_CLIENT_ID?.trim();
+  const envClientSecret = process.env.OIDC_CLIENT_SECRET?.trim();
+  const envRedirectUri = process.env.OIDC_REDIRECT_URI?.trim();
+  if (envIssuer) withEnv.issuer = envIssuer;
+  if (envClientId) withEnv.clientId = envClientId;
+  if (envClientSecret) withEnv.clientSecret = envClientSecret;
+  if (envRedirectUri) withEnv.redirectUri = envRedirectUri;
+
+  return {
+    ...OidcConfigDefaults,
+    ...withEnv,
+    ...parsed,
+    scopes: Array.isArray(parsed.scopes) && parsed.scopes.length ? parsed.scopes : OidcConfigDefaults.scopes,
+    redirectUri: parsed.redirectUri ?? withEnv.redirectUri ?? OidcConfigDefaults.redirectUri
+  };
+}
+
+export async function setOidcConfig(input: OidcConfig): Promise<void> {
+  await setSetting("oidc_config", JSON.stringify(input));
+}
+
+export type OidcProviderConfig = {
+  id: string;
+  name?: string;
+  providerType?: "oidc" | "duo_websdk";
+  duoApiHostname?: string;
+  enabled?: boolean;
+  issuer?: string;
+  clientId?: string;
+  clientSecret?: string;
+  redirectUri?: string;
+  authorizationUrl?: string;
+  tokenUrl?: string;
+  userinfoUrl?: string;
+  jwksUrl?: string;
+  logoutUrl?: string;
+  scopes?: string[];
+  usernameClaim?: string;
+  emailClaim?: string;
+  groupsClaim?: string;
+  allowAutoCreate?: boolean;
+  matchByEmail?: boolean;
+  matchByUsername?: boolean;
+  syncGroups?: boolean;
+};
+
 export type OidcSettings = {
   activeProviderId: string | null;
   providers: OidcProviderConfig[];
 };
 
-const OidcProviderSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().optional(),
-  providerType: z.enum(["oidc", "duo_websdk"]).optional(),
-  duoApiHostname: z.string().optional(),
-  enabled: z.boolean().optional(),
-  issuer: z.string().optional(),
-  clientId: z.string().optional(),
-  clientSecret: z.string().optional(),
-  redirectUri: z.string().optional(),
-  authorizationUrl: z.string().optional(),
-  tokenUrl: z.string().optional(),
-  userinfoUrl: z.string().optional(),
-  jwksUrl: z.string().optional(),
-  logoutUrl: z.string().optional(),
-  scopes: z.array(z.string()).optional(),
-  usernameClaim: z.string().optional(),
-  emailClaim: z.string().optional(),
-  groupsClaim: z.string().optional(),
-  allowAutoCreate: z.boolean().optional(),
-  matchByEmail: z.boolean().optional(),
-  matchByUsername: z.boolean().optional(),
-  syncGroups: z.boolean().optional()
-});
-
-const OidcSettingsSchema = z.object({
-  activeProviderId: z.string().nullable().optional(),
-  providers: z.array(OidcProviderSchema).optional()
-});
-
-const OidcLegacySchema = z.object({
-  enabled: z.boolean().optional(),
-  issuer: z.string().optional(),
-  clientId: z.string().optional(),
-  clientSecret: z.string().optional(),
-  redirectUri: z.string().optional(),
-  authorizationUrl: z.string().optional(),
-  tokenUrl: z.string().optional(),
-  userinfoUrl: z.string().optional(),
-  jwksUrl: z.string().optional(),
-  logoutUrl: z.string().optional(),
-  scopes: z.array(z.string()).optional(),
-  usernameClaim: z.string().optional(),
-  emailClaim: z.string().optional(),
-  groupsClaim: z.string().optional(),
-  allowAutoCreate: z.boolean().optional(),
-  matchByEmail: z.boolean().optional(),
-  matchByUsername: z.boolean().optional(),
-  syncGroups: z.boolean().optional()
-});
-
 const OidcProviderDefaults: OidcProviderConfig = {
   id: "default",
-  name: "PocketID",
+  name: "OIDC Provider",
   providerType: "oidc",
   duoApiHostname: "",
   enabled: false,
@@ -3667,141 +3740,350 @@ const OidcProviderDefaults: OidcProviderConfig = {
   syncGroups: false
 };
 
-function applyOidcDefaults(input: Partial<OidcProviderConfig> & { id: string }): OidcProviderConfig {
+function normalizeOidcProvider(input: OidcProviderConfig): OidcProviderConfig {
   return {
     ...OidcProviderDefaults,
     ...input,
-    id: input.id,
-    name: input.name ?? OidcProviderDefaults.name,
-    providerType: input.providerType ?? OidcProviderDefaults.providerType,
-    duoApiHostname: input.duoApiHostname ?? OidcProviderDefaults.duoApiHostname,
-    enabled: input.enabled ?? OidcProviderDefaults.enabled,
-    issuer: input.issuer ?? OidcProviderDefaults.issuer,
-    clientId: input.clientId ?? OidcProviderDefaults.clientId,
-    clientSecret: input.clientSecret ?? OidcProviderDefaults.clientSecret,
-    redirectUri: input.redirectUri ?? OidcProviderDefaults.redirectUri,
-    authorizationUrl: input.authorizationUrl ?? OidcProviderDefaults.authorizationUrl,
-    tokenUrl: input.tokenUrl ?? OidcProviderDefaults.tokenUrl,
-    userinfoUrl: input.userinfoUrl ?? OidcProviderDefaults.userinfoUrl,
-    jwksUrl: input.jwksUrl ?? OidcProviderDefaults.jwksUrl,
-    logoutUrl: input.logoutUrl ?? OidcProviderDefaults.logoutUrl,
+    id: input.id || OidcProviderDefaults.id,
+    name: input.name?.trim() || OidcProviderDefaults.name,
+    providerType: input.providerType ?? "oidc",
+    duoApiHostname: input.duoApiHostname?.trim() ?? "",
+    issuer: input.issuer?.trim() ?? "",
+    clientId: input.clientId?.trim() ?? "",
+    clientSecret: input.clientSecret ?? "",
+    redirectUri: input.redirectUri?.trim() ?? "",
+    authorizationUrl: input.authorizationUrl?.trim() ?? "",
+    tokenUrl: input.tokenUrl?.trim() ?? "",
+    userinfoUrl: input.userinfoUrl?.trim() ?? "",
+    jwksUrl: input.jwksUrl?.trim() ?? "",
+    logoutUrl: input.logoutUrl?.trim() ?? "",
     scopes: Array.isArray(input.scopes) && input.scopes.length ? input.scopes : OidcProviderDefaults.scopes,
-    usernameClaim: input.usernameClaim ?? OidcProviderDefaults.usernameClaim,
-    emailClaim: input.emailClaim ?? OidcProviderDefaults.emailClaim,
-    groupsClaim: input.groupsClaim ?? OidcProviderDefaults.groupsClaim,
+    usernameClaim: input.usernameClaim?.trim() || OidcProviderDefaults.usernameClaim,
+    emailClaim: input.emailClaim?.trim() || OidcProviderDefaults.emailClaim,
+    groupsClaim: input.groupsClaim?.trim() || OidcProviderDefaults.groupsClaim,
     allowAutoCreate: input.allowAutoCreate ?? OidcProviderDefaults.allowAutoCreate,
     matchByEmail: input.matchByEmail ?? OidcProviderDefaults.matchByEmail,
     matchByUsername: input.matchByUsername ?? OidcProviderDefaults.matchByUsername,
-    syncGroups: input.syncGroups ?? OidcProviderDefaults.syncGroups
-  };
-}
-
-function applyEnvOverrides(provider: OidcProviderConfig): OidcProviderConfig {
-  const envIssuer = process.env.OIDC_ISSUER?.trim();
-  const envClientId = process.env.OIDC_CLIENT_ID?.trim();
-  const envClientSecret = process.env.OIDC_CLIENT_SECRET?.trim();
-  const envRedirectUri = process.env.OIDC_REDIRECT_URI?.trim();
-  return {
-    ...provider,
-    issuer: provider.issuer || envIssuer || provider.issuer,
-    clientId: provider.clientId || envClientId || provider.clientId,
-    clientSecret: provider.clientSecret || envClientSecret || provider.clientSecret,
-    redirectUri: provider.redirectUri || envRedirectUri || provider.redirectUri
+    syncGroups: input.syncGroups ?? OidcProviderDefaults.syncGroups,
+    enabled: input.enabled ?? false
   };
 }
 
 export async function getOidcSettings(): Promise<OidcSettings> {
-  const raw = await getSetting("oidc_config");
-  let providers: OidcProviderConfig[] = [];
-  let activeProviderId: string | null = null;
-
+  const raw = await getSetting("oidc_settings");
   if (raw) {
     try {
-      const parsed = OidcSettingsSchema.parse(JSON.parse(raw));
-      providers = (parsed.providers ?? []).map((p) => applyOidcDefaults(p));
-      activeProviderId = parsed.activeProviderId ?? null;
+      const parsed = JSON.parse(raw) as OidcSettings;
+      const providers = Array.isArray(parsed.providers) ? parsed.providers.map(normalizeOidcProvider) : [];
+      return {
+        activeProviderId: parsed.activeProviderId ?? null,
+        providers
+      };
     } catch {
-      try {
-        const legacy = OidcLegacySchema.parse(JSON.parse(raw));
-        const legacyProvider = applyOidcDefaults({
-          id: "default",
-          name: "PocketID",
-          enabled: legacy.enabled ?? false,
-          issuer: legacy.issuer ?? "",
-          clientId: legacy.clientId ?? "",
-          clientSecret: legacy.clientSecret ?? "",
-          redirectUri: legacy.redirectUri ?? "",
-          authorizationUrl: legacy.authorizationUrl ?? "",
-          tokenUrl: legacy.tokenUrl ?? "",
-          userinfoUrl: legacy.userinfoUrl ?? "",
-          jwksUrl: legacy.jwksUrl ?? "",
-          logoutUrl: legacy.logoutUrl ?? "",
-          scopes: legacy.scopes ?? OidcProviderDefaults.scopes,
-          usernameClaim: legacy.usernameClaim ?? OidcProviderDefaults.usernameClaim,
-          emailClaim: legacy.emailClaim ?? OidcProviderDefaults.emailClaim,
-          groupsClaim: legacy.groupsClaim ?? OidcProviderDefaults.groupsClaim,
-          allowAutoCreate: legacy.allowAutoCreate ?? OidcProviderDefaults.allowAutoCreate,
-          matchByEmail: legacy.matchByEmail ?? OidcProviderDefaults.matchByEmail,
-          matchByUsername: legacy.matchByUsername ?? OidcProviderDefaults.matchByUsername,
-          syncGroups: legacy.syncGroups ?? OidcProviderDefaults.syncGroups
-        });
-        providers = [legacyProvider];
-        activeProviderId = legacyProvider.enabled ? legacyProvider.id : null;
-      } catch {
-        providers = [];
-        activeProviderId = null;
-      }
+      // fall through to legacy
     }
   }
 
-  if (!providers.length) {
-    const fallback = applyOidcDefaults({ id: "default", name: "PocketID" });
-    providers = [applyEnvOverrides(fallback)];
-  } else if (providers.length === 1) {
-    providers = [applyEnvOverrides(providers[0])];
+  const legacyRaw = await getSetting("oidc_config");
+  if (legacyRaw) {
+    try {
+      const parsed = JSON.parse(legacyRaw) as Partial<OidcSettings>;
+      if (Array.isArray(parsed.providers)) {
+        const providers = parsed.providers.map(normalizeOidcProvider);
+        const normalized: OidcSettings = {
+          activeProviderId: parsed.activeProviderId ?? null,
+          providers
+        };
+        await setSetting("oidc_settings", JSON.stringify(normalized));
+        return normalized;
+      }
+    } catch {
+      // fall through to legacy config parser
+    }
   }
 
-  if (activeProviderId && !providers.some((p) => p.id === activeProviderId)) {
-    activeProviderId = null;
-  }
+  const legacy = await getOidcConfig();
+  const provider: OidcProviderConfig = {
+    ...legacy,
+    id: "legacy",
+    name: "OIDC Provider",
+    providerType: "oidc",
+    enabled: legacy.enabled
+  };
 
-  if (!activeProviderId) {
-    const enabled = providers.find((p) => p.enabled);
-    activeProviderId = enabled ? enabled.id : null;
-  }
-
-  return { activeProviderId, providers };
+  return {
+    activeProviderId: legacy.enabled ? provider.id : null,
+    providers: [normalizeOidcProvider(provider)]
+  };
 }
 
-export async function getOidcProviderById(providerId: string): Promise<OidcProviderConfig | null> {
-  if (!providerId) return null;
-  const settings = await getOidcSettings();
-  return settings.providers.find((p) => p.id === providerId) ?? null;
+export async function setOidcSettings(input: OidcSettings): Promise<void> {
+  await setSetting("oidc_settings", JSON.stringify(input));
 }
 
 export async function getActiveOidcProvider(): Promise<OidcProviderConfig | null> {
   const settings = await getOidcSettings();
-  const provider = settings.activeProviderId
-    ? settings.providers.find((p) => p.id === settings.activeProviderId)
-    : settings.providers.length === 1 && settings.providers[0].enabled
-      ? settings.providers[0]
-      : null;
-
-  if (!provider) return null;
-  if (!provider.enabled) return null;
-
-  const isDuo = provider.providerType === "duo_websdk" || /duo/i.test(provider.name ?? "") || !!provider.duoApiHostname;
-  if (isDuo) {
-    if (!provider.clientId || !provider.clientSecret || !provider.duoApiHostname) return null;
-    return provider;
-  }
-
-  if (!provider.issuer || !provider.clientId) return null;
-  return provider;
+  const candidates = settings.providers ?? [];
+  if (!candidates.length) return null;
+  const active = settings.activeProviderId
+    ? candidates.find((provider) => provider.id === settings.activeProviderId)
+    : candidates.find((provider) => provider.enabled);
+  return active?.enabled ? normalizeOidcProvider(active) : null;
 }
 
-export async function setOidcSettings(input: OidcSettings): Promise<void> {
-  await setSetting("oidc_config", JSON.stringify(input));
+export async function getOidcProviderById(providerId: string): Promise<OidcProviderConfig | null> {
+  const settings = await getOidcSettings();
+  const found = settings.providers.find((provider) => provider.id === providerId);
+  return found ? normalizeOidcProvider(found) : null;
+}
+
+export async function getUserByUsernameInsensitive(username: string): Promise<DbUserWithHash | null> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT id, username, groups, password_hash, email, oidc_sub, jellyfin_user_id, jellyfin_username, jellyfin_device_id, jellyfin_auth_token, letterboxd_username, discord_user_id, trakt_username, avatar_url, avatar_version, created_at, last_seen_at, mfa_secret, discover_region, original_language, watchlist_sync_movies, watchlist_sync_tv, request_limit_movie, request_limit_movie_days, request_limit_series, request_limit_series_days, banned, weekly_digest_opt_in
+    FROM app_user
+    WHERE LOWER(username) = LOWER($1)
+    LIMIT 1
+    `,
+    [username]
+  );
+  if (!res.rows.length) return null;
+  const row = res.rows[0];
+  return {
+    id: Number(row.id),
+    username: row.username,
+    groups: normalizeGroupList(row.groups as string),
+    password_hash: row.password_hash,
+    email: row.email ?? null,
+    oidc_sub: row.oidc_sub ?? null,
+    jellyfin_user_id: row.jellyfin_user_id ?? null,
+    jellyfin_username: row.jellyfin_username ?? null,
+    jellyfin_device_id: row.jellyfin_device_id ?? null,
+    jellyfin_auth_token: decryptOptionalSecret(row.jellyfin_auth_token),
+    letterboxd_username: row.letterboxd_username ?? null,
+    discord_user_id: row.discord_user_id ?? null,
+    trakt_username: row.trakt_username ?? null,
+    avatar_url: row.avatar_url ?? null,
+    avatar_version: row.avatar_version ?? null,
+    created_at: row.created_at,
+    last_seen_at: row.last_seen_at,
+    mfa_secret: decryptOptionalSecret(row.mfa_secret),
+    discover_region: row.discover_region ?? null,
+    original_language: row.original_language ?? null,
+    watchlist_sync_movies: !!row.watchlist_sync_movies,
+    watchlist_sync_tv: !!row.watchlist_sync_tv,
+    request_limit_movie: row.request_limit_movie ?? null,
+    request_limit_movie_days: row.request_limit_movie_days ?? null,
+    request_limit_series: row.request_limit_series ?? null,
+    request_limit_series_days: row.request_limit_series_days ?? null,
+    banned: !!row.banned,
+    weekly_digest_opt_in: !!row.weekly_digest_opt_in
+  };
+}
+
+export type PlexLibraryConfig = {
+  id: string;
+  name: string;
+  type: "movie" | "show";
+  enabled: boolean;
+};
+
+export type PlexConfig = {
+  enabled: boolean;
+  name: string;
+  hostname: string;
+  port: number;
+  useSsl: boolean;
+  urlBase: string;
+  externalUrl: string;
+  libraries: PlexLibraryConfig[];
+  serverId: string;
+  tokenEncrypted: string;
+};
+
+const PlexConfigDefaults: PlexConfig = {
+  enabled: false,
+  name: "",
+  hostname: "",
+  port: 32400,
+  useSsl: false,
+  urlBase: "",
+  externalUrl: "",
+  libraries: [],
+  serverId: "",
+  tokenEncrypted: ""
+};
+
+export async function getPlexConfig(): Promise<PlexConfig> {
+  const raw = await getSetting("plex_config");
+  let parsed: Partial<PlexConfig> = {};
+  if (raw) {
+    try {
+      parsed = JSON.parse(raw) as Partial<PlexConfig>;
+    } catch {
+      parsed = {};
+    }
+  }
+  return {
+    ...PlexConfigDefaults,
+    ...parsed,
+    libraries: Array.isArray(parsed.libraries) ? parsed.libraries : PlexConfigDefaults.libraries
+  };
+}
+
+export async function setPlexConfig(input: PlexConfig): Promise<void> {
+  await setSetting("plex_config", JSON.stringify(input));
+}
+
+let ensurePlexAvailabilitySchemaPromise: Promise<void> | null = null;
+async function ensurePlexAvailabilitySchema() {
+  if (ensurePlexAvailabilitySchemaPromise) return ensurePlexAvailabilitySchemaPromise;
+  ensurePlexAvailabilitySchemaPromise = (async () => {
+    const p = getPool();
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS plex_availability (
+        id BIGSERIAL PRIMARY KEY,
+        tmdb_id INTEGER,
+        tvdb_id INTEGER,
+        imdb_id TEXT,
+        media_type TEXT NOT NULL CHECK (media_type IN ('movie','episode','season','series')),
+        title TEXT,
+        season_number INTEGER,
+        episode_number INTEGER,
+        air_date DATE,
+        plex_item_id TEXT UNIQUE NOT NULL,
+        plex_library_id TEXT,
+        last_scanned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_plex_availability_tmdb ON plex_availability(tmdb_id);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_plex_availability_tvdb ON plex_availability(tvdb_id);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_plex_availability_imdb ON plex_availability(imdb_id);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_plex_availability_scanned ON plex_availability(last_scanned_at DESC);`);
+
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS plex_scan_log (
+        id BIGSERIAL PRIMARY KEY,
+        library_id TEXT,
+        library_name TEXT,
+        items_scanned INTEGER NOT NULL DEFAULT 0,
+        items_added INTEGER NOT NULL DEFAULT 0,
+        items_removed INTEGER NOT NULL DEFAULT 0,
+        scan_started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        scan_completed_at TIMESTAMPTZ,
+        scan_status TEXT NOT NULL DEFAULT 'running' CHECK (scan_status IN ('running','completed','failed')),
+        error_message TEXT
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_plex_scan_log_started ON plex_scan_log(scan_started_at DESC);`);
+  })();
+  return ensurePlexAvailabilitySchemaPromise;
+}
+
+export async function upsertPlexAvailability(params: {
+  tmdbId?: number | null;
+  tvdbId?: number | null;
+  imdbId?: string | null;
+  mediaType: 'movie' | 'episode' | 'season' | 'series';
+  title?: string | null;
+  seasonNumber?: number | null;
+  episodeNumber?: number | null;
+  airDate?: string | null;
+  plexItemId: string;
+  plexLibraryId?: string | null;
+}): Promise<{ isNew: boolean }> {
+  await ensurePlexAvailabilitySchema();
+  const p = getPool();
+  const res = await p.query(
+    `INSERT INTO plex_availability
+      (tmdb_id, tvdb_id, imdb_id, media_type, title, season_number, episode_number, air_date, plex_item_id, plex_library_id, last_scanned_at, created_at)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+    ON CONFLICT (plex_item_id)
+    DO UPDATE SET
+      last_scanned_at = NOW(),
+      title = COALESCE($5, plex_availability.title),
+      tmdb_id = COALESCE($1, plex_availability.tmdb_id),
+      tvdb_id = COALESCE($2, plex_availability.tvdb_id),
+      imdb_id = COALESCE($3, plex_availability.imdb_id),
+      air_date = COALESCE($8, plex_availability.air_date)
+    RETURNING (xmax = 0) AS is_new`,
+    [
+      params.tmdbId ?? null,
+      params.tvdbId ?? null,
+      params.imdbId ?? null,
+      params.mediaType,
+      params.title ?? null,
+      params.seasonNumber ?? null,
+      params.episodeNumber ?? null,
+      params.airDate ?? null,
+      params.plexItemId,
+      params.plexLibraryId ?? null
+    ]
+  );
+  return { isNew: res.rows[0]?.is_new ?? false };
+}
+
+export async function startPlexScan(params: {
+  libraryId?: string | null;
+  libraryName?: string | null;
+}): Promise<number> {
+  await ensurePlexAvailabilitySchema();
+  const p = getPool();
+  const res = await p.query(
+    `INSERT INTO plex_scan_log
+      (library_id, library_name, items_scanned, items_added, items_removed, scan_started_at, scan_status)
+    VALUES ($1, $2, 0, 0, 0, NOW(), 'running')
+    RETURNING id`,
+    [params.libraryId ?? null, params.libraryName ?? null]
+  );
+  return res.rows[0].id;
+}
+
+export async function updatePlexScan(scanId: number, params: {
+  itemsScanned?: number;
+  itemsAdded?: number;
+  itemsRemoved?: number;
+  scanStatus?: 'running' | 'completed' | 'failed';
+  errorMessage?: string | null;
+}): Promise<void> {
+  await ensurePlexAvailabilitySchema();
+  const p = getPool();
+  const updates: string[] = [];
+  const values: any[] = [];
+  let paramIdx = 1;
+
+  if (params.itemsScanned !== undefined) {
+    values.push(params.itemsScanned);
+    updates.push(`items_scanned = $${paramIdx++}`);
+  }
+  if (params.itemsAdded !== undefined) {
+    values.push(params.itemsAdded);
+    updates.push(`items_added = $${paramIdx++}`);
+  }
+  if (params.itemsRemoved !== undefined) {
+    values.push(params.itemsRemoved);
+    updates.push(`items_removed = $${paramIdx++}`);
+  }
+  if (params.scanStatus !== undefined) {
+    values.push(params.scanStatus);
+    updates.push(`scan_status = $${paramIdx++}`);
+    if (params.scanStatus !== "running") {
+      updates.push(`scan_completed_at = NOW()`);
+    }
+  }
+  if (params.errorMessage !== undefined) {
+    values.push(params.errorMessage);
+    updates.push(`error_message = $${paramIdx++}`);
+  }
+  if (!updates.length) return;
+  values.push(scanId);
+  await p.query(
+    `UPDATE plex_scan_log SET ${updates.join(', ')} WHERE id = $${paramIdx}`,
+    values
+  );
 }
 
 export type TraktConfig = {
@@ -5756,183 +6038,6 @@ export async function getRecentJellyfinScans(limit = 10): Promise<JellyfinScanLo
             scan_completed_at as "scanCompletedAt", scan_status as "scanStatus",
             error_message as "errorMessage"
      FROM jellyfin_scan_log
-     ORDER BY scan_started_at DESC
-     LIMIT $1`,
-    [limit]
-  );
-  return res.rows;
-}
-
-// ===== Plex Availability Cache =====
-
-export type PlexAvailabilityItem = {
-  id: number;
-  tmdbId: number | null;
-  tvdbId: number | null;
-  imdbId: string | null;
-  mediaType: 'movie' | 'episode' | 'season' | 'series';
-  title: string | null;
-  seasonNumber: number | null;
-  episodeNumber: number | null;
-  airDate: string | null;
-  plexItemId: string;
-  plexLibraryId: string | null;
-  lastScannedAt: string;
-  createdAt: string;
-};
-
-export type PlexScanLog = {
-  id: number;
-  libraryId: string | null;
-  libraryName: string | null;
-  itemsScanned: number;
-  itemsAdded: number;
-  itemsRemoved: number;
-  scanStartedAt: string;
-  scanCompletedAt: string | null;
-  scanStatus: 'running' | 'completed' | 'failed';
-  errorMessage: string | null;
-};
-
-export type NewPlexItem = {
-  plexItemId: string;
-  title: string | null;
-  mediaType: 'movie' | 'episode' | 'season' | 'series';
-  tmdbId: number | null;
-  addedAt: string;
-};
-
-export async function upsertPlexAvailability(params: {
-  tmdbId?: number | null;
-  tvdbId?: number | null;
-  imdbId?: string | null;
-  mediaType: 'movie' | 'episode' | 'season' | 'series';
-  title?: string | null;
-  seasonNumber?: number | null;
-  episodeNumber?: number | null;
-  airDate?: string | null;
-  plexItemId: string;
-  plexLibraryId?: string | null;
-}): Promise<{ isNew: boolean }> {
-  const p = getPool();
-  const res = await p.query(
-    `INSERT INTO plex_availability
-      (tmdb_id, tvdb_id, imdb_id, media_type, title, season_number, episode_number, air_date, plex_item_id, plex_library_id, last_scanned_at, created_at)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
-    ON CONFLICT (plex_item_id)
-    DO UPDATE SET
-      last_scanned_at = NOW(),
-      title = COALESCE($5, plex_availability.title),
-      tmdb_id = COALESCE($1, plex_availability.tmdb_id),
-      tvdb_id = COALESCE($2, plex_availability.tvdb_id),
-      imdb_id = COALESCE($3, plex_availability.imdb_id),
-      air_date = COALESCE($8, plex_availability.air_date)
-    RETURNING (xmax = 0) AS is_new`,
-    [
-      params.tmdbId ?? null,
-      params.tvdbId ?? null,
-      params.imdbId ?? null,
-      params.mediaType,
-      params.title ?? null,
-      params.seasonNumber ?? null,
-      params.episodeNumber ?? null,
-      params.airDate ?? null,
-      params.plexItemId,
-      params.plexLibraryId ?? null
-    ]
-  );
-  return { isNew: res.rows[0]?.is_new ?? false };
-}
-
-export async function getNewPlexItems(sinceDate?: Date, limit = 100): Promise<NewPlexItem[]> {
-  const p = getPool();
-  const query = sinceDate
-    ? `SELECT plex_item_id as "plexItemId", title, media_type as "mediaType",
-              tmdb_id as "tmdbId", created_at as "addedAt"
-       FROM plex_availability
-       WHERE created_at > $1
-       ORDER BY created_at DESC
-       LIMIT $2`
-    : `SELECT plex_item_id as "plexItemId", title, media_type as "mediaType",
-              tmdb_id as "tmdbId", created_at as "addedAt"
-       FROM plex_availability
-       ORDER BY created_at DESC
-       LIMIT $1`;
-
-  const params = sinceDate ? [sinceDate, limit] : [limit];
-  const res = await p.query(query, params);
-  return res.rows;
-}
-
-export async function startPlexScan(params: {
-  libraryId?: string | null;
-  libraryName?: string | null;
-}): Promise<number> {
-  const p = getPool();
-  const res = await p.query(
-    `INSERT INTO plex_scan_log
-      (library_id, library_name, items_scanned, items_added, items_removed, scan_started_at, scan_status)
-    VALUES ($1, $2, 0, 0, 0, NOW(), 'running')
-    RETURNING id`,
-    [params.libraryId ?? null, params.libraryName ?? null]
-  );
-  return res.rows[0].id;
-}
-
-export async function updatePlexScan(scanId: number, params: {
-  itemsScanned?: number;
-  itemsAdded?: number;
-  itemsRemoved?: number;
-  scanStatus?: 'running' | 'completed' | 'failed';
-  errorMessage?: string | null;
-}): Promise<void> {
-  const p = getPool();
-  const updates: string[] = [];
-  const values: any[] = [];
-  let paramIdx = 1;
-
-  if (params.itemsScanned !== undefined) {
-    updates.push(`items_scanned = $${paramIdx++}`);
-    values.push(params.itemsScanned);
-  }
-  if (params.itemsAdded !== undefined) {
-    updates.push(`items_added = $${paramIdx++}`);
-    values.push(params.itemsAdded);
-  }
-  if (params.itemsRemoved !== undefined) {
-    updates.push(`items_removed = $${paramIdx++}`);
-    values.push(params.itemsRemoved);
-  }
-  if (params.scanStatus) {
-    updates.push(`scan_status = $${paramIdx++}`);
-    values.push(params.scanStatus);
-    if (params.scanStatus === 'completed' || params.scanStatus === 'failed') {
-      updates.push(`scan_completed_at = NOW()`);
-    }
-  }
-  if (params.errorMessage !== undefined) {
-    updates.push(`error_message = $${paramIdx++}`);
-    values.push(params.errorMessage);
-  }
-
-  if (updates.length === 0) return;
-
-  values.push(scanId);
-  await p.query(
-    `UPDATE plex_scan_log SET ${updates.join(', ')} WHERE id = $${paramIdx}`,
-    values
-  );
-}
-
-export async function getRecentPlexScans(limit = 10): Promise<PlexScanLog[]> {
-  const p = getPool();
-  const res = await p.query(
-    `SELECT id, library_id as "libraryId", library_name as "libraryName",
-            items_scanned as "itemsScanned", items_added as "itemsAdded",
-            items_removed as "itemsRemoved", scan_started_at as "scanStartedAt",
-            scan_completed_at as "scanCompletedAt", scan_status as "scanStatus",
-            error_message as "errorMessage"
-     FROM plex_scan_log
      ORDER BY scan_started_at DESC
      LIMIT $1`,
     [limit]

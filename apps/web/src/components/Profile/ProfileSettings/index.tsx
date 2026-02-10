@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import useSWR from "swr";
 import { Loader2 } from "lucide-react";
 import { useToast } from "@/components/Providers/ToastProvider";
@@ -10,6 +10,9 @@ import { csrfFetch } from "@/lib/csrf-client";
 import { RegionSelector } from "@/components/Common/RegionSelector";
 import { LanguageSelector } from "@/components/Common/LanguageSelector";
 import { Switch } from "@headlessui/react";
+import { PasswordPolicyChecklist } from "@/components/Common/PasswordPolicyChecklist";
+import { getPasswordPolicyResult } from "@/lib/password-policy";
+import { formatDate } from "@/lib/dateFormat";
 
 type ProfileResponse = {
   user: {
@@ -63,6 +66,13 @@ type FormState = {
   watchlistSyncTv: boolean;
 };
 
+type ApiTokenInfo = {
+  id: number;
+  name: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
 const initialForm: FormState = {
   username: "",
   email: "",
@@ -103,6 +113,13 @@ export function ProfileSettings({
   const [jellyfinForm, setJellyfinForm] = useState({ username: "", password: "" });
   const [jellyfinLoading, setJellyfinLoading] = useState(false);
   const [jellyfinError, setJellyfinError] = useState<string | null>(null);
+  const [apiTokens, setApiTokens] = useState<ApiTokenInfo[]>([]);
+  const [apiTokensLoading, setApiTokensLoading] = useState(false);
+  const [apiTokenName, setApiTokenName] = useState("");
+  const [apiTokenCreating, setApiTokenCreating] = useState(false);
+  const [newApiToken, setNewApiToken] = useState<string | null>(null);
+  const [apiTokenError, setApiTokenError] = useState<string | null>(null);
+  const showPassword = section === "all" || section === "security";
 
   const fetcher = async (url: string) => {
     const res = await fetch(url, { credentials: "include" });
@@ -120,6 +137,85 @@ export function ProfileSettings({
       throw new Error("Invalid profile response");
     }
     return res.json() as Promise<ProfileResponse>;
+  };
+
+  const loadApiTokens = useCallback(async () => {
+    setApiTokensLoading(true);
+    setApiTokenError(null);
+    try {
+      const res = await fetch("/api/profile/api-tokens", { credentials: "include" });
+      if (!res.ok) {
+        throw new Error("Failed to load API tokens");
+      }
+      const data = await res.json();
+      setApiTokens(Array.isArray(data?.tokens) ? data.tokens : []);
+    } catch (err: any) {
+      setApiTokenError(err?.message ?? "Failed to load API tokens");
+    } finally {
+      setApiTokensLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (showPassword) {
+      void loadApiTokens();
+    }
+  }, [showPassword, loadApiTokens]);
+
+  const handleCreateApiToken = async () => {
+    const name = apiTokenName.trim();
+    if (!name) {
+      toast.error("Enter a name for the API token");
+      return;
+    }
+    setApiTokenCreating(true);
+    setApiTokenError(null);
+    setNewApiToken(null);
+    try {
+      const res = await csrfFetch("/api/profile/api-tokens", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name })
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || "Failed to create API token");
+      }
+      const data = await res.json();
+      if (data?.tokenInfo) {
+        setApiTokens(prev => [data.tokenInfo, ...prev]);
+      }
+      setNewApiToken(data?.token ?? null);
+      setApiTokenName("");
+      toast.success("API token created");
+    } catch (err: any) {
+      const msg = err?.message ?? "Failed to create API token";
+      setApiTokenError(msg);
+      toast.error(msg);
+    } finally {
+      setApiTokenCreating(false);
+    }
+  };
+
+  const handleRevokeApiToken = async (id: number) => {
+    setApiTokenError(null);
+    try {
+      const res = await csrfFetch("/api/profile/api-tokens", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id })
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || "Failed to revoke API token");
+      }
+      setApiTokens(prev => prev.filter(token => token.id !== id));
+      toast.success("API token revoked");
+    } catch (err: any) {
+      const msg = err?.message ?? "Failed to revoke API token";
+      setApiTokenError(msg);
+      toast.error(msg);
+    }
   };
 
   const { data, error: profileError, isLoading, mutate } = useSWR<ProfileResponse>("/api/v1/profile", fetcher);
@@ -197,6 +293,14 @@ export function ProfileSettings({
         setFormError("Enter a new password");
         return;
       }
+      const policy = getPasswordPolicyResult({
+        password: form.newPassword,
+        username: initialData.username
+      });
+      if (policy.errors.length) {
+        setFormError(policy.errors[0]);
+        return;
+      }
       payload.newPassword = form.newPassword;
       payload.currentPassword = form.currentPassword;
     }
@@ -269,7 +373,6 @@ export function ProfileSettings({
 
   const showGeneral = section === "all" || section === "general";
   const showLinked = section === "all" || section === "linked";
-  const showPassword = section === "all" || section === "security";
   const watchlistLinked = jellyfinLinked || traktLinked;
 
   return (
@@ -734,15 +837,12 @@ export function ProfileSettings({
                   </div>
                 </div>
 
-                {/* Password Tips */}
                 <div className="rounded-lg bg-white/5 border border-white/5 p-4">
-                  <div className="flex items-start gap-3">
-                    <span className="text-white/40">💡</span>
-                    <div className="text-xs text-white/50 space-y-1">
-                      <p>Use 12+ characters with a mix of letters, numbers, and symbols</p>
-                      <p>Don&apos;t reuse passwords from other accounts</p>
-                    </div>
-                  </div>
+                  <PasswordPolicyChecklist
+                    password={form.newPassword}
+                    username={initialData?.username ?? ""}
+                    showReuseNote
+                  />
                 </div>
 
                 <div className="flex justify-end gap-3 pt-2">
@@ -774,6 +874,95 @@ export function ProfileSettings({
                   </Button>
                 </div>
               </form>
+            </div>
+          ) : null}
+
+          {showPassword ? (
+            <div className="rounded-2xl md:rounded-3xl border border-white/10 bg-white/[0.02] p-6 md:p-8">
+              <div className="flex items-center gap-4 mb-6">
+                <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 ring-1 ring-white/10">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-300">
+                    <rect x="2" y="7" width="20" height="10" rx="2" />
+                    <path d="M6 7V5a4 4 0 0 1 8 0v2" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-white">API Tokens</h3>
+                  <p className="text-sm text-gray-400 mt-1">Create named tokens for apps, CI, or integrations</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+                  <input
+                    value={apiTokenName}
+                    onChange={e => setApiTokenName(e.target.value)}
+                    className="w-full rounded-lg border border-white/10 bg-black/30 px-4 py-3 text-white placeholder:text-white/30 outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all text-sm"
+                    placeholder="Token name (e.g. Home Assistant, CI)"
+                  />
+                  <Button
+                    type="button"
+                    onClick={handleCreateApiToken}
+                    disabled={apiTokenCreating}
+                    className="px-5 py-2 rounded-lg text-sm font-medium bg-emerald-600 hover:bg-emerald-500 text-white transition-colors disabled:opacity-50"
+                  >
+                    {apiTokenCreating ? "Creating..." : "Create Token"}
+                  </Button>
+                </div>
+
+                {newApiToken ? (
+                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4 space-y-2">
+                    <div className="text-xs text-emerald-200">Copy this token now. You won&apos;t be able to see it again.</div>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <code className="flex-1 rounded-md bg-black/40 px-3 py-2 text-xs text-emerald-100 break-all">{newApiToken}</code>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="border-emerald-500/40 text-emerald-200 hover:bg-emerald-500/20"
+                        onClick={() => {
+                          void navigator.clipboard?.writeText(newApiToken);
+                          toast.success("Token copied");
+                        }}
+                      >
+                        Copy
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {apiTokenError ? (
+                  <div className="rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+                    {apiTokenError}
+                  </div>
+                ) : null}
+
+                <div className="space-y-2">
+                  {apiTokensLoading ? (
+                    <div className="text-xs text-white/50">Loading tokens...</div>
+                  ) : apiTokens.length ? (
+                    apiTokens.map(token => (
+                      <div key={token.id} className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/20 px-4 py-3">
+                        <div>
+                          <div className="text-sm font-semibold text-white">{token.name}</div>
+                          <div className="text-xs text-white/50">
+                            Created {token.createdAt ? formatDate(token.createdAt) : "Unknown"}
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="border-red-500/40 text-red-200 hover:bg-red-500/20"
+                          onClick={() => handleRevokeApiToken(token.id)}
+                        >
+                          Revoke
+                        </Button>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-xs text-white/50">No API tokens created yet.</div>
+                  )}
+                </div>
+              </div>
             </div>
           ) : null}
 

@@ -25,7 +25,8 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ sliderId: s
     return NextResponse.json(updated);
   } catch (e) {
     if (e instanceof z.ZodError) {
-      return NextResponse.json({ error: "Invalid request body", details: e.flatten() }, { status: 400 });
+      console.warn("[API] Invalid dashboard slider payload", { issues: e.issues });
+      return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
     }
     return NextResponse.json({ error: "Failed to update slider" }, { status: 500 });
   }

@@ -29,7 +29,12 @@ export async function PUT(req: NextRequest) {
   try {
     parsed = payloadSchema.parse(await req.json());
   } catch (error: any) {
-    return NextResponse.json({ error: "Invalid payload", details: error?.issues ?? [] }, { status: 400 });
+    if (error?.issues) {
+      console.warn("[API] Invalid maintenance payload", { issues: error.issues });
+    } else {
+      console.warn("[API] Invalid maintenance payload", { error });
+    }
+    return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
 
   const state = await setMaintenanceState({ enabled: parsed.enabled, message: parsed.message ?? undefined });

@@ -1,10 +1,13 @@
-import { hashPassword } from "@/lib/auth-utils";
+import { hashPassword, verifyPassword } from "@/lib/auth-utils";
 import { requireAdmin } from "@/auth";
 import {
   deleteUserById,
   getUserById,
+  getUserPasswordHistory,
+  getUserWithHashById,
   getSettingInt,
   listNotificationEndpoints,
+  addUserPasswordHistory,
   setUserNotificationEndpointIds,
   updateUserPasswordById,
   updateUserProfile,
@@ -20,12 +23,13 @@ import { getClientIp } from "@/lib/rate-limit";
 import { randomUUID } from "crypto";
 import { summarizeUserAgent } from "@/lib/device-info";
 import { normalizeGroupList } from "@/lib/groups";
+import { getPasswordPolicyResult } from "@/lib/password-policy";
 
 const updateSchema = z.object({
   username: z.string().trim().min(1).optional(),
   email: z.union([z.string().trim().email(), z.literal("")]).optional(),
   groups: z.array(z.string()).optional(),
-  password: z.string().min(6).optional(),
+  password: z.string().min(1).optional(),
   notificationEndpointIds: z.array(z.coerce.number().int().positive()).optional()
 });
 
@@ -42,8 +46,12 @@ function forbidden() {
 }
 
 function validationError(error: unknown) {
-  const message = error instanceof z.ZodError ? error.issues.map(err => err.message).join(", ") : "Invalid request body";
-  return NextResponse.json({ error: message }, { status: 400 });
+  if (error instanceof z.ZodError) {
+    console.warn("[API] Invalid user update payload", { issues: error.issues });
+  } else {
+    console.warn("[API] Invalid user update payload", { error });
+  }
+  return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
 }
 
 export async function PUT(req: NextRequest, { params }: { params: ParamsInput }) {
@@ -61,6 +69,25 @@ export async function PUT(req: NextRequest, { params }: { params: ParamsInput })
     return validationError(error);
   }
 
+  const target = await getUserWithHashById(id);
+  if (!target) return NextResponse.json({ error: "User not found" }, { status: 404 });
+
+  if (payload.password) {
+    const nextUsername = payload.username?.toLowerCase() ?? target.username;
+    const newPassword = payload.password ?? "";
+    const policy = getPasswordPolicyResult({ password: newPassword, username: nextUsername });
+    if (policy.errors.length) {
+      return NextResponse.json({ error: policy.errors[0] }, { status: 400 });
+    }
+    const history = await getUserPasswordHistory(target.id);
+    const hashes = [target.password_hash, ...history].filter((hash): hash is string => typeof hash === "string" && hash.length > 0);
+    const checks = await Promise.all(hashes.map(hash => verifyPassword(newPassword, hash)));
+    const reused = checks.some(Boolean);
+    if (reused) {
+      return NextResponse.json({ error: "Password cannot be reused" }, { status: 400 });
+    }
+  }
+
   const profile = await updateUserProfile(id, {
     username: payload.username?.toLowerCase(),
     email: payload.email === "" ? null : payload.email,
@@ -72,7 +99,9 @@ export async function PUT(req: NextRequest, { params }: { params: ParamsInput })
   const changes: string[] = [];
   
   if (payload.password) {
-    await updateUserPasswordById(id, hashPassword(payload.password));
+    const passwordHash = await hashPassword(payload.password);
+    await updateUserPasswordById(id, passwordHash);
+    await addUserPasswordHistory(id, passwordHash);
     changes.push("password");
     await logAuditEvent({
       action: "user.password_changed",

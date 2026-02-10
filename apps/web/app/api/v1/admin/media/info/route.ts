@@ -36,7 +36,8 @@ export async function GET(req: NextRequest) {
   });
 
   if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid query", details: parsed.error.issues }, { status: 400 });
+    console.warn("[API] Invalid media info query", { issues: parsed.error.issues });
+    return NextResponse.json({ error: "Invalid query" }, { status: 400 });
   }
 
   try {

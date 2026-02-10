@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserById, listRequestsPaged, listRequestItems } from "@/db";
 import { getJellyfinItemIdByTmdb, getJellyfinItemIdByName } from "@/lib/jellyfin";
-import { verifyExternalApiKey } from "@/lib/external-api";
+import { extractExternalApiKey, verifyExternalApiKey } from "@/lib/external-api";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
 
 function extractApiKey(req: NextRequest) {
   return req.headers.get("x-api-key")
     || req.headers.get("X-Api-Key")
     || req.headers.get("authorization")?.replace(/^Bearer\\s+/i, "")
-    || req.nextUrl.searchParams.get("api_key")
+    || extractExternalApiKey(req)
     || "";
 }
 

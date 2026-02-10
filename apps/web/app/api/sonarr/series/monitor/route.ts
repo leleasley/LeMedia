@@ -36,7 +36,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ ok: false, error: "Invalid request data", details: error.issues }, { status: 400 });
+      console.warn("[API] Invalid sonarr monitoring request", { issues: error.issues });
+      return NextResponse.json({ ok: false, error: "Invalid request data" }, { status: 400 });
     }
     const message = error?.message ?? String(error);
     return NextResponse.json({ ok: false, error: message }, { status: 500 });

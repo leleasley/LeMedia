@@ -50,7 +50,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(sliders);
   } catch (e) {
     if (e instanceof z.ZodError) {
-      return NextResponse.json({ error: "Invalid request body", details: e.flatten() }, { status: 400 });
+      console.warn("[API] Invalid dashboard settings payload", { issues: e.issues });
+      return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
     }
     return NextResponse.json({ error: "Failed to update dashboard settings" }, { status: 500 });
   }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getExternalApiAuth } from "@/lib/external-api";
+import { extractExternalApiKey, getExternalApiAuth } from "@/lib/external-api";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
 import { deleteRequestById, findRequestIdByNumericId, getRequestWithItems } from "@/db";
 import { getJellyfinItemIdByTmdb } from "@/lib/jellyfin";
@@ -7,11 +7,7 @@ import { deleteMovie, getMovieByTmdbId } from "@/lib/radarr";
 import { deleteSeries, getSeriesByTmdbId } from "@/lib/sonarr";
 
 function extractApiKey(req: NextRequest) {
-  return req.headers.get("x-api-key")
-    || req.headers.get("X-Api-Key")
-    || req.headers.get("authorization")?.replace(/^Bearer\s+/i, "")
-    || req.nextUrl.searchParams.get("api_key")
-    || "";
+  return extractExternalApiKey(req);
 }
 
 function isUuid(value: string) {

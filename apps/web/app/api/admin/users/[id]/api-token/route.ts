@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/auth";
-import { getUserApiToken, revokeUserApiToken, upsertUserApiToken } from "@/db";
+import { createUserApiToken, getUserApiToken, revokeUserApiToken } from "@/db";
 import { generateUserApiToken } from "@/lib/api-tokens";
 import { requireCsrf } from "@/lib/csrf";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!userId) return NextResponse.json({ error: "Invalid user" }, { status: 400 });
 
   const token = generateUserApiToken();
-  const saved = await upsertUserApiToken(userId, token);
+  const saved = await createUserApiToken(userId, "Admin", token);
 
   await logAuditEvent({
     action: "user.updated",

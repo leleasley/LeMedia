@@ -58,8 +58,9 @@ export async function POST(req: NextRequest) {
 
   const parsed = authPayloadSchema.safeParse(body);
   if (!parsed.success) {
+    console.warn("[API] Invalid Jellyfin auth payload", { issues: parsed.error.issues });
     return NextResponse.json(
-      { error: "Invalid payload", details: parsed.error.issues },
+      { error: "Invalid payload" },
       { status: 400 }
     );
   }

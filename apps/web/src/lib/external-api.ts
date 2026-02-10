@@ -7,6 +7,8 @@ import { randomBytes, timingSafeEqual } from "crypto";
 import { decryptSecret, encryptSecret } from "@/lib/encryption";
 import { findUserIdByApiToken, getSetting, setSetting } from "@/db";
 import { requestInterceptorFunction } from "@/lib/custom-proxy-agent";
+import { logger } from "@/lib/logger";
+import type { NextRequest } from "next/server";
 
 // 5 minute default TTL (in seconds)
 const DEFAULT_TTL = 300;
@@ -171,4 +173,20 @@ export async function getExternalApiAuth(apiKey: string): Promise<{ ok: boolean;
 export async function verifyExternalApiKey(apiKey: string): Promise<boolean> {
   const auth = await getExternalApiAuth(apiKey);
   return auth.ok;
+}
+
+export function extractExternalApiKey(req: NextRequest): string {
+  const headerKey =
+    req.headers.get("x-api-key")
+    || req.headers.get("X-Api-Key")
+    || req.headers.get("authorization")?.replace(/^Bearer\s+/i, "")
+    || "";
+  if (headerKey) return headerKey;
+  const queryKey = req.nextUrl.searchParams.get("api_key") || "";
+  if (queryKey) {
+    logger.warn("[API] api_key query parameter is deprecated", {
+      path: req.nextUrl.pathname
+    });
+  }
+  return queryKey;
 }

@@ -74,8 +74,12 @@ export async function POST(req: NextRequest) {
   try {
     payload = createSchema.parse(await req.json());
   } catch (err) {
-    const message = err instanceof z.ZodError ? err.issues.map(e => e.message).join(", ") : "Invalid payload";
-    return NextResponse.json({ error: message }, { status: 400 });
+    if (err instanceof z.ZodError) {
+      console.warn("[API] Invalid notification endpoint payload", { issues: err.issues });
+    } else {
+      console.warn("[API] Invalid notification endpoint payload", { err });
+    }
+    return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
 
   const config =

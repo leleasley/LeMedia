@@ -7,6 +7,8 @@ import { useToast } from "@/components/Providers/ToastProvider";
 import { normalizeGroupList } from "@/lib/groups";
 import { csrfFetch } from "@/lib/csrf-client";
 import { formatDate } from "@/lib/dateFormat";
+import { PasswordPolicyChecklist } from "@/components/Common/PasswordPolicyChecklist";
+import { getPasswordPolicyResult } from "@/lib/password-policy";
 
 type AdminUser = {
   id: number;
@@ -104,6 +106,13 @@ export function UsersAdminPanel({ initialUsers, initialEndpoints }: { initialUse
     if (modal.mode === "create" && !formState.password) {
       setError("Password is required for new users");
       return;
+    }
+    if (formState.password) {
+      const policy = getPasswordPolicyResult({ password: formState.password, username: trimmedUsername });
+      if (policy.errors.length) {
+        setError(policy.errors[0]);
+        return;
+      }
     }
 
     setSubmitting(true);
@@ -456,6 +465,13 @@ export function UsersAdminPanel({ initialUsers, initialEndpoints }: { initialUse
                 value={formState.password}
                 onChange={event => setFormState(prev => ({ ...prev, password: event.target.value }))}
               />
+              {formState.password ? (
+                <PasswordPolicyChecklist
+                  password={formState.password}
+                  username={formState.username}
+                  className="pt-2"
+                />
+              ) : null}
             </div>
 
             <div className="space-y-3">

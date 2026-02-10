@@ -72,8 +72,9 @@ export async function POST(req: NextRequest) {
     console.error("[Calendar Subscribe] POST Error:", error);
 
     if (error instanceof z.ZodError) {
+      console.warn("[Calendar Subscribe] Invalid request payload", { issues: error.issues });
       return NextResponse.json(
-        { error: "Invalid request data", details: error.issues },
+        { error: "Invalid request data" },
         { status: 400 }
       );
     }
@@ -115,8 +116,9 @@ export async function DELETE(req: NextRequest) {
     console.error("[Calendar Subscribe] DELETE Error:", error);
 
     if (error instanceof z.ZodError) {
+      console.warn("[Calendar Subscribe] Invalid request payload", { issues: error.issues });
       return NextResponse.json(
-        { error: "Invalid request data", details: error.issues },
+        { error: "Invalid request data" },
         { status: 400 }
       );
     }

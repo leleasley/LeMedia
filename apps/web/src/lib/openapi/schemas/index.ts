@@ -18,7 +18,7 @@ export const UserSchema = z
 export const CreateUserSchema = z
   .object({
     username: z.string().trim().min(1).describe("Username"),
-    password: z.string().min(6).describe("Password (min 6 characters)"),
+    password: z.string().min(8).describe("Password (min 8 characters)"),
     email: z
       .union([z.string().trim().email(), z.literal("")])
       .optional()
@@ -38,7 +38,7 @@ export const UpdateProfileSchema = z
       .union([z.string().trim().email(), z.literal("")])
       .optional()
       .describe("New email address"),
-    newPassword: z.string().min(6).optional().describe("New password"),
+    newPassword: z.string().min(8).optional().describe("New password"),
     currentPassword: z
       .string()
       .min(1)
