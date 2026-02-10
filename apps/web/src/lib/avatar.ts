@@ -1,6 +1,7 @@
 export type AvatarUser = {
   avatarUrl?: string | null;
   jellyfinUserId?: string | null;
+  avatarVersion?: number | null;
   displayName?: string | null;
   username?: string | null;
   email?: string | null;
@@ -17,9 +18,16 @@ const fallbackAvatarSvg = [
 const fallbackAvatarSrc = `data:image/svg+xml;utf8,${encodeURIComponent(fallbackAvatarSvg)}`;
 const avatarProxyPrefix = "/avatarproxy/";
 
+function withVersion(src: string, version?: number | null) {
+  if (!version && version !== 0) return src;
+  if (src.startsWith("data:image/")) return src;
+  const separator = src.includes("?") ? "&" : "?";
+  return `${src}${separator}v=${version}`;
+}
+
 export function getAvatarSrc(user?: AvatarUser | null) {
-  if (user?.avatarUrl) return user.avatarUrl;
-  if (user?.jellyfinUserId) return `${avatarProxyPrefix}${user.jellyfinUserId}`;
+  if (user?.avatarUrl) return withVersion(user.avatarUrl, user.avatarVersion ?? null);
+  if (user?.jellyfinUserId) return withVersion(`${avatarProxyPrefix}${user.jellyfinUserId}`, user.avatarVersion ?? null);
   return fallbackAvatarSrc;
 }
 

@@ -9,8 +9,10 @@ import { NotificationBell } from "@/components/Notifications/NotificationBell";
 
 type ProfileSummary = {
     username: string;
+    displayName?: string | null;
     email: string | null;
     avatarUrl?: string | null;
+    avatarVersion?: number | null;
     jellyfinUserId?: string | null;
 };
 
@@ -158,7 +160,8 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
     };
 
     const avatarSrc = getAvatarSrc(profile);
-    const avatarAlt = getAvatarAlt(profile, profile?.username ?? "User");
+    const displayName = profile?.displayName?.trim() ? profile.displayName : profile?.username;
+    const avatarAlt = getAvatarAlt(profile, displayName ?? "User");
 
     return (
         <div className="flex items-center gap-1.5 sm:gap-2 w-full">
@@ -240,7 +243,7 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
                         className="absolute right-0 mt-2 w-52 sm:w-56 rounded-2xl border border-white/10 shadow-md z-50 bg-slate-900 animate-ios-bounce-in overflow-hidden"
                     >
                         <div className="px-4 py-3 border-b border-white/10 bg-slate-800/50">
-                            <div className="text-sm font-semibold text-white truncate">{profile?.username ?? "User"}</div>
+                            <div className="text-sm font-semibold text-white truncate">{displayName ?? "User"}</div>
                             <div className="text-xs text-white/60 truncate mt-0.5">{profile?.email ?? "No email"}</div>
                         </div>
                         <div className="py-1">

@@ -24,8 +24,10 @@ interface AppLayoutClientProps {
     issuesCount?: number;
     profile?: {
         username: string;
+        displayName?: string | null;
         email: string | null;
         avatarUrl?: string | null;
+        avatarVersion?: number | null;
         jellyfinUserId?: string | null;
     } | null;
     imageProxyEnabled: boolean;
@@ -57,8 +59,10 @@ function AppHeader({
     isAdmin: boolean;
     profile: {
         username: string;
+        displayName?: string | null;
         email: string | null;
         avatarUrl?: string | null;
+        avatarVersion?: number | null;
         jellyfinUserId?: string | null;
     } | null;
 }) {

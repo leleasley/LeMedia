@@ -35,9 +35,15 @@ export default async function ProfilePage() {
     <ProfilePageClient
       user={{
         username: user.username,
+        displayName: dbUser.display_name ?? null,
         email: dbUser.email,
         avatarUrl: dbUser.avatar_url,
+        avatarVersion: dbUser.avatar_version ?? null,
         jellyfinUserId: dbUser.jellyfin_user_id,
+        jellyfinUsername: dbUser.jellyfin_username ?? null,
+        traktUsername: dbUser.trakt_username ?? null,
+        discordUserId: dbUser.discord_user_id ?? null,
+        letterboxdUsername: dbUser.letterboxd_username ?? null,
         createdAt: dbUser.created_at,
         lastSeenAt: dbUser.last_seen_at,
         userId: dbUser.id,

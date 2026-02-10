@@ -15,6 +15,7 @@ type RecentRequestCard = {
   type: "movie" | "tv";
   status: string;
   username: string;
+  displayName?: string | null;
   avatarUrl?: string | null;
   jellyfinUserId?: string | null;
 };
@@ -78,6 +79,7 @@ export async function GET(request: NextRequest) {
           type,
           status: req.status,
           username: req.username,
+          displayName: (req as any).display_name ?? null,
           avatarUrl: req.avatar_url ?? null,
           jellyfinUserId: req.jellyfin_user_id ?? null
         };

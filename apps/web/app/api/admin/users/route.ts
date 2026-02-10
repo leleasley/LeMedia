@@ -21,7 +21,7 @@ export async function GET(request: Request) {
         const offset = (page - 1) * limit;
 
         // Build sort clause
-        let orderBy = "u.username ASC";
+        let orderBy = "COALESCE(u.display_name, u.username) ASC";
         if (sort === "created") {
             orderBy = "u.created_at DESC";
         } else if (sort === "requests") {
@@ -36,7 +36,7 @@ export async function GET(request: Request) {
 
         if (search) {
             queryParams.push(`%${search}%`);
-            whereConditions.push(`(u.username ILIKE $${queryParams.length} OR u.email ILIKE $${queryParams.length})`);
+            whereConditions.push(`(u.username ILIKE $${queryParams.length} OR u.display_name ILIKE $${queryParams.length} OR u.email ILIKE $${queryParams.length})`);
         }
 
         const whereSQL = whereConditions.length > 0 ? `WHERE ${whereConditions.join(" AND ")}` : "";
@@ -52,6 +52,7 @@ export async function GET(request: Request) {
             `SELECT 
         u.id,
         u.username,
+        u.display_name,
         u.email,
         u.groups,
         u.created_at,
@@ -67,7 +68,7 @@ export async function GET(request: Request) {
       FROM app_user u
       LEFT JOIN media_request mr ON mr.requested_by = u.id
       ${whereSQL}
-      GROUP BY u.id, u.username, u.email, u.groups, u.created_at, u.discord_user_id, u.letterboxd_username, u.trakt_username, u.jellyfin_user_id, u.jellyfin_username, u.avatar_url, u.banned, u.weekly_digest_opt_in
+      GROUP BY u.id, u.username, u.display_name, u.email, u.groups, u.created_at, u.discord_user_id, u.letterboxd_username, u.trakt_username, u.jellyfin_user_id, u.jellyfin_username, u.avatar_url, u.banned, u.weekly_digest_opt_in
       ORDER BY ${orderBy}
       LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}`,
             queryParams
@@ -83,7 +84,7 @@ export async function GET(request: Request) {
             results: users.rows.map(row => ({
                 id: row.id,
                 email: row.email,
-                displayName: row.username,
+                displayName: row.display_name || row.username,
                 groups: normalizeGroupList(row.groups as string),
                 isAdmin: isAdminGroup(row.groups as string),
                 banned: !!row.banned,

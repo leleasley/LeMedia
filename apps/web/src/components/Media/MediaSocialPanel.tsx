@@ -7,6 +7,7 @@ import { getAvatarSrc, shouldBypassNextImage } from "@/lib/avatar";
 
 type RequestedBy = {
   username: string;
+  displayName?: string | null;
   avatarUrl?: string | null;
   jellyfinUserId?: string | null;
 };
@@ -46,8 +47,9 @@ export function MediaSocialPanel({ tmdbId, mediaType, requestedBy, initialWatchl
 
   const requestedLabel = useMemo(() => {
     if (!requestedBy?.username) return null;
-    return `Requested by ${requestedBy.username}`;
-  }, [requestedBy?.username]);
+    const name = requestedBy.displayName?.trim() || requestedBy.username;
+    return `Requested by ${name}`;
+  }, [requestedBy?.username, requestedBy?.displayName]);
 
   if (watchlist === null && !requestedBy) return null;
 
@@ -55,7 +57,8 @@ export function MediaSocialPanel({ tmdbId, mediaType, requestedBy, initialWatchl
     ? (requestedBy.jellyfinUserId ? `/avatarproxy/${requestedBy.jellyfinUserId}` : getAvatarSrc({
         avatarUrl: requestedBy.avatarUrl,
         jellyfinUserId: requestedBy.jellyfinUserId ?? null,
-        username: requestedBy.username
+        username: requestedBy.username,
+        displayName: requestedBy.displayName ?? null
       }))
     : null;
 
@@ -73,7 +76,7 @@ export function MediaSocialPanel({ tmdbId, mediaType, requestedBy, initialWatchl
             <span className="relative h-5 w-5 overflow-hidden rounded-full border border-white/10 bg-black/40">
               <Image
                 src={avatarSrc}
-                alt={requestedBy?.username ?? "User"}
+                alt={requestedBy?.displayName ?? requestedBy?.username ?? "User"}
                 fill
                 className="object-cover"
                 unoptimized={shouldBypassNextImage(avatarSrc)}
@@ -81,7 +84,7 @@ export function MediaSocialPanel({ tmdbId, mediaType, requestedBy, initialWatchl
             </span>
           ) : (
             <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-white/10 bg-black/40 text-[10px] text-gray-300">
-              {initials(requestedBy?.username ?? "User")}
+              {initials((requestedBy?.displayName ?? requestedBy?.username ?? "User"))}
             </span>
           )}
           <span className="inline-flex items-center gap-1">{requestedLabel}</span>

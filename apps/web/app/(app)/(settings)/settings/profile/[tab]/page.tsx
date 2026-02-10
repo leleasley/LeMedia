@@ -46,8 +46,10 @@ export default async function ProfileSettingsTabPage({
     <ProfileSettingsPageClient
       user={{
         username: user.username,
+        displayName: dbUser?.display_name ?? null,
         email: dbUser?.email,
         avatarUrl: dbUser?.avatar_url,
+        avatarVersion: dbUser?.avatar_version ?? null,
         jellyfinUserId: dbUser?.jellyfin_user_id,
         createdAt: dbUser?.created_at,
         userId: dbUser?.id,

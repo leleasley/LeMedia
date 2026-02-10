@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowRightCircle } from "lucide-react";
 import useSWR from "swr";
@@ -8,13 +8,22 @@ import { ProfileHeader } from "@/components/Profile/ProfileHeader";
 import { ImageFader } from "@/components/Common/ImageFader";
 import { ProgressCircle } from "@/components/Common/ProgressCircle";
 import { RecentRequestsSlider } from "@/components/Dashboard/RecentRequestsSlider";
+import { csrfFetch } from "@/lib/csrf-client";
+import { useToast } from "@/components/Providers/ToastProvider";
+import { useRouter } from "next/navigation";
 
 interface ProfilePageClientProps {
   user: {
     username: string;
+    displayName?: string | null;
     email?: string | null;
     avatarUrl?: string | null;
+    avatarVersion?: number | null;
     jellyfinUserId?: string | null;
+    jellyfinUsername?: string | null;
+    traktUsername?: string | null;
+    discordUserId?: string | null;
+    letterboxdUsername?: string | null;
     createdAt?: string;
     lastSeenAt?: string;
     userId?: number;
@@ -55,6 +64,7 @@ interface RecentRequest {
   type: "movie" | "tv";
   status: string;
   username: string;
+  displayName?: string | null;
   avatarUrl?: string | null;
 }
 
@@ -64,6 +74,14 @@ export function ProfilePageClient({
   isAdmin,
   assignedEndpoints,
 }: ProfilePageClientProps) {
+  const [profileUser, setProfileUser] = useState(user);
+  const [displayName, setDisplayName] = useState(user.displayName ?? "");
+  const [displayNameSaving, setDisplayNameSaving] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const toast = useToast();
+  const router = useRouter();
+
   // Fetch stats
   const { data: statsData } = useSWR<{ stats: RequestStats; quota?: { movie: RequestQuotaStatus; series: RequestQuotaStatus } }>("/api/v1/profile/stats");
   const stats = statsData?.stats || null;
@@ -102,6 +120,80 @@ export function ProfilePageClient({
     restricted: Boolean(seriesQuotaData && seriesQuotaData.limit > 0 && (seriesQuotaData.remaining ?? 0) <= 0),
   };
 
+  const linkedAccounts = [
+    { label: "Jellyfin", value: profileUser.jellyfinUsername ?? (profileUser.jellyfinUserId ? "Linked" : null) },
+    { label: "Trakt", value: profileUser.traktUsername ?? null },
+    { label: "Discord", value: profileUser.discordUserId ?? null },
+    { label: "Letterboxd", value: profileUser.letterboxdUsername ?? null }
+  ];
+
+  const badges = [
+    isAdmin ? "Admin" : null,
+    mfaEnabled ? "MFA Enabled" : null,
+    profileUser.jellyfinUserId ? "Jellyfin Linked" : null,
+    profileUser.traktUsername ? "Trakt Linked" : null
+  ].filter(Boolean) as string[];
+
+  const saveDisplayName = async () => {
+    if (displayNameSaving) return;
+    const trimmed = displayName.trim();
+    if (trimmed === (profileUser.displayName ?? "").trim()) {
+      return;
+    }
+    setDisplayNameSaving(true);
+    try {
+      const res = await csrfFetch("/api/v1/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ displayName: trimmed })
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body?.error || "Failed to update display name");
+      }
+      setProfileUser(prev => ({ ...prev, displayName: body?.user?.displayName ?? trimmed }));
+      toast.success("Display name updated");
+      router.refresh();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to update display name");
+    } finally {
+      setDisplayNameSaving(false);
+    }
+  };
+
+  const uploadAvatar = async () => {
+    if (!avatarFile || avatarUploading) return;
+    if (avatarFile.size > 2 * 1024 * 1024) {
+      toast.error("Avatar must be 2MB or less");
+      return;
+    }
+    setAvatarUploading(true);
+    try {
+      const form = new FormData();
+      form.set("avatar", avatarFile);
+      const res = await csrfFetch("/api/v1/profile/avatar", {
+        method: "POST",
+        body: form
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body?.error || "Failed to update avatar");
+      }
+      setProfileUser(prev => ({
+        ...prev,
+        avatarUrl: body.avatarUrl ?? prev.avatarUrl,
+        avatarVersion: body.avatarVersion ?? prev.avatarVersion
+      }));
+      setAvatarFile(null);
+      toast.success("Avatar updated");
+      router.refresh();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to update avatar");
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
   return (
     <>
       {/* Background Image Fader */}
@@ -117,7 +209,109 @@ export function ProfilePageClient({
       )}
 
       {/* Profile Header */}
-      <ProfileHeader user={user} isAdmin={isAdmin} />
+      <ProfileHeader user={profileUser} isAdmin={isAdmin} />
+
+      {/* Profile Basics */}
+      <div className="relative z-0 mt-6 grid gap-5 lg:grid-cols-3">
+        <div className="rounded-2xl border border-white/10 bg-gray-900/40 p-5 shadow-lg lg:col-span-2">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-white">Profile Basics</h2>
+            <Link href="/settings/profile/general" className="text-xs text-gray-400 hover:text-white">
+              More options
+            </Link>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="text-xs uppercase tracking-wider text-gray-400">Display name</label>
+              <input
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="Your display name"
+                className="mt-2 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-gray-500"
+              />
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-wider text-gray-400">Username</label>
+              <div className="mt-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-300">
+                @{profileUser.username}
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={saveDisplayName}
+              disabled={displayNameSaving}
+              className="rounded-lg border border-white/10 bg-white/10 px-4 py-2 text-xs font-semibold text-white hover:bg-white/20 disabled:opacity-60"
+            >
+              {displayNameSaving ? "Saving..." : "Save Display Name"}
+            </button>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-gray-900/40 p-5 shadow-lg">
+          <h2 className="text-lg font-semibold text-white mb-4">Avatar</h2>
+          <p className="text-xs text-gray-400 mb-3">
+            Uploading an avatar updates your Jellyfin profile too.
+          </p>
+          {!profileUser.jellyfinUserId && (
+            <div className="mb-3 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+              Link Jellyfin to enable avatar uploads.
+            </div>
+          )}
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            onChange={(e) => setAvatarFile(e.target.files?.[0] ?? null)}
+            disabled={!profileUser.jellyfinUserId}
+            className="w-full text-xs text-gray-300 file:mr-4 file:rounded-md file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white hover:file:bg-white/20 disabled:opacity-60"
+          />
+          <button
+            type="button"
+            onClick={uploadAvatar}
+            disabled={!avatarFile || avatarUploading || !profileUser.jellyfinUserId}
+            className="mt-4 w-full rounded-lg border border-white/10 bg-white/10 px-4 py-2 text-xs font-semibold text-white hover:bg-white/20 disabled:opacity-60"
+          >
+            {avatarUploading ? "Uploading..." : "Upload Avatar"}
+          </button>
+        </div>
+      </div>
+
+      {/* Linked Accounts & Badges */}
+      <div className="relative z-0 mt-6 grid gap-5 lg:grid-cols-3">
+        <div className="rounded-2xl border border-white/10 bg-gray-900/40 p-5 shadow-lg lg:col-span-2">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-white">Linked Accounts</h2>
+            <Link href="/settings/profile/linked" className="text-xs text-gray-400 hover:text-white">
+              Manage links
+            </Link>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {linkedAccounts.map((account) => (
+              <div key={account.label} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+                <div className="text-xs uppercase tracking-wider text-gray-400">{account.label}</div>
+                <div className="mt-1 text-sm font-semibold text-white">
+                  {account.value ?? "Not linked"}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-gray-900/40 p-5 shadow-lg">
+          <h2 className="text-lg font-semibold text-white mb-4">Profile Badges</h2>
+          <div className="flex flex-wrap gap-2">
+            {badges.length === 0 && (
+              <span className="text-sm text-gray-400">No badges yet</span>
+            )}
+            {badges.map((badge) => (
+              <span key={badge} className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-gray-200">
+                {badge}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
 
       {/* Request Stats Cards */}
       {stats && (

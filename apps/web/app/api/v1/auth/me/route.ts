@@ -12,6 +12,7 @@ function extractApiKey(req: NextRequest) {
 type ApiUserInfo = {
   id: number;
   username: string;
+  displayName?: string | null;
   email: string | null;
   groups: string[];
   createdAt: string | null;
@@ -26,6 +27,7 @@ async function resolveExternalApiUser(req: NextRequest, fallbackUserId?: number 
       return {
         id: user.id,
         username: user.username,
+        displayName: user.displayName ?? null,
         email: user.email ?? null,
         groups: user.groups,
         createdAt: user.created_at ?? null,
@@ -42,6 +44,7 @@ async function resolveExternalApiUser(req: NextRequest, fallbackUserId?: number 
       return {
         id: user.id,
         username: user.username,
+        displayName: user.displayName ?? null,
         email: user.email ?? null,
         groups: user.groups,
         createdAt: user.created_at ?? null,
@@ -58,6 +61,7 @@ async function resolveExternalApiUser(req: NextRequest, fallbackUserId?: number 
   return {
     id: selected.id,
     username: selected.username,
+    displayName: selected.displayName ?? null,
     email: selected.email ?? null,
     groups: selected.groups,
     createdAt: selected.created_at ?? null,
@@ -74,7 +78,7 @@ function toSeerrUser(user: ApiUserInfo | null) {
     id: user.id,
     email: user.email ?? null,
     username: user.username,
-    displayName: user.username,
+    displayName: user.displayName ?? user.username,
     permissions,
     avatar: user.avatarUrl ?? null,
     createdAt: user.createdAt,
@@ -103,6 +107,7 @@ export async function GET(req: NextRequest) {
     const mapped: ApiUserInfo = {
       id: dbUser.id,
       username: dbUser.username,
+      displayName: dbUser.displayName ?? null,
       email: dbUser.email ?? null,
       groups: dbUser.groups,
       createdAt: dbUser.created_at ?? null,

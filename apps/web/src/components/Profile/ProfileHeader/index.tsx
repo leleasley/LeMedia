@@ -9,8 +9,10 @@ import { DEFAULT_AVATAR_SRC, getAvatarAlt, getAvatarSrc, shouldBypassNextImage }
 interface ProfileHeaderProps {
   user: {
     username: string;
+    displayName?: string | null;
     email?: string | null;
     avatarUrl?: string | null;
+    avatarVersion?: number | null;
     jellyfinUserId?: string | null;
     createdAt?: string | Date;
     userId?: number;
@@ -32,7 +34,8 @@ export function ProfileHeader({ user, isSettingsPage = false, isAdmin = false }:
 
   const baseAvatarSrc = getAvatarSrc(user);
   const avatarSrc = avatarError ? DEFAULT_AVATAR_SRC : baseAvatarSrc;
-  const avatarAlt = getAvatarAlt(user, user.username);
+  const displayName = user.displayName?.trim() ? user.displayName : user.username;
+  const avatarAlt = getAvatarAlt({ ...user, displayName }, displayName);
 
   return (
     <div className="relative z-0 mt-6 mb-12 lg:flex lg:items-end lg:justify-between lg:space-x-5">
@@ -57,9 +60,14 @@ export function ProfileHeader({ user, isSettingsPage = false, isAdmin = false }:
         <div className="pt-1.5">
           <h1 className="mb-1 flex flex-col sm:flex-row sm:items-center">
             <span className="text-lg font-bold text-purple-300 hover:text-purple-200 sm:text-2xl">
-              {user.username}
+              {displayName}
             </span>
-            {user.email && user.username.toLowerCase() !== user.email && (
+            {user.username && displayName !== user.username && (
+              <span className="text-sm text-gray-400 sm:ml-2 sm:text-lg">
+                @{user.username}
+              </span>
+            )}
+            {user.email && user.username.toLowerCase() !== user.email && displayName === user.username && (
               <span className="text-sm text-gray-400 sm:ml-2 sm:text-lg">
                 ({user.email})
               </span>

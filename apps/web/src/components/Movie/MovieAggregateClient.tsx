@@ -27,6 +27,7 @@ type MovieAggregate = {
     requestedBy: {
       id: number;
       username: string;
+      displayName?: string | null;
       avatarUrl: string | null;
       jellyfinUserId?: string | null;
     };
@@ -112,8 +113,7 @@ export function MovieActionButtons({
   backdropUrl,
   prefetched,
   posterUrl,
-  year,
-  initialListStatus
+  year
 }: {
   tmdbId: number;
   title: string;
@@ -122,7 +122,6 @@ export function MovieActionButtons({
   prefetched?: MovieAggregate;
   posterUrl?: string | null;
   year?: string | number | null;
-  initialListStatus?: { favorite: boolean; watchlist: boolean } | null;
 }) {
   const { data, isLoading } = useMovieAggregate(tmdbId, title, prefetched);
   const available = Boolean(data?.availableInLibrary);
@@ -161,12 +160,7 @@ export function MovieActionButtons({
     <>
       {available ? (
         <>
-          <MediaListButtons
-            tmdbId={tmdbId}
-            mediaType="movie"
-            initialFavorite={initialListStatus?.favorite ?? null}
-            initialWatchlist={initialListStatus?.watchlist ?? null}
-          />
+          <MediaListButtons tmdbId={tmdbId} mediaType="movie" />
           <ShareButton
             mediaType="movie"
             tmdbId={tmdbId}
@@ -178,12 +172,7 @@ export function MovieActionButtons({
         </>
       ) : (
         <>
-          <MediaListButtons
-            tmdbId={tmdbId}
-            mediaType="movie"
-            initialFavorite={initialListStatus?.favorite ?? null}
-            initialWatchlist={initialListStatus?.watchlist ?? null}
-          />
+          <MediaListButtons tmdbId={tmdbId} mediaType="movie" />
           <ShareButton
             mediaType="movie"
             tmdbId={tmdbId}

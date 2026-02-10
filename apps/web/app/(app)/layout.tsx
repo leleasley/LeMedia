@@ -21,8 +21,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   let issuesCount = 0;
   let profile: {
     username: string;
+    displayName?: string | null;
     email: string | null;
     avatarUrl?: string | null;
+    avatarVersion?: number | null;
     jellyfinUserId?: string | null;
   } | null = null;
   const maintenanceState = await withCache("maintenance_state", 30_000, () => getMaintenanceState());
@@ -37,8 +39,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     if (dbUser) {
       profile = {
         username: dbUser.username,
+        displayName: dbUser.display_name ?? null,
         email: dbUser.email ?? null,
         avatarUrl: dbUser.avatar_url ?? null,
+        avatarVersion: dbUser.avatar_version ?? null,
         jellyfinUserId: dbUser.jellyfin_user_id ?? null
       };
     }

@@ -21,8 +21,10 @@ interface AssignedEndpoint {
 interface ProfileSettingsPageClientProps {
   user: {
     username: string;
+    displayName?: string | null;
     email?: string | null;
     avatarUrl?: string | null;
+    avatarVersion?: number | null;
     jellyfinUserId?: string | null;
     createdAt?: string;
     userId?: number;

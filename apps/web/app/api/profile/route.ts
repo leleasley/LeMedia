@@ -12,6 +12,7 @@ import { logger } from "@/lib/logger";
 
 const UpdateSchema = z.object({
   username: z.string().trim().min(1).optional(),
+  displayName: z.union([z.string().trim().min(1), z.literal("")]).optional(),
   email: z.union([z.string().trim().email(), z.literal("")]).optional(),
   newPassword: z.string().min(8).optional(),
   currentPassword: z.string().min(1).optional(),
@@ -44,6 +45,7 @@ export async function GET(req: NextRequest) {
       user: {
         id: dbUser.id,
         username: dbUser.username,
+        displayName: dbUser.display_name ?? null,
         email: dbUser.email,
         jellyfinUserId: dbUser.jellyfin_user_id,
         jellyfinUsername: dbUser.jellyfin_username,
@@ -53,6 +55,7 @@ export async function GET(req: NextRequest) {
         traktLinked: traktStatus.linked,
         traktTokenExpiresAt: traktStatus.expiresAt,
         avatarUrl: dbUser.avatar_url,
+        avatarVersion: dbUser.avatar_version ?? null,
         discoverRegion: dbUser.discover_region,
         originalLanguage: dbUser.original_language,
         watchlistSyncMovies: dbUser.watchlist_sync_movies,
@@ -87,20 +90,24 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
     }
 
-    if (!body.username && body.username !== "" && !body.email && !body.newPassword && body.discordUserId === undefined && body.letterboxdUsername === undefined && body.traktUsername === undefined && body.discoverRegion === undefined && body.originalLanguage === undefined && body.watchlistSyncMovies === undefined && body.watchlistSyncTv === undefined) {
+    if (!body.username && body.username !== "" && body.displayName === undefined && !body.email && !body.newPassword && body.discordUserId === undefined && body.letterboxdUsername === undefined && body.traktUsername === undefined && body.discoverRegion === undefined && body.originalLanguage === undefined && body.watchlistSyncMovies === undefined && body.watchlistSyncTv === undefined) {
       return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
     }
 
     const dbUser = await getUserWithHash(user.username);
     if (!dbUser) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
-    const updates: { username?: string; email?: string | null; discordUserId?: string | null; letterboxdUsername?: string | null; traktUsername?: string | null; discoverRegion?: string | null; originalLanguage?: string | null; watchlistSyncMovies?: boolean; watchlistSyncTv?: boolean } = {};
+    const updates: { username?: string; email?: string | null; displayName?: string | null; discordUserId?: string | null; letterboxdUsername?: string | null; traktUsername?: string | null; discoverRegion?: string | null; originalLanguage?: string | null; watchlistSyncMovies?: boolean; watchlistSyncTv?: boolean } = {};
     if (body.username !== undefined && body.username.trim() && body.username.trim() !== dbUser.username) {
       updates.username = body.username.trim().toLowerCase();
     }
     if (body.email !== undefined) {
       const trimmed = body.email.trim();
       updates.email = trimmed === "" ? null : trimmed;
+    }
+    if (body.displayName !== undefined) {
+      const trimmed = body.displayName.trim();
+      updates.displayName = trimmed === "" ? null : trimmed;
     }
     if (body.discordUserId !== undefined) {
       const trimmed = body.discordUserId.trim();
@@ -164,6 +171,7 @@ export async function PATCH(req: NextRequest) {
 
     const nextUsername = updates.username ?? dbUser.username;
     const nextEmail = updates.email !== undefined ? updates.email : dbUser.email;
+    const nextDisplayName = updates.displayName !== undefined ? updates.displayName : dbUser.display_name ?? null;
     const nextDiscordUserId = updates.discordUserId !== undefined ? updates.discordUserId : dbUser.discord_user_id;
     const nextLetterboxdUsername = updates.letterboxdUsername !== undefined ? updates.letterboxdUsername : dbUser.letterboxd_username;
     const nextTraktUsername = updates.traktUsername !== undefined ? updates.traktUsername : dbUser.trakt_username;
@@ -171,6 +179,7 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({
       user: {
         username: nextUsername,
+        displayName: nextDisplayName,
         email: nextEmail,
         discordUserId: nextDiscordUserId,
         letterboxdUsername: nextLetterboxdUsername,

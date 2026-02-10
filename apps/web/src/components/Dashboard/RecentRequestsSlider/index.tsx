@@ -18,6 +18,7 @@ interface RecentRequest {
     type: "movie" | "tv";
     status: string;
     username: string;
+    displayName?: string | null;
     avatarUrl?: string | null;
     jellyfinUserId?: string | null;
 }
@@ -167,8 +168,9 @@ export function RecentRequestsSlider({ items, className, isLoading = false }: Re
                     {items.map((request) => {
                         const statusInfo = getStatusClasses(request.status);
                         const href = request.type === "movie" ? `/movie/${request.tmdbId}` : `/tv/${request.tmdbId}`;
-                        const avatarSrc = getAvatarSrc({ avatarUrl: request.avatarUrl, jellyfinUserId: request.jellyfinUserId, username: request.username });
-                        const avatarAlt = getAvatarAlt({ username: request.username });
+                        const displayName = request.displayName ?? request.username;
+                        const avatarSrc = getAvatarSrc({ avatarUrl: request.avatarUrl, jellyfinUserId: request.jellyfinUserId, username: request.username, displayName });
+                        const avatarAlt = getAvatarAlt({ username: request.username, displayName });
 
                         return (
                             <PrefetchLink
@@ -226,7 +228,7 @@ export function RecentRequestsSlider({ items, className, isLoading = false }: Re
                                                         decoding="async"
                                                     />
                                                 </span>
-                                                <span className="text-gray-300 truncate">{request.username}</span>
+                                                <span className="text-gray-300 truncate">{displayName}</span>
                                             </div>
 
                                             {/* Status */}

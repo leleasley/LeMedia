@@ -22,6 +22,7 @@ export async function GET(
             `SELECT 
         id,
         username,
+        display_name,
         email,
         groups,
         created_at,
@@ -50,7 +51,7 @@ export async function GET(
         return jsonResponseWithETag(request, {
             id: user.id,
             email: user.email,
-            displayName: user.username,
+            displayName: user.display_name || user.username,
             groups: normalizeGroupList(user.groups as string),
             isAdmin: isAdminGroup(user.groups as string),
             banned: !!user.banned,
@@ -99,8 +100,9 @@ export async function PATCH(
         let paramIndex = 1;
 
         if (body.displayName !== undefined) {
-            updates.push(`username = $${paramIndex++}`);
-            values.push(body.displayName);
+            updates.push(`display_name = $${paramIndex++}`);
+            const trimmed = String(body.displayName ?? "").trim();
+            values.push(trimmed === "" ? null : trimmed);
         }
 
         if (body.email !== undefined) {

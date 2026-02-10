@@ -17,6 +17,7 @@ import { formatDate } from "@/lib/dateFormat";
 type ProfileResponse = {
   user: {
     username: string;
+    displayName?: string | null;
     email: string | null;
     jellyfinUserId?: string | null;
     jellyfinUsername?: string | null;
@@ -26,6 +27,7 @@ type ProfileResponse = {
     traktLinked?: boolean;
     traktTokenExpiresAt?: string | null;
     avatarUrl?: string | null;
+    avatarVersion?: number | null;
     discoverRegion?: string | null;
     originalLanguage?: string | null;
     watchlistSyncMovies?: boolean;
@@ -40,6 +42,7 @@ type ProfileResponse = {
 type UpdateResponse = {
   user: {
     username: string;
+    displayName?: string | null;
     email: string | null;
     discordUserId?: string | null;
     letterboxdUsername?: string | null;
@@ -54,6 +57,7 @@ type UpdateResponse = {
 
 type FormState = {
   username: string;
+  displayName: string;
   email: string;
   discordUserId: string;
   letterboxdUsername: string;
@@ -75,6 +79,7 @@ type ApiTokenInfo = {
 
 const initialForm: FormState = {
   username: "",
+  displayName: "",
   email: "",
   discordUserId: "",
   letterboxdUsername: "",
@@ -226,6 +231,7 @@ export function ProfileSettings({
     setForm(prev => ({
       ...prev,
       username: data.user.username,
+      displayName: data.user.displayName ?? "",
       email: data.user.email ?? "",
       discordUserId: data.user.discordUserId ?? "",
       letterboxdUsername: data.user.letterboxdUsername ?? "",
@@ -254,6 +260,10 @@ export function ProfileSettings({
     const trimmedUsername = form.username.trim().toLowerCase();
     if (trimmedUsername && trimmedUsername !== initialData.username) {
       payload.username = trimmedUsername;
+    }
+    const displayNameChanged = form.displayName.trim() !== (initialData.displayName ?? "");
+    if (displayNameChanged) {
+      payload.displayName = form.displayName.trim();
     }
 
     const emailChanged = form.email.trim() !== (initialData.email ?? "");
@@ -328,6 +338,7 @@ export function ProfileSettings({
       setForm(prev => ({
         ...prev,
         username: data.user.username,
+        displayName: data.user.displayName ?? "",
         email: data.user.email ?? "",
         discordUserId: form.discordUserId,
         letterboxdUsername: data.user.letterboxdUsername ?? form.letterboxdUsername,
@@ -422,8 +433,22 @@ export function ProfileSettings({
               <form className="space-y-5 md:space-y-6" onSubmit={handleSubmit}>
                 <div className="grid md:grid-cols-2 gap-6">
                     <div className="space-y-2">
-                    <label className="text-sm font-semibold text-foreground flex items-center gap-2" htmlFor="profile-username">
+                    <label className="text-sm font-semibold text-foreground flex items-center gap-2" htmlFor="profile-display-name">
                         <span>Display Name</span>
+                        <span className="text-xs text-foreground/50 font-normal">(optional)</span>
+                    </label>
+                    <input
+                        id="profile-display-name"
+                        value={form.displayName}
+                        onChange={e => updateField("displayName", e.target.value)}
+                        className="w-full rounded-xl border border-white/20 bg-white/5 px-4 py-3 md:py-4 text-foreground placeholder:text-foreground/30 outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all text-sm backdrop-blur-sm"
+                        placeholder="Enter your display name"
+                    />
+                    </div>
+
+                    <div className="space-y-2">
+                    <label className="text-sm font-semibold text-foreground flex items-center gap-2" htmlFor="profile-username">
+                        <span>Username</span>
                         <span className="text-xs text-foreground/50 font-normal">(required)</span>
                     </label>
                     <input
@@ -434,7 +459,9 @@ export function ProfileSettings({
                         placeholder="Enter your username"
                     />
                     </div>
+                </div>
 
+                <div className="grid md:grid-cols-2 gap-6">
                     <div className="space-y-2">
                     <label className="text-sm font-semibold text-foreground flex items-center gap-2" htmlFor="profile-email">
                         <span>Email</span>
