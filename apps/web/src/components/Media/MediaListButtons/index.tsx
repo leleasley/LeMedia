@@ -14,18 +14,26 @@ export function MediaListButtons({
   tmdbId,
   mediaType,
   className,
+  initialFavorite,
+  initialWatchlist,
 }: {
   tmdbId: number;
   mediaType: MediaType;
   className?: string;
+  initialFavorite?: boolean | null;
+  initialWatchlist?: boolean | null;
 }) {
-  const [favorite, setFavorite] = useState(false);
-  const [watchlist, setWatchlist] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [favorite, setFavorite] = useState(Boolean(initialFavorite));
+  const [watchlist, setWatchlist] = useState(Boolean(initialWatchlist));
+  const [loading, setLoading] = useState(initialFavorite == null || initialWatchlist == null);
   const [saving, setSaving] = useState(false);
   const toast = useToast();
 
   useEffect(() => {
+    if (initialFavorite != null && initialWatchlist != null) {
+      setLoading(false);
+      return;
+    }
     let active = true;
     setLoading(true);
     fetch(`/api/v1/media-list?tmdbId=${tmdbId}&mediaType=${mediaType}`, { credentials: "include" })

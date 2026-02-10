@@ -8,6 +8,8 @@ import { RecentlyViewedTracker } from "@/components/Media/RecentlyViewedTracker"
 import { ExternalRatings } from "@/components/Media/ExternalRatings";
 import { headers } from "next/headers";
 import { MediaReviews } from "@/components/Reviews/MediaReviews";
+import { getUser } from "@/auth";
+import { getUserByUsername, getUserMediaListStatus, upsertUser } from "@/db";
 
 const Params = z.object({ id: z.coerce.number().int() });
 type ParamsInput = { id: string } | Promise<{ id: string }>;
@@ -41,6 +43,15 @@ async function fetchTvAggregate(tmdbId: number, tvdbId?: number | null, title?: 
   }
 }
 
+async function resolveUserId() {
+  const user = await getUser().catch(() => null);
+  if (!user) return null;
+  const dbUser = await getUserByUsername(user.username).catch(() => null);
+  if (dbUser) return dbUser.id;
+  const created = await upsertUser(user.username, user.groups).catch(() => null);
+  return created?.id ?? null;
+}
+
 export async function generateMetadata({ params }: { params: ParamsInput }) {
   try {
     const { id } = Params.parse(await resolveParams(params));
@@ -64,9 +75,13 @@ export default async function TvPage({ params }: { params: ParamsInput }) {
     const tv = details.tv;
     const imageProxyEnabled = details.imageProxyEnabled;
     const streamingProviders = details.streamingProviders;
+    const watchProviders = details.watchProviders;
+    const contentRatings = details.contentRatings;
     const keywords = details.keywords;
     const tvdbId = details.tvdbId;
     const imdbId = details.imdbId;
+    const userId = await resolveUserId();
+    const listStatus = userId ? await getUserMediaListStatus({ userId, mediaType: "tv", tmdbId: id }).catch(() => null) : null;
 
     // Now fetch aggregate with proper tvdbId
     const aggregate = await fetchTvAggregate(id, tvdbId, tv.name || "");
@@ -119,6 +134,8 @@ export default async function TvPage({ params }: { params: ParamsInput }) {
           availableSeasons={availableSeasons}
           availableInLibrary={availableInLibrary}
           streamingProviders={streamingProviders}
+          watchProviders={watchProviders}
+          contentRatings={contentRatings}
           imdbRating={null}
           rtCriticsScore={null}
           rtCriticsRating={null}
@@ -136,6 +153,7 @@ export default async function TvPage({ params }: { params: ParamsInput }) {
           externalRatingsSlot={
             <ExternalRatings tmdbId={tv.id} mediaType="tv" imdbId={imdbId} />
           }
+          initialListStatus={listStatus ?? undefined}
         >
           <div className="px-4 mt-8">
             <MediaReviews

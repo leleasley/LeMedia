@@ -5,7 +5,7 @@ import { z } from "zod";
 import { getMovie, tmdbImageUrl } from "@/lib/tmdb";
 import { MovieAvailabilityBadge, MovieActionButtons } from "@/components/Movie/MovieAggregateClient";
 import { pickTrailerUrl } from "@/lib/trailer-utils";
-import { Users, Film } from "lucide-react";
+import { Film } from "lucide-react";
 import { MediaInfoBox } from "@/components/Media/MediaInfoBox";
 import { MediaSlider } from "@/components/Media/MediaSlider";
 import { getMovieDetailAggregateFast } from "@/lib/media-aggregate-fast";
@@ -13,7 +13,12 @@ import { headers } from "next/headers";
 import { RecentlyViewedTracker } from "@/components/Media/RecentlyViewedTracker";
 import { ExternalRatings } from "@/components/Media/ExternalRatings";
 import { MediaReviews } from "@/components/Reviews/MediaReviews";
+import { MediaCastScroller } from "@/components/Media/MediaCastScroller";
+import { MediaGalleryStrip } from "@/components/Media/MediaGalleryStrip";
+import { MediaSocialPanel } from "@/components/Media/MediaSocialPanel";
 import tmdbLogo from "@/assets/tmdb_logo.svg";
+import { getUser } from "@/auth";
+import { getUserByUsername, getUserMediaListStatus, upsertUser } from "@/db";
 
 const Params = z.object({ id: z.coerce.number().int() });
 type ParamsInput = { id: string } | Promise<{ id: string }>;
@@ -43,6 +48,14 @@ async function fetchMovieAggregate(tmdbId: number, title?: string) {
   }
 }
 
+async function resolveUserId() {
+  const user = await getUser().catch(() => null);
+  if (!user) return null;
+  const dbUser = await getUserByUsername(user.username).catch(() => null);
+  if (dbUser) return dbUser.id;
+  const created = await upsertUser(user.username, user.groups).catch(() => null);
+  return created?.id ?? null;
+}
 
 export async function generateMetadata({ params }: { params: ParamsInput }) {
   try {
@@ -68,8 +81,12 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
     ]);
 
     const movie = details.movie;
+    const userId = await resolveUserId();
+    const listStatus = userId ? await getUserMediaListStatus({ userId, mediaType: "movie", tmdbId: id }).catch(() => null) : null;
     const imageProxyEnabled = details.imageProxyEnabled;
     const streamingProviders = details.streamingProviders;
+    const watchProviders = details.watchProviders;
+    const releaseDates = details.releaseDates;
     const keywords = details.keywords;
     const imdbId = details.imdbId;
 
@@ -77,8 +94,9 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
     const backdrop = tmdbImageUrl(movie.backdrop_path, "w1920_and_h800_multi_faces", imageProxyEnabled);
     const backdropImage = backdrop ?? poster;
     const trailerUrl = pickTrailerUrl(movie);
-    const cast: any[] = (movie?.credits?.cast ?? []).slice(0, 20);
+    const cast: any[] = (movie?.credits?.cast ?? []).slice(0, 50);
     const crew: any[] = (movie?.credits?.crew ?? []).slice(0, 6);
+    const fullCrew: any[] = movie?.credits?.crew ?? [];
 
     const releaseYear = movie.release_date ? new Date(movie.release_date).getFullYear() : "";
     const collection = movie.belongs_to_collection ?? null;
@@ -94,6 +112,14 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
     if (movie.genres && movie.genres.length > 0) {
       movieAttributes.push(...movie.genres.map((g: any) => g.name));
     }
+
+    const trailers = (movie.videos?.results ?? [])
+      .filter((v: any) => String(v?.site || "").toLowerCase() === "youtube" && v?.key)
+      .slice(0, 6)
+      .map((v: any) => ({
+        name: String(v?.name || "Trailer"),
+        url: `https://www.youtube.com/watch?v=${v.key}`
+      }));
 
     return (
       <div className="media-page">
@@ -178,6 +204,13 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
             <ExternalRatings tmdbId={movie.id} mediaType="movie" imdbId={imdbId} />
           </div>
 
+          <MediaSocialPanel
+            tmdbId={movie.id}
+            mediaType="movie"
+            requestedBy={aggregate?.request?.requestedBy ?? null}
+            initialWatchlist={listStatus?.watchlist ?? null}
+          />
+
           {/* Attributes */}
           {movieAttributes.length > 0 && (
             <span className="media-attributes">
@@ -202,6 +235,7 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
               posterUrl={poster}
               year={releaseYear ?? null}
               prefetched={aggregate ?? undefined}
+              initialListStatus={listStatus}
             />
           </div>
         </div>
@@ -299,58 +333,38 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
           imdbRating={null}
           metacriticScore={null}
           streamingProviders={streamingProviders}
+          watchProviders={watchProviders}
           genres={movie.genres ?? []}
           status={movie.status}
           originalLanguage={movie.original_language}
           productionCountries={movie.production_countries ?? []}
-          releaseDates={null}
+          releaseDates={releaseDates}
           type="movie"
         />
       </div>
 
-      {/* Cast Section - Horizontal Scroll */}
-      {cast.length > 0 && (
-        <div className="media-section">
-          <h3 className="media-section-title">
-            <Users className="h-4 w-4 sm:h-5 sm:w-5" />
-            Cast
-          </h3>
-          <div className="media-cast-scroll">
-            {cast.map((person: any) => {
-              const name = person.name ?? "Unknown";
-              const character = person.character ?? "";
-              const label = character ? `${name} as ${character}` : name;
-              return (
-                <PrefetchLink
-                  key={person.id}
-                  href={`/person/${person.id}`}
-                  aria-label={`View ${label}`}
-                  className="media-cast-card group"
-                >
-                  <div className="cast-image">
-                    {person.profile_path ? (
-                      <Image
-                        src={tmdbImageUrl(person.profile_path, "w300", imageProxyEnabled) || ""}
-                        alt={name}
-                        fill
-                        className="object-cover"
-                      />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center">
-                        <Users className="h-6 w-6 text-gray-600" />
-                      </div>
-                    )}
-                    <div className="cast-overlay">
-                      <span className="cast-name">{name}</span>
-                      {character && <span className="cast-character">{character}</span>}
-                    </div>
-                  </div>
-                </PrefetchLink>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      <MediaGalleryStrip trailers={trailers} />
+
+      <MediaCastScroller
+        title="Cast"
+        items={cast.map((person: any) => ({
+          id: person.id,
+          name: person.name ?? "Unknown",
+          role: person.character ?? null,
+          profileUrl: person.profile_path
+            ? tmdbImageUrl(person.profile_path, "w300", imageProxyEnabled) || null
+            : null
+        }))}
+        crewItems={fullCrew.map((person: any) => ({
+          id: person.id,
+          name: person.name ?? "Unknown",
+          role: person.job ?? null,
+          profileUrl: person.profile_path
+            ? tmdbImageUrl(person.profile_path, "w300", imageProxyEnabled) || null
+            : null
+        }))}
+        previewCount={12}
+      />
 
       {/* Reviews */}
       <div className="media-section">

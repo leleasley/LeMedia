@@ -32,6 +32,7 @@ type RecommendationItem = {
   type: "movie" | "tv";
   genres?: number[];
   explanation?: string;
+  listStatus?: { favorite: boolean; watchlist: boolean };
 };
 
 const ITEMS_PER_PAGE = 40;
@@ -180,36 +181,16 @@ export function RecommendationsPageClientV2() {
 
   useEffect(() => {
     if (items.length === 0) return;
-    const missing = items.filter(item => !inListState[`${item.type}:${item.id}`]);
-    if (missing.length === 0) return;
-    let active = true;
-
-    const loadStatuses = async () => {
-      const updates: { [key: string]: { favorite: boolean; watchlist: boolean } } = {};
-      await Promise.all(
-        missing.map(async (item) => {
-          try {
-            const res = await fetch(`/api/v1/media-list?tmdbId=${item.id}&mediaType=${item.type}`, { credentials: "include" });
-            if (!res.ok) return;
-            const data = await res.json();
-            updates[`${item.type}:${item.id}`] = {
-              favorite: Boolean(data.favorite),
-              watchlist: Boolean(data.watchlist)
-            };
-          } catch {
-          }
-        })
-      );
-      if (!active) return;
-      if (Object.keys(updates).length === 0) return;
-      setInListState(prev => ({ ...prev, ...updates }));
-    };
-
-    loadStatuses().catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, [items, inListState]);
+    const updates: { [key: string]: { favorite: boolean; watchlist: boolean } } = {};
+    items.forEach((item) => {
+      const key = `${item.type}:${item.id}`;
+      updates[key] = {
+        favorite: Boolean(item.listStatus?.favorite),
+        watchlist: Boolean(item.listStatus?.watchlist)
+      };
+    });
+    setInListState(prev => ({ ...prev, ...updates }));
+  }, [items]);
 
   if (loading || isPageChanging) {
     return (

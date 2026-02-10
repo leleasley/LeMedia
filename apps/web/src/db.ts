@@ -347,12 +347,12 @@ export async function findActiveRequestByTmdb(input: { requestType: "movie" | "e
   const res = await p.query(
     `
     SELECT mr.id, mr.status, mr.created_at, mr.requested_by,
-           u.username, u.avatar_url
+           u.username, u.avatar_url, u.jellyfin_user_id
     FROM media_request mr
     LEFT JOIN app_user u ON u.id = mr.requested_by
     WHERE mr.request_type = $1
       AND mr.tmdb_id = $2
-      AND mr.status IN ('queued','pending','submitted')
+      AND mr.status IN ('queued','pending','submitted','available','already_exists')
     ORDER BY mr.created_at DESC
     LIMIT 1
     `,
@@ -366,7 +366,8 @@ export async function findActiveRequestByTmdb(input: { requestType: "movie" | "e
     requestedBy: {
       id: res.rows[0].requested_by as number,
       username: res.rows[0].username as string,
-      avatarUrl: res.rows[0].avatar_url as string | null
+      avatarUrl: res.rows[0].avatar_url as string | null,
+      jellyfinUserId: res.rows[0].jellyfin_user_id as string | null
     }
   };
 }
@@ -2381,6 +2382,39 @@ export async function getUserMediaListStatus(input: {
     favorite: types.has("favorite"),
     watchlist: types.has("watchlist")
   };
+}
+
+export async function getUserMediaListStatusBulk(input: {
+  userId: number;
+  items: Array<{ mediaType: "movie" | "tv"; tmdbId: number }>;
+}) {
+  await ensureMediaListSchema();
+  if (input.items.length === 0) return new Map<string, { favorite: boolean; watchlist: boolean }>();
+  const p = getPool();
+  const values: any[] = [input.userId];
+  const tuples = input.items.map((item, index) => {
+    const mediaTypeIdx = values.push(item.mediaType);
+    const tmdbIdIdx = values.push(item.tmdbId);
+    return `($${mediaTypeIdx}, $${tmdbIdIdx})`;
+  });
+  const res = await p.query(
+    `
+    SELECT media_type, tmdb_id, list_type
+    FROM user_media_list
+    WHERE user_id = $1
+      AND (media_type, tmdb_id) IN (${tuples.join(",")})
+    `,
+    values
+  );
+  const map = new Map<string, { favorite: boolean; watchlist: boolean }>();
+  for (const row of res.rows) {
+    const key = `${row.media_type}:${row.tmdb_id}`;
+    const entry = map.get(key) ?? { favorite: false, watchlist: false };
+    if (row.list_type === "favorite") entry.favorite = true;
+    if (row.list_type === "watchlist") entry.watchlist = true;
+    map.set(key, entry);
+  }
+  return map;
 }
 
 export async function listUsersWithWatchlistSync(userId?: number) {

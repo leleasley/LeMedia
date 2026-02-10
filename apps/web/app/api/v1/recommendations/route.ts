@@ -6,7 +6,8 @@ import {
   listUserMediaList,
   getRecentlyViewed,
   listUserReviewsForUser,
-  listRequestsByUsername
+  listRequestsByUsername,
+  getUserMediaListStatusBulk
 } from "@/db";
 import {
   getMovie,
@@ -52,6 +53,20 @@ const SEED_LIMIT = 12;
 const RECS_PER_SEED = 6;
 
 const keyFor = (mediaType: MediaType, tmdbId: number) => `${mediaType}:${tmdbId}`;
+
+async function mapWithConcurrency<T, U>(items: T[], concurrency: number, mapper: (item: T, index: number) => Promise<U>) {
+  if (items.length === 0) return [];
+  const results = new Array<U>(items.length);
+  let index = 0;
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (index < items.length) {
+      const current = index++;
+      results[current] = await mapper(items[current], current);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
 
 async function fetchSeedRecommendations(seed: Seed): Promise<number[]> {
   try {
@@ -135,31 +150,29 @@ export async function GET(req: NextRequest) {
       const needed = limit + 1;
       const items: any[] = [];
 
-      for (let i = offset; i < trendingItems.length && items.length < needed; i++) {
-        const item = trendingItems[i];
-        try {
-          if (item.mediaType === "movie") {
-            const movie = await getMovie(item.tmdbId);
-            if (!movie) continue;
-            const filtered = {
-              id: item.tmdbId,
-              title: movie.title ?? "Untitled",
-              posterUrl: tmdbImageUrl(movie.poster_path, "w500", imageProxyEnabled),
-              year: (movie.release_date ?? "").slice(0, 4),
-              rating: movie.vote_average ?? 0,
-              description: movie.overview ?? "",
-              type: "movie" as const,
-              genres: movie.genres?.map((g: any) => g.id) ?? [],
-              popularity: movie.popularity || 0,
-              explanation: "Trending now"
-            };
-            if (selectedGenres.length > 0 && !selectedGenres.some(g => filtered.genres.includes(g))) continue;
-            if (searchParam && !filtered.title.toLowerCase().includes(searchParam.toLowerCase())) continue;
-            items.push(filtered);
-          } else {
+      for (let i = offset; i < trendingItems.length && items.length < needed; i += 20) {
+        const slice = trendingItems.slice(i, i + 20);
+        const mapped = await mapWithConcurrency(slice, 6, async (item) => {
+          try {
+            if (item.mediaType === "movie") {
+              const movie = await getMovie(item.tmdbId);
+              if (!movie) return null;
+              return {
+                id: item.tmdbId,
+                title: movie.title ?? "Untitled",
+                posterUrl: tmdbImageUrl(movie.poster_path, "w500", imageProxyEnabled),
+                year: (movie.release_date ?? "").slice(0, 4),
+                rating: movie.vote_average ?? 0,
+                description: movie.overview ?? "",
+                type: "movie" as const,
+                genres: movie.genres?.map((g: any) => g.id) ?? [],
+                popularity: movie.popularity || 0,
+                explanation: "Trending now"
+              };
+            }
             const tv = await getTv(item.tmdbId);
-            if (!tv) continue;
-            const filtered = {
+            if (!tv) return null;
+            return {
               id: item.tmdbId,
               title: tv.name ?? "Untitled",
               posterUrl: tmdbImageUrl(tv.poster_path, "w500", imageProxyEnabled),
@@ -171,16 +184,30 @@ export async function GET(req: NextRequest) {
               popularity: tv.popularity || 0,
               explanation: "Trending now"
             };
-            if (selectedGenres.length > 0 && !selectedGenres.some(g => filtered.genres.includes(g))) continue;
-            if (searchParam && !filtered.title.toLowerCase().includes(searchParam.toLowerCase())) continue;
-            items.push(filtered);
+          } catch {
+            return null;
           }
-        } catch {
+        });
+        for (const filtered of mapped) {
+          if (!filtered) continue;
+          if (selectedGenres.length > 0 && !selectedGenres.some(g => filtered.genres.includes(g))) continue;
+          if (searchParam && !filtered.title.toLowerCase().includes(searchParam.toLowerCase())) continue;
+          items.push(filtered);
+          if (items.length >= needed) break;
         }
       }
 
       const hasMore = items.length > limit;
-      return cacheableJsonResponseWithETag(req, { items: items.slice(0, limit), hasMore }, { maxAge: 60, sMaxAge: 0, private: true });
+      const pageItems = items.slice(0, limit);
+      const listStatusMap = await getUserMediaListStatusBulk({
+        userId,
+        items: pageItems.map((item) => ({ mediaType: item.type, tmdbId: item.id }))
+      });
+      const finalItems = pageItems.map((item) => ({
+        ...item,
+        listStatus: listStatusMap.get(keyFor(item.type, item.id)) ?? { favorite: false, watchlist: false }
+      }));
+      return cacheableJsonResponseWithETag(req, { items: finalItems, hasMore }, { maxAge: 60, sMaxAge: 0, private: true });
     }
 
     // Personalized mode
@@ -294,44 +321,41 @@ export async function GET(req: NextRequest) {
     const needed = limit + 1;
     const items: any[] = [];
 
-    for (let i = offset; i < candidates.length && items.length < needed; i++) {
-      const item = candidates[i];
-      try {
-        if (item.mediaType === "movie") {
-          const movie = await getMovie(item.tmdbId);
-          if (!movie) continue;
-          let explanation = "Based on your activity";
-          if (item.seedSource === "favorite") {
-            const seedTitle = seedTitles.get(keyFor("movie", item.seedId!));
-            explanation = `Similar to "${seedTitle?.title ?? "saved item"}"`;
-          } else if (item.seedSource === "review") {
-            const rating = item.seedRating ? Math.round(item.seedRating / 2) : 3;
-            explanation = `Similar to your ${rating}⭐ pick`;
-          } else if (item.seedSource === "watchlist") {
-            const seedTitle = seedTitles.get(keyFor("movie", item.seedId!));
-            explanation = `Similar to "${seedTitle?.title ?? "watchlist item"}"`;
-          } else if (item.seedSource === "jellyfin") {
-            explanation = "Based on your watch history";
+    for (let i = offset; i < candidates.length && items.length < needed; i += 20) {
+      const slice = candidates.slice(i, i + 20);
+      const mapped = await mapWithConcurrency(slice, 6, async (item) => {
+        try {
+          if (item.mediaType === "movie") {
+            const movie = await getMovie(item.tmdbId);
+            if (!movie) return null;
+            let explanation = "Based on your activity";
+            if (item.seedSource === "favorite") {
+              const seedTitle = seedTitles.get(keyFor("movie", item.seedId!));
+              explanation = `Similar to "${seedTitle?.title ?? "saved item"}"`;
+            } else if (item.seedSource === "review") {
+              const rating = item.seedRating ? Math.round(item.seedRating / 2) : 3;
+              explanation = `Similar to your ${rating}⭐ pick`;
+            } else if (item.seedSource === "watchlist") {
+              const seedTitle = seedTitles.get(keyFor("movie", item.seedId!));
+              explanation = `Similar to "${seedTitle?.title ?? "watchlist item"}"`;
+            } else if (item.seedSource === "jellyfin") {
+              explanation = "Based on your watch history";
+            }
+            return {
+              id: item.tmdbId,
+              title: movie.title ?? "Untitled",
+              posterUrl: tmdbImageUrl(movie.poster_path, "w500", imageProxyEnabled),
+              year: (movie.release_date ?? "").slice(0, 4),
+              rating: movie.vote_average ?? 0,
+              description: movie.overview ?? "",
+              type: "movie" as const,
+              genres: movie.genres?.map((g: any) => g.id) ?? [],
+              popularity: movie.popularity || 0,
+              explanation
+            };
           }
-          const res: any = {
-            id: item.tmdbId,
-            title: movie.title ?? "Untitled",
-            posterUrl: tmdbImageUrl(movie.poster_path, "w500", imageProxyEnabled),
-            year: (movie.release_date ?? "").slice(0, 4),
-            rating: movie.vote_average ?? 0,
-            description: movie.overview ?? "",
-            type: "movie",
-            genres: movie.genres?.map((g: any) => g.id) ?? [],
-            popularity: movie.popularity || 0,
-            explanation
-          };
-          if (selectedGenres.length > 0 && !selectedGenres.some(g => res.genres.includes(g))) continue;
-          if (searchParam && !res.title.toLowerCase().includes(searchParam.toLowerCase())) continue;
-          if (mediaTypeParam && res.type !== mediaTypeParam) continue;
-          items.push(res);
-        } else {
           const tv = await getTv(item.tmdbId);
-          if (!tv) continue;
+          if (!tv) return null;
           let explanation = "Based on your activity";
           if (item.seedSource === "favorite") {
             const seedTitle = seedTitles.get(keyFor("tv", item.seedId!));
@@ -345,24 +369,29 @@ export async function GET(req: NextRequest) {
           } else if (item.seedSource === "jellyfin") {
             explanation = "Based on your watch history";
           }
-          const res: any = {
+          return {
             id: item.tmdbId,
             title: tv.name ?? "Untitled",
             posterUrl: tmdbImageUrl(tv.poster_path, "w500", imageProxyEnabled),
             year: (tv.first_air_date ?? "").slice(0, 4),
             rating: tv.vote_average ?? 0,
             description: tv.overview ?? "",
-            type: "tv",
+            type: "tv" as const,
             genres: tv.genres?.map((g: any) => g.id) ?? [],
             popularity: tv.popularity || 0,
             explanation
           };
-          if (selectedGenres.length > 0 && !selectedGenres.some(g => res.genres.includes(g))) continue;
-          if (searchParam && !res.title.toLowerCase().includes(searchParam.toLowerCase())) continue;
-          if (mediaTypeParam && res.type !== mediaTypeParam) continue;
-          items.push(res);
+        } catch {
+          return null;
         }
-      } catch {
+      });
+      for (const res of mapped) {
+        if (!res) continue;
+        if (selectedGenres.length > 0 && !selectedGenres.some(g => res.genres.includes(g))) continue;
+        if (searchParam && !res.title.toLowerCase().includes(searchParam.toLowerCase())) continue;
+        if (mediaTypeParam && res.type !== mediaTypeParam) continue;
+        items.push(res);
+        if (items.length >= needed) break;
       }
     }
 
@@ -375,7 +404,16 @@ export async function GET(req: NextRequest) {
       sorted.sort((a, b) => b.rating - a.rating);
     }
     const finalHasMore = sorted.length > limit;
-    return cacheableJsonResponseWithETag(req, { items: sorted.slice(0, limit), hasMore: finalHasMore }, { maxAge: 120, sMaxAge: 0, private: true });
+    const pageItems = sorted.slice(0, limit);
+    const listStatusMap = await getUserMediaListStatusBulk({
+      userId,
+      items: pageItems.map((item) => ({ mediaType: item.type, tmdbId: item.id }))
+    });
+    const finalItems = pageItems.map((item) => ({
+      ...item,
+      listStatus: listStatusMap.get(keyFor(item.type, item.id)) ?? { favorite: false, watchlist: false }
+    }));
+    return cacheableJsonResponseWithETag(req, { items: finalItems, hasMore: finalHasMore }, { maxAge: 120, sMaxAge: 0, private: true });
   } catch (err) {
     return jsonResponseWithETag(req, { items: [], error: "Unable to load recommendations" }, { status: 500 });
   }

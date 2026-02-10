@@ -4,13 +4,16 @@ import Link from "next/link";
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
-import { ChevronDown, ChevronUp, Star, Tv, Eye, Users, CheckCircle, Info, Check, X, Loader2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Star, Tv, Eye, CheckCircle, Info, Check, X, Loader2 } from "lucide-react";
 import { Modal } from "@/components/Common/Modal";
 import { readJson } from "@/lib/fetch-utils";
 import { csrfFetch } from "@/lib/csrf-client";
 import { MediaInfoBox } from "@/components/Media/MediaInfoBox";
+import { MediaCastScroller } from "@/components/Media/MediaCastScroller";
+import { MediaGalleryStrip } from "@/components/Media/MediaGalleryStrip";
 import { MediaActionMenu } from "@/components/Media/MediaActionMenu";
 import { MediaListButtons } from "@/components/Media/MediaListButtons";
+import { MediaSocialPanel } from "@/components/Media/MediaSocialPanel";
 import { SeriesRequestModal } from "@/components/Requests/SeriesRequestModal";
 import ButtonWithDropdown from "@/components/Common/ButtonWithDropdown";
 import { ArrowDownTrayIcon } from "@heroicons/react/24/outline";
@@ -49,6 +52,7 @@ type CrewMember = {
     id: number;
     name?: string | null;
     job?: string | null;
+    profile_path?: string | null;
 };
 
 type TvDetail = {
@@ -69,6 +73,15 @@ type TvDetail = {
     created_by?: Array<{ id: number; name?: string | null; profile_path?: string | null }> | null;
     credits?: { cast?: CastMember[] | null; crew?: CrewMember[] | null } | null;
     aggregate_credits?: { cast?: CastMember[] | null; crew?: CrewMember[] | null } | null;
+    next_episode_to_air?: { air_date?: string | null; name?: string | null; episode_number?: number | null; season_number?: number | null } | null;
+    last_episode_to_air?: { air_date?: string | null; name?: string | null; episode_number?: number | null; season_number?: number | null } | null;
+    images?: {
+        backdrops?: Array<{ file_path?: string | null }> | null;
+        posters?: Array<{ file_path?: string | null }> | null;
+    } | null;
+    videos?: {
+        results?: Array<{ site?: string | null; key?: string | null; name?: string | null }> | null;
+    } | null;
 };
 
 type Creator = {
@@ -112,6 +125,7 @@ type TvAggregateResponse = {
             id: number;
             username: string;
             avatarUrl: string | null;
+            jellyfinUserId?: string | null;
         };
     } | null;
     requestedSeasons?: Record<number, { requested: number }>;
@@ -146,6 +160,8 @@ export function TvDetailClientNew({
     availableInJellyfin,
     availableSeasons = [],
     streamingProviders = [],
+    watchProviders,
+    contentRatings,
     rtCriticsScore,
     rtCriticsRating,
     rtAudienceScore,
@@ -163,6 +179,7 @@ export function TvDetailClientNew({
     externalRatingsSlot,
     keywordsSlot,
     prefetchedAggregate,
+    initialListStatus,
     children
 }: {
     tv: TvDetail;
@@ -180,6 +197,15 @@ export function TvDetailClientNew({
     availableInJellyfin?: boolean | null;
     availableSeasons?: number[];
     streamingProviders?: StreamingProvider[];
+    watchProviders?: {
+        link?: string;
+        flatrate?: StreamingProvider[];
+        rent?: StreamingProvider[];
+        buy?: StreamingProvider[];
+        free?: StreamingProvider[];
+        ads?: StreamingProvider[];
+    } | null;
+    contentRatings?: any;
     rtCriticsScore?: number | null;
     rtCriticsRating?: string | null;
     rtAudienceScore?: number | null;
@@ -197,11 +223,16 @@ export function TvDetailClientNew({
     externalRatingsSlot?: React.ReactNode;
     keywordsSlot?: React.ReactNode;
     prefetchedAggregate?: unknown;
+    initialListStatus?: { favorite: boolean; watchlist: boolean };
     children?: React.ReactNode;
 }) {
     const cast = useMemo<CastMember[]>(() => (tv.aggregate_credits?.cast ?? tv.credits?.cast ?? []).slice(0, 12), [tv]);
     const creators = useMemo<Creator[]>(() => (Array.isArray(tv.created_by) ? tv.created_by.slice(0, 6) : []), [tv]);
     const crew = useMemo<CrewMember[]>(() => (Array.isArray(tv.credits?.crew) ? tv.credits.crew : []), [tv]);
+    const fullCrew = useMemo<CrewMember[]>(
+        () => (Array.isArray(tv.aggregate_credits?.crew) ? tv.aggregate_credits.crew : (tv.credits?.crew ?? [])),
+        [tv]
+    );
 
     const crewRoles = useMemo(() => new Set([
         "Executive Producer",
@@ -224,6 +255,16 @@ export function TvDetailClientNew({
         (path: string | null | undefined, size: string) => tmdbImageUrl(path, size, imageProxyEnabled),
         [imageProxyEnabled]
     );
+
+    const trailers = useMemo(() => {
+        return (tv.videos?.results ?? [])
+            .filter((v) => String(v?.site || "").toLowerCase() === "youtube" && v?.key)
+            .slice(0, 6)
+            .map((v) => ({
+                name: String(v?.name || "Trailer"),
+                url: `https://www.youtube.com/watch?v=${v.key}`
+            }));
+    }, [tv.videos]);
     const [expandedSeasons, setExpandedSeasons] = useState<Set<number>>(new Set());
     const [seasonEpisodes, setSeasonEpisodes] = useState<Record<number, Episode[]>>({});
     const [loadingSeasons, setLoadingSeasons] = useState<Set<number>>(new Set());
@@ -755,6 +796,19 @@ export function TvDetailClientNew({
         return `Airing in ${days} day${days !== 1 ? "s" : ""}`;
     }, []);
 
+    const formatHeaderDate = useCallback((dateStr?: string | null) => {
+        if (!dateStr) return null;
+        try {
+            return new Date(dateStr).toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "numeric" });
+        } catch {
+            return dateStr;
+        }
+    }, []);
+
+    const nextEpisodeDate = formatHeaderDate(tv.next_episode_to_air?.air_date ?? null);
+    const lastEpisodeDate = formatHeaderDate(tv.last_episode_to_air?.air_date ?? null);
+    const requestedBy = (aggregate as any)?.request?.requestedBy ?? (prefetchedAggregate as any)?.request?.requestedBy ?? null;
+
     return (
         <div className="media-page">
             <Modal open={!!modal} title={modal?.title ?? ""} onClose={() => setModal(null)}>{modal?.message ?? ""}</Modal>
@@ -988,16 +1042,9 @@ export function TvDetailClientNew({
                             </div>
                         )}
                         {showRequestBadge && requestLabel && (
-                            <div className="inline-flex flex-col gap-0.5">
-                                <div className="inline-flex h-7 items-center gap-1.5 rounded-full border border-sky-400 bg-sky-500 px-3 text-xs font-semibold text-white shadow-sm">
-                                    <CheckCircle className="h-4 w-4" />
-                                    {requestLabel}
-                                </div>
-                                {aggregate?.request?.requestedBy?.username && (
-                                    <div className="ml-1 text-xs text-gray-400">
-                                        Requested by <span className="font-medium text-gray-300">{aggregate.request.requestedBy.username}</span>
-                                    </div>
-                                )}
+                            <div className="inline-flex h-7 items-center gap-1.5 rounded-full border border-sky-400 bg-sky-500 px-3 text-xs font-semibold text-white shadow-sm">
+                                <CheckCircle className="h-4 w-4" />
+                                {requestLabel}
                             </div>
                         )}
                     </div>
@@ -1027,6 +1074,13 @@ export function TvDetailClientNew({
                         {externalRatingsSlot}
                     </div>
 
+                    <MediaSocialPanel
+                        tmdbId={tv.id}
+                        mediaType="tv"
+                        requestedBy={requestedBy}
+                        initialWatchlist={initialListStatus?.watchlist ?? null}
+                    />
+
                     {/* Attributes */}
                     <span className="media-attributes">
                         {Number(tv.number_of_seasons ?? 0) > 0 && (
@@ -1039,6 +1093,21 @@ export function TvDetailClientNew({
                         ))}
                     </span>
 
+                    {(nextEpisodeDate || lastEpisodeDate) && (
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                            {nextEpisodeDate && (
+                                <span className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-emerald-200">
+                                    Next episode: {nextEpisodeDate}
+                                </span>
+                            )}
+                            {lastEpisodeDate && (
+                                <span className="inline-flex items-center gap-2 rounded-full border border-slate-500/30 bg-slate-500/10 px-3 py-1 text-slate-200">
+                                    Last aired: {lastEpisodeDate}
+                                </span>
+                            )}
+                        </div>
+                    )}
+
                     {/* Tagline in header */}
                     {tv.tagline && (
                         <div className="media-tagline">&ldquo;{tv.tagline}&rdquo;</div>
@@ -1046,7 +1115,12 @@ export function TvDetailClientNew({
 
                     {/* Action Buttons */}
                     <div className="media-actions">
-                        <MediaListButtons tmdbId={tv.id} mediaType="tv" />
+                        <MediaListButtons
+                            tmdbId={tv.id}
+                            mediaType="tv"
+                            initialFavorite={initialListStatus?.favorite ?? null}
+                            initialWatchlist={initialListStatus?.watchlist ?? null}
+                        />
                         <ShareButton
                             mediaType="tv"
                             tmdbId={tv.id}
@@ -1194,9 +1268,13 @@ export function TvDetailClientNew({
                                   }))
                             : undefined
                     }
+                    watchProviders={watchProviders ?? undefined}
+                    contentRatings={contentRatings}
                     type="tv"
                 />
             </div>
+
+            <MediaGalleryStrip trailers={trailers} />
 
             {/* Seasons Section */}
             <div className="media-section">
@@ -1237,51 +1315,27 @@ export function TvDetailClientNew({
             </div>
 
             {/* Cast Section - Horizontal Scroll */}
-            {cast.length > 0 && (
-                <div className="media-section">
-                    <h2 className="media-section-title">
-                        <Users className="h-4 w-4 sm:h-5 sm:w-5" />
-                        Cast
-                    </h2>
-                    <div className="media-cast-scroll">
-                        {cast.map((person) => {
-                            const img = getTmdbImage(person.profile_path, "w300");
-                            const name = person.name ?? "Unknown";
-                            const character = person.roles ? person.roles[0]?.character : (person.character ?? "");
-                            const episodeCount = person.roles ? person.total_episode_count : null;
-                            const label = character ? `${name} as ${character}` : name;
-                            return (
-                                <Link
-                                    key={person.id}
-                                    href={`/person/${person.id}`}
-                                    aria-label={`View ${label}`}
-                                    className="media-cast-card group"
-                                >
-                                    <div className="cast-image">
-                                        {img ? (
-                                            <CachedImage
-                                                type="tmdb"
-                                                src={img}
-                                                alt={name}
-                                                fill
-                                                className="object-cover"
-                                            />
-                                        ) : (
-                                            <div className="absolute inset-0 flex items-center justify-center text-gray-500 font-semibold text-xs sm:text-sm">{initials(name)}</div>
-                                        )}
-                                        <div className="cast-overlay">
-                                            <span className="cast-name">{name}</span>
-                                            <span className="cast-character">
-                                                {character}{episodeCount ? ` \u00B7 ${episodeCount} eps` : ""}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </Link>
-                            );
-                        })}
-                    </div>
-                </div>
-            )}
+            <MediaCastScroller
+                title="Cast"
+                items={cast.map((person) => {
+                    const name = person.name ?? "Unknown";
+                    const character = person.roles ? person.roles[0]?.character : (person.character ?? "");
+                    const episodeCount = person.roles ? person.total_episode_count : null;
+                    return {
+                        id: person.id,
+                        name,
+                        role: character ? `${character}${episodeCount ? ` - ${episodeCount} eps` : ""}` : null,
+                        profileUrl: getTmdbImage(person.profile_path, "w300")
+                    };
+                })}
+                crewItems={fullCrew.map((person) => ({
+                    id: person.id,
+                    name: person.name ?? "Unknown",
+                    role: person.job ?? null,
+                    profileUrl: getTmdbImage((person as any).profile_path ?? null, "w300")
+                }))}
+                previewCount={12}
+            />
             {children}
             <div className="extra-bottom-space relative" />
         </div>

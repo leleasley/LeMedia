@@ -60,6 +60,12 @@ export const TvSeasonItem = memo(({
     const isSeasonPartiallyAvailable = seasonAvailableCount > 0 && seasonAvailableCount < seasonTotalCount;
     const requestedCount = requestCounts?.requested ?? 0;
     const isSeasonRequested = requestedCount > 0 && !isSeasonFullyAvailable;
+    const safeTotal = seasonTotalCount > 0 ? seasonTotalCount : 0;
+    const clampedAvailable = Math.min(seasonAvailableCount, safeTotal);
+    const clampedRequested = Math.min(requestedCount, Math.max(safeTotal - clampedAvailable, 0));
+    const remainingCount = Math.max(safeTotal - clampedAvailable - clampedRequested, 0);
+    const availablePct = safeTotal > 0 ? (clampedAvailable / safeTotal) * 100 : 0;
+    const requestedPct = safeTotal > 0 ? (clampedRequested / safeTotal) * 100 : 0;
 
     return (
         <div className="overflow-hidden rounded-xl border border-white/10 bg-black/20 backdrop-blur-sm transition-all hover:bg-black/30">
@@ -121,6 +127,34 @@ export const TvSeasonItem = memo(({
                                 <span className="text-emerald-400 font-medium bg-emerald-400/10 px-2 py-0.5 rounded text-xs">{checkedCount} Selected</span>
                             )}
                         </div>
+                        {safeTotal > 0 && (
+                            <div className="mt-3 flex items-center gap-3">
+                                <div className="h-1.5 w-40 sm:w-56 overflow-hidden rounded-full bg-white/10">
+                                    <div className="flex h-full w-full">
+                                        {availablePct > 0 && (
+                                            <div className="h-full bg-emerald-500/80" style={{ width: `${availablePct}%` }} />
+                                        )}
+                                        {requestedPct > 0 && (
+                                            <div className="h-full bg-sky-500/80" style={{ width: `${requestedPct}%` }} />
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2 text-[11px] text-gray-400">
+                                    <span className="inline-flex items-center gap-1">
+                                        <span className="h-2 w-2 rounded-full bg-emerald-500/80" />
+                                        {clampedAvailable} available
+                                    </span>
+                                    <span className="inline-flex items-center gap-1">
+                                        <span className="h-2 w-2 rounded-full bg-sky-500/80" />
+                                        {clampedRequested} requested
+                                    </span>
+                                    <span className="inline-flex items-center gap-1">
+                                        <span className="h-2 w-2 rounded-full bg-white/30" />
+                                        {remainingCount} remaining
+                                    </span>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
                 {isExpanded ? (<ChevronUp className="h-5 w-5 text-gray-400" />) : (<ChevronDown className="h-5 w-5 text-gray-400" />)}

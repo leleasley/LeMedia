@@ -28,6 +28,7 @@ type MovieAggregate = {
       id: number;
       username: string;
       avatarUrl: string | null;
+      jellyfinUserId?: string | null;
     };
   } | null;
   manage?: {
@@ -74,7 +75,6 @@ export function MovieAvailabilityBadge({
   if (!data.availableInLibrary && !data.request?.status) return null;
 
   const requestStatus = data.request?.status ?? null;
-  const requestedByUsername = data.request?.requestedBy?.username ?? null;
   const requestLabel =
     requestStatus === "queued"
       ? "Queued"
@@ -97,16 +97,9 @@ export function MovieAvailabilityBadge({
         Available
       </div>
     ) : requestLabel ? (
-      <div className="inline-flex flex-col gap-0.5">
-        <div className={`inline-flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold text-white shadow-sm ${requestBadgeClasses}`}>
-          <CheckCircle className="h-4 w-4" />
-          {requestLabel}
-        </div>
-        {requestedByUsername && (
-          <div className="ml-1 text-xs text-gray-400">
-            Requested by <span className="font-medium text-gray-300">{requestedByUsername}</span>
-          </div>
-        )}
+      <div className={`inline-flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold text-white shadow-sm ${requestBadgeClasses}`}>
+        <CheckCircle className="h-4 w-4" />
+        {requestLabel}
       </div>
     ) : null
   );
@@ -119,7 +112,8 @@ export function MovieActionButtons({
   backdropUrl,
   prefetched,
   posterUrl,
-  year
+  year,
+  initialListStatus
 }: {
   tmdbId: number;
   title: string;
@@ -128,6 +122,7 @@ export function MovieActionButtons({
   prefetched?: MovieAggregate;
   posterUrl?: string | null;
   year?: string | number | null;
+  initialListStatus?: { favorite: boolean; watchlist: boolean } | null;
 }) {
   const { data, isLoading } = useMovieAggregate(tmdbId, title, prefetched);
   const available = Boolean(data?.availableInLibrary);
@@ -166,7 +161,12 @@ export function MovieActionButtons({
     <>
       {available ? (
         <>
-          <MediaListButtons tmdbId={tmdbId} mediaType="movie" />
+          <MediaListButtons
+            tmdbId={tmdbId}
+            mediaType="movie"
+            initialFavorite={initialListStatus?.favorite ?? null}
+            initialWatchlist={initialListStatus?.watchlist ?? null}
+          />
           <ShareButton
             mediaType="movie"
             tmdbId={tmdbId}
@@ -178,7 +178,12 @@ export function MovieActionButtons({
         </>
       ) : (
         <>
-          <MediaListButtons tmdbId={tmdbId} mediaType="movie" />
+          <MediaListButtons
+            tmdbId={tmdbId}
+            mediaType="movie"
+            initialFavorite={initialListStatus?.favorite ?? null}
+            initialWatchlist={initialListStatus?.watchlist ?? null}
+          />
           <ShareButton
             mediaType="movie"
             tmdbId={tmdbId}

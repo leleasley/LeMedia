@@ -3,8 +3,10 @@ import "server-only";
 import { getImageProxyEnabled } from "@/lib/app-settings";
 import {
   getMovieKeywords,
+  getMovieReleaseDates,
   getMovieWatchProviders,
   getMovieWithCreditsAndVideos,
+  getTvContentRatings,
   getTvKeywords,
   getTvWatchProviders,
   getTvWithCreditsAndVideos
@@ -18,14 +20,16 @@ export async function getMovieDetailAggregateFast(id: number) {
   const region = process.env.TMDB_REGION || "GB";
 
   // Only fetch fast TMDB data
-  const [movie, imageProxyEnabled, providersResult, keywordsResult] = await Promise.all([
+  const [movie, imageProxyEnabled, providersResult, releaseDates, keywordsResult] = await Promise.all([
     getMovieWithCreditsAndVideos(id),
     getImageProxyEnabled(),
     getMovieWatchProviders(id).catch(() => null),
+    getMovieReleaseDates(id).catch(() => null),
     getMovieKeywords(id).catch(() => ({ keywords: [] }))
   ]);
 
-  const streamingProviders = providersResult?.results?.[region]?.flatrate || [];
+  const watchProviders = providersResult?.results?.[region] ?? null;
+  const streamingProviders = watchProviders?.flatrate || [];
   const keywords = keywordsResult?.keywords ?? [];
   const imdbId = movie.external_ids?.imdb_id ?? null;
 
@@ -33,6 +37,8 @@ export async function getMovieDetailAggregateFast(id: number) {
     movie,
     imageProxyEnabled,
     streamingProviders,
+    watchProviders,
+    releaseDates,
     keywords,
     imdbId
   };
@@ -45,14 +51,16 @@ export async function getTvDetailAggregateFast(id: number) {
   const region = process.env.TMDB_REGION || "GB";
 
   // Only fetch fast TMDB data
-  const [tv, imageProxyEnabled, providersResult, keywordsResult] = await Promise.all([
+  const [tv, imageProxyEnabled, providersResult, contentRatings, keywordsResult] = await Promise.all([
     getTvWithCreditsAndVideos(id),
     getImageProxyEnabled(),
     getTvWatchProviders(id).catch(() => null),
+    getTvContentRatings(id).catch(() => null),
     getTvKeywords(id).catch(() => ({ results: [] }))
   ]);
 
-  const streamingProviders = providersResult?.results?.[region]?.flatrate || [];
+  const watchProviders = providersResult?.results?.[region] ?? null;
+  const streamingProviders = watchProviders?.flatrate || [];
   const keywords = keywordsResult?.results ?? [];
   const imdbId = tv.external_ids?.imdb_id ?? null;
   const tvdbId = typeof tv.external_ids?.tvdb_id === "number" ? tv.external_ids.tvdb_id : null;
@@ -61,6 +69,8 @@ export async function getTvDetailAggregateFast(id: number) {
     tv,
     imageProxyEnabled,
     streamingProviders,
+    watchProviders,
+    contentRatings,
     keywords,
     imdbId,
     tvdbId
