@@ -120,6 +120,7 @@ type Request = {
   status: string;
   created_at: string;
   username: string;
+  display_name?: string | null;
   poster_path: string | null;
   backdrop_path?: string | null;
   avatar_url?: string | null;
@@ -384,14 +385,19 @@ export function AllRequestsClient({
                     <div className="w-6 h-6 rounded-full overflow-hidden bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center flex-shrink-0">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={getAvatarSrc({ avatarUrl: r.avatar_url, jellyfinUserId: r.jellyfin_user_id, username: r.username })}
-                        alt={getAvatarAlt({ username: r.username })}
+                        src={getAvatarSrc({
+                          avatarUrl: r.avatar_url,
+                          jellyfinUserId: r.jellyfin_user_id,
+                          displayName: r.display_name ?? null,
+                          username: r.username
+                        })}
+                        alt={getAvatarAlt({ displayName: r.display_name ?? null, username: r.username })}
                         className="w-full h-full object-cover"
                         loading="lazy"
                         decoding="async"
                       />
                     </div>
-                    <span className="truncate">{r.username}</span>
+                    <span className="truncate">{r.display_name || r.username}</span>
                   </div>
                   <span className="whitespace-nowrap">{formatDate(r.created_at)}</span>
                 </div>
@@ -480,14 +486,19 @@ export function AllRequestsClient({
                         <div className="w-6 h-6 rounded-full overflow-hidden bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center flex-shrink-0">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
-                            src={getAvatarSrc({ avatarUrl: r.avatar_url, jellyfinUserId: r.jellyfin_user_id, username: r.username })}
-                            alt={getAvatarAlt({ username: r.username })}
+                            src={getAvatarSrc({
+                              avatarUrl: r.avatar_url,
+                              jellyfinUserId: r.jellyfin_user_id,
+                              displayName: r.display_name ?? null,
+                              username: r.username
+                            })}
+                            alt={getAvatarAlt({ displayName: r.display_name ?? null, username: r.username })}
                             className="w-full h-full object-cover"
                             loading="lazy"
                             decoding="async"
                           />
                         </div>
-                        <span className="text-white/80">{r.username}</span>
+                        <span className="text-white/80">{r.display_name || r.username}</span>
                       </div>
                     </td>
                     <td className="p-4">

@@ -9,38 +9,23 @@ import { ExternalRatings } from "@/components/Media/ExternalRatings";
 import { headers } from "next/headers";
 import { MediaReviews } from "@/components/Reviews/MediaReviews";
 import { getUser } from "@/auth";
-import { getUserByUsername, getUserMediaListStatus, upsertUser } from "@/db";
+import { getReviewStatsForMedia, getReviewsForMedia, getUserByUsername, getUserMediaListStatus, getUserReviewForMedia, upsertUser } from "@/db";
 
 const Params = z.object({ id: z.coerce.number().int() });
 type ParamsInput = { id: string } | Promise<{ id: string }>;
 
-async function resolveParams(params: ParamsInput) {
-  if (params && typeof (params as any).then === "function") return await (params as Promise<{ id: string }>);
-  return params as { id: string };
-}
-
-async function fetchTvAggregate(tmdbId: number, tvdbId?: number | null, title?: string) {
+async function getBaseUrlFromHeaders() {
   const headerStore = await headers();
   const host = headerStore.get("x-forwarded-host") ?? headerStore.get("host");
   const proto = headerStore.get("x-forwarded-proto") ?? "http";
   const fallbackBaseUrl = process.env.INTERNAL_APP_BASE_URL ?? process.env.APP_BASE_URL ?? "";
   const baseUrl = host ? `${proto}://${host}` : fallbackBaseUrl;
-  if (!baseUrl) return null;
-  const params = new URLSearchParams();
-  if (title) params.set("title", title);
-  if (tvdbId) params.set("tvdbId", String(tvdbId));
-  const normalizedBaseUrl = baseUrl.replace(/\/+$/, "");
-  const url = `${normalizedBaseUrl}/api/v1/tv/${tmdbId}${params.toString() ? `?${params.toString()}` : ""}`;
-  try {
-    const res = await fetch(url, {
-      headers: { cookie: headerStore.get("cookie") ?? "" },
-      cache: "no-store"
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  }
+  return baseUrl.replace(/\/+$/, "");
+}
+
+async function resolveParams(params: ParamsInput) {
+  if (params && typeof (params as any).then === "function") return await (params as Promise<{ id: string }>);
+  return params as { id: string };
 }
 
 async function resolveUserId() {
@@ -50,6 +35,22 @@ async function resolveUserId() {
   if (dbUser) return dbUser.id;
   const created = await upsertUser(user.username, user.groups).catch(() => null);
   return created?.id ?? null;
+}
+
+async function fetchRatings(mediaType: "movie" | "tv", tmdbId: number) {
+  const baseUrl = await getBaseUrlFromHeaders();
+  if (!baseUrl) return null;
+  try {
+    const res = await fetch(`${baseUrl}/api/v1/ratings/${mediaType}/${tmdbId}`, {
+      next: { revalidate: 900 }
+    });
+    if (!res.ok) return null;
+    const json = (await res.json()) as any;
+    if (!json || !json.ratings) return null;
+    return { ratings: json.ratings };
+  } catch {
+    return null;
+  }
 }
 
 export async function generateMetadata({ params }: { params: ParamsInput }) {
@@ -70,8 +71,16 @@ export default async function TvPage({ params }: { params: ParamsInput }) {
   try {
     const { id } = Params.parse(await resolveParams(params));
 
-    // Fetch details first to get tvdbId
-    const details = await getTvDetailAggregateFast(id);
+    const detailsPromise = getTvDetailAggregateFast(id);
+    const userIdPromise = resolveUserId();
+    const ratingsPromise = fetchRatings("tv", id);
+
+    const [details, userId, initialRatings] = await Promise.all([
+      detailsPromise,
+      userIdPromise,
+      ratingsPromise
+    ]);
+
     const tv = details.tv;
     const imageProxyEnabled = details.imageProxyEnabled;
     const streamingProviders = details.streamingProviders;
@@ -80,27 +89,27 @@ export default async function TvPage({ params }: { params: ParamsInput }) {
     const keywords = details.keywords;
     const tvdbId = details.tvdbId;
     const imdbId = details.imdbId;
-    const userId = await resolveUserId();
-    const listStatus = userId ? await getUserMediaListStatus({ userId, mediaType: "tv", tmdbId: id }).catch(() => null) : null;
+    const [listStatus, reviews, reviewStats, userReview] = await Promise.all([
+      userId ? getUserMediaListStatus({ userId, mediaType: "tv", tmdbId: id }).catch(() => null) : Promise.resolve(null),
+      getReviewsForMedia("tv", id, 50).catch(() => []),
+      getReviewStatsForMedia("tv", id).catch(() => ({ total: 0, average: 0 })),
+      userId ? getUserReviewForMedia(userId, "tv", id).catch(() => null) : Promise.resolve(null)
+    ]);
 
-    // Now fetch aggregate with proper tvdbId
-    const aggregate = await fetchTvAggregate(id, tvdbId, tv.name || "");
-
-    // Extract aggregate data
-    const sonarr = aggregate?.sonarr ?? {};
-    const qualityProfiles = Array.isArray(sonarr.qualityProfiles) ? sonarr.qualityProfiles : [];
-    const defaultQualityProfileId = typeof sonarr.defaultQualityProfileId === "number" ? sonarr.defaultQualityProfileId : 0;
-    const requestsBlocked = Boolean(sonarr.requestsBlocked);
-    const sonarrError = sonarr.sonarrError ?? null;
-    const existingSeries = sonarr.existingSeries ?? null;
-    const availableInJellyfin = sonarr.availableInJellyfin ?? null;
-    const availableSeasons = Array.isArray(aggregate?.availableSeasons) ? aggregate.availableSeasons : [];
-    const availableInLibrary = Boolean(aggregate?.availableInLibrary);
-    const playUrl = aggregate?.playUrl ?? null;
-    const isAdmin = Boolean(aggregate?.isAdmin);
-    const manageItemId = aggregate?.manage?.itemId ?? null;
-    const manageSlug = aggregate?.manage?.slug ?? null;
-    const manageBaseUrl = aggregate?.manage?.baseUrl ?? null;
+    // These values hydrate client-side via SWR in TvDetailClientNew.
+    const qualityProfiles: any[] = [];
+    const defaultQualityProfileId = 0;
+    const requestsBlocked = false;
+    const sonarrError = null;
+    const existingSeries = null;
+    const availableInJellyfin = null;
+    const availableSeasons: number[] = [];
+    const availableInLibrary = false;
+    const playUrl = null;
+    const isAdmin = false;
+    const manageItemId = null;
+    const manageSlug = null;
+    const manageBaseUrl = null;
 
     const poster = tmdbImageUrl(tv.poster_path, "w600_and_h900_bestv2", false);
     const backdrop = tmdbImageUrl(tv.backdrop_path, "w1920_and_h800_multi_faces", false);
@@ -149,9 +158,9 @@ export default async function TvPage({ params }: { params: ParamsInput }) {
           manageSlug={manageSlug}
           manageBaseUrl={manageBaseUrl}
           tvdbId={tvdbId}
-          prefetchedAggregate={aggregate}
+          prefetchedAggregate={undefined}
           externalRatingsSlot={
-            <ExternalRatings tmdbId={tv.id} mediaType="tv" imdbId={imdbId} />
+            <ExternalRatings tmdbId={tv.id} mediaType="tv" imdbId={imdbId} initialData={initialRatings} />
           }
           initialListStatus={listStatus ?? undefined}
         >
@@ -163,6 +172,7 @@ export default async function TvPage({ params }: { params: ParamsInput }) {
               posterPath={tv.poster_path}
               releaseYear={tv.first_air_date ? new Date(tv.first_air_date).getFullYear() : null}
               imageProxyEnabled={imageProxyEnabled}
+              initialData={{ stats: reviewStats, reviews, userReview }}
             />
           </div>
           {/* Recommendations Section */}

@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import useSWR from "swr";
 import { Loader2, Calendar, TrendingUp, Users, CheckCircle2, XCircle, Clock } from "lucide-react";
+import { getAvatarAlt, getAvatarSrc } from "@/lib/avatar";
 
 interface Analytics {
   totalRequests: number;
@@ -12,7 +13,13 @@ interface Analytics {
   approvedRequests: number;
   deniedRequests: number;
   avgApprovalTimeHours: number;
-  topRequesters: Array<{ username: string; count: number }>;
+  topRequesters: Array<{
+    username: string;
+    displayName: string | null;
+    avatarUrl: string | null;
+    jellyfinUserId: string | null;
+    count: number;
+  }>;
   requestsByDay: Array<{ date: string; count: number }>;
   requestsByStatus: Array<{ status: string; count: number }>;
 }
@@ -186,8 +193,23 @@ export function AnalyticsDashboard() {
                 <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold text-sm">
                   {idx + 1}
                 </div>
+                <div className="h-8 w-8 rounded-full overflow-hidden bg-white/10 flex items-center justify-center">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={getAvatarSrc({
+                      avatarUrl: user.avatarUrl,
+                      jellyfinUserId: user.jellyfinUserId,
+                      displayName: user.displayName,
+                      username: user.username
+                    })}
+                    alt={getAvatarAlt({ displayName: user.displayName, username: user.username })}
+                    className="h-full w-full object-cover"
+                    loading="lazy"
+                    decoding="async"
+                  />
+                </div>
                 <div className="flex-1">
-                  <p className="text-white font-medium">{user.username}</p>
+                  <p className="text-white font-medium">{user.displayName || user.username}</p>
                 </div>
                 <div className="text-right">
                   <p className="text-white font-semibold">{user.count}</p>

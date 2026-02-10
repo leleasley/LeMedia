@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useCallback, useEffect, useState } from "react";
 import useSWR from "swr";
-import { Loader2 } from "lucide-react";
+import { Loader2, Film, Tv, RefreshCw } from "lucide-react";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { Button } from "@/components/ui/button";
 import { csrfFetch } from "@/lib/csrf-client";
@@ -418,13 +419,25 @@ export function ProfileSettings({
               {(accountTypeLabel || roleLabel) ? (
                 <div className="mb-6 flex flex-wrap gap-2">
                   {accountTypeLabel ? (
-                    <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-semibold text-foreground">
-                      Account Type: {accountTypeLabel}
+                    <span className="inline-flex items-center gap-2 rounded-full border border-purple-500/30 bg-purple-500/10 px-3 py-1.5 text-xs font-semibold text-purple-200">
+                      {accountTypeLabel.toLowerCase().includes("jellyfin") && (
+                        <Image src="/images/jellyfin.svg" alt="" width={14} height={14} className="h-3.5 w-3.5" />
+                      )}
+                      {accountTypeLabel}
                     </span>
                   ) : null}
                   {roleLabel ? (
-                    <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-semibold text-foreground">
-                      Role: {roleLabel}
+                    <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${
+                      roleLabel.toLowerCase() === "owner"
+                        ? "border-amber-500/30 bg-amber-500/10 text-amber-200"
+                        : "border-blue-500/30 bg-blue-500/10 text-blue-200"
+                    }`}>
+                      {roleLabel.toLowerCase() === "owner" ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 22 12 18.56 5.82 22 7 14.14l-5-4.87 6.91-1.01z"/></svg>
+                      ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                      )}
+                      {roleLabel}
                     </span>
                   ) : null}
                 </div>
@@ -497,24 +510,40 @@ export function ProfileSettings({
                 <div className="border-t border-white/10 my-6"></div>
                 <h3 className="text-lg font-bold text-foreground mb-4">Request Quotas</h3>
                 <div className="grid md:grid-cols-2 gap-6">
-                    <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-                        <div className="text-sm font-semibold text-white mb-1">Movies</div>
-                        <div className="text-2xl font-bold text-indigo-400">
-                            {initialData?.requestLimitMovie ? (
-                                <span>{initialData.requestLimitMovie} <span className="text-sm font-normal text-gray-400">per {initialData.requestLimitMovieDays ?? 1} day(s)</span></span>
-                            ) : (
-                                <span className="text-emerald-400">Unlimited</span>
-                            )}
+                    <div className="relative overflow-hidden rounded-xl border border-indigo-500/20 bg-gradient-to-br from-indigo-950/30 via-slate-900/40 to-slate-900/20 p-4 hover:border-indigo-500/30 transition-all">
+                        <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-transparent pointer-events-none" />
+                        <div className="relative flex items-center gap-3">
+                            <div className="h-10 w-10 flex-shrink-0 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center shadow-lg">
+                                <Film className="h-5 w-5 text-white" />
+                            </div>
+                            <div>
+                                <div className="text-sm font-semibold text-white">Movies</div>
+                                <div className="text-xl font-bold text-indigo-400">
+                                    {initialData?.requestLimitMovie ? (
+                                        <span>{initialData.requestLimitMovie} <span className="text-xs font-normal text-gray-400">per {initialData.requestLimitMovieDays ?? 1} day(s)</span></span>
+                                    ) : (
+                                        <span className="text-emerald-400">Unlimited</span>
+                                    )}
+                                </div>
+                            </div>
                         </div>
                     </div>
-                    <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-                        <div className="text-sm font-semibold text-white mb-1">TV Series</div>
-                        <div className="text-2xl font-bold text-purple-400">
-                            {initialData?.requestLimitSeries ? (
-                                <span>{initialData.requestLimitSeries} <span className="text-sm font-normal text-gray-400">per {initialData.requestLimitSeriesDays ?? 1} day(s)</span></span>
-                            ) : (
-                                <span className="text-emerald-400">Unlimited</span>
-                            )}
+                    <div className="relative overflow-hidden rounded-xl border border-teal-500/20 bg-gradient-to-br from-teal-950/30 via-slate-900/40 to-slate-900/20 p-4 hover:border-teal-500/30 transition-all">
+                        <div className="absolute inset-0 bg-gradient-to-br from-teal-500/5 to-transparent pointer-events-none" />
+                        <div className="relative flex items-center gap-3">
+                            <div className="h-10 w-10 flex-shrink-0 rounded-xl bg-gradient-to-br from-teal-500 to-teal-600 flex items-center justify-center shadow-lg">
+                                <Tv className="h-5 w-5 text-white" />
+                            </div>
+                            <div>
+                                <div className="text-sm font-semibold text-white">TV Series</div>
+                                <div className="text-xl font-bold text-teal-400">
+                                    {initialData?.requestLimitSeries ? (
+                                        <span>{initialData.requestLimitSeries} <span className="text-xs font-normal text-gray-400">per {initialData.requestLimitSeriesDays ?? 1} day(s)</span></span>
+                                    ) : (
+                                        <span className="text-emerald-400">Unlimited</span>
+                                    )}
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -523,18 +552,32 @@ export function ProfileSettings({
                     <>
                         <div className="border-t border-white/10 my-6"></div>
                         <div className="flex items-center justify-between mb-4">
-                            <div>
-                                <h3 className="text-lg font-bold text-foreground">Watchlist Synchronization</h3>
-                                <p className="text-sm text-foreground/60 mt-1">
-                                    Automatically request items added to your Jellyfin or Trakt watchlist.
-                                    {!roleLabel?.toLowerCase().includes("admin") && !roleLabel?.toLowerCase().includes("owner") && (
-                                        <span className="text-amber-400 block mt-1">Note: Requests will require admin approval unless already available.</span>
+                            <div className="flex items-center gap-3">
+                                <div className="flex gap-1">
+                                    {jellyfinLinked && (
+                                        <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center shadow-md">
+                                            <Image src="/images/jellyfin.svg" alt="Jellyfin" width={16} height={16} className="h-4 w-4" />
+                                        </div>
                                     )}
-                                </p>
+                                    {traktLinked && (
+                                        <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-red-500 to-red-600 flex items-center justify-center shadow-md">
+                                            <Image src="/images/trakt.svg" alt="Trakt" width={16} height={16} className="h-4 w-4" />
+                                        </div>
+                                    )}
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-bold text-foreground">Watchlist Sync</h3>
+                                    <p className="text-sm text-foreground/60 mt-0.5">
+                                        Auto-request from your {jellyfinLinked && traktLinked ? "Jellyfin & Trakt" : jellyfinLinked ? "Jellyfin" : "Trakt"} watchlists
+                                        {!roleLabel?.toLowerCase().includes("admin") && !roleLabel?.toLowerCase().includes("owner") && (
+                                            <span className="text-amber-400 block mt-1">Requests will require admin approval unless already available.</span>
+                                        )}
+                                    </p>
+                                </div>
                             </div>
                             {(form.watchlistSyncMovies || form.watchlistSyncTv) && (
-                                <Button 
-                                    type="button" 
+                                <Button
+                                    type="button"
                                     onClick={handleSync}
                                     disabled={syncing}
                                     className="h-9 px-4 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-200 border border-indigo-500/30"
@@ -546,12 +589,7 @@ export function ProfileSettings({
                                         </>
                                     ) : (
                                         <>
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2">
-                                                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
-                                                <path d="M3 3v5h5"></path>
-                                                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path>
-                                                <path d="M16 16h5v5"></path>
-                                            </svg>
+                                            <RefreshCw className="mr-2 h-3.5 w-3.5" />
                                             Sync Now
                                         </>
                                     )}
@@ -560,15 +598,21 @@ export function ProfileSettings({
                         </div>
 
                         <div className="grid md:grid-cols-2 gap-6">
-                            <div className="flex items-center justify-between p-4 rounded-xl border border-white/10 bg-white/5">
-                                <div className="flex flex-col">
-                                    <span className="font-semibold text-white text-sm">Sync Movies</span>
-                                    <span className="text-xs text-gray-400">Auto-request movies from watchlist</span>
+                            <div className="relative overflow-hidden flex items-center justify-between p-4 rounded-xl border border-indigo-500/20 bg-gradient-to-br from-indigo-950/20 via-slate-900/30 to-slate-900/10 hover:border-indigo-500/30 transition-all">
+                                <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-transparent pointer-events-none" />
+                                <div className="relative flex items-center gap-3">
+                                    <div className="h-9 w-9 flex-shrink-0 rounded-lg bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center shadow-md">
+                                        <Film className="h-4 w-4 text-white" />
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <span className="font-semibold text-white text-sm">Sync Movies</span>
+                                        <span className="text-xs text-gray-400">Auto-request from watchlist</span>
+                                    </div>
                                 </div>
                                 <Switch
                                     checked={form.watchlistSyncMovies}
                                     onChange={(val: boolean) => updateField("watchlistSyncMovies", val)}
-                                    className={`${
+                                    className={`relative ${
                                         form.watchlistSyncMovies ? 'bg-indigo-600' : 'bg-gray-700'
                                     } relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-gray-900`}
                                 >
@@ -580,17 +624,23 @@ export function ProfileSettings({
                                 </Switch>
                             </div>
 
-                            <div className="flex items-center justify-between p-4 rounded-xl border border-white/10 bg-white/5">
-                                <div className="flex flex-col">
-                                    <span className="font-semibold text-white text-sm">Sync Series</span>
-                                    <span className="text-xs text-gray-400">Auto-request TV shows from watchlist</span>
+                            <div className="relative overflow-hidden flex items-center justify-between p-4 rounded-xl border border-teal-500/20 bg-gradient-to-br from-teal-950/20 via-slate-900/30 to-slate-900/10 hover:border-teal-500/30 transition-all">
+                                <div className="absolute inset-0 bg-gradient-to-br from-teal-500/5 to-transparent pointer-events-none" />
+                                <div className="relative flex items-center gap-3">
+                                    <div className="h-9 w-9 flex-shrink-0 rounded-lg bg-gradient-to-br from-teal-500 to-teal-600 flex items-center justify-center shadow-md">
+                                        <Tv className="h-4 w-4 text-white" />
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <span className="font-semibold text-white text-sm">Sync Series</span>
+                                        <span className="text-xs text-gray-400">Auto-request from watchlist</span>
+                                    </div>
                                 </div>
                                 <Switch
                                     checked={form.watchlistSyncTv}
                                     onChange={(val: boolean) => updateField("watchlistSyncTv", val)}
-                                    className={`${
-                                        form.watchlistSyncTv ? 'bg-indigo-600' : 'bg-gray-700'
-                                    } relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-gray-900`}
+                                    className={`relative ${
+                                        form.watchlistSyncTv ? 'bg-teal-600' : 'bg-gray-700'
+                                    } relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 focus:ring-offset-gray-900`}
                                 >
                                     <span
                                         className={`${
@@ -640,40 +690,52 @@ export function ProfileSettings({
               </div>
 
               <form className="space-y-6" onSubmit={handleSubmit}>
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-foreground flex items-center gap-2" htmlFor="profile-discord-id-linked">
-                    <span>Discord User ID</span>
-                    <span className="text-xs text-foreground/50 font-normal">(optional)</span>
-                  </label>
-                  <input
-                    id="profile-discord-id-linked"
-                    value={form.discordUserId}
-                    onChange={e => updateField("discordUserId", e.target.value)}
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    placeholder="18-digit Discord user ID"
-                    className="w-full rounded-xl border border-white/20 bg-white/5 px-4 py-3 md:py-4 text-foreground placeholder:text-foreground/30 outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all text-sm backdrop-blur-sm"
-                  />
-                  <p className="text-xs text-foreground/50">
-                    Used for Discord notifications. <a href="https://support.discord.com/hc/en-us/articles/206346498-Where-can-I-find-my-User-Server-Message-ID-" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">Find your ID</a>
-                  </p>
+                <div className="relative overflow-hidden rounded-xl border border-indigo-500/20 bg-gradient-to-br from-indigo-950/20 via-slate-900/30 to-slate-900/10 p-4 hover:border-indigo-500/30 transition-all">
+                  <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-transparent pointer-events-none" />
+                  <div className="relative space-y-3">
+                    <label className="text-sm font-semibold text-foreground flex items-center gap-2" htmlFor="profile-discord-id-linked">
+                      <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center shadow-md">
+                        <Image src="/images/discord.svg" alt="" width={14} height={14} className="h-3.5 w-3.5" />
+                      </div>
+                      <span>Discord User ID</span>
+                      <span className="text-xs text-foreground/50 font-normal">(optional)</span>
+                    </label>
+                    <input
+                      id="profile-discord-id-linked"
+                      value={form.discordUserId}
+                      onChange={e => updateField("discordUserId", e.target.value)}
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      placeholder="18-digit Discord user ID"
+                      className="w-full rounded-xl border border-indigo-500/20 bg-indigo-950/20 px-4 py-3 md:py-4 text-foreground placeholder:text-foreground/30 outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all text-sm"
+                    />
+                    <p className="text-xs text-foreground/50">
+                      Used for Discord notifications. <a href="https://support.discord.com/hc/en-us/articles/206346498-Where-can-I-find-my-User-Server-Message-ID-" target="_blank" rel="noreferrer" className="text-indigo-400 hover:underline">Find your ID</a>
+                    </p>
+                  </div>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-foreground flex items-center gap-2" htmlFor="profile-letterboxd-linked">
-                    <span>Letterboxd Username</span>
-                    <span className="text-xs text-foreground/50 font-normal">(optional)</span>
-                  </label>
-                  <input
-                    id="profile-letterboxd-linked"
-                    value={form.letterboxdUsername}
-                    onChange={e => updateField("letterboxdUsername", e.target.value)}
-                    placeholder="your-letterboxd-username"
-                    className="w-full rounded-xl border border-white/20 bg-white/5 px-4 py-3 md:py-4 text-foreground placeholder:text-foreground/30 outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all text-sm backdrop-blur-sm"
-                  />
-                  <p className="text-xs text-foreground/50">
-                    Connect your Letterboxd profile. <a href="https://letterboxd.com/signup" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">Create account</a>
-                  </p>
+                <div className="relative overflow-hidden rounded-xl border border-emerald-500/20 bg-gradient-to-br from-emerald-950/20 via-slate-900/30 to-slate-900/10 p-4 hover:border-emerald-500/30 transition-all">
+                  <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-transparent pointer-events-none" />
+                  <div className="relative space-y-3">
+                    <label className="text-sm font-semibold text-foreground flex items-center gap-2" htmlFor="profile-letterboxd-linked">
+                      <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shadow-md">
+                        <Image src="/images/letterboxd.svg" alt="" width={14} height={14} className="h-3.5 w-3.5" />
+                      </div>
+                      <span>Letterboxd Username</span>
+                      <span className="text-xs text-foreground/50 font-normal">(optional)</span>
+                    </label>
+                    <input
+                      id="profile-letterboxd-linked"
+                      value={form.letterboxdUsername}
+                      onChange={e => updateField("letterboxdUsername", e.target.value)}
+                      placeholder="your-letterboxd-username"
+                      className="w-full rounded-xl border border-emerald-500/20 bg-emerald-950/20 px-4 py-3 md:py-4 text-foreground placeholder:text-foreground/30 outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all text-sm"
+                    />
+                    <p className="text-xs text-foreground/50">
+                      Connect your Letterboxd profile. <a href="https://letterboxd.com/signup" target="_blank" rel="noreferrer" className="text-emerald-400 hover:underline">Create account</a>
+                    </p>
+                  </div>
                 </div>
 
                 <div className="flex justify-end pt-4">
@@ -696,12 +758,18 @@ export function ProfileSettings({
               </form>
 
               <div className="border-t border-white/10 my-6"></div>
-              <h3 className="text-lg font-bold text-foreground mb-4">Jellyfin Connection</h3>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center shadow-lg">
+                  <Image src="/images/jellyfin.svg" alt="Jellyfin" width={18} height={18} className="h-4.5 w-4.5" />
+                </div>
+                <h3 className="text-lg font-bold text-foreground">Jellyfin Connection</h3>
+              </div>
 
               {jellyfinLinked ? (
                 <div className="space-y-4">
-                  <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-emerald-100">
-                    Linked as <span className="font-semibold">{jellyfinUsername ?? "Jellyfin user"}</span>.
+                  <div className="flex items-center gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-emerald-100">
+                    <Image src="/images/jellyfin.svg" alt="" width={20} height={20} className="h-5 w-5" />
+                    Linked as <span className="font-semibold">{jellyfinUsername ?? "Jellyfin user"}</span>
                   </div>
                   <button
                     className="btn bg-red-500/10 hover:bg-red-500/20 text-red-200"

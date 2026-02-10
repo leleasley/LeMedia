@@ -18,31 +18,36 @@ import { MediaGalleryStrip } from "@/components/Media/MediaGalleryStrip";
 import { MediaSocialPanel } from "@/components/Media/MediaSocialPanel";
 import tmdbLogo from "@/assets/tmdb_logo.svg";
 import { getUser } from "@/auth";
-import { getUserByUsername, getUserMediaListStatus, upsertUser } from "@/db";
+import { findActiveRequestByTmdb, getReviewStatsForMedia, getReviewsForMedia, getUserByUsername, getUserMediaListStatus, getUserReviewForMedia, upsertUser } from "@/db";
 
 const Params = z.object({ id: z.coerce.number().int() });
 type ParamsInput = { id: string } | Promise<{ id: string }>;
+
+async function getBaseUrlFromHeaders() {
+  const headerStore = await headers();
+  const host = headerStore.get("x-forwarded-host") ?? headerStore.get("host");
+  const proto = headerStore.get("x-forwarded-proto") ?? "http";
+  const fallbackBaseUrl = process.env.INTERNAL_APP_BASE_URL ?? process.env.APP_BASE_URL ?? "";
+  const baseUrl = host ? `${proto}://${host}` : fallbackBaseUrl;
+  return baseUrl.replace(/\/+$/, "");
+}
 
 async function resolveParams(params: ParamsInput) {
   if (params && typeof (params as any).then === "function") return await (params as Promise<{ id: string }>);
   return params as { id: string };
 }
 
-async function fetchMovieAggregate(tmdbId: number, title?: string) {
-  const headerStore = await headers();
-  const host = headerStore.get("x-forwarded-host") ?? headerStore.get("host");
-  if (!host) return null;
-  const proto = headerStore.get("x-forwarded-proto") ?? "http";
-  const params = new URLSearchParams();
-  if (title) params.set("title", title);
-  const url = `${proto}://${host}/api/v1/movie/${tmdbId}${params.toString() ? `?${params.toString()}` : ""}`;
+async function fetchRatings(mediaType: "movie" | "tv", tmdbId: number) {
+  const baseUrl = await getBaseUrlFromHeaders();
+  if (!baseUrl) return null;
   try {
-    const res = await fetch(url, {
-      headers: { cookie: headerStore.get("cookie") ?? "" },
-      cache: "no-store"
+    const res = await fetch(`${baseUrl}/api/v1/ratings/${mediaType}/${tmdbId}`, {
+      next: { revalidate: 900 }
     });
     if (!res.ok) return null;
-    return await res.json();
+    const json = (await res.json()) as any;
+    if (!json || !json.ratings) return null;
+    return { ratings: json.ratings };
   } catch {
     return null;
   }
@@ -75,14 +80,25 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
   try {
     const { id } = Params.parse(await resolveParams(params));
 
-    const [details, aggregate] = await Promise.all([
-      getMovieDetailAggregateFast(id),
-      fetchMovieAggregate(id, "")
+    const detailsPromise = getMovieDetailAggregateFast(id);
+    const userIdPromise = resolveUserId();
+    const ratingsPromise = fetchRatings("movie", id);
+    const activeRequestPromise = findActiveRequestByTmdb({ requestType: "movie", tmdbId: id }).catch(() => null);
+
+    const [details, userId, initialRatings, activeRequest] = await Promise.all([
+      detailsPromise,
+      userIdPromise,
+      ratingsPromise,
+      activeRequestPromise
     ]);
 
     const movie = details.movie;
-    const userId = await resolveUserId();
-    const listStatus = userId ? await getUserMediaListStatus({ userId, mediaType: "movie", tmdbId: id }).catch(() => null) : null;
+    const [listStatus, reviews, reviewStats, userReview] = await Promise.all([
+      userId ? getUserMediaListStatus({ userId, mediaType: "movie", tmdbId: id }).catch(() => null) : Promise.resolve(null),
+      getReviewsForMedia("movie", id, 50).catch(() => []),
+      getReviewStatsForMedia("movie", id).catch(() => ({ total: 0, average: 0 })),
+      userId ? getUserReviewForMedia(userId, "movie", id).catch(() => null) : Promise.resolve(null)
+    ]);
     const imageProxyEnabled = details.imageProxyEnabled;
     const streamingProviders = details.streamingProviders;
     const watchProviders = details.watchProviders;
@@ -176,7 +192,7 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
         {/* Media Title Section */}
         <div className="media-title">
           <div className="media-status">
-            <MovieAvailabilityBadge tmdbId={movie.id} title={movie.title} prefetched={aggregate ?? undefined} />
+            <MovieAvailabilityBadge tmdbId={movie.id} title={movie.title} />
           </div>
           <h1 data-testid="media-title">
             {movie.title}{" "}
@@ -201,13 +217,13 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
                 <span className="text-xs sm:text-sm font-bold text-white">{(movie.vote_average * 10).toFixed(0)}%</span>
               </Link>
             )}
-            <ExternalRatings tmdbId={movie.id} mediaType="movie" imdbId={imdbId} />
+            <ExternalRatings tmdbId={movie.id} mediaType="movie" imdbId={imdbId} initialData={initialRatings} />
           </div>
 
           <MediaSocialPanel
             tmdbId={movie.id}
             mediaType="movie"
-            requestedBy={aggregate?.request?.requestedBy ?? null}
+            requestedBy={activeRequest?.requestedBy ?? null}
             initialWatchlist={listStatus?.watchlist ?? null}
           />
 
@@ -234,7 +250,6 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
               backdropUrl={backdropImage}
               posterUrl={poster}
               year={releaseYear ?? null}
-              prefetched={aggregate ?? undefined}
               initialListStatus={listStatus}
             />
           </div>
@@ -375,6 +390,7 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
           posterPath={movie.poster_path}
           releaseYear={releaseYear}
           imageProxyEnabled={imageProxyEnabled}
+          initialData={{ stats: reviewStats, reviews, userReview }}
         />
       </div>
 

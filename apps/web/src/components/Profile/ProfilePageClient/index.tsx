@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowRightCircle } from "lucide-react";
+import Image from "next/image";
+import { ArrowRightCircle, ShieldCheck, Lock, Film, Tv, CheckCircle2, XCircle } from "lucide-react";
 import useSWR from "swr";
 import { ProfileHeader } from "@/components/Profile/ProfileHeader";
 import { ImageFader } from "@/components/Common/ImageFader";
@@ -121,18 +122,54 @@ export function ProfilePageClient({
   };
 
   const linkedAccounts = [
-    { label: "Jellyfin", value: profileUser.jellyfinUsername ?? (profileUser.jellyfinUserId ? "Linked" : null) },
-    { label: "Trakt", value: profileUser.traktUsername ?? null },
-    { label: "Discord", value: profileUser.discordUserId ?? null },
-    { label: "Letterboxd", value: profileUser.letterboxdUsername ?? null }
+    {
+      label: "Jellyfin",
+      value: profileUser.jellyfinUsername ?? (profileUser.jellyfinUserId ? "Linked" : null),
+      icon: "/images/jellyfin.svg",
+      color: "purple",
+      borderClass: "border-purple-500/20 hover:border-purple-500/40",
+      bgClass: "from-purple-950/40 via-slate-900/60 to-slate-900/40",
+      iconBgClass: "from-purple-500 to-purple-600",
+      glowClass: "from-purple-500/5",
+    },
+    {
+      label: "Trakt",
+      value: profileUser.traktUsername ?? null,
+      icon: "/images/trakt.svg",
+      color: "red",
+      borderClass: "border-red-500/20 hover:border-red-500/40",
+      bgClass: "from-red-950/40 via-slate-900/60 to-slate-900/40",
+      iconBgClass: "from-red-500 to-red-600",
+      glowClass: "from-red-500/5",
+    },
+    {
+      label: "Discord",
+      value: profileUser.discordUserId ?? null,
+      icon: "/images/discord.svg",
+      color: "indigo",
+      borderClass: "border-indigo-500/20 hover:border-indigo-500/40",
+      bgClass: "from-indigo-950/40 via-slate-900/60 to-slate-900/40",
+      iconBgClass: "from-indigo-500 to-indigo-600",
+      glowClass: "from-indigo-500/5",
+    },
+    {
+      label: "Letterboxd",
+      value: profileUser.letterboxdUsername ?? null,
+      icon: "/images/letterboxd.svg",
+      color: "emerald",
+      borderClass: "border-emerald-500/20 hover:border-emerald-500/40",
+      bgClass: "from-emerald-950/40 via-slate-900/60 to-slate-900/40",
+      iconBgClass: "from-emerald-400 to-emerald-600",
+      glowClass: "from-emerald-500/5",
+    },
   ];
 
   const badges = [
-    isAdmin ? "Admin" : null,
-    mfaEnabled ? "MFA Enabled" : null,
-    profileUser.jellyfinUserId ? "Jellyfin Linked" : null,
-    profileUser.traktUsername ? "Trakt Linked" : null
-  ].filter(Boolean) as string[];
+    isAdmin ? { label: "Admin", icon: "shield", color: "purple" } : null,
+    mfaEnabled ? { label: "MFA Enabled", icon: "lock", color: "emerald" } : null,
+    profileUser.jellyfinUserId ? { label: "Jellyfin Linked", icon: "jellyfin", color: "purple" } : null,
+    profileUser.traktUsername ? { label: "Trakt Linked", icon: "trakt", color: "red" } : null,
+  ].filter(Boolean) as Array<{ label: string; icon: string; color: string }>;
 
   const saveDisplayName = async () => {
     if (displayNameSaving) return;
@@ -213,207 +250,266 @@ export function ProfilePageClient({
 
       {/* Profile Basics */}
       <div className="relative z-0 mt-6 grid gap-5 lg:grid-cols-3">
-        <div className="rounded-2xl border border-white/10 bg-gray-900/40 p-5 shadow-lg lg:col-span-2">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-white">Profile Basics</h2>
-            <Link href="/settings/profile/general" className="text-xs text-gray-400 hover:text-white">
-              More options
-            </Link>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="text-xs uppercase tracking-wider text-gray-400">Display name</label>
-              <input
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="Your display name"
-                className="mt-2 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-gray-500"
-              />
+        <div className="relative overflow-hidden rounded-2xl border border-blue-500/20 bg-gradient-to-br from-blue-950/30 via-slate-900/60 to-slate-900/40 p-5 shadow-lg backdrop-blur-md lg:col-span-2 hover:border-blue-500/30 transition-all">
+          <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-transparent pointer-events-none" />
+          <div className="relative">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white">
+                    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+                    <circle cx="12" cy="7" r="4" />
+                  </svg>
+                </div>
+                <h2 className="text-lg font-semibold text-white">Profile Basics</h2>
+              </div>
+              <Link href="/settings/profile/general" className="text-xs text-gray-400 hover:text-white transition-colors">
+                More options
+              </Link>
             </div>
-            <div>
-              <label className="text-xs uppercase tracking-wider text-gray-400">Username</label>
-              <div className="mt-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-300">
-                @{profileUser.username}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="text-xs uppercase tracking-wider text-gray-400">Display name</label>
+                <input
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder="Your display name"
+                  className="mt-2 w-full rounded-xl border border-blue-500/20 bg-blue-950/20 px-4 py-2.5 text-sm text-white placeholder:text-white/30 outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all"
+                />
+              </div>
+              <div>
+                <label className="text-xs uppercase tracking-wider text-gray-400">Username</label>
+                <div className="mt-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-gray-300">
+                  @{profileUser.username}
+                </div>
               </div>
             </div>
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={saveDisplayName}
+                disabled={displayNameSaving}
+                className="rounded-xl bg-blue-600/80 px-5 py-2 text-xs font-semibold text-white hover:bg-blue-600 transition-colors disabled:opacity-60"
+              >
+                {displayNameSaving ? "Saving..." : "Save Display Name"}
+              </button>
+            </div>
           </div>
-          <div className="mt-4 flex items-center justify-end gap-2">
+        </div>
+
+        <div className="relative overflow-hidden rounded-2xl border border-amber-500/20 bg-gradient-to-br from-amber-950/30 via-slate-900/60 to-slate-900/40 p-5 shadow-lg backdrop-blur-md hover:border-amber-500/30 transition-all">
+          <div className="absolute inset-0 bg-gradient-to-br from-amber-500/5 to-transparent pointer-events-none" />
+          <div className="relative">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center shadow-lg">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white">
+                  <circle cx="12" cy="12" r="10" />
+                  <circle cx="12" cy="10" r="3" />
+                  <path d="M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662" />
+                </svg>
+              </div>
+              <h2 className="text-lg font-semibold text-white">Avatar</h2>
+            </div>
+            <p className="text-xs text-gray-400 mb-3">
+              Uploading an avatar updates your Jellyfin profile too.
+            </p>
+            {!profileUser.jellyfinUserId && (
+              <div className="mb-3 flex items-center gap-2 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                <Image src="/images/jellyfin.svg" alt="" width={14} height={14} className="h-3.5 w-3.5" />
+                Link Jellyfin to enable avatar uploads.
+              </div>
+            )}
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={(e) => setAvatarFile(e.target.files?.[0] ?? null)}
+              disabled={!profileUser.jellyfinUserId}
+              className="w-full text-xs text-gray-300 file:mr-4 file:rounded-xl file:border-0 file:bg-amber-600/80 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white hover:file:bg-amber-600 file:transition-colors file:cursor-pointer disabled:opacity-60"
+            />
             <button
               type="button"
-              onClick={saveDisplayName}
-              disabled={displayNameSaving}
-              className="rounded-lg border border-white/10 bg-white/10 px-4 py-2 text-xs font-semibold text-white hover:bg-white/20 disabled:opacity-60"
+              onClick={uploadAvatar}
+              disabled={!avatarFile || avatarUploading || !profileUser.jellyfinUserId}
+              className="mt-4 w-full rounded-xl bg-amber-600/80 px-4 py-2 text-xs font-semibold text-white hover:bg-amber-600 transition-colors disabled:opacity-60"
             >
-              {displayNameSaving ? "Saving..." : "Save Display Name"}
+              {avatarUploading ? "Uploading..." : "Upload Avatar"}
             </button>
           </div>
         </div>
+      </div>
 
-        <div className="rounded-2xl border border-white/10 bg-gray-900/40 p-5 shadow-lg">
-          <h2 className="text-lg font-semibold text-white mb-4">Avatar</h2>
-          <p className="text-xs text-gray-400 mb-3">
-            Uploading an avatar updates your Jellyfin profile too.
-          </p>
-          {!profileUser.jellyfinUserId && (
-            <div className="mb-3 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
-              Link Jellyfin to enable avatar uploads.
-            </div>
-          )}
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            onChange={(e) => setAvatarFile(e.target.files?.[0] ?? null)}
-            disabled={!profileUser.jellyfinUserId}
-            className="w-full text-xs text-gray-300 file:mr-4 file:rounded-md file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white hover:file:bg-white/20 disabled:opacity-60"
-          />
-          <button
-            type="button"
-            onClick={uploadAvatar}
-            disabled={!avatarFile || avatarUploading || !profileUser.jellyfinUserId}
-            className="mt-4 w-full rounded-lg border border-white/10 bg-white/10 px-4 py-2 text-xs font-semibold text-white hover:bg-white/20 disabled:opacity-60"
-          >
-            {avatarUploading ? "Uploading..." : "Upload Avatar"}
-          </button>
+      {/* Linked Accounts */}
+      <div className="relative z-0 mt-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-white">Linked Accounts</h2>
+          <Link href="/settings/profile/linked" className="text-xs text-gray-400 hover:text-white transition-colors">
+            Manage links
+          </Link>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {linkedAccounts.map((account) => {
+            const isLinked = Boolean(account.value);
+            return (
+              <div
+                key={account.label}
+                className={`relative overflow-hidden rounded-2xl border ${account.borderClass} bg-gradient-to-br ${account.bgClass} p-4 backdrop-blur-md transition-all`}
+              >
+                <div className={`absolute inset-0 bg-gradient-to-br ${account.glowClass} to-transparent pointer-events-none`} />
+                <div className="relative flex items-center gap-3">
+                  <div className={`h-11 w-11 flex-shrink-0 rounded-xl bg-gradient-to-br ${account.iconBgClass} flex items-center justify-center shadow-lg`}>
+                    <Image
+                      src={account.icon}
+                      alt={account.label}
+                      width={24}
+                      height={24}
+                      className="h-6 w-6"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-bold text-white">{account.label}</h3>
+                      {isLinked ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-semibold text-green-300 border border-green-500/30">
+                          <CheckCircle2 className="h-3 w-3" />
+                          Connected
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-semibold text-gray-500 border border-white/10">
+                          <XCircle className="h-3 w-3" />
+                          Not linked
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-0.5 text-sm text-gray-300 truncate">
+                      {account.value
+                        ? (account.label === "Discord" ? `ID: ${account.value}` : `@${account.value}`)
+                        : "Connect to get started"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
-      {/* Linked Accounts & Badges */}
-      <div className="relative z-0 mt-6 grid gap-5 lg:grid-cols-3">
-        <div className="rounded-2xl border border-white/10 bg-gray-900/40 p-5 shadow-lg lg:col-span-2">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-white">Linked Accounts</h2>
-            <Link href="/settings/profile/linked" className="text-xs text-gray-400 hover:text-white">
-              Manage links
-            </Link>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {linkedAccounts.map((account) => (
-              <div key={account.label} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
-                <div className="text-xs uppercase tracking-wider text-gray-400">{account.label}</div>
-                <div className="mt-1 text-sm font-semibold text-white">
-                  {account.value ?? "Not linked"}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-white/10 bg-gray-900/40 p-5 shadow-lg">
-          <h2 className="text-lg font-semibold text-white mb-4">Profile Badges</h2>
-          <div className="flex flex-wrap gap-2">
-            {badges.length === 0 && (
-              <span className="text-sm text-gray-400">No badges yet</span>
-            )}
-            {badges.map((badge) => (
-              <span key={badge} className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-gray-200">
-                {badge}
+      {/* Profile Badges */}
+      <div className="relative z-0 mt-6">
+        <h2 className="text-lg font-semibold text-white mb-4">Profile Badges</h2>
+        <div className="flex flex-wrap gap-2">
+          {badges.length === 0 && (
+            <span className="text-sm text-gray-400">No badges yet</span>
+          )}
+          {badges.map((badge) => {
+            const colorMap: Record<string, string> = {
+              purple: "border-purple-500/30 bg-purple-500/10 text-purple-200",
+              emerald: "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
+              red: "border-red-500/30 bg-red-500/10 text-red-200",
+              indigo: "border-indigo-500/30 bg-indigo-500/10 text-indigo-200",
+            };
+            const cls = colorMap[badge.color] || "border-white/10 bg-white/5 text-gray-200";
+            return (
+              <span key={badge.label} className={`inline-flex items-center gap-1.5 rounded-full border ${cls} px-3 py-1.5 text-xs font-semibold`}>
+                {badge.icon === "shield" && <ShieldCheck className="h-3.5 w-3.5" />}
+                {badge.icon === "lock" && <Lock className="h-3.5 w-3.5" />}
+                {badge.icon === "jellyfin" && (
+                  <Image src="/images/jellyfin.svg" alt="" width={14} height={14} className="h-3.5 w-3.5" />
+                )}
+                {badge.icon === "trakt" && (
+                  <Image src="/images/trakt.svg" alt="" width={14} height={14} className="h-3.5 w-3.5" />
+                )}
+                {badge.label}
               </span>
-            ))}
-          </div>
+            );
+          })}
         </div>
       </div>
 
       {/* Request Stats Cards */}
       {stats && (
-        <div className="relative z-0">
-          <dl className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-3">
+        <div className="relative z-0 mt-6">
+          <h2 className="text-lg font-semibold text-white mb-4">Request Stats</h2>
+          <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             {/* Total Requests */}
-            <div className="overflow-hidden rounded-lg bg-gray-800/50 backdrop-blur-sm px-4 py-5 shadow ring-1 ring-gray-700 sm:p-6">
-              <dt className="truncate text-sm font-bold text-gray-300">
-                Total Requests
-              </dt>
-              <dd className="mt-1 text-3xl font-semibold text-white">
-                <Link
-                  href="/requests"
-                  className="hover:text-purple-300 transition-colors"
-                >
-                  {stats.total}
-                </Link>
-              </dd>
+            <div className="relative overflow-hidden rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-950/40 via-slate-900/60 to-slate-900/40 p-5 backdrop-blur-md hover:border-purple-500/40 transition-all">
+              <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-transparent pointer-events-none" />
+              <div className="relative">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center shadow-lg">
+                    <ArrowRightCircle className="h-5 w-5 text-white" />
+                  </div>
+                  <dt className="text-sm font-bold text-gray-300">Total Requests</dt>
+                </div>
+                <dd className="text-3xl font-bold text-white">
+                  <Link href="/requests" className="hover:text-purple-300 transition-colors">
+                    {stats.total}
+                  </Link>
+                </dd>
+              </div>
             </div>
 
             {/* Movie Requests */}
-            <div
-              className={`overflow-hidden rounded-lg bg-gray-800/50 backdrop-blur-sm px-4 py-5 shadow ring-1 ${
-                movieQuota.restricted
-                  ? "bg-gradient-to-t from-red-900/30 to-transparent ring-red-500"
-                  : "ring-gray-700"
-              } sm:p-6`}
-            >
-              <dt
-                className={`truncate text-sm font-bold ${
-                  movieQuota.restricted ? "text-red-400" : "text-gray-300"
-                }`}
-              >
-                Movie Requests
-              </dt>
-              <dd
-                className={`mt-1 flex items-center text-sm ${
-                  movieQuota.restricted ? "text-red-400" : "text-white"
-                }`}
-              >
-                {movieQuota.limit ? (
-                  <>
-                    <ProgressCircle
-                      progress={Math.round(
-                        (movieQuota.remaining / movieQuota.limit) * 100
-                      )}
-                      useHeatLevel
-                      className="mr-2 h-8 w-8"
-                    />
-                    <div>
-                      <span className="text-3xl font-semibold">
-                        {movieQuota.remaining} of {movieQuota.limit}
-                      </span>
-                      <span className="ml-1 text-sm">remaining</span>
-                    </div>
-                  </>
-                ) : (
-                  <span className="text-3xl font-semibold">Unlimited</span>
-                )}
-              </dd>
+            <div className={`relative overflow-hidden rounded-2xl border ${movieQuota.restricted ? "border-red-500/40" : "border-indigo-500/20 hover:border-indigo-500/40"} bg-gradient-to-br ${movieQuota.restricted ? "from-red-950/40" : "from-indigo-950/40"} via-slate-900/60 to-slate-900/40 p-5 backdrop-blur-md transition-all`}>
+              <div className={`absolute inset-0 bg-gradient-to-br ${movieQuota.restricted ? "from-red-500/5" : "from-indigo-500/5"} to-transparent pointer-events-none`} />
+              <div className="relative">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className={`h-10 w-10 rounded-xl bg-gradient-to-br ${movieQuota.restricted ? "from-red-500 to-red-600" : "from-indigo-500 to-indigo-600"} flex items-center justify-center shadow-lg`}>
+                    <Film className="h-5 w-5 text-white" />
+                  </div>
+                  <dt className={`text-sm font-bold ${movieQuota.restricted ? "text-red-400" : "text-gray-300"}`}>
+                    Movie Quota
+                  </dt>
+                </div>
+                <dd className={`flex items-center ${movieQuota.restricted ? "text-red-400" : "text-white"}`}>
+                  {movieQuota.limit ? (
+                    <>
+                      <ProgressCircle
+                        progress={Math.round((movieQuota.remaining / movieQuota.limit) * 100)}
+                        useHeatLevel
+                        className="mr-3 h-9 w-9"
+                      />
+                      <div>
+                        <span className="text-2xl font-bold">{movieQuota.remaining}</span>
+                        <span className="text-sm text-gray-400 ml-1">/ {movieQuota.limit} remaining</span>
+                      </div>
+                    </>
+                  ) : (
+                    <span className="text-2xl font-bold text-emerald-400">Unlimited</span>
+                  )}
+                </dd>
+              </div>
             </div>
 
             {/* Series Requests */}
-            <div
-              className={`overflow-hidden rounded-lg bg-gray-800/50 backdrop-blur-sm px-4 py-5 shadow ring-1 ${
-                seriesQuota.restricted
-                  ? "bg-gradient-to-t from-red-900/30 to-transparent ring-red-500"
-                  : "ring-gray-700"
-              } sm:p-6`}
-            >
-              <dt
-                className={`truncate text-sm font-bold ${
-                  seriesQuota.restricted ? "text-red-400" : "text-gray-300"
-                }`}
-              >
-                Series Requests
-              </dt>
-              <dd
-                className={`mt-1 flex items-center text-sm ${
-                  seriesQuota.restricted ? "text-red-400" : "text-white"
-                }`}
-              >
-                {seriesQuota.limit ? (
-                  <>
-                    <ProgressCircle
-                      progress={Math.round(
-                        (seriesQuota.remaining / seriesQuota.limit) * 100
-                      )}
-                      useHeatLevel
-                      className="mr-2 h-8 w-8"
-                    />
-                    <div>
-                      <span className="text-3xl font-semibold">
-                        {seriesQuota.remaining} of {seriesQuota.limit}
-                      </span>
-                      <span className="ml-1 text-sm">remaining</span>
-                    </div>
-                  </>
-                ) : (
-                  <span className="text-3xl font-semibold">Unlimited</span>
-                )}
-              </dd>
+            <div className={`relative overflow-hidden rounded-2xl border ${seriesQuota.restricted ? "border-red-500/40" : "border-teal-500/20 hover:border-teal-500/40"} bg-gradient-to-br ${seriesQuota.restricted ? "from-red-950/40" : "from-teal-950/40"} via-slate-900/60 to-slate-900/40 p-5 backdrop-blur-md transition-all`}>
+              <div className={`absolute inset-0 bg-gradient-to-br ${seriesQuota.restricted ? "from-red-500/5" : "from-teal-500/5"} to-transparent pointer-events-none`} />
+              <div className="relative">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className={`h-10 w-10 rounded-xl bg-gradient-to-br ${seriesQuota.restricted ? "from-red-500 to-red-600" : "from-teal-500 to-teal-600"} flex items-center justify-center shadow-lg`}>
+                    <Tv className="h-5 w-5 text-white" />
+                  </div>
+                  <dt className={`text-sm font-bold ${seriesQuota.restricted ? "text-red-400" : "text-gray-300"}`}>
+                    Series Quota
+                  </dt>
+                </div>
+                <dd className={`flex items-center ${seriesQuota.restricted ? "text-red-400" : "text-white"}`}>
+                  {seriesQuota.limit ? (
+                    <>
+                      <ProgressCircle
+                        progress={Math.round((seriesQuota.remaining / seriesQuota.limit) * 100)}
+                        useHeatLevel
+                        className="mr-3 h-9 w-9"
+                      />
+                      <div>
+                        <span className="text-2xl font-bold">{seriesQuota.remaining}</span>
+                        <span className="text-sm text-gray-400 ml-1">/ {seriesQuota.limit} remaining</span>
+                      </div>
+                    </>
+                  ) : (
+                    <span className="text-2xl font-bold text-emerald-400">Unlimited</span>
+                  )}
+                </dd>
+              </div>
             </div>
           </dl>
         </div>

@@ -38,6 +38,7 @@ export async function GET(req: NextRequest) {
   const base = ctx.base;
   const from = sanitizeRelativePath(req.nextUrl.searchParams.get("from"));
   const turnstileToken = req.nextUrl.searchParams.get("turnstile_token") ?? "";
+  const popupRequested = req.nextUrl.searchParams.get("popup") === "1";
   const ip = getClientIp(req);
   const rate = checkRateLimit(`oidc_login:${ip}`, { windowMs: 60 * 1000, max: 20 });
 
@@ -109,5 +110,10 @@ export async function GET(req: NextRequest) {
   res.cookies.set("lemedia_oidc_nonce", nonce, { ...cookieBase, maxAge: 60 * 10 });
   res.cookies.set("lemedia_oidc_provider", config.id, { ...cookieBase, maxAge: 60 * 30 });
   res.cookies.set("lemedia_login_redirect", from, { ...cookieBase, maxAge: 60 * 30 });
+  if (popupRequested) {
+    res.cookies.set("lemedia_sso_popup", "1", { ...cookieBase, maxAge: 60 * 10 });
+  } else {
+    res.cookies.set("lemedia_sso_popup", "", { ...cookieBase, maxAge: 0 });
+  }
   return res;
 }

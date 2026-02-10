@@ -4,10 +4,14 @@ import useSWR from "swr";
 import { useState } from "react";
 import { csrfFetch } from "@/lib/csrf-client";
 import { useToast } from "@/components/Providers/ToastProvider";
+import { getAvatarAlt, getAvatarSrc } from "@/lib/avatar";
 
 type SessionRow = {
   userId: number;
   username: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  jellyfinUserId: string | null;
   jti: string;
   expiresAt: string;
   revokedAt: string | null;
@@ -129,7 +133,31 @@ export function AdminDevicesPageClient() {
             ) : (
               sessions.map((session) => (
                 <tr key={`${session.userId}-${session.jti}`} className="hover:bg-gray-800/60">
-                  <td className="px-4 py-3 text-gray-200">{session.username}</td>
+                  <td className="px-4 py-3 text-gray-200">
+                    <div className="flex items-center gap-2">
+                      <div className="h-8 w-8 rounded-full overflow-hidden bg-white/10 flex items-center justify-center">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={getAvatarSrc({
+                            avatarUrl: session.avatarUrl,
+                            jellyfinUserId: session.jellyfinUserId,
+                            displayName: session.displayName,
+                            username: session.username
+                          })}
+                          alt={getAvatarAlt({
+                            displayName: session.displayName,
+                            username: session.username
+                          })}
+                          className="h-full w-full object-cover"
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      </div>
+                      <span className="truncate">
+                        {session.displayName || session.username}
+                      </span>
+                    </div>
+                  </td>
                   <td className="px-4 py-3 text-gray-200">
                     {session.deviceLabel || "Unknown device"}
                   </td>

@@ -146,6 +146,8 @@ export function TvDetailClientNew({
     availableInJellyfin,
     availableSeasons = [],
     streamingProviders = [],
+    watchProviders,
+    contentRatings,
     rtCriticsScore,
     rtCriticsRating,
     rtAudienceScore,
@@ -162,6 +164,7 @@ export function TvDetailClientNew({
     tvdbId,
     externalRatingsSlot,
     keywordsSlot,
+    initialListStatus,
     prefetchedAggregate,
     children
 }: {
@@ -180,6 +183,8 @@ export function TvDetailClientNew({
     availableInJellyfin?: boolean | null;
     availableSeasons?: number[];
     streamingProviders?: StreamingProvider[];
+    watchProviders?: any;
+    contentRatings?: any;
     rtCriticsScore?: number | null;
     rtCriticsRating?: string | null;
     rtAudienceScore?: number | null;
@@ -196,6 +201,7 @@ export function TvDetailClientNew({
     tvdbId?: number | null;
     externalRatingsSlot?: React.ReactNode;
     keywordsSlot?: React.ReactNode;
+    initialListStatus?: { favorite: boolean; watchlist: boolean } | null;
     prefetchedAggregate?: unknown;
     children?: React.ReactNode;
 }) {
@@ -1015,101 +1021,64 @@ export function TvDetailClientNew({
 
                     {/* Action Buttons */}
                     <div className="media-actions">
-                        {hasAnyAvailable ? (
+                        <MediaListButtons
+                            tmdbId={tv.id}
+                            mediaType="tv"
+                            initialFavorite={initialListStatus?.favorite ?? null}
+                            initialWatchlist={initialListStatus?.watchlist ?? null}
+                        />
+                        <ShareButton
+                            mediaType="tv"
+                            tmdbId={tv.id}
+                            title={tv.name ?? tv.title ?? "Unknown"}
+                            backdropPath={backdrop ?? null}
+                            posterUrl={poster ?? null}
+                        />
+                        {actionMenu}
+
+                        {!requestInfoLoaded ? (
+                            <div
+                                className="h-10 w-28 rounded-lg border border-white/10 bg-white/5 opacity-0"
+                                aria-hidden="true"
+                            />
+                        ) : canRequestSeries ? (
                             <>
-                                <MediaListButtons tmdbId={tv.id} mediaType="tv" />
-                                <ShareButton
-                                    mediaType="tv"
-                                    tmdbId={tv.id}
-                                    title={tv.name ?? tv.title ?? "Unknown"}
-                                    backdropPath={backdrop ?? null}
-                                    posterUrl={poster ?? null}
+                                <ButtonWithDropdown
+                                    text={
+                                        <>
+                                            <ArrowDownTrayIcon />
+                                            <span>Request</span>
+                                        </>
+                                    }
+                                    onClick={() => setRequestModalOpen(true)}
                                 />
-                                {actionMenu}
-                                {canRequestSeries && (
-                                    <>
-                                        <ButtonWithDropdown
-                                            text={
-                                                <>
-                                                    <ArrowDownTrayIcon />
-                                                    <span>Request</span>
-                                                </>
-                                            }
-                                            onClick={() => setRequestModalOpen(true)}
-                                        />
-                                        <SeriesRequestModal
-                                            open={requestModalOpen}
-                                            onClose={() => setRequestModalOpen(false)}
-                                            tmdbId={tv.id}
-                                            tvdbId={tvdbId ?? undefined}
-                                            qualityProfiles={qualityProfilesState}
-                                            defaultQualityProfileId={selectedQualityProfileId}
-                                            requestsBlocked={requestsBlockedState}
-                                            title={tv.name ?? tv.title ?? "Unknown"}
-                                            posterUrl={poster}
-                                            backdropUrl={backdrop}
-                                            isLoading={!requestInfoLoaded}
-                                            isAdmin={isAdminState}
-                                            prowlarrEnabled={prowlarrEnabledState}
-                                            serviceItemId={existingSeriesState?.id ?? null}
-                                            onRequestPlaced={() => {
-                                                setRequestModalOpen(false);
-                                                router.refresh();
-                                            }}
-                                        />
-                                    </>
-                                )}
+                                <SeriesRequestModal
+                                    open={requestModalOpen}
+                                    onClose={() => setRequestModalOpen(false)}
+                                    tmdbId={tv.id}
+                                    tvdbId={tvdbId ?? undefined}
+                                    qualityProfiles={qualityProfilesState}
+                                    defaultQualityProfileId={selectedQualityProfileId}
+                                    requestsBlocked={requestsBlockedState}
+                                    title={tv.name ?? tv.title ?? "Unknown"}
+                                    posterUrl={poster}
+                                    backdropUrl={backdrop}
+                                    isLoading={!requestInfoLoaded}
+                                    isAdmin={isAdminState}
+                                    prowlarrEnabled={prowlarrEnabledState}
+                                    serviceItemId={existingSeriesState?.id ?? null}
+                                    onRequestPlaced={() => {
+                                        setRequestModalOpen(false);
+                                        router.refresh();
+                                    }}
+                                />
                             </>
                         ) : (
-                            <>
-                                <MediaListButtons tmdbId={tv.id} mediaType="tv" />
-                                <ShareButton
-                                    mediaType="tv"
-                                    tmdbId={tv.id}
-                                    title={tv.name ?? tv.title ?? "Unknown"}
-                                    backdropPath={backdrop ?? null}
-                                    posterUrl={poster ?? null}
-                                />
-                                {actionMenu}
-                                {canRequestSeries && (
-                                    <>
-                                        <ButtonWithDropdown
-                                            text={
-                                                <>
-                                                    <ArrowDownTrayIcon />
-                                                    <span>Request</span>
-                                                </>
-                                            }
-                                            onClick={() => setRequestModalOpen(true)}
-                                        />
-                                        <SeriesRequestModal
-                                            open={requestModalOpen}
-                                            onClose={() => setRequestModalOpen(false)}
-                                            tmdbId={tv.id}
-                                            tvdbId={tvdbId ?? undefined}
-                                            qualityProfiles={qualityProfilesState}
-                                            defaultQualityProfileId={selectedQualityProfileId}
-                                            requestsBlocked={requestsBlockedState}
-                                            title={tv.name ?? tv.title ?? "Unknown"}
-                                            posterUrl={poster}
-                                            backdropUrl={backdrop}
-                                            isLoading={!requestInfoLoaded}
-                                            isAdmin={isAdminState}
-                                            prowlarrEnabled={prowlarrEnabledState}
-                                            serviceItemId={existingSeriesState?.id ?? null}
-                                            onRequestPlaced={() => {
-                                                setRequestModalOpen(false);
-                                                router.refresh();
-                                            }}
-                                        />
-                                    </>
-                                )}
-                                {!isExisting && qualityProfilesState.length === 0 && requestInfoLoaded && (
-                                    <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-2 text-amber-200 text-sm">
-                                        ⚠️ Configure Sonarr first
-                                    </div>
-                                )}
-                            </>
+                            !isExisting && qualityProfilesState.length === 0 && (
+                                <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-2 text-amber-200 text-sm">
+                                    ⚠️ Configure Sonarr first
+                                </div>
+                            )
                         )}
                     </div>
                 </div>

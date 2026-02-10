@@ -20,11 +20,13 @@ interface MediaReviewsProps {
   posterPath: string | null | undefined;
   releaseYear?: number | string | null;
   imageProxyEnabled: boolean;
+  initialData?: ReviewsResponse | null;
 }
 
 interface ReviewUser {
   id: number;
   username: string;
+  displayName?: string | null;
   avatarUrl: string | null;
   jellyfinUserId?: string | null;
   groups: string[];
@@ -71,12 +73,14 @@ interface LetterboxdReviewsResponse {
   }[];
 }
 
-export function MediaReviews({ tmdbId, mediaType, title, posterPath, releaseYear, imageProxyEnabled }: MediaReviewsProps) {
+export function MediaReviews({ tmdbId, mediaType, title, posterPath, releaseYear, imageProxyEnabled, initialData }: MediaReviewsProps) {
   const toast = useToast();
   const { data, isLoading, mutate } = useSWR<ReviewsResponse>(
     `/api/v1/reviews/${mediaType}/${tmdbId}`,
     swrFetcher,
     {
+      fallbackData: initialData ?? undefined,
+      revalidateOnMount: true,
       onError: (err) => {
         logger.error("Failed to load reviews", err);
         toast.error("Unable to load reviews");
@@ -304,12 +308,14 @@ export function MediaReviews({ tmdbId, mediaType, title, posterPath, releaseYear
           ) : (
             reviews.map((review) => {
               const isSpoilerHidden = review.spoiler && !revealed[review.id];
+              const displayName = review.user.displayName || review.user.username;
               const avatarSrc = getAvatarSrc({
                 avatarUrl: review.user.avatarUrl,
                 jellyfinUserId: review.user.jellyfinUserId,
+                displayName,
                 username: review.user.username
               });
-              const avatarAlt = getAvatarAlt({ username: review.user.username });
+              const avatarAlt = getAvatarAlt({ displayName, username: review.user.username });
               return (
                 <div key={review.id} className="glass-strong rounded-xl border border-white/10 p-4">
                   <div className="flex items-center gap-3">
@@ -324,7 +330,7 @@ export function MediaReviews({ tmdbId, mediaType, title, posterPath, releaseYear
                     </div>
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-white">{review.user.username}</span>
+                        <span className="text-sm font-semibold text-white">{displayName}</span>
                         <span className="text-xs text-gray-400">{formatDate(review.createdAt)}</span>
                       </div>
                       <div className="flex items-center gap-1">

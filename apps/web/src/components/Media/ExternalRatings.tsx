@@ -11,22 +11,37 @@ import imdbLogo from "@/assets/imdb.svg";
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
 
+type Ratings = {
+  imdbId: string | null;
+  imdbRating: string | null;
+  metacriticScore: string | null;
+  rtCriticsScore: number | null;
+  rtCriticsRating: string | null;
+  rtAudienceScore: number | null;
+  rtAudienceRating: string | null;
+  rtUrl: string | null;
+};
+
+type RatingsResponse = { ratings: Ratings };
+
 export function ExternalRatings({
   tmdbId,
   mediaType,
-  imdbId
+  imdbId,
+  initialData,
 }: {
   tmdbId: number;
   mediaType: "movie" | "tv";
   imdbId: string | null;
+  initialData?: RatingsResponse | null;
 }) {
-  const { data, isLoading } = useSWR(
-    imdbId ? `/api/v1/ratings/${mediaType}/${tmdbId}` : null,
+  const { data, isLoading } = useSWR<{ ratings: Ratings }>(
+    `/api/v1/ratings/${mediaType}/${tmdbId}`,
     fetcher,
-    { revalidateOnFocus: false }
+    { revalidateOnFocus: false, fallbackData: initialData ?? undefined }
   );
 
-  if (isLoading) {
+  if (isLoading && !data) {
     return null;
   }
 

@@ -13,7 +13,9 @@ type RecentRequestItem = {
   type: "movie" | "tv";
   status: string;
   username: string;
+  displayName?: string | null;
   avatarUrl?: string | null;
+  jellyfinUserId?: string | null;
 };
 
 export function RecentRequestsSliderClient({

@@ -55,6 +55,7 @@ function redirectToLogin(
   res.cookies.set("lemedia_oidc_nonce", "", { ...cookieBase, maxAge: 0 });
   res.cookies.set("lemedia_login_redirect", "", { ...cookieBase, maxAge: 0 });
   res.cookies.set("lemedia_oidc_provider", "", { ...cookieBase, maxAge: 0 });
+  res.cookies.set("lemedia_sso_popup", "", { ...cookieBase, maxAge: 0 });
   return res;
 }
 
@@ -107,6 +108,7 @@ export async function GET(req: NextRequest) {
   const storedNonce = req.cookies.get("lemedia_oidc_nonce")?.value ?? "";
   const storedProviderId = req.cookies.get("lemedia_oidc_provider")?.value ?? "";
   const from = sanitizeRelativePath(req.cookies.get("lemedia_login_redirect")?.value);
+  const popupRequested = req.cookies.get("lemedia_sso_popup")?.value === "1";
 
   if (!code || !state || !storedState || state !== storedState) {
     return ensureCsrfCookie(req, redirectToLogin(base, "SSO session expired. Please try again.", cookieBase), ctx).res;
@@ -316,7 +318,14 @@ export async function GET(req: NextRequest) {
     deviceLabel,
     ipAddress: ip
   });
-  const res = NextResponse.redirect(new URL(from, base));
+  const redirectTarget = popupRequested
+    ? (() => {
+        const url = new URL("/auth/popup-complete", base);
+        url.searchParams.set("from", from || "/");
+        return url;
+      })()
+    : new URL(from, base);
+  const res = NextResponse.redirect(redirectTarget);
   res.cookies.set("lemedia_session", token, { ...cookieBase, maxAge: sessionMaxAge });
   // Clear any stale flash state before setting success
   res.cookies.set("lemedia_flash", "", { ...cookieBase, maxAge: 0 });
@@ -329,6 +338,7 @@ export async function GET(req: NextRequest) {
   res.cookies.set("lemedia_oidc_state", "", { ...cookieBase, maxAge: 0 });
   res.cookies.set("lemedia_oidc_nonce", "", { ...cookieBase, maxAge: 0 });
   res.cookies.set("lemedia_oidc_provider", "", { ...cookieBase, maxAge: 0 });
+  res.cookies.set("lemedia_sso_popup", "", { ...cookieBase, maxAge: 0 });
   res.cookies.set("lemedia_force_login", "", { ...cookieBase, maxAge: 0 });
   res.cookies.set("lemedia_mfa_token", "", { ...cookieBase, maxAge: 0 });
   res.cookies.set("lemedia_session_reset", "", { ...cookieBase, httpOnly: false, maxAge: 0 });

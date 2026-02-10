@@ -14,6 +14,7 @@ import {
 interface ProfileSettingsShellClientProps {
   user: {
     username: string;
+    displayName?: string | null;
     email?: string | null;
     avatarUrl?: string | null;
     jellyfinUserId?: string | null;

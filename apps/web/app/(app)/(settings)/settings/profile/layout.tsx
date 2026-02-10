@@ -22,6 +22,7 @@ export default async function ProfileSettingsLayout({ children }: { children: Re
     <ProfileSettingsShellClient
       user={{
         username: user.username,
+        displayName: dbUser.display_name ?? null,
         email: dbUser.email,
         avatarUrl: dbUser.avatar_url,
         jellyfinUserId: dbUser.jellyfin_user_id,

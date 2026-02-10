@@ -113,7 +113,8 @@ export function MovieActionButtons({
   backdropUrl,
   prefetched,
   posterUrl,
-  year
+  year,
+  initialListStatus
 }: {
   tmdbId: number;
   title: string;
@@ -122,8 +123,10 @@ export function MovieActionButtons({
   prefetched?: MovieAggregate;
   posterUrl?: string | null;
   year?: string | number | null;
+  initialListStatus?: { favorite: boolean; watchlist: boolean } | null;
 }) {
   const { data, isLoading } = useMovieAggregate(tmdbId, title, prefetched);
+  const aggregateLoaded = data !== undefined;
   const available = Boolean(data?.availableInLibrary);
   const isAdmin = Boolean(data?.isAdmin);
   const manage = data?.manage;
@@ -158,40 +161,38 @@ export function MovieActionButtons({
 
   return (
     <>
-      {available ? (
-        <>
-          <MediaListButtons tmdbId={tmdbId} mediaType="movie" />
-          <ShareButton
-            mediaType="movie"
-            tmdbId={tmdbId}
-            title={title}
-            backdropPath={backdropUrl ?? null}
-            posterUrl={posterUrl ?? null}
-          />
-          {actionMenu}
-        </>
-      ) : (
-        <>
-          <MediaListButtons tmdbId={tmdbId} mediaType="movie" />
-          <ShareButton
-            mediaType="movie"
-            tmdbId={tmdbId}
-            title={title}
-            backdropPath={backdropUrl ?? null}
-            posterUrl={posterUrl ?? null}
-          />
-          {actionMenu}
-          <MovieRequestPanel
-            tmdbId={tmdbId}
-            prefetched={radarr ? { ...radarr, isAdmin } : undefined}
-            loading={isLoading}
-            title={title}
-            posterUrl={posterUrl}
-            backdropUrl={backdropUrl}
-            year={year}
-          />
-        </>
-      )}
+      <MediaListButtons
+        tmdbId={tmdbId}
+        mediaType="movie"
+        initialFavorite={initialListStatus?.favorite ?? null}
+        initialWatchlist={initialListStatus?.watchlist ?? null}
+      />
+      <ShareButton
+        mediaType="movie"
+        tmdbId={tmdbId}
+        title={title}
+        backdropPath={backdropUrl ?? null}
+        posterUrl={posterUrl ?? null}
+      />
+      {actionMenu}
+
+      {/* Avoid flashing Radarr-derived labels before the aggregate determines availability. */}
+      {!aggregateLoaded ? (
+        <div
+          className="h-10 w-28 rounded-lg border border-white/10 bg-white/5 opacity-0"
+          aria-hidden="true"
+        />
+      ) : !available ? (
+        <MovieRequestPanel
+          tmdbId={tmdbId}
+          prefetched={radarr ? { ...radarr, isAdmin } : undefined}
+          loading={isLoading}
+          title={title}
+          posterUrl={posterUrl}
+          backdropUrl={backdropUrl}
+          year={year}
+        />
+      ) : null}
     </>
   );
 }
