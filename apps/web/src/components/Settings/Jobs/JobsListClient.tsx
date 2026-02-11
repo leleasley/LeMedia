@@ -29,6 +29,33 @@ type Job = {
   disabledReason: string | null;
 };
 
+type JobRuntimeMetric = {
+  name: string;
+  totalRuns: number;
+  successRuns: number;
+  failedRuns: number;
+  successRate: number;
+  failureRate: number;
+  avgDurationMs: number;
+  lastDurationMs: number | null;
+  lastStartedAt: string | null;
+  lastFinishedAt: string | null;
+  lastResult: "success" | "failure" | "none";
+  lastError: string | null;
+};
+
+type JobMetricsResponse = {
+  summary: {
+    totalJobsTracked: number;
+    totalRuns: number;
+    totalSuccess: number;
+    totalFailed: number;
+    successRate: number;
+    avgDurationMs: number;
+  };
+  metrics: JobRuntimeMetric[];
+};
+
 const fetcher = (url: string) =>
   fetch(url, { cache: "no-store" }).then((res) => res.json());
 
@@ -109,6 +136,10 @@ function formatSchedule(job: Job): string {
 
 export function JobsListClient() {
   const { data: jobs, error, mutate } = useSWR<Job[]>("/api/v1/admin/jobs", fetcher, {
+    refreshInterval: 15000,
+    revalidateOnFocus: true,
+  });
+  const { data: runtimeData } = useSWR<JobMetricsResponse>("/api/v1/admin/jobs/metrics", fetcher, {
     refreshInterval: 15000,
     revalidateOnFocus: true,
   });
@@ -226,11 +257,41 @@ export function JobsListClient() {
   if (!jobs && !error) return <div className="text-muted p-4">Loading jobs...</div>;
   if (error) return <div className="text-red-500 p-4">Failed to load jobs</div>;
 
+  const metricsByName = new Map((runtimeData?.metrics ?? []).map((item) => [item.name, item]));
+
   return (
     <div className="space-y-4">
+      {runtimeData?.summary && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+            <div className="text-xs text-gray-400 uppercase">Total runs</div>
+            <div className="text-xl font-bold text-white">{runtimeData.summary.totalRuns}</div>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+            <div className="text-xs text-gray-400 uppercase">Success rate</div>
+            <div className="text-xl font-bold text-emerald-300">
+              {(runtimeData.summary.successRate * 100).toFixed(1)}%
+            </div>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+            <div className="text-xs text-gray-400 uppercase">Failed runs</div>
+            <div className="text-xl font-bold text-amber-300">{runtimeData.summary.totalFailed}</div>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+            <div className="text-xs text-gray-400 uppercase">Avg runtime</div>
+            <div className="text-xl font-bold text-blue-300">
+              {Math.round(runtimeData.summary.avgDurationMs)} ms
+            </div>
+          </div>
+        </div>
+      )}
       {jobs?.map((job) => (
         <div key={job.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-xl border border-white/10 bg-white/5 p-4">
           <div>
+            {(() => {
+              const metric = metricsByName.get(job.name);
+              return (
+                <>
             <div className="flex items-center gap-2">
               <h3 className="font-bold text-lg text-white">{job.name}</h3>
               <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${job.type === 'system' ? 'bg-blue-500/20 text-blue-200' : 'bg-green-500/20 text-green-200'}`}>
@@ -260,7 +321,18 @@ export function JobsListClient() {
               {job.lastError ? (
                 <div className="text-xs text-amber-200">Last error: {job.lastError}</div>
               ) : null}
+              {metric ? (
+                <div className="pt-1 text-xs text-gray-300">
+                  Runtime: last {metric.lastDurationMs ?? "n/a"} ms, avg {Math.round(metric.avgDurationMs)} ms,
+                  success {(metric.successRate * 100).toFixed(1)}%
+                </div>
+              ) : (
+                <div className="pt-1 text-xs text-gray-400">Runtime: no executions recorded yet</div>
+              )}
             </div>
+                </>
+              );
+            })()}
           </div>
           <div className="flex w-full sm:w-auto gap-3">
             <button

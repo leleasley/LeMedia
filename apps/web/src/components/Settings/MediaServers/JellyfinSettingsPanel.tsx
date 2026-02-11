@@ -4,7 +4,7 @@ import { useEffect, useState, useId } from "react";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { csrfFetch } from "@/lib/csrf-client";
 import useSWR from "swr";
-import { JellyfinSetup } from "@/components/Auth/JellyfinSetup";
+import { JellyfinSetup } from "@/components/auth/JellyfinSetup";
 
 type JellyfinLibrary = {
     id: string;

@@ -1,0 +1,622 @@
+{
+  "generatedAt": "2026-02-11T10:02:02.968Z",
+  "pairCount": 154,
+  "pairs": [
+    {
+      "base": "/admin/jellyfin/import/route.ts",
+      "v1": "/v1/admin/jellyfin/import/route.ts"
+    },
+    {
+      "base": "/admin/jellyfin/users/route.ts",
+      "v1": "/v1/admin/jellyfin/users/route.ts"
+    },
+    {
+      "base": "/admin/media/movie/route.ts",
+      "v1": "/v1/admin/media/movie/route.ts"
+    },
+    {
+      "base": "/admin/media/tv/route.ts",
+      "v1": "/v1/admin/media/tv/route.ts"
+    },
+    {
+      "base": "/admin/notifications/[type]/[id]/route.ts",
+      "v1": "/v1/admin/notifications/[type]/[id]/route.ts"
+    },
+    {
+      "base": "/admin/notifications/[type]/create/route.ts",
+      "v1": "/v1/admin/notifications/[type]/create/route.ts"
+    },
+    {
+      "base": "/admin/notifications/[type]/list/route.ts",
+      "v1": "/v1/admin/notifications/[type]/list/route.ts"
+    },
+    {
+      "base": "/admin/notifications/[type]/test/route.ts",
+      "v1": "/v1/admin/notifications/[type]/test/route.ts"
+    },
+    {
+      "base": "/admin/notifications/discord/[id]/route.ts",
+      "v1": "/v1/admin/notifications/discord/[id]/route.ts"
+    },
+    {
+      "base": "/admin/notifications/discord/create/route.ts",
+      "v1": "/v1/admin/notifications/discord/create/route.ts"
+    },
+    {
+      "base": "/admin/notifications/discord/route.ts",
+      "v1": "/v1/admin/notifications/discord/route.ts"
+    },
+    {
+      "base": "/admin/notifications/discord/test/route.ts",
+      "v1": "/v1/admin/notifications/discord/test/route.ts"
+    },
+    {
+      "base": "/admin/notifications/email/[id]/route.ts",
+      "v1": "/v1/admin/notifications/email/[id]/route.ts"
+    },
+    {
+      "base": "/admin/notifications/email/create/route.ts",
+      "v1": "/v1/admin/notifications/email/create/route.ts"
+    },
+    {
+      "base": "/admin/notifications/email/route.ts",
+      "v1": "/v1/admin/notifications/email/route.ts"
+    },
+    {
+      "base": "/admin/notifications/email/test/route.ts",
+      "v1": "/v1/admin/notifications/email/test/route.ts"
+    },
+    {
+      "base": "/admin/notifications/gotify/[id]/route.ts",
+      "v1": "/v1/admin/notifications/gotify/[id]/route.ts"
+    },
+    {
+      "base": "/admin/notifications/gotify/create/route.ts",
+      "v1": "/v1/admin/notifications/gotify/create/route.ts"
+    },
+    {
+      "base": "/admin/notifications/gotify/route.ts",
+      "v1": "/v1/admin/notifications/gotify/route.ts"
+    },
+    {
+      "base": "/admin/notifications/gotify/test/route.ts",
+      "v1": "/v1/admin/notifications/gotify/test/route.ts"
+    },
+    {
+      "base": "/admin/notifications/ntfy/[id]/route.ts",
+      "v1": "/v1/admin/notifications/ntfy/[id]/route.ts"
+    },
+    {
+      "base": "/admin/notifications/ntfy/create/route.ts",
+      "v1": "/v1/admin/notifications/ntfy/create/route.ts"
+    },
+    {
+      "base": "/admin/notifications/ntfy/route.ts",
+      "v1": "/v1/admin/notifications/ntfy/route.ts"
+    },
+    {
+      "base": "/admin/notifications/ntfy/test/route.ts",
+      "v1": "/v1/admin/notifications/ntfy/test/route.ts"
+    },
+    {
+      "base": "/admin/notifications/pushbullet/[id]/route.ts",
+      "v1": "/v1/admin/notifications/pushbullet/[id]/route.ts"
+    },
+    {
+      "base": "/admin/notifications/pushbullet/create/route.ts",
+      "v1": "/v1/admin/notifications/pushbullet/create/route.ts"
+    },
+    {
+      "base": "/admin/notifications/pushbullet/route.ts",
+      "v1": "/v1/admin/notifications/pushbullet/route.ts"
+    },
+    {
+      "base": "/admin/notifications/pushbullet/test/route.ts",
+      "v1": "/v1/admin/notifications/pushbullet/test/route.ts"
+    },
+    {
+      "base": "/admin/notifications/pushover/[id]/route.ts",
+      "v1": "/v1/admin/notifications/pushover/[id]/route.ts"
+    },
+    {
+      "base": "/admin/notifications/pushover/create/route.ts",
+      "v1": "/v1/admin/notifications/pushover/create/route.ts"
+    },
+    {
+      "base": "/admin/notifications/pushover/route.ts",
+      "v1": "/v1/admin/notifications/pushover/route.ts"
+    },
+    {
+      "base": "/admin/notifications/pushover/test/route.ts",
+      "v1": "/v1/admin/notifications/pushover/test/route.ts"
+    },
+    {
+      "base": "/admin/notifications/slack/[id]/route.ts",
+      "v1": "/v1/admin/notifications/slack/[id]/route.ts"
+    },
+    {
+      "base": "/admin/notifications/slack/create/route.ts",
+      "v1": "/v1/admin/notifications/slack/create/route.ts"
+    },
+    {
+      "base": "/admin/notifications/slack/route.ts",
+      "v1": "/v1/admin/notifications/slack/route.ts"
+    },
+    {
+      "base": "/admin/notifications/slack/test/route.ts",
+      "v1": "/v1/admin/notifications/slack/test/route.ts"
+    },
+    {
+      "base": "/admin/notifications/telegram/[id]/route.ts",
+      "v1": "/v1/admin/notifications/telegram/[id]/route.ts"
+    },
+    {
+      "base": "/admin/notifications/telegram/create/route.ts",
+      "v1": "/v1/admin/notifications/telegram/create/route.ts"
+    },
+    {
+      "base": "/admin/notifications/telegram/route.ts",
+      "v1": "/v1/admin/notifications/telegram/route.ts"
+    },
+    {
+      "base": "/admin/notifications/telegram/test/route.ts",
+      "v1": "/v1/admin/notifications/telegram/test/route.ts"
+    },
+    {
+      "base": "/admin/notifications/webhook/[id]/route.ts",
+      "v1": "/v1/admin/notifications/webhook/[id]/route.ts"
+    },
+    {
+      "base": "/admin/notifications/webhook/create/route.ts",
+      "v1": "/v1/admin/notifications/webhook/create/route.ts"
+    },
+    {
+      "base": "/admin/notifications/webhook/route.ts",
+      "v1": "/v1/admin/notifications/webhook/route.ts"
+    },
+    {
+      "base": "/admin/notifications/webhook/test/route.ts",
+      "v1": "/v1/admin/notifications/webhook/test/route.ts"
+    },
+    {
+      "base": "/admin/notifications/webpush/[id]/route.ts",
+      "v1": "/v1/admin/notifications/webpush/[id]/route.ts"
+    },
+    {
+      "base": "/admin/notifications/webpush/create/route.ts",
+      "v1": "/v1/admin/notifications/webpush/create/route.ts"
+    },
+    {
+      "base": "/admin/notifications/webpush/route.ts",
+      "v1": "/v1/admin/notifications/webpush/route.ts"
+    },
+    {
+      "base": "/admin/notifications/webpush/test/route.ts",
+      "v1": "/v1/admin/notifications/webpush/test/route.ts"
+    },
+    {
+      "base": "/admin/services/[id]/ping/route.ts",
+      "v1": "/v1/admin/services/[id]/ping/route.ts"
+    },
+    {
+      "base": "/admin/services/[id]/route.ts",
+      "v1": "/v1/admin/services/[id]/route.ts"
+    },
+    {
+      "base": "/admin/services/route.ts",
+      "v1": "/v1/admin/services/route.ts"
+    },
+    {
+      "base": "/admin/services/test/route.ts",
+      "v1": "/v1/admin/services/test/route.ts"
+    },
+    {
+      "base": "/admin/settings/api-key/route.ts",
+      "v1": "/v1/admin/settings/api-key/route.ts"
+    },
+    {
+      "base": "/admin/settings/jellyfin/library/route.ts",
+      "v1": "/v1/admin/settings/jellyfin/library/route.ts"
+    },
+    {
+      "base": "/admin/settings/jellyfin/route.ts",
+      "v1": "/v1/admin/settings/jellyfin/route.ts"
+    },
+    {
+      "base": "/admin/settings/jellyfin/sync/route.ts",
+      "v1": "/v1/admin/settings/jellyfin/sync/route.ts"
+    },
+    {
+      "base": "/admin/settings/jellyfin/test/route.ts",
+      "v1": "/v1/admin/settings/jellyfin/test/route.ts"
+    },
+    {
+      "base": "/admin/settings/maintenance/route.ts",
+      "v1": "/v1/admin/settings/maintenance/route.ts"
+    },
+    {
+      "base": "/admin/settings/oidc/route.ts",
+      "v1": "/v1/admin/settings/oidc/route.ts"
+    },
+    {
+      "base": "/admin/settings/plex/library/route.ts",
+      "v1": "/v1/admin/settings/plex/library/route.ts"
+    },
+    {
+      "base": "/admin/settings/plex/route.ts",
+      "v1": "/v1/admin/settings/plex/route.ts"
+    },
+    {
+      "base": "/admin/settings/plex/test/route.ts",
+      "v1": "/v1/admin/settings/plex/test/route.ts"
+    },
+    {
+      "base": "/admin/settings/rotate-secrets/route.ts",
+      "v1": "/v1/admin/settings/rotate-secrets/route.ts"
+    },
+    {
+      "base": "/admin/settings/route.ts",
+      "v1": "/v1/admin/settings/route.ts"
+    },
+    {
+      "base": "/admin/settings/trakt/route.ts",
+      "v1": "/v1/admin/settings/trakt/route.ts"
+    },
+    {
+      "base": "/admin/settings/users/route.ts",
+      "v1": "/v1/admin/settings/users/route.ts"
+    },
+    {
+      "base": "/admin/users/[id]/api-token/route.ts",
+      "v1": "/v1/admin/users/[id]/api-token/route.ts"
+    },
+    {
+      "base": "/admin/users/[id]/calendar-feed/route.ts",
+      "v1": "/v1/admin/users/[id]/calendar-feed/route.ts"
+    },
+    {
+      "base": "/admin/users/[id]/logout-sessions/route.ts",
+      "v1": "/v1/admin/users/[id]/logout-sessions/route.ts"
+    },
+    {
+      "base": "/admin/users/[id]/permissions/route.ts",
+      "v1": "/v1/admin/users/[id]/permissions/route.ts"
+    },
+    {
+      "base": "/admin/users/[id]/reset-auth/route.ts",
+      "v1": "/v1/admin/users/[id]/reset-auth/route.ts"
+    },
+    {
+      "base": "/admin/users/[id]/reset-mfa/route.ts",
+      "v1": "/v1/admin/users/[id]/reset-mfa/route.ts"
+    },
+    {
+      "base": "/admin/users/[id]/route.ts",
+      "v1": "/v1/admin/users/[id]/route.ts"
+    },
+    {
+      "base": "/admin/users/[id]/unlink-jellyfin/route.ts",
+      "v1": "/v1/admin/users/[id]/unlink-jellyfin/route.ts"
+    },
+    {
+      "base": "/admin/users/create/route.ts",
+      "v1": "/v1/admin/users/create/route.ts"
+    },
+    {
+      "base": "/admin/users/route.ts",
+      "v1": "/v1/admin/users/route.ts"
+    },
+    {
+      "base": "/auth/duo/callback/route.ts",
+      "v1": "/v1/auth/duo/callback/route.ts"
+    },
+    {
+      "base": "/auth/duo/login/route.ts",
+      "v1": "/v1/auth/duo/login/route.ts"
+    },
+    {
+      "base": "/auth/oidc/callback/route.ts",
+      "v1": "/v1/auth/oidc/callback/route.ts"
+    },
+    {
+      "base": "/auth/oidc/login/route.ts",
+      "v1": "/v1/auth/oidc/login/route.ts"
+    },
+    {
+      "base": "/availability/route.ts",
+      "v1": "/v1/availability/route.ts"
+    },
+    {
+      "base": "/backdrops/route.ts",
+      "v1": "/v1/backdrops/route.ts"
+    },
+    {
+      "base": "/csrf/route.ts",
+      "v1": "/v1/csrf/route.ts"
+    },
+    {
+      "base": "/debug/stats/route.ts",
+      "v1": "/v1/debug/stats/route.ts"
+    },
+    {
+      "base": "/flash/clear/route.ts",
+      "v1": "/v1/flash/clear/route.ts"
+    },
+    {
+      "base": "/health/route.ts",
+      "v1": "/v1/health/route.ts"
+    },
+    {
+      "base": "/imageproxy/[type]/[...path]/route.ts",
+      "v1": "/v1/imageproxy/[type]/[...path]/route.ts"
+    },
+    {
+      "base": "/issues/[id]/route.ts",
+      "v1": "/v1/issues/[id]/route.ts"
+    },
+    {
+      "base": "/issues/count/route.ts",
+      "v1": "/v1/issues/count/route.ts"
+    },
+    {
+      "base": "/issues/report/route.ts",
+      "v1": "/v1/issues/report/route.ts"
+    },
+    {
+      "base": "/issues/route.ts",
+      "v1": "/v1/issues/route.ts"
+    },
+    {
+      "base": "/library/continue-watching/route.ts",
+      "v1": "/v1/library/continue-watching/route.ts"
+    },
+    {
+      "base": "/library/recent/route.ts",
+      "v1": "/v1/library/recent/route.ts"
+    },
+    {
+      "base": "/login/jellyfin/route.ts",
+      "v1": "/v1/login/jellyfin/route.ts"
+    },
+    {
+      "base": "/login/route.ts",
+      "v1": "/v1/login/route.ts"
+    },
+    {
+      "base": "/media-info/movie/[id]/route.ts",
+      "v1": "/v1/media-info/movie/[id]/route.ts"
+    },
+    {
+      "base": "/media-info/tv/[id]/route.ts",
+      "v1": "/v1/media-info/tv/[id]/route.ts"
+    },
+    {
+      "base": "/media-list/route.ts",
+      "v1": "/v1/media-list/route.ts"
+    },
+    {
+      "base": "/mfa/setup/route.ts",
+      "v1": "/v1/mfa/setup/route.ts"
+    },
+    {
+      "base": "/mfa/verify/route.ts",
+      "v1": "/v1/mfa/verify/route.ts"
+    },
+    {
+      "base": "/my/notification-subscriptions/route.ts",
+      "v1": "/v1/my/notification-subscriptions/route.ts"
+    },
+    {
+      "base": "/notification-endpoints/[id]/route.ts",
+      "v1": "/v1/notification-endpoints/[id]/route.ts"
+    },
+    {
+      "base": "/notification-endpoints/[id]/test/route.ts",
+      "v1": "/v1/notification-endpoints/[id]/test/route.ts"
+    },
+    {
+      "base": "/notification-endpoints/route.ts",
+      "v1": "/v1/notification-endpoints/route.ts"
+    },
+    {
+      "base": "/profile/api-token/route.ts",
+      "v1": "/v1/profile/api-token/route.ts"
+    },
+    {
+      "base": "/profile/api-tokens/route.ts",
+      "v1": "/v1/profile/api-tokens/route.ts"
+    },
+    {
+      "base": "/profile/avatar/route.ts",
+      "v1": "/v1/profile/avatar/route.ts"
+    },
+    {
+      "base": "/profile/jellyfin/route.ts",
+      "v1": "/v1/profile/jellyfin/route.ts"
+    },
+    {
+      "base": "/profile/mfa/begin/route.ts",
+      "v1": "/v1/profile/mfa/begin/route.ts"
+    },
+    {
+      "base": "/profile/mfa/disable/route.ts",
+      "v1": "/v1/profile/mfa/disable/route.ts"
+    },
+    {
+      "base": "/profile/mfa/reset/route.ts",
+      "v1": "/v1/profile/mfa/reset/route.ts"
+    },
+    {
+      "base": "/profile/requests/route.ts",
+      "v1": "/v1/profile/requests/route.ts"
+    },
+    {
+      "base": "/profile/route.ts",
+      "v1": "/v1/profile/route.ts"
+    },
+    {
+      "base": "/profile/stats/route.ts",
+      "v1": "/v1/profile/stats/route.ts"
+    },
+    {
+      "base": "/profile/weekly-digest/route.ts",
+      "v1": "/v1/profile/weekly-digest/route.ts"
+    },
+    {
+      "base": "/profile/weekly-digest/test/route.ts",
+      "v1": "/v1/profile/weekly-digest/test/route.ts"
+    },
+    {
+      "base": "/radarr/collection-status/route.ts",
+      "v1": "/v1/radarr/collection-status/route.ts"
+    },
+    {
+      "base": "/radarr/movie-info/route.ts",
+      "v1": "/v1/radarr/movie-info/route.ts"
+    },
+    {
+      "base": "/request/collection/route.ts",
+      "v1": "/v1/request/collection/route.ts"
+    },
+    {
+      "base": "/request/episodes/route.ts",
+      "v1": "/v1/request/episodes/route.ts"
+    },
+    {
+      "base": "/request/movie/route.ts",
+      "v1": "/v1/request/movie/route.ts"
+    },
+    {
+      "base": "/request/tv/route.ts",
+      "v1": "/v1/request/tv/route.ts"
+    },
+    {
+      "base": "/requests/count/route.ts",
+      "v1": "/v1/requests/count/route.ts"
+    },
+    {
+      "base": "/requests/me/route.ts",
+      "v1": "/v1/requests/me/route.ts"
+    },
+    {
+      "base": "/requests/recent/route.ts",
+      "v1": "/v1/requests/recent/route.ts"
+    },
+    {
+      "base": "/settings/route.ts",
+      "v1": "/v1/settings/route.ts"
+    },
+    {
+      "base": "/sonarr/series/monitor/route.ts",
+      "v1": "/v1/sonarr/series/monitor/route.ts"
+    },
+    {
+      "base": "/sonarr/tv-info/route.ts",
+      "v1": "/v1/sonarr/tv-info/route.ts"
+    },
+    {
+      "base": "/tmdb/company-search/route.ts",
+      "v1": "/v1/tmdb/company-search/route.ts"
+    },
+    {
+      "base": "/tmdb/discover/movie/route.ts",
+      "v1": "/v1/tmdb/discover/movie/route.ts"
+    },
+    {
+      "base": "/tmdb/discover/tv/network/[networkId]/route.ts",
+      "v1": "/v1/tmdb/discover/tv/network/[networkId]/route.ts"
+    },
+    {
+      "base": "/tmdb/discover/tv/route.ts",
+      "v1": "/v1/tmdb/discover/tv/route.ts"
+    },
+    {
+      "base": "/tmdb/genres/route.ts",
+      "v1": "/v1/tmdb/genres/route.ts"
+    },
+    {
+      "base": "/tmdb/keyword-search/route.ts",
+      "v1": "/v1/tmdb/keyword-search/route.ts"
+    },
+    {
+      "base": "/tmdb/languages/route.ts",
+      "v1": "/v1/tmdb/languages/route.ts"
+    },
+    {
+      "base": "/tmdb/movie/[id]/recommendations/route.ts",
+      "v1": "/v1/tmdb/movie/[id]/recommendations/route.ts"
+    },
+    {
+      "base": "/tmdb/movie/[id]/similar/route.ts",
+      "v1": "/v1/tmdb/movie/[id]/similar/route.ts"
+    },
+    {
+      "base": "/tmdb/movie/now-playing/route.ts",
+      "v1": "/v1/tmdb/movie/now-playing/route.ts"
+    },
+    {
+      "base": "/tmdb/movie/popular/route.ts",
+      "v1": "/v1/tmdb/movie/popular/route.ts"
+    },
+    {
+      "base": "/tmdb/movie/top-rated/route.ts",
+      "v1": "/v1/tmdb/movie/top-rated/route.ts"
+    },
+    {
+      "base": "/tmdb/movie/upcoming/route.ts",
+      "v1": "/v1/tmdb/movie/upcoming/route.ts"
+    },
+    {
+      "base": "/tmdb/regions/route.ts",
+      "v1": "/v1/tmdb/regions/route.ts"
+    },
+    {
+      "base": "/tmdb/search/route.ts",
+      "v1": "/v1/tmdb/search/route.ts"
+    },
+    {
+      "base": "/tmdb/tv/[id]/recommendations/route.ts",
+      "v1": "/v1/tmdb/tv/[id]/recommendations/route.ts"
+    },
+    {
+      "base": "/tmdb/tv/[id]/season/[season]/route.ts",
+      "v1": "/v1/tmdb/tv/[id]/season/[season]/route.ts"
+    },
+    {
+      "base": "/tmdb/tv/[id]/similar/route.ts",
+      "v1": "/v1/tmdb/tv/[id]/similar/route.ts"
+    },
+    {
+      "base": "/tmdb/tv/popular/route.ts",
+      "v1": "/v1/tmdb/tv/popular/route.ts"
+    },
+    {
+      "base": "/tmdb/tv/top-rated/route.ts",
+      "v1": "/v1/tmdb/tv/top-rated/route.ts"
+    },
+    {
+      "base": "/tmdb/tv/upcoming/route.ts",
+      "v1": "/v1/tmdb/tv/upcoming/route.ts"
+    },
+    {
+      "base": "/tmdb/watch-providers/route.ts",
+      "v1": "/v1/tmdb/watch-providers/route.ts"
+    },
+    {
+      "base": "/user/route.ts",
+      "v1": "/v1/user/route.ts"
+    },
+    {
+      "base": "/users/[id]/reset-mfa/route.ts",
+      "v1": "/v1/users/[id]/reset-mfa/route.ts"
+    },
+    {
+      "base": "/users/[id]/route.ts",
+      "v1": "/v1/users/[id]/route.ts"
+    },
+    {
+      "base": "/users/route.ts",
+      "v1": "/v1/users/route.ts"
+    }
+  ]
+}

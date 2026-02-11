@@ -32,7 +32,7 @@ function getDigitalReleaseDate(releaseDates: any, region: string) {
 }
 
 export async function GET(req: NextRequest, { params }: { params: ParamsInput }) {
-  const rateLimit = enforceRateLimit(req, "media-info", mediaInfoRateLimit);
+  const rateLimit = await enforceRateLimit(req, "media-info", mediaInfoRateLimit);
   if (rateLimit) return rateLimit;
   const parsed = Params.safeParse(await resolveParams(params));
   if (!parsed.success) {

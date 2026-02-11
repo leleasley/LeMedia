@@ -19,7 +19,7 @@ export async function GET(
   req: NextRequest,
   ctx: { params: Promise<{ id: string; season: string }> }
 ) {
-  const rateLimit = enforceTmdbRateLimit(req);
+  const rateLimit = await enforceTmdbRateLimit(req);
   if (rateLimit) return rateLimit;
   const params = await ctx.params;
   const id = z.coerce.number().int().parse(params.id);

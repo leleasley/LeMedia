@@ -11,7 +11,7 @@ export async function GET(
   { params }: { params: { id: string } | Promise<{ id: string }> }
 ) {
   try {
-    const rateLimit = enforceTmdbRateLimit(request);
+    const rateLimit = await enforceTmdbRateLimit(request);
     if (rateLimit) return rateLimit;
     const resolvedParams = await Promise.resolve(params);
     const id = parseInt(resolvedParams.id);

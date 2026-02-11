@@ -8,7 +8,7 @@ const MOVIE_LIST_FIELDS = ["id", "title", "poster_path", "backdrop_path", "relea
 
 export async function GET(req: NextRequest) {
   try {
-    const rateLimit = enforceTmdbRateLimit(req);
+    const rateLimit = await enforceTmdbRateLimit(req);
     if (rateLimit) return rateLimit;
     const page = parsePage(req);
     let result = await getNowPlayingMovies(page);

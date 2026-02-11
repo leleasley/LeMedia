@@ -50,7 +50,7 @@ export function MediaListButtons({
     return () => {
       active = false;
     };
-  }, [tmdbId, mediaType]);
+  }, [tmdbId, mediaType, initialFavorite, initialWatchlist]);
 
   const toggle = async (listType: "favorite" | "watchlist") => {
     if (saving) return;

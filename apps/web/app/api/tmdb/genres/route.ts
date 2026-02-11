@@ -5,7 +5,7 @@ import { jsonResponseWithETag } from "@/lib/api-optimization";
 
 export async function GET(req: NextRequest) {
     try {
-        const rateLimit = enforceTmdbRateLimit(req);
+        const rateLimit = await enforceTmdbRateLimit(req);
         if (rateLimit) return rateLimit;
         const url = new URL(req.url);
         const type = (url.searchParams.get("type") || "movie").toLowerCase();

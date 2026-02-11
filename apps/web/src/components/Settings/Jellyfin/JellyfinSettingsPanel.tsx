@@ -5,7 +5,7 @@ import { useToast } from "@/components/Providers/ToastProvider";
 import { AnimatedCheckbox } from "@/components/Common/AnimatedCheckbox";
 import { csrfFetch } from "@/lib/csrf-client";
 import useSWR from "swr";
-import { JellyfinSetup } from "@/components/Auth/JellyfinSetup";
+import { JellyfinSetup } from "@/components/auth/JellyfinSetup";
 
 type JellyfinLibrary = {
     id: string;

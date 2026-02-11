@@ -14,7 +14,7 @@ function htmlResponse(message: string, status = 200) {
 
 export async function GET(req: NextRequest) {
   const ip = getClientIp(req);
-  const rate = checkRateLimit(`email-unsubscribe:${ip}`, { windowMs: 60 * 1000, max: 10 });
+  const rate = await checkRateLimit(`email-unsubscribe:${ip}`, { windowMs: 60 * 1000, max: 10 });
   if (!rate.ok) {
     return htmlResponse("Too many requests. Please try again in a minute.", 429);
   }

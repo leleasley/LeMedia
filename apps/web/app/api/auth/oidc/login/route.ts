@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
   const turnstileToken = req.nextUrl.searchParams.get("turnstile_token") ?? "";
   const popupRequested = req.nextUrl.searchParams.get("popup") === "1";
   const ip = getClientIp(req);
-  const rate = checkRateLimit(`oidc_login:${ip}`, { windowMs: 60 * 1000, max: 20 });
+  const rate = await checkRateLimit(`oidc_login:${ip}`, { windowMs: 60 * 1000, max: 20 });
 
   if (!rate.ok) {
     const url = new URL("/login", base);

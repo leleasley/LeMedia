@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
   const userAgent = req.headers.get("user-agent");
   const deviceLabel = summarizeUserAgent(userAgent);
-  const rate = checkRateLimit(`login:${ip}`, { windowMs: 60 * 1000, max: 10 });
+  const rate = await checkRateLimit(`login:${ip}`, { windowMs: 60 * 1000, max: 10 });
 
   const redirectToLogin = (message: string) => {
     const url = new URL("/login", base);
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
   }
 
   const lockKey = `login:${usernameInput || "unknown"}:${ip}`;
-  const lock = checkLockout(lockKey, { windowMs: 15 * 60 * 1000, max: 5, banMs: 15 * 60 * 1000 });
+  const lock = await checkLockout(lockKey, { windowMs: 15 * 60 * 1000, max: 5, banMs: 15 * 60 * 1000 });
   if (lock.locked) {
     return redirectToLogin(formatRetry(lock.retryAfterSec));
   }
@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
 
   const user = await getUserWithHash(usernameInput);
   if (!user || !(await verifyPassword(password, user.password_hash))) {
-    const failure = recordFailure(lockKey, { windowMs: 15 * 60 * 1000, max: 5, banMs: 15 * 60 * 1000 });
+    const failure = await recordFailure(lockKey, { windowMs: 15 * 60 * 1000, max: 5, banMs: 15 * 60 * 1000 });
     if (failure.locked) {
       return redirectToLogin(formatRetry(failure.retryAfterSec));
     }
@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
     return redirectToLogin("Account suspended");
   }
 
-  clearFailures(lockKey);
+  await clearFailures(lockKey);
   await deleteMfaSessionsForUser(user.id);
   
   // Log successful login

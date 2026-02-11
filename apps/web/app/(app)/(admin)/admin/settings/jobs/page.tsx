@@ -16,7 +16,7 @@ export default async function AdminJobsPage() {
     <section className="space-y-6">
       <div>
         <h2 className="text-2xl font-semibold text-white">Jobs & Scheduling</h2>
-        <p className="text-sm text-muted">Manage background tasks and sync schedules.</p>
+        <p className="text-sm text-muted">Manage background tasks, schedules, and runtime health metrics.</p>
       </div>
 
       <JobsListClient />

@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
   const user = await requireUser();
 
   const ip = getClientIp(req);
-  const rate = checkRateLimit(`trakt_callback:${ip}`, { windowMs: 60 * 1000, max: 30 });
+  const rate = await checkRateLimit(`trakt_callback:${ip}`, { windowMs: 60 * 1000, max: 30 });
   if (!rate.ok) {
     return NextResponse.json({ error: "Too many requests" }, { status: 429 });
   }

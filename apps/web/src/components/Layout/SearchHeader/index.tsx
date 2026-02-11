@@ -69,7 +69,9 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
                 });
             }
             if (combined.length) {
-                setRecentSearches(combined.filter((v) => typeof v === "string"));
+                const next = combined.filter((v) => typeof v === "string");
+                const id = window.setTimeout(() => setRecentSearches(next), 0);
+                return () => window.clearTimeout(id);
             }
         } catch {
             // ignore localStorage errors
@@ -100,15 +102,6 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
         return () => window.removeEventListener("click", onClick);
     }, [recentOpen]);
 
-    useEffect(() => {
-        const q = searchParams.get("q") ?? "";
-        const isSearchPage = pathname === "/search";
-        if (!isSearchPage) return;
-        if (q.trim().length < 2) return;
-        if (inputRef.current === document.activeElement) return;
-        addRecent(q);
-    }, [pathname, searchParams]);
-
     const persistRecent = (items: string[]) => {
         setRecentSearches(items);
         try {
@@ -129,6 +122,32 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
         lastSavedRef.current = trimmed;
         persistRecent(next);
     };
+
+    useEffect(() => {
+        const q = searchParams.get("q") ?? "";
+        const isSearchPage = pathname === "/search";
+        if (!isSearchPage) return;
+        const trimmed = q.trim();
+        if (trimmed.length < 2) return;
+        if (inputRef.current === document.activeElement) return;
+        const id = window.setTimeout(() => {
+            if (lastSavedRef.current.toLowerCase() === trimmed.toLowerCase()) return;
+            setRecentSearches((prev) => {
+                const next = [trimmed, ...prev.filter((item) => item.toLowerCase() !== trimmed.toLowerCase())].slice(0, 8);
+                lastSavedRef.current = trimmed;
+                try {
+                    if (profile?.username) {
+                        window.localStorage.setItem(`recentSearches:${profile.username}`, JSON.stringify(next));
+                    }
+                    window.localStorage.setItem("recentSearches:global", JSON.stringify(next));
+                } catch {
+                    // ignore localStorage errors
+                }
+                return next;
+            });
+        }, 0);
+        return () => window.clearTimeout(id);
+    }, [pathname, profile?.username, searchParams]);
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const value = e.target.value;

@@ -91,7 +91,7 @@ export async function GET(req: NextRequest) {
   const base = ctx.base;
   const cookieBase = getCookieBase(ctx, true);
   const ip = getClientIp(req);
-  const rate = checkRateLimit(`oidc_callback:${ip}`, { windowMs: 60 * 1000, max: 30 });
+  const rate = await checkRateLimit(`oidc_callback:${ip}`, { windowMs: 60 * 1000, max: 30 });
   if (!rate.ok) {
     return ensureCsrfCookie(req, redirectToLogin(base, "Too many SSO attempts. Please try again shortly.", cookieBase), ctx).res;
   }

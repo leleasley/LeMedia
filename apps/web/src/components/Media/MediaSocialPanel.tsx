@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import { StarIcon } from "@heroicons/react/24/solid";
 import { getAvatarSrc, shouldBypassNextImage } from "@/lib/avatar";
@@ -43,13 +43,11 @@ export function MediaSocialPanel({ tmdbId, mediaType, requestedBy, initialWatchl
     return () => {
       active = false;
     };
-  }, [tmdbId, mediaType]);
+  }, [tmdbId, mediaType, initialWatchlist]);
 
-  const requestedLabel = useMemo(() => {
-    if (!requestedBy?.username) return null;
-    const name = requestedBy.displayName?.trim() || requestedBy.username;
-    return `Requested by ${name}`;
-  }, [requestedBy?.username, requestedBy?.displayName]);
+  const requestedLabel = requestedBy?.username
+    ? `Requested by ${requestedBy.displayName?.trim() || requestedBy.username}`
+    : null;
 
   if (watchlist === null && !requestedBy) return null;
 

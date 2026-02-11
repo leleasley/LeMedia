@@ -15,7 +15,7 @@ const collectionRateLimit = { windowMs: 60 * 1000, max: 30 };
 export async function POST(req: NextRequest) {
   const user = await requireUser();
   if (user instanceof NextResponse) return user;
-  const rateLimit = enforceRateLimit(req, "radarr-collection", collectionRateLimit);
+  const rateLimit = await enforceRateLimit(req, "radarr-collection", collectionRateLimit);
   if (rateLimit) return rateLimit;
   const csrf = requireCsrf(req);
   if (csrf) return csrf;

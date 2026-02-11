@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
     const ip = getClientIp(req);
     
     // Rate limit: 20 registration attempts per hour per IP
-    const rateLimitResult = checkRateLimit(`webauthn_register:${ip}`, {
+    const rateLimitResult = await checkRateLimit(`webauthn_register:${ip}`, {
       windowMs: 60 * 60 * 1000,
       max: 20
     });

@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   const base = ctx.base;
   const ip = getClientIp(req);
-  const rate = checkRateLimit(`login:jellyfin:${ip}`, { windowMs: 60 * 1000, max: 10 });
+  const rate = await checkRateLimit(`login:jellyfin:${ip}`, { windowMs: 60 * 1000, max: 10 });
 
   const redirectToLogin = (message: string) => {
     const url = new URL("/login", base);
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
   }
 
   const lockKey = `login:jellyfin:${(usernameInput || "unknown").toLowerCase()}:${ip}`;
-  const lock = checkLockout(lockKey, { windowMs: 15 * 60 * 1000, max: 5, banMs: 15 * 60 * 1000 });
+  const lock = await checkLockout(lockKey, { windowMs: 15 * 60 * 1000, max: 5, banMs: 15 * 60 * 1000 });
   if (lock.locked) {
     return redirectToLogin(formatRetry(lock.retryAfterSec));
   }
@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
       clientIp: ip
     });
   } catch {
-    const failure = recordFailure(lockKey, { windowMs: 15 * 60 * 1000, max: 5, banMs: 15 * 60 * 1000 });
+    const failure = await recordFailure(lockKey, { windowMs: 15 * 60 * 1000, max: 5, banMs: 15 * 60 * 1000 });
     if (failure.locked) {
       return redirectToLogin(formatRetry(failure.retryAfterSec));
     }
@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
     return redirectToLogin("Account suspended");
   }
 
-  clearFailures(lockKey);
+  await clearFailures(lockKey);
   await deleteMfaSessionsForUser(user.id);
 
   await linkUserToJellyfin({

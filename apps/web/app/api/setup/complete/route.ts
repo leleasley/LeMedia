@@ -2,15 +2,28 @@ import { NextRequest, NextResponse } from "next/server";
 import { addUserPasswordHistory, getPool, isSetupComplete, markSetupComplete } from "@/db";
 import { hashPassword } from "@/lib/auth-utils";
 import { logAuditEvent } from "@/lib/audit-log";
-import { getClientIp } from "@/lib/rate-limit";
+import { getRequestContext, isSameOriginRequest } from "@/lib/proxy";
+import { checkRateLimit, getClientIp, rateLimitResponse } from "@/lib/rate-limit";
 import { logger } from "@/lib/logger";
 import { serializeGroups } from "@/lib/groups";
 import { getPasswordPolicyResult } from "@/lib/password-policy";
+import { verifyTurnstileToken } from "@/lib/turnstile";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   try {
+    const ctx = getRequestContext(request);
+    if (!isSameOriginRequest(request, ctx.base)) {
+      return NextResponse.json({ error: "Invalid origin" }, { status: 403 });
+    }
+
+    const ip = getClientIp(request);
+    const rate = await checkRateLimit(`setup-complete:${ip}`, { windowMs: 10 * 60 * 1000, max: 5 });
+    if (!rate.ok) {
+      return rateLimitResponse(rate.retryAfterSec);
+    }
+
     // Security: Only allow if setup not complete
     const setupComplete = await isSetupComplete();
     if (setupComplete) {
@@ -21,7 +34,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { username, email, password } = body;
+    const { username, email, password, turnstileToken } = body;
 
     // Validation
     if (!username?.trim() || !email?.trim() || !password) {
@@ -31,8 +44,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY) {
+      const token = typeof turnstileToken === "string" ? turnstileToken : "";
+      const turnstileValid = await verifyTurnstileToken(token, ip);
+      if (!turnstileValid) {
+        return NextResponse.json({ error: "Turnstile verification failed" }, { status: 400 });
+      }
+    }
+
     // Validate username format
     const usernameClean = username.trim().toLowerCase();
+    const emailClean = email.trim().toLowerCase();
     if (usernameClean.length < 3 || usernameClean.length > 50) {
       return NextResponse.json(
         { error: "Username must be between 3 and 50 characters" },
@@ -42,7 +64,7 @@ export async function POST(request: NextRequest) {
 
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email.trim())) {
+    if (!emailRegex.test(emailClean)) {
       return NextResponse.json(
         { error: "Please enter a valid email address" },
         { status: 400 }
@@ -59,7 +81,7 @@ export async function POST(request: NextRequest) {
     // Check if user already exists (edge case)
     const existing = await db.query(
       "SELECT id FROM app_user WHERE username = $1 OR email = $2",
-      [usernameClean, email.trim()]
+      [usernameClean, emailClean]
     );
 
     if (existing.rows.length > 0) {
@@ -76,7 +98,7 @@ export async function POST(request: NextRequest) {
       `INSERT INTO app_user (username, email, password_hash, groups, created_at, last_seen_at)
        VALUES ($1, $2, $3, $4, NOW(), NOW())
        RETURNING id`,
-      [usernameClean, email.trim(), passwordHash, serializeGroups(["administrators"])]
+      [usernameClean, emailClean, passwordHash, serializeGroups(["administrators"])]
     );
     await addUserPasswordHistory(result.rows[0].id, passwordHash);
 
@@ -88,7 +110,7 @@ export async function POST(request: NextRequest) {
       action: "user.created",
       actor: "setup_wizard",
       target: usernameClean,
-      ip: getClientIp(request),
+      ip,
       metadata: { isInitialAdmin: true },
     });
 

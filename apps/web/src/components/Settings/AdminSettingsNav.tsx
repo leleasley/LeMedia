@@ -55,6 +55,7 @@ export function AdminSettingsNav() {
             gradient: "from-slate-500/20 to-gray-500/20",
             routes: [
                 { id: "general", label: "General", href: "/admin/settings/general", match: /^\/admin\/settings(\/general)?$/, icon: Cog6ToothIcon },
+                { id: "maintenance", label: "Maintenance", href: "/admin/settings/maintenance", match: /^\/admin\/settings\/maintenance/, icon: ShieldCheckIcon },
                 { id: "jobs", label: "Jobs", href: "/admin/settings/jobs", match: /^\/admin\/settings\/jobs/, icon: ClockIcon },
                 { id: "logs", label: "Logs", href: "/admin/settings/logs", match: /^\/admin\/settings\/logs/, icon: DocumentTextIcon },
             ]

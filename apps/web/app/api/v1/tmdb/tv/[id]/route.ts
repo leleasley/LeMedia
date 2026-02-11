@@ -20,7 +20,7 @@ async function resolveParams(params: ParamsInput) {
 }
 
 export async function GET(req: NextRequest, { params }: { params: ParamsInput }) {
-  const rateLimit = enforceRateLimit(req, "tmdb", tmdbRateLimit);
+  const rateLimit = await enforceRateLimit(req, "tmdb", tmdbRateLimit);
   if (rateLimit) return rateLimit;
 
   const resolved = await resolveParams(params);

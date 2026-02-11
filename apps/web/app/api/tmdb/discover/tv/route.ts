@@ -20,7 +20,7 @@ const TV_LIST_FIELDS = [
 
 export async function GET(req: NextRequest) {
   try {
-    const rateLimit = enforceTmdbRateLimit(req);
+    const rateLimit = await enforceTmdbRateLimit(req);
     if (rateLimit) return rateLimit;
     const page = parsePage(req);
     const searchParams = req.nextUrl.searchParams;

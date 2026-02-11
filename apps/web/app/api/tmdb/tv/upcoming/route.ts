@@ -8,7 +8,7 @@ const TV_LIST_FIELDS = ["id", "name", "poster_path", "backdrop_path", "first_air
 
 export async function GET(req: NextRequest) {
     try {
-        const rateLimit = enforceTmdbRateLimit(req);
+        const rateLimit = await enforceTmdbRateLimit(req);
         if (rateLimit) return rateLimit;
         const page = parsePage(req);
         let result = await getUpcomingTvAccurate(page);

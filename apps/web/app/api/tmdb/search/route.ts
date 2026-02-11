@@ -12,7 +12,7 @@ const typeSchema = z.enum(["all", "movie", "tv", "person"]).default("all");
 
 export async function GET(req: NextRequest) {
   try {
-    const rateLimit = enforceTmdbRateLimit(req);
+    const rateLimit = await enforceTmdbRateLimit(req);
     if (rateLimit) return rateLimit;
     const q = querySchema.parse(req.nextUrl.searchParams.get("q") ?? "");
     const page = pageSchema.parse(req.nextUrl.searchParams.get("page") ?? "1");

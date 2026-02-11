@@ -5,7 +5,7 @@ import { jsonResponseWithETag } from "@/lib/api-optimization";
 
 export async function GET(req: NextRequest) {
   try {
-    const rateLimit = enforceTmdbRateLimit(req);
+    const rateLimit = await enforceTmdbRateLimit(req);
     if (rateLimit) return rateLimit;
     const languages = await getLanguages();
     return jsonResponseWithETag(req, { languages });

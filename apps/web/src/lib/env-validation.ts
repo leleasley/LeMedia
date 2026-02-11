@@ -7,6 +7,7 @@ const EnvSchema = z.object({
   SERVICES_SECRET_KEY_VERSION: z.string().min(1).default("1"),
   SERVICES_SECRET_KEY_PREVIOUS: z.string().optional(),
   SERVICES_SECRET_KEY_PREVIOUS_VERSION: z.string().optional(),
+  REDIS_URL: z.string().url().optional(),
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   PORT: z.coerce.number().int().positive().default(3010),
 });

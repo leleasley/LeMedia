@@ -88,7 +88,7 @@ export function RecommendationsPageClientV2() {
     { refreshInterval: 600000 }
   );
 
-  const items = data?.items ?? [];
+  const items = useMemo(() => data?.items ?? [], [data?.items]);
   const hasMore = data?.hasMore ?? false;
   const [loading, setLoading] = useState(true);
   const isPageChanging = page !== prevPage;

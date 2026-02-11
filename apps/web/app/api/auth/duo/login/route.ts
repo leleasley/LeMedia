@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
   const username = (req.nextUrl.searchParams.get("username") ?? "").trim();
   const popupRequested = req.nextUrl.searchParams.get("popup") === "1";
   const ip = getClientIp(req);
-  const rate = checkRateLimit(`duo_login:${ip}`, { windowMs: 60 * 1000, max: 20 });
+  const rate = await checkRateLimit(`duo_login:${ip}`, { windowMs: 60 * 1000, max: 20 });
 
   if (!rate.ok) {
     const url = new URL("/login", base);

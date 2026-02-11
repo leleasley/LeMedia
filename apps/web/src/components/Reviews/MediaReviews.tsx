@@ -129,7 +129,7 @@ export function MediaReviews({ tmdbId, mediaType, title, posterPath, releaseYear
       setReviewText("");
       setSpoiler(false);
     }
-  }, [userReview?.id]);
+  }, [userReview]);
 
   const averageDisplay = useMemo(() => {
     if (!data?.stats?.total) return null;

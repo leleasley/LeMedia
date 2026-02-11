@@ -75,6 +75,7 @@ See `docs/JELLYFIN_AVAILABILITY.md` for setup, how the cache works, and troubles
 
 - Docker and Docker Compose (Portainer deployment supported)
 - PostgreSQL database (included in docker-compose.yml)
+- Redis (included in docker-compose.yml, used for distributed rate limiting)
 - TMDB API key (v3)
 - OMDB API key (optional, for additional metadata)
 - Sonarr instance with API key
@@ -106,6 +107,7 @@ See `docs/JELLYFIN_AVAILABILITY.md` for setup, how the cache works, and troubles
    - `SONARR_URL` and `SONARR_API_KEY`: Your Sonarr instance details
    - `RADARR_URL` and `RADARR_API_KEY`: Your Radarr instance details
    - `DATABASE_URL`: PostgreSQL connection string (or use the provided defaults)
+   - `REDIS_URL`: Redis connection string (default: `redis://lemedia-redis:6379`)
 
 3. Start the application:
    ```bash
@@ -213,6 +215,26 @@ docker image prune -af      # Remove unused images
 ```
 
 ## Configuration
+
+### Redis Host Tuning (Linux)
+
+If Redis logs a warning about memory overcommit, apply this on the Docker host:
+
+```bash
+# Apply immediately
+sudo sysctl -w vm.overcommit_memory=1
+
+# Persist across reboots
+echo "vm.overcommit_memory=1" | sudo tee /etc/sysctl.d/99-redis.conf
+sudo sysctl --system
+```
+
+Then restart Redis:
+
+```bash
+docker compose restart lemedia-redis
+docker compose logs -f lemedia-redis
+```
 
 ### Web Push Notifications
 

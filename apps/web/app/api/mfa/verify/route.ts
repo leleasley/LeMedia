@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   const base = ctx.base;
   const ip = getClientIp(req);
-  const rate = checkRateLimit(`mfa:${ip}`, { windowMs: 60 * 1000, max: 10 });
+  const rate = await checkRateLimit(`mfa:${ip}`, { windowMs: 60 * 1000, max: 10 });
   const cookieOptions = getCookieBase(ctx, true);
   const from = sanitizeRelativePath(req.cookies.get("lemedia_login_redirect")?.value);
   const token = req.cookies.get("lemedia_mfa_token")?.value;
@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
   }
 
   const lockKey = `mfa:${token || "unknown"}:${ip}`;
-  const lock = checkLockout(lockKey, { windowMs: 10 * 60 * 1000, max: 5, banMs: 10 * 60 * 1000 });
+  const lock = await checkLockout(lockKey, { windowMs: 10 * 60 * 1000, max: 5, banMs: 10 * 60 * 1000 });
   if (lock.locked) {
     return redirectToMfa(base, formatRetry(lock.retryAfterSec));
   }
@@ -71,14 +71,14 @@ export async function POST(req: NextRequest) {
   }
 
   if (!authenticator.check(code, secret)) {
-    const failure = recordFailure(lockKey, { windowMs: 10 * 60 * 1000, max: 5, banMs: 10 * 60 * 1000 });
+    const failure = await recordFailure(lockKey, { windowMs: 10 * 60 * 1000, max: 5, banMs: 10 * 60 * 1000 });
     if (failure.locked) {
       return redirectToMfa(base, formatRetry(failure.retryAfterSec));
     }
     return redirectToMfa(base, "Invalid authentication code");
   }
 
-  clearFailures(lockKey);
+  await clearFailures(lockKey);
   const user = await getUserById(session.user_id);
   if (!user) {
     return redirectToLogin(base, "Unable to load your account");

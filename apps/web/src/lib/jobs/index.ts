@@ -10,6 +10,110 @@ const isBuildPhase =
   process.env.NEXT_PHASE === "phase-production-build" ||
   process.env.NEXT_PHASE === "phase-production-export";
 
+export type JobRuntimeMetrics = {
+  name: string;
+  totalRuns: number;
+  successRuns: number;
+  failedRuns: number;
+  successRate: number;
+  failureRate: number;
+  avgDurationMs: number;
+  lastDurationMs: number | null;
+  lastStartedAt: string | null;
+  lastFinishedAt: string | null;
+  lastResult: "success" | "failure" | "none";
+  lastError: string | null;
+};
+
+type JobRuntimeState = {
+  name: string;
+  totalRuns: number;
+  successRuns: number;
+  failedRuns: number;
+  durationTotalMs: number;
+  lastDurationMs: number | null;
+  lastStartedAt: number | null;
+  lastFinishedAt: number | null;
+  lastResult: "success" | "failure" | "none";
+  lastError: string | null;
+};
+
+const runtimeStore = globalThis as typeof globalThis & {
+  __lemediaJobRuntimeMetrics?: Map<string, JobRuntimeState>;
+};
+
+const jobRuntimeMetrics = runtimeStore.__lemediaJobRuntimeMetrics ?? new Map<string, JobRuntimeState>();
+runtimeStore.__lemediaJobRuntimeMetrics = jobRuntimeMetrics;
+
+function getRuntimeState(name: string): JobRuntimeState {
+  const existing = jobRuntimeMetrics.get(name);
+  if (existing) return existing;
+  const created: JobRuntimeState = {
+    name,
+    totalRuns: 0,
+    successRuns: 0,
+    failedRuns: 0,
+    durationTotalMs: 0,
+    lastDurationMs: null,
+    lastStartedAt: null,
+    lastFinishedAt: null,
+    lastResult: "none",
+    lastError: null,
+  };
+  jobRuntimeMetrics.set(name, created);
+  return created;
+}
+
+function markJobStart(name: string) {
+  const state = getRuntimeState(name);
+  state.totalRuns += 1;
+  state.lastStartedAt = Date.now();
+  state.lastError = null;
+}
+
+function markJobResult(name: string, result: "success" | "failure", error?: string) {
+  const state = getRuntimeState(name);
+  const finishedAt = Date.now();
+  state.lastFinishedAt = finishedAt;
+  state.lastResult = result;
+  if (result === "success") {
+    state.successRuns += 1;
+    state.lastError = null;
+  } else {
+    state.failedRuns += 1;
+    state.lastError = error ?? "Unknown error";
+  }
+  if (state.lastStartedAt) {
+    const duration = Math.max(0, finishedAt - state.lastStartedAt);
+    state.lastDurationMs = duration;
+    state.durationTotalMs += duration;
+  }
+}
+
+export function getJobRuntimeMetrics(): JobRuntimeMetrics[] {
+  return Array.from(jobRuntimeMetrics.values())
+    .map((state) => {
+      const successRate = state.totalRuns > 0 ? state.successRuns / state.totalRuns : 0;
+      const failureRate = state.totalRuns > 0 ? state.failedRuns / state.totalRuns : 0;
+      const avgDurationMs = state.totalRuns > 0 ? state.durationTotalMs / state.totalRuns : 0;
+      return {
+        name: state.name,
+        totalRuns: state.totalRuns,
+        successRuns: state.successRuns,
+        failedRuns: state.failedRuns,
+        successRate,
+        failureRate,
+        avgDurationMs,
+        lastDurationMs: state.lastDurationMs,
+        lastStartedAt: state.lastStartedAt ? new Date(state.lastStartedAt).toISOString() : null,
+        lastFinishedAt: state.lastFinishedAt ? new Date(state.lastFinishedAt).toISOString() : null,
+        lastResult: state.lastResult,
+        lastError: state.lastError,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 function getJobTimezone() {
   return process.env.JOBS_TIMEZONE || process.env.TZ || undefined;
 }
@@ -105,6 +209,8 @@ async function runJob(job: Job) {
     return;
   }
 
+  markJobStart(job.name);
+
   try {
     logger.info(`[Job] Executing ${job.name}...`);
     await handler();
@@ -114,10 +220,12 @@ async function runJob(job: Job) {
     const nextRun = computeNextRun(job.schedule, job.intervalSeconds, now);
 
     await updateJobRun(job.id, now, nextRun);
+    markJobResult(job.name, "success");
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     logger.error(`[Job] Job ${job.name} failed`, err);
     await recordJobFailure(job.id, message, 3);
+    markJobResult(job.name, "failure", message);
   }
 }
 

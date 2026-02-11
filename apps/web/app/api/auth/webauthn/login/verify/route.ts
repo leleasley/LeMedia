@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
     const ip = getClientIp(req);
     
     // Rate limit: 10 attempts per 15 minutes per IP
-    const rateLimitResult = checkRateLimit(`webauthn_login:${ip}`, {
+    const rateLimitResult = await checkRateLimit(`webauthn_login:${ip}`, {
       windowMs: 15 * 60 * 1000,
       max: 10
     });

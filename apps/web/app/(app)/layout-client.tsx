@@ -158,6 +158,7 @@ export default function AppLayoutClient({
 }: AppLayoutClientProps) {
     const pathname = usePathname();
     const searchParams = useSearchParams();
+    const searchParamsKey = searchParams?.toString() ?? "";
     const isDesktop = useMediaQuery("(min-width: 768px)", null);
     const [liveCounts, setLiveCounts] = useState<{ pending?: number; open?: number } | null>(null);
     const [progressVisible, setProgressVisible] = useState(false);
@@ -289,8 +290,10 @@ export default function AppLayoutClient({
     useEffect(() => {
         if (!pathname) return;
         const timers: number[] = [];
-        setProgressVisible(true);
-        setProgressValue(8);
+        timers.push(window.setTimeout(() => {
+            setProgressVisible(true);
+            setProgressValue(8);
+        }, 0));
         timers.push(window.setTimeout(() => setProgressValue(28), 90));
         timers.push(window.setTimeout(() => setProgressValue(52), 220));
         timers.push(window.setTimeout(() => setProgressValue(76), 420));
@@ -300,7 +303,7 @@ export default function AppLayoutClient({
         return () => {
             timers.forEach((t) => window.clearTimeout(t));
         };
-    }, [pathname, searchParams?.toString()]);
+    }, [pathname, searchParamsKey]);
 
     useEffect(() => {
         if (!pathname) return;

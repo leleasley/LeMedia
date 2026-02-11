@@ -9,7 +9,7 @@ export async function GET(
     { params }: { params: Promise<{ networkId: string }> }
 ) {
     try {
-        const rateLimit = enforceTmdbRateLimit(req);
+        const rateLimit = await enforceTmdbRateLimit(req);
         if (rateLimit) return rateLimit;
         const { networkId } = await params;
         const page = parsePage(req);

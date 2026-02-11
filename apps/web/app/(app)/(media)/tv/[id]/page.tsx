@@ -68,6 +68,9 @@ export async function generateMetadata({ params }: { params: ParamsInput }) {
 }
 
 export default async function TvPage({ params }: { params: ParamsInput }) {
+  let pageData: any = null;
+  let loadError: string | null = null;
+
   try {
     const { id } = Params.parse(await resolveParams(params));
 
@@ -118,91 +121,129 @@ export default async function TvPage({ params }: { params: ParamsInput }) {
       .filter((s: any) => s.season_number !== 0)
       .sort((a: any, b: any) => a.season_number - b.season_number);
 
-    return (
-      <>
-        <RecentlyViewedTracker
-          mediaType="tv"
-          tmdbId={tv.id}
-          title={tv.name}
-          posterPath={tv.poster_path}
-        />
-        <TvDetailClientNew
-          tv={tv}
-          poster={poster}
-          backdrop={backdrop}
-          imageProxyEnabled={false}
-          trailerUrl={trailerUrl}
-          playUrl={playUrl}
-          seasons={seasons}
-          qualityProfiles={qualityProfiles}
-          defaultQualityProfileId={defaultQualityProfileId}
-          sonarrError={sonarrError}
-          requestsBlocked={requestsBlocked}
-          existingSeries={existingSeries}
-          availableInJellyfin={availableInJellyfin}
-          availableSeasons={availableSeasons}
-          availableInLibrary={availableInLibrary}
-          streamingProviders={streamingProviders}
-          watchProviders={watchProviders}
-          contentRatings={contentRatings}
-          imdbRating={null}
-          rtCriticsScore={null}
-          rtCriticsRating={null}
-          rtAudienceScore={null}
-          rtAudienceRating={null}
-          rtUrl={null}
-          metacriticScore={null}
-          keywords={keywords}
-          isAdmin={isAdmin}
-          manageItemId={manageItemId}
-          manageSlug={manageSlug}
-          manageBaseUrl={manageBaseUrl}
-          tvdbId={tvdbId}
-          prefetchedAggregate={undefined}
-          externalRatingsSlot={
-            <ExternalRatings tmdbId={tv.id} mediaType="tv" imdbId={imdbId} initialData={initialRatings} />
-          }
-          initialListStatus={listStatus ?? undefined}
-        >
-          <div className="px-4 mt-8">
-            <MediaReviews
-              tmdbId={tv.id}
-              mediaType="tv"
-              title={tv.name}
-              posterPath={tv.poster_path}
-              releaseYear={tv.first_air_date ? new Date(tv.first_air_date).getFullYear() : null}
-              imageProxyEnabled={imageProxyEnabled}
-              initialData={{ stats: reviewStats, reviews, userReview }}
-            />
-          </div>
-          {/* Recommendations Section */}
-          <div className="px-4 mt-8">
-            <MediaSlider
-              title="Recommendations"
-              url={`/api/v1/tmdb/tv/${tv.id}/recommendations`}
-              sliderKey={`tv-${tv.id}-recommendations`}
-              mediaType="tv"
-            />
-          </div>
-
-          {/* Similar TV Shows Section */}
-          <div className="px-4 mt-8 mb-8">
-            <MediaSlider
-              title="Similar Series"
-              url={`/api/v1/tmdb/tv/${tv.id}/similar`}
-              sliderKey={`tv-${tv.id}-similar`}
-              mediaType="tv"
-            />
-          </div>
-        </TvDetailClientNew>
-      </>
-    );
+    pageData = {
+      tv,
+      poster,
+      backdrop,
+      trailerUrl,
+      seasons,
+      qualityProfiles,
+      defaultQualityProfileId,
+      sonarrError,
+      requestsBlocked,
+      existingSeries,
+      availableInJellyfin,
+      availableSeasons,
+      availableInLibrary,
+      streamingProviders,
+      watchProviders,
+      contentRatings,
+      keywords,
+      isAdmin,
+      manageItemId,
+      manageSlug,
+      manageBaseUrl,
+      tvdbId,
+      imdbId,
+      initialRatings,
+      listStatus,
+      reviews,
+      reviewStats,
+      userReview,
+      imageProxyEnabled
+    };
   } catch (e: any) {
+    loadError = e?.message ?? "Unknown error from TMDB.";
+  }
+
+  if (!pageData) {
     return (
       <div className="glass-strong rounded-2xl p-4">
         <h1 className="text-xl font-bold text-text">Unable to load show</h1>
-        <p className="mt-2 text-sm text-muted">{e?.message ?? "Unknown error from TMDB."}</p>
+        <p className="mt-2 text-sm text-muted">{loadError ?? "Unknown error from TMDB."}</p>
       </div>
     );
   }
+
+  return (
+    <>
+      <RecentlyViewedTracker
+        mediaType="tv"
+        tmdbId={pageData.tv.id}
+        title={pageData.tv.name}
+        posterPath={pageData.tv.poster_path}
+      />
+      <TvDetailClientNew
+        tv={pageData.tv}
+        poster={pageData.poster}
+        backdrop={pageData.backdrop}
+        imageProxyEnabled={false}
+        trailerUrl={pageData.trailerUrl}
+        playUrl={null}
+        seasons={pageData.seasons}
+        qualityProfiles={pageData.qualityProfiles}
+        defaultQualityProfileId={pageData.defaultQualityProfileId}
+        sonarrError={pageData.sonarrError}
+        requestsBlocked={pageData.requestsBlocked}
+        existingSeries={pageData.existingSeries}
+        availableInJellyfin={pageData.availableInJellyfin}
+        availableSeasons={pageData.availableSeasons}
+        availableInLibrary={pageData.availableInLibrary}
+        streamingProviders={pageData.streamingProviders}
+        watchProviders={pageData.watchProviders}
+        contentRatings={pageData.contentRatings}
+        imdbRating={null}
+        rtCriticsScore={null}
+        rtCriticsRating={null}
+        rtAudienceScore={null}
+        rtAudienceRating={null}
+        rtUrl={null}
+        metacriticScore={null}
+        keywords={pageData.keywords}
+        isAdmin={pageData.isAdmin}
+        manageItemId={pageData.manageItemId}
+        manageSlug={pageData.manageSlug}
+        manageBaseUrl={pageData.manageBaseUrl}
+        tvdbId={pageData.tvdbId}
+        prefetchedAggregate={undefined}
+        externalRatingsSlot={
+          <ExternalRatings
+            tmdbId={pageData.tv.id}
+            mediaType="tv"
+            imdbId={pageData.imdbId}
+            initialData={pageData.initialRatings}
+          />
+        }
+        initialListStatus={pageData.listStatus ?? undefined}
+      >
+        <div className="px-4 mt-8">
+          <MediaReviews
+            tmdbId={pageData.tv.id}
+            mediaType="tv"
+            title={pageData.tv.name}
+            posterPath={pageData.tv.poster_path}
+            releaseYear={pageData.tv.first_air_date ? new Date(pageData.tv.first_air_date).getFullYear() : null}
+            imageProxyEnabled={pageData.imageProxyEnabled}
+            initialData={{ stats: pageData.reviewStats, reviews: pageData.reviews, userReview: pageData.userReview }}
+          />
+        </div>
+        <div className="px-4 mt-8">
+          <MediaSlider
+            title="Recommendations"
+            url={`/api/v1/tmdb/tv/${pageData.tv.id}/recommendations`}
+            sliderKey={`tv-${pageData.tv.id}-recommendations`}
+            mediaType="tv"
+          />
+        </div>
+        <div className="px-4 mt-8 mb-8">
+          <MediaSlider
+            title="Similar Series"
+            url={`/api/v1/tmdb/tv/${pageData.tv.id}/similar`}
+            sliderKey={`tv-${pageData.tv.id}-similar`}
+            mediaType="tv"
+          />
+        </div>
+      </TvDetailClientNew>
+    </>
+  );
 }

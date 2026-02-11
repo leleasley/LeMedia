@@ -36,20 +36,20 @@ export async function POST(req: NextRequest) {
     }
 
     const lockKey = `share-auth:${share.id}:${ip}`;
-    const lockout = checkLockout(lockKey, { windowMs: 60 * 60 * 1000, max: 5, banMs: 60 * 60 * 1000 });
+    const lockout = await checkLockout(lockKey, { windowMs: 60 * 60 * 1000, max: 5, banMs: 60 * 60 * 1000 });
     if (lockout.locked) {
       return rateLimitResponse(lockout.retryAfterSec);
     }
 
     if (!verifySharePassword(data.password, share.passwordHash)) {
-      const failure = recordFailure(lockKey, { windowMs: 60 * 60 * 1000, max: 5, banMs: 60 * 60 * 1000 });
+      const failure = await recordFailure(lockKey, { windowMs: 60 * 60 * 1000, max: 5, banMs: 60 * 60 * 1000 });
       if (failure.locked) {
         return rateLimitResponse(failure.retryAfterSec);
       }
       return NextResponse.json({ error: "Invalid password" }, { status: 403 });
     }
 
-    clearFailures(lockKey);
+    await clearFailures(lockKey);
     const token = signShareAccess(share.id, share.passwordHash);
     const ctx = getRequestContext(req);
     const cookieBase = getCookieBase(ctx, true);

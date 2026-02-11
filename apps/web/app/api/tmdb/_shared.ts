@@ -13,6 +13,6 @@ export function parsePage(req: NextRequest): number {
   return pageSchema.parse(Number(raw));
 }
 
-export function enforceTmdbRateLimit(req: NextRequest) {
-  return enforceRateLimit(req, "tmdb", tmdbRateLimit);
+export async function enforceTmdbRateLimit(req: NextRequest) {
+  return await enforceRateLimit(req, "tmdb", tmdbRateLimit);
 }

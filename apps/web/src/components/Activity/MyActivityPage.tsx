@@ -608,17 +608,17 @@ function RecentlyWatchedTimeline({ items }: { items: RecentlyWatchedItem[] }) {
   );
 }
 
+function TrendDirectionIcon({ value }: { value: number }) {
+  if (value > 0) return <ArrowRight className="h-4 w-4 text-emerald-400 rotate-45" />;
+  if (value < 0) return <ArrowRight className="h-4 w-4 text-rose-400 -rotate-45" />;
+  return <ArrowRight className="h-4 w-4 text-gray-500" />;
+}
+
 // This Month Stats Component
 function ThisMonthStatsCard({ stats }: { stats: ThisMonthStats }) {
   const moviesTrend = stats.moviesThisMonth - stats.moviesLastMonth;
   const episodesTrend = stats.episodesThisMonth - stats.episodesLastMonth;
   const hoursTrend = stats.hoursThisMonth - stats.hoursLastMonth;
-
-  const TrendIcon = ({ value }: { value: number }) => {
-    if (value > 0) return <ArrowRight className="h-4 w-4 text-emerald-400 rotate-45" />;
-    if (value < 0) return <ArrowRight className="h-4 w-4 text-rose-400 -rotate-45" />;
-    return <ArrowRight className="h-4 w-4 text-gray-500" />;
-  };
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -628,7 +628,7 @@ function ThisMonthStatsCard({ stats }: { stats: ThisMonthStats }) {
             <Film className="h-5 w-5 text-blue-400" />
             <span className="text-sm text-gray-400">Movies</span>
           </div>
-          <TrendIcon value={moviesTrend} />
+          <TrendDirectionIcon value={moviesTrend} />
         </div>
         <div className="flex items-baseline gap-2">
           <div className="text-2xl font-bold text-white">{stats.moviesThisMonth}</div>
@@ -644,7 +644,7 @@ function ThisMonthStatsCard({ stats }: { stats: ThisMonthStats }) {
             <Tv className="h-5 w-5 text-purple-400" />
             <span className="text-sm text-gray-400">Episodes</span>
           </div>
-          <TrendIcon value={episodesTrend} />
+          <TrendDirectionIcon value={episodesTrend} />
         </div>
         <div className="flex items-baseline gap-2">
           <div className="text-2xl font-bold text-white">{stats.episodesThisMonth}</div>
@@ -660,7 +660,7 @@ function ThisMonthStatsCard({ stats }: { stats: ThisMonthStats }) {
             <Clock className="h-5 w-5 text-emerald-400" />
             <span className="text-sm text-gray-400">Hours</span>
           </div>
-          <TrendIcon value={hoursTrend} />
+          <TrendDirectionIcon value={hoursTrend} />
         </div>
         <div className="flex items-baseline gap-2">
           <div className="text-2xl font-bold text-white">{stats.hoursThisMonth}h</div>
@@ -897,7 +897,7 @@ export default function MyActivityPage() {
             <div className="p-2 rounded-lg bg-yellow-500/10">
               <Trophy className="h-5 w-5 text-yellow-400" />
             </div>
-            <h2 className="text-xl font-bold text-white">This Week's Achievement</h2>
+            <h2 className="text-xl font-bold text-white">This Week&apos;s Achievement</h2>
           </div>
           <AchievementBadge achievement={achievement} onClick={() => setShowAchievements(true)} />
         </div>

@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
   if (user instanceof NextResponse) return user;
 
   const ip = getClientIp(req);
-  const rate = checkRateLimit(`trakt_connect:${ip}`, { windowMs: 60 * 1000, max: 15 });
+  const rate = await checkRateLimit(`trakt_connect:${ip}`, { windowMs: 60 * 1000, max: 15 });
   if (!rate.ok) {
     return NextResponse.json({ error: "Too many attempts. Please try again later." }, { status: 429 });
   }

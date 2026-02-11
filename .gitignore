@@ -16,6 +16,9 @@ build
 
 # Database
 db/data
+redis/data
+backups
+backups/*
 *.db
 *.sqlite
 
