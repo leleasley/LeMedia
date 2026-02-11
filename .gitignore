@@ -17,8 +17,8 @@ build
 # Database
 db/data
 redis/data
-backups
-backups/*
+/backups
+/backups/*
 *.db
 *.sqlite
 
