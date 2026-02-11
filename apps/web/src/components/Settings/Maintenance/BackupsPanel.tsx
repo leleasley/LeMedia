@@ -13,6 +13,7 @@ type BackupSummary = {
 
 type BackupResponse = {
   backups: BackupSummary[];
+  maxFiles: number;
 };
 
 const fetcher = (url: string) => fetch(url, { cache: "no-store", credentials: "include" }).then((res) => res.json());
@@ -28,6 +29,7 @@ export function BackupsPanel() {
   const toast = useToast();
   const [creating, setCreating] = useState(false);
   const [validating, setValidating] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const [validationResult, setValidationResult] = useState<Record<string, string>>({});
 
   const { data, mutate, isLoading } = useSWR<BackupResponse>("/api/v1/admin/settings/backups", fetcher, {
@@ -100,6 +102,9 @@ export function BackupsPanel() {
           Backups are written to <code className="rounded bg-black/30 px-1 py-0.5">BACKUP_DIR</code> (default:
           <code className="rounded bg-black/30 px-1 py-0.5 ml-1">/data/backups</code>).
         </p>
+        <p className="mt-1 text-sm text-gray-300">
+          Retention keeps the newest <code className="rounded bg-black/30 px-1 py-0.5">{data?.maxFiles ?? 5}</code> backups.
+        </p>
       </div>
 
       <div className="space-y-3">
@@ -137,6 +142,37 @@ export function BackupsPanel() {
                 >
                   Download
                 </a>
+                <button
+                  onClick={async () => {
+                    const confirmed = window.confirm(`Delete backup ${backup.name}?`);
+                    if (!confirmed) return;
+                    setDeleting(backup.name);
+                    try {
+                      const res = await csrfFetch(`/api/v1/admin/settings/backups/${encodeURIComponent(backup.name)}`, {
+                        method: "DELETE",
+                      });
+                      const body = await res.json().catch(() => ({}));
+                      if (!res.ok) {
+                        throw new Error(body?.error || "Failed to delete backup");
+                      }
+                      toast.success(`Deleted ${backup.name}`);
+                      setValidationResult((prev) => {
+                        const next = { ...prev };
+                        delete next[backup.name];
+                        return next;
+                      });
+                      mutate();
+                    } catch (error) {
+                      toast.error(error instanceof Error ? error.message : "Failed to delete backup");
+                    } finally {
+                      setDeleting(null);
+                    }
+                  }}
+                  disabled={deleting === backup.name}
+                  className="rounded-lg bg-rose-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-600 disabled:opacity-60"
+                >
+                  {deleting === backup.name ? "Deleting..." : "Delete"}
+                </button>
               </div>
             </div>
           ))

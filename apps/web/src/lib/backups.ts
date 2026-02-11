@@ -13,9 +13,12 @@ export type BackupSummary = {
   createdAt: string;
 };
 
+const DEFAULT_BACKUP_MAX_FILES = 5;
+
 type BackupManifest = {
   version: 1;
   createdAt: string;
+  trigger: "manual" | "job" | "script";
   app: {
     name: string;
     commitTag: string;
@@ -30,6 +33,17 @@ type BackupManifest = {
 
 function getBackupDir() {
   return process.env.BACKUP_DIR?.trim() || "/data/backups";
+}
+
+export function getBackupMaxFiles() {
+  const raw = process.env.BACKUP_MAX_FILES?.trim();
+  if (!raw) return DEFAULT_BACKUP_MAX_FILES;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return DEFAULT_BACKUP_MAX_FILES;
+  const rounded = Math.floor(parsed);
+  if (rounded < 1) return 1;
+  if (rounded > 200) return 200;
+  return rounded;
 }
 
 function safeBackupName(raw: string): string | null {
@@ -149,7 +163,49 @@ export async function listBackups(): Promise<BackupSummary[]> {
   return summaries.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-export async function createBackupArchive() {
+export async function deleteBackupArchive(name: string) {
+  const fullPath = await getBackupPath(name);
+  if (!fullPath) {
+    return { ok: false as const, error: "Invalid backup name" };
+  }
+
+  try {
+    await fs.unlink(fullPath);
+    return { ok: true as const };
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err?.code === "ENOENT") {
+      return { ok: false as const, error: "Backup file not found" };
+    }
+    logger.error("[Backup] Failed to delete backup", { name, error: err?.message ?? String(error) });
+    return { ok: false as const, error: "Failed to delete backup file" };
+  }
+}
+
+async function enforceBackupRetention() {
+  const maxFiles = getBackupMaxFiles();
+  const backups = await listBackups();
+  if (backups.length <= maxFiles) {
+    return { maxFiles, deleted: [] as string[] };
+  }
+
+  const toDelete = backups.slice(maxFiles);
+  const deleted: string[] = [];
+  for (const backup of toDelete) {
+    const result = await deleteBackupArchive(backup.name);
+    if (result.ok) {
+      deleted.push(backup.name);
+    }
+  }
+
+  if (deleted.length > 0) {
+    logger.info("[Backup] Retention removed old backups", { maxFiles, deletedCount: deleted.length, deleted });
+  }
+
+  return { maxFiles, deleted };
+}
+
+export async function createBackupArchive(options?: { trigger?: "manual" | "job" | "script" }) {
   const dir = await ensureBackupDir();
   const [postgres, redis] = await Promise.all([
     collectPostgresSnapshot(),
@@ -159,6 +215,7 @@ export async function createBackupArchive() {
   const manifest: BackupManifest = {
     version: 1,
     createdAt: new Date().toISOString(),
+    trigger: options?.trigger ?? "manual",
     app: {
       name: "LeMedia",
       commitTag: process.env.commitTag || process.env.COMMIT_TAG || "unknown",
@@ -185,6 +242,7 @@ export async function createBackupArchive() {
   const name = buildBackupName();
   const fullPath = path.join(dir, name);
   await fs.writeFile(fullPath, output);
+  const retention = await enforceBackupRetention();
 
   const stats = await fs.stat(fullPath);
   logger.info("[Backup] Archive created", {
@@ -192,6 +250,8 @@ export async function createBackupArchive() {
     sizeBytes: stats.size,
     tableCount: manifest.postgres.tableCount,
     redisKeyCount: manifest.redis.keyCount,
+    trigger: manifest.trigger,
+    retentionDeleted: retention.deleted.length,
   });
 
   return {
@@ -199,6 +259,7 @@ export async function createBackupArchive() {
     sizeBytes: stats.size,
     createdAt: stats.mtime.toISOString(),
     manifest,
+    retention,
   };
 }
 
@@ -242,6 +303,7 @@ export async function validateBackupArchive(name: string) {
       details: {
         version: manifest.version,
         createdAt: manifest.createdAt,
+        trigger: manifest.trigger ?? "manual",
         tableCount: manifest.postgres.tableCount,
         redisKeyCount: manifest.redis.keyCount,
       },

@@ -1,5 +1,6 @@
 # Environment files
 .env
+.env.staging
 .env.local
 .env.*.local
 

@@ -8,6 +8,7 @@ import { syncPlexAvailability } from "@/lib/plex-availability-sync";
 import { refreshUpgradeHintsForAll } from "@/lib/upgrade-finder";
 import { syncProwlarrIndexers } from "@/lib/prowlarr-sync";
 import { importLetterboxdReviews } from "@/lib/letterboxd";
+import { createBackupArchive } from "@/lib/backups";
 
 export type JobHandler = () => Promise<void>;
 
@@ -62,5 +63,10 @@ export const jobHandlers: Record<string, JobHandler> = {
     logger.info("[Job] Starting letterboxd-import");
     const result = await importLetterboxdReviews();
     logger.info(`[Job] letterboxd-import completed: imported=${result.imported} skipped=${result.skipped} errors=${result.errors}`);
+  },
+  "backup-snapshot": async () => {
+    logger.info("[Job] Starting backup-snapshot");
+    const result = await createBackupArchive({ trigger: "job" });
+    logger.info(`[Job] backup-snapshot completed: ${result.name} (${result.sizeBytes} bytes), retention-removed=${result.retention.deleted.length}`);
   },
 };

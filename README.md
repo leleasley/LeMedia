@@ -139,6 +139,39 @@ If disk usage grows over time, it's usually Docker build cache:
 - `docker builder prune -af` (build cache)
 - `docker image prune -af` (unused images)
 
+### Local IP Staging Preview (Safe Test Path)
+
+If you want to test changes from another device via local IP before publishing to your domain, use a separate staging web container.
+
+1. Create staging env overrides:
+   ```bash
+   cp .env.staging.example .env.staging
+   nano .env.staging
+   ```
+
+2. Set `APP_BASE_URL` in `.env.staging` to your server LAN IP and staging port, for example:
+   - `APP_BASE_URL=http://192.168.1.50:3011`
+
+3. Start staging preview only:
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.staging.yml --profile staging up -d --build lemedia-web-staging
+   ```
+
+4. Browse staging at:
+   - `http://<your-server-ip>:3011`
+
+5. Stop staging when done:
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.staging.yml --profile staging stop lemedia-web-staging
+   ```
+
+Notes:
+- Production publish flow stays the same:
+  - `docker compose up -d --build lemedia-web`
+- Staging defaults keep risk lower:
+  - `JOB_SCHEDULER_ENABLED=0`
+  - `NOTIFICATIONS_ENABLED=false`
+
 ### Reverse Proxy Configuration (Optional)
 
 For production deployments, you can use a reverse proxy with SSO. LeMedia supports these headers from your authentication layer:

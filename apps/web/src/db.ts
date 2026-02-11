@@ -2847,7 +2847,8 @@ async function ensureSchema() {
           ('calendar-notifications', '0 */6 * * *', 21600, 'system', FALSE),
           ('jellyfin-availability-sync', '0 */4 * * *', 14400, 'system', FALSE),
           ('upgrade-finder-4k', '0 3 * * *', 86400, 'system', FALSE),
-          ('prowlarr-indexer-sync', '*/5 * * * *', 300, 'system', TRUE)
+          ('prowlarr-indexer-sync', '*/5 * * * *', 300, 'system', TRUE),
+          ('backup-snapshot', '30 2 * * *', 86400, 'system', FALSE)
       ON CONFLICT (name) DO NOTHING;
     `);
   })();

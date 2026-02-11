@@ -28,6 +28,11 @@ Backups are stored on the server in `BACKUP_DIR`.
 
 `/opt/LeMedia/backups` is ignored by git.
 
+Retention:
+
+- `BACKUP_MAX_FILES` controls max retained archives (default `5`).
+- When a new backup is created, oldest archives beyond the limit are automatically deleted.
+
 ## One-click CLI Scripts
 
 These scripts call the same admin API:
@@ -64,6 +69,8 @@ Before any restore attempt:
 ## Notes
 
 - Backups are logical snapshots (JSON payloads), suitable for app-level restore workflows.
+- Backups can be deleted in UI from `/admin/settings/maintenance`.
+- A scheduled job named `backup-snapshot` appears in `/admin/settings/jobs` and is configurable there.
 - For infrastructure-level disaster recovery, pair this with periodic volume snapshots of:
   - `/opt/LeMedia/db/data`
   - `/opt/LeMedia/redis/data`
