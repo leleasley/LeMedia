@@ -490,6 +490,11 @@
     @apply relative z-20 flex flex-col items-center pt-4 xl:flex-row xl:items-end;
   }
 
+  /* Discover page container - matches media page pattern */
+  .discover-page-container {
+    @apply relative px-4 md:px-6 lg:px-8;
+  }
+
   .media-poster {
     @apply w-36 overflow-hidden rounded-lg shadow-2xl md:w-48 xl:mr-6 xl:w-56;
     box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08);

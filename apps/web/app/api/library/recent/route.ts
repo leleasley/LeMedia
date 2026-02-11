@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
           type: "movie" as const,
           addedAt: movie.added ? new Date(movie.added).getTime() : 0,
           available: hasFile,
-          mediaStatus: hasFile ? MediaStatus.AVAILABLE : MediaStatus.DOWNLOADING
+          mediaStatus: hasFile ? MediaStatus.AVAILABLE : MediaStatus.PENDING
         };
       })
     )

@@ -1,5 +1,6 @@
 # LeMedia — Developer & Agent Guidelines
 
+
 ## Logging
 
 **Never use `console.log`, `console.warn`, `console.error`, or `console.info` in server-side code** (API routes, lib, server actions, etc.).

@@ -6,7 +6,7 @@ import { PrefetchLink } from "@/components/Layout/PrefetchLink";
 import Image from "next/image";
 import { usePathname, useSearchParams } from "next/navigation";
 import { ModeToggle } from "@/components/ui/mode-toggle";
-import { AlertTriangle, Settings, LayoutGrid, Film, Tv, Inbox, Users, CalendarDays, Activity, Star, Sparkles } from "lucide-react";
+import { AlertTriangle, Settings, LayoutGrid, Compass, Film, Tv, Inbox, Users, CalendarDays, Activity, Star, Sparkles } from "lucide-react";
 import { MobileNav } from "@/components/Layout/MobileNav";
 import { SearchHeader } from "@/components/Layout/SearchHeader";
 import { cn } from "@/lib/utils";
@@ -105,6 +105,7 @@ function AppHeader({
             {/* Mobile header - iOS liquid glass style */}
             {isDesktop === false ? (
                 <div
+                    data-search-header
                     className={cn(
                         "fixed left-0 right-0 top-0 z-[60] flex flex-shrink-0 transition-all duration-300",
                         isScrolled
@@ -125,6 +126,7 @@ function AppHeader({
             {/* Desktop: fixed search at top - with proper width accounting for sidebar */}
             {isDesktop ? (
                 <div
+                    data-search-header
                     className={cn(
                         "fixed top-0 z-[60] flex flex-shrink-0 px-4 py-3 right-0",
                         "md:left-64",
@@ -372,7 +374,11 @@ export default function AppLayoutClient({
                             <div className="space-y-1">
                                 <PrefetchLink href="/" className={linkClass(pathname === "/")}>
                                     <LayoutGrid className="h-5 w-5" />
-                                    <span>Dashboard</span>
+                                    <span>Home</span>
+                                </PrefetchLink>
+                                <PrefetchLink href="/discover" className={linkClass(pathname?.startsWith("/discover") ?? false)}>
+                                    <Compass className="h-5 w-5" />
+                                    <span>Discover</span>
                                 </PrefetchLink>
                                 <PrefetchLink href="/my-activity" className={linkClass(pathname === "/my-activity")}>
                                     <Activity className="h-5 w-5" />

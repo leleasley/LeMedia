@@ -22,6 +22,8 @@ if (process.env.NODE_ENV === "production") {
 export type AppUser = {
   id: number;
   username: string;
+  displayName: string | null;
+  jellyfinUserId: string | null;
   groups: string[];
   isAdmin: boolean;
 };
@@ -36,7 +38,7 @@ export async function getUser(): Promise<AppUser> {
       throw new Error("DEV_USER is disabled in production. Unset DEV_USER or set ALLOW_DEV_BYPASS=1 to override.");
     }
     const groups = normalizeGroupList(devGroups);
-    return { id: 0, username: devUser, groups, isAdmin: isAdminGroup(groups) };
+    return { id: 0, username: devUser, displayName: null, jellyfinUserId: null, groups, isAdmin: isAdminGroup(groups) };
   }
 
   const cookieStore = await cookies();
@@ -67,6 +69,8 @@ export async function getUser(): Promise<AppUser> {
     return {
       id: u.id,
       username: u.username,
+      displayName: u.display_name ?? null,
+      jellyfinUserId: u.jellyfin_user_id ?? null,
       groups: normalizeGroupList(u.groups),
       isAdmin: isAdminGroup(u.groups),
       banned: !!u.banned
@@ -90,7 +94,7 @@ export async function getUser(): Promise<AppUser> {
     logger.debug("[AUTH] groups", { groups });
   }
 
-  return { id: dbUser.id, username, groups, isAdmin };
+  return { id: dbUser.id, username, displayName: dbUser.displayName ?? null, jellyfinUserId: dbUser.jellyfinUserId ?? null, groups, isAdmin };
 }
 
 export async function requireUser(): Promise<AppUser | NextResponse> {

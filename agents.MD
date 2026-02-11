@@ -74,18 +74,10 @@ Once you're happy with your changes, push them to Gitea:
    )"
    ```
 
-4. **Push to Gitea**:
+4. **Push to Github**:
    ```bash
    git push
    ```
-
-### What Happens After Push
-
-When you push to Gitea:
-
-1. **Code is backed up** - Your changes are safely stored in Gitea
-2. **Version history updated** - Full commit history available in Gitea web UI
-3. **Ready to deploy** - You're already on the server, so changes are live after rebuild
 
 Note: Since you work directly on the server, you don't need CI/CD. Just rebuild manually when needed:
 ```bash
