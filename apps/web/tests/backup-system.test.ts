@@ -10,6 +10,7 @@ test("backup retention default and parser exist", () => {
   const source = fs.readFileSync(path.join(rootDir, "src", "lib", "backups.ts"), "utf8");
   assert.ok(source.includes("const DEFAULT_BACKUP_MAX_FILES = 5"), "default backup max should be 5");
   assert.ok(source.includes("export function getBackupMaxFiles()"), "backup max parser should be exported");
+  assert.ok(source.includes("enforceBackupRetention([name])"), "retention should preserve the newly created backup");
 });
 
 test("backup delete route is admin + csrf protected", () => {

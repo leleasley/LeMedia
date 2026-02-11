@@ -230,10 +230,6 @@ async function runJob(job: Job) {
 }
 
 export function startJobScheduler() {
-  const schedulerEnabled = (process.env.JOB_SCHEDULER_ENABLED ?? "1").trim().toLowerCase();
-  if (schedulerEnabled === "0" || schedulerEnabled === "false" || schedulerEnabled === "off") {
-    return;
-  }
   if (schedulerInterval || isBuildPhase || process.env.NODE_ENV === "test") return;
 
   // Run every minute to check for pending jobs

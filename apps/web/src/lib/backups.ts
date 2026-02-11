@@ -182,14 +182,20 @@ export async function deleteBackupArchive(name: string) {
   }
 }
 
-async function enforceBackupRetention() {
+async function enforceBackupRetention(keepNames: string[] = []) {
   const maxFiles = getBackupMaxFiles();
   const backups = await listBackups();
   if (backups.length <= maxFiles) {
     return { maxFiles, deleted: [] as string[] };
   }
 
-  const toDelete = backups.slice(maxFiles);
+  const keepSet = new Set(keepNames);
+  const toDelete: BackupSummary[] = [];
+  for (const backup of backups) {
+    if (keepSet.has(backup.name)) continue;
+    if (backups.length - toDelete.length <= maxFiles) break;
+    toDelete.push(backup);
+  }
   const deleted: string[] = [];
   for (const backup of toDelete) {
     const result = await deleteBackupArchive(backup.name);
@@ -242,9 +248,17 @@ export async function createBackupArchive(options?: { trigger?: "manual" | "job"
   const name = buildBackupName();
   const fullPath = path.join(dir, name);
   await fs.writeFile(fullPath, output);
-  const retention = await enforceBackupRetention();
-
-  const stats = await fs.stat(fullPath);
+  let stats = await fs.stat(fullPath);
+  const retention = await enforceBackupRetention([name]);
+  // File should still exist because retention excludes current name; keep defensive fallback.
+  try {
+    stats = await fs.stat(fullPath);
+  } catch (error) {
+    logger.warn("[Backup] Newly created backup missing after retention", {
+      name,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
   logger.info("[Backup] Archive created", {
     name,
     sizeBytes: stats.size,
