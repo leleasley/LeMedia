@@ -178,10 +178,24 @@ export function RequestMediaModal({
             </div>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-5">
+            {/* Poster Preview */}
+            {posterUrl && (
+              <div className="flex items-center gap-4 p-3 rounded-xl bg-gradient-to-r from-purple-500/10 via-indigo-500/10 to-blue-500/10 border border-white/10">
+                <div className="relative h-20 w-14 rounded-lg overflow-hidden shadow-lg flex-shrink-0">
+                  <img src={posterUrl} alt={title} className="object-cover w-full h-full" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold text-white truncate">{title}</h3>
+                  {year && <p className="text-xs text-gray-400 mt-1">{year}</p>}
+                </div>
+              </div>
+            )}
+
             {/* Quality Profile Selection */}
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-sm font-semibold text-gray-200">
+                <span className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-emerald-400 to-cyan-400"></span>
                 Quality Profile
               </label>
               <AdaptiveSelect
@@ -205,13 +219,16 @@ export function RequestMediaModal({
 
             {/* Warning if blocked */}
             {requestsBlocked && (
-              <div className="rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
-                {blockedMessage}
+              <div className="rounded-xl border border-amber-500/40 bg-gradient-to-r from-amber-500/10 to-orange-500/10 px-4 py-3 text-sm text-amber-100 backdrop-blur-sm">
+                <div className="flex items-start gap-2">
+                  <span className="text-amber-400 text-lg">⚠️</span>
+                  <span>{blockedMessage}</span>
+                </div>
               </div>
             )}
 
             {/* Actions */}
-            <div className="flex gap-3 pt-2">
+            <div className="flex gap-2 pt-2">
               {isAdmin && allowRaw ? (
                 <button
                   onClick={() => {
@@ -219,38 +236,38 @@ export function RequestMediaModal({
                   }}
                   disabled={!canOpenRaw}
                   title={canOpenRaw ? "View Raw releases" : "Set up Prowlarr in services"}
-                  className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm font-medium text-white hover:bg-white/10 hover:border-white/20 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 backdrop-blur-sm"
                 >
                   <Eye className="h-4 w-4" />
-                  {canOpenRaw ? "View Raw" : "Set up Prowlarr in services"}
+                  <span className="hidden sm:inline">{canOpenRaw ? "View Raw" : "Set up Prowlarr"}</span>
                 </button>
               ) : null}
               <button
                 onClick={handleClose}
                 disabled={isSubmitting}
-                className="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/10 hover:border-white/20 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed backdrop-blur-sm"
               >
                 Cancel
               </button>
               <button
                 onClick={submit}
                 disabled={isSubmitting || requestsBlocked}
-                className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${
+                className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg backdrop-blur-sm ${
                   submitState === "success"
-                    ? "bg-green-600 hover:bg-green-700"
+                    ? "bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700"
                     : submitState === "error"
-                    ? "bg-red-600 hover:bg-red-700"
-                    : "bg-emerald-600 hover:bg-emerald-700"
+                    ? "bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700"
+                    : "bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700"
                 }`}
               >
                 {submitState === "loading" && <Loader2 className="h-4 w-4 animate-spin" />}
-                {submitState === "success" && <Check className="h-4 w-4" />}
-                {submitState === "error" && <X className="h-4 w-4" />}
+                {submitState === "success" && <Check className="h-5 w-5" />}
+                {submitState === "error" && <X className="h-5 w-5" />}
                 <span>
                   {submitState === "loading"
                     ? "Requesting..."
                     : submitState === "success"
-                    ? "Success"
+                    ? "Success!"
                     : submitState === "error"
                     ? "Failed"
                     : "Request"}

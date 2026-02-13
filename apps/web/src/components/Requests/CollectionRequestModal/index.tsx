@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Modal } from "@/components/Common/Modal";
 import { csrfFetch } from "@/lib/csrf-client";
-import { Check, Loader2, X } from "lucide-react";
+import { Check, Loader2, X, Film, Star } from "lucide-react";
 
 type MovieItem = {
   id: number;
@@ -133,46 +133,75 @@ export function CollectionRequestModal(props: {
   return (
     <Modal
       open={props.open}
-      title="Request Collection"
+      title={`Request ${props.collectionName}`}
       onClose={props.onClose}
       backgroundImage={backgroundImage}
     >
-      <div className="space-y-4">
-        <div className="text-sm text-muted">{props.collectionName}</div>
+      <div className="space-y-5">
+        {/* Stats Bar */}
+        <div className="flex items-center justify-between p-3 rounded-xl bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-pink-500/10 border border-white/10">
+          <div className="flex items-center gap-2">
+            <Film className="h-5 w-5 text-purple-400" />
+            <span className="text-sm font-semibold text-white">{props.movies.length} Movies</span>
+          </div>
+          <div className="flex items-center gap-2 text-sm text-gray-300">
+            <span className="text-emerald-400 font-semibold">{selectedIds.length}</span>
+            <span>selected</span>
+          </div>
+        </div>
+
         {props.requestsBlocked ? (
-          <div className="rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
-            {blockedMessage}
+          <div className="rounded-xl border border-amber-500/40 bg-gradient-to-r from-amber-500/10 to-orange-500/10 px-4 py-3 text-sm text-amber-100">
+            <div className="flex items-start gap-2">
+              <span className="text-amber-400 text-lg">⚠️</span>
+              <span>{blockedMessage}</span>
+            </div>
           </div>
         ) : (
-          <div className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-xs text-muted">
-            This request will be approved automatically.
+          <div className="rounded-xl border border-emerald-500/30 bg-gradient-to-r from-emerald-500/10 to-cyan-500/10 px-4 py-3 text-sm text-emerald-100">
+            <div className="flex items-start gap-2">
+              <Check className="h-4 w-4 text-emerald-400 mt-0.5" />
+              <span>This request will be approved automatically.</span>
+            </div>
           </div>
         )}
 
-        <div className="space-y-2">
+        <div className="space-y-2 max-h-[40vh] overflow-y-auto pr-1 custom-scrollbar">
           {props.movies.map(movie => {
             const effectiveStatus = statusById[movie.id] ?? movie.status;
             const disabled = effectiveStatus && effectiveStatus !== "available";
             const checked = (selected[movie.id] ?? selectable[movie.id]) && !disabled;
             return (
-              <label key={movie.id} className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+              <label 
+                key={movie.id} 
+                className={`group flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 transition-all duration-200 ${
+                  disabled 
+                    ? 'opacity-60 cursor-not-allowed' 
+                    : 'hover:bg-white/10 hover:border-white/20 cursor-pointer'
+                }`}
+              >
                 <input
                   type="checkbox"
                   checked={checked}
                   disabled={disabled || submitting}
                   onChange={(e) => setSelected(prev => ({ ...prev, [movie.id]: e.target.checked }))}
+                  className="w-4 h-4 rounded border-gray-600 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-gray-800"
                 />
-                <div className="relative h-12 w-9 overflow-hidden rounded bg-black/30">
+                <div className="relative h-14 w-10 overflow-hidden rounded-lg bg-black/30 shadow-md flex-shrink-0">
                   {movie.posterPath ? (
                     <Image src={movie.posterPath} alt={movie.title} fill sizes="40px" className="object-cover" />
-                  ) : null}
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <Film className="h-5 w-5 text-gray-600" />
+                    </div>
+                  )}
                 </div>
-                <div className="flex-1">
-                  <div className="text-sm font-semibold text-white">{movie.title}</div>
-                  <div className="text-xs text-muted">{movie.releaseDate?.slice(0, 4) || "Unknown year"}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold text-white line-clamp-1">{movie.title}</div>
+                  <div className="text-xs text-gray-400 mt-0.5">{movie.releaseDate?.slice(0, 4) || "Unknown year"}</div>
                 </div>
                 {effectiveStatus && effectiveStatus !== "available" ? (
-                  <span className="rounded-full bg-slate-700/60 px-2 py-1 text-[10px] uppercase tracking-wider text-slate-200">
+                  <span className="rounded-full bg-gradient-to-r from-slate-700/60 to-slate-600/60 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-200 border border-slate-600/30">
                     {effectiveStatus.replace(/_/g, " ")}
                   </span>
                 ) : null}
@@ -181,18 +210,26 @@ export function CollectionRequestModal(props: {
           })}
         </div>
 
-        {loadingStatus ? <div className="text-xs text-muted">Checking collection availability...</div> : null}
+        {loadingStatus ? (
+          <div className="flex items-center gap-2 text-sm text-blue-400 animate-pulse">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span>Checking collection availability...</span>
+          </div>
+        ) : null}
 
-        <div>
-          <label className="text-xs uppercase tracking-[0.2em] text-muted">Quality profile</label>
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 text-sm font-semibold text-gray-200">
+            <span className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-emerald-400 to-cyan-400"></span>
+            Quality Profile
+          </label>
           <select
-            className="mt-2 w-full"
+            className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white hover:bg-white/10 focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20 transition-all"
             value={profileId}
             onChange={(e) => setProfileId(Number(e.target.value))}
             disabled={submitting}
           >
             {props.qualityProfiles.map(profile => (
-              <option key={profile.id} value={profile.id}>
+              <option key={profile.id} value={profile.id} className="bg-gray-900">
                 {profile.name}
               </option>
             ))}
@@ -201,43 +238,51 @@ export function CollectionRequestModal(props: {
 
         {result ? (
           <div
-            className={`rounded-md border px-3 py-2 text-xs ${
+            className={`rounded-xl border px-4 py-3 text-sm font-medium backdrop-blur-sm ${
               submitState === "success"
-                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
+                ? "border-emerald-500/40 bg-gradient-to-r from-emerald-500/10 to-green-500/10 text-emerald-200"
                 : submitState === "error"
-                ? "border-red-500/40 bg-red-500/10 text-red-200"
-                : "border-white/10 bg-white/5 text-muted"
+                ? "border-red-500/40 bg-gradient-to-r from-red-500/10 to-rose-500/10 text-red-200"
+                : "border-white/10 bg-white/5 text-gray-300"
             }`}
           >
-            {result}
+            <div className="flex items-start gap-2">
+              {submitState === "success" && <Check className="h-5 w-5 text-emerald-400 mt-0.5 flex-shrink-0" />}
+              {submitState === "error" && <X className="h-5 w-5 text-red-400 mt-0.5 flex-shrink-0" />}
+              <span>{result}</span>
+            </div>
           </div>
         ) : null}
 
-        <div className="flex justify-end gap-2">
-          <button className="btn btn-ghost" onClick={props.onClose} disabled={submitting}>
+        <div className="flex justify-end gap-2 pt-2">
+          <button 
+            className="btn btn-ghost rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-white/10 transition-all duration-200" 
+            onClick={props.onClose} 
+            disabled={submitting}
+          >
             Cancel
           </button>
           <button
-            className={`btn flex items-center gap-2 ${
+            className={`btn flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold shadow-lg transition-all duration-200 ${
               submitState === "success"
-                ? "bg-emerald-600 hover:bg-emerald-700"
+                ? "bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700"
                 : submitState === "error"
-                ? "bg-red-600 hover:bg-red-700"
-                : ""
+                ? "bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700"
+                : "bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700"
             }`}
             onClick={submit}
-            disabled={submitting}
+            disabled={submitting || selectedIds.length === 0}
           >
             {submitState === "loading" && <Loader2 className="h-4 w-4 animate-spin" />}
-            {submitState === "success" && <Check className="h-4 w-4" />}
-            {submitState === "error" && <X className="h-4 w-4" />}
+            {submitState === "success" && <Check className="h-5 w-5" />}
+            {submitState === "error" && <X className="h-5 w-5" />}
             {submitState === "loading"
               ? "Requesting..."
               : submitState === "success"
-              ? "Success"
+              ? "Success!"
               : submitState === "error"
-              ? "Failed"
-              : "Request movies"}
+              ? "Try Again"
+              : `Request ${selectedIds.length} movie${selectedIds.length !== 1 ? 's' : ''}`}
           </button>
         </div>
       </div>

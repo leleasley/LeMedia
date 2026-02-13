@@ -152,7 +152,13 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
     }
 
     const trailers = (movie.videos?.results ?? [])
-      .filter((v: any) => String(v?.site || "").toLowerCase() === "youtube" && v?.key)
+      .filter((v: any) => {
+        const isSiteYouTube = String(v?.site || "").toLowerCase() === "youtube" && v?.key;
+        const videoType = String(v?.type || "").toLowerCase();
+        // Only show actual trailers, teasers, and clips - filter out featurettes, behind-the-scenes, etc
+        const isTrailerType = ["trailer", "teaser", "clip"].includes(videoType);
+        return isSiteYouTube && isTrailerType;
+      })
       .slice(0, 6)
       .map((v: any) => ({
         name: String(v?.name || "Trailer"),
