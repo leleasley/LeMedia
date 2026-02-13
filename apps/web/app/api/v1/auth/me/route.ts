@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { extractExternalApiKey, getExternalApiAuth } from "@/lib/external-api";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
-import { getUserById, listUsers } from "@/db";
+import { getUserById, getUserRequestStats, listUsers } from "@/db";
 import { isAdminGroup } from "@/lib/groups";
 import { getUser } from "@/auth";
 
@@ -18,6 +18,11 @@ type ApiUserInfo = {
   createdAt: string | null;
   lastSeenAt: string | null;
   avatarUrl?: string | null;
+  requestCount?: number;
+  movieQuotaLimit?: number | null;
+  movieQuotaDays?: number | null;
+  tvQuotaLimit?: number | null;
+  tvQuotaDays?: number | null;
 };
 
 async function resolveExternalApiUser(req: NextRequest, fallbackUserId?: number | null): Promise<ApiUserInfo | null> {
@@ -83,7 +88,12 @@ function toSeerrUser(user: ApiUserInfo | null) {
     avatar: user.avatarUrl ?? null,
     createdAt: user.createdAt,
     updatedAt: user.lastSeenAt ?? user.createdAt,
-    isAdmin
+    isAdmin,
+    requestCount: user.requestCount ?? 0,
+    movieQuotaLimit: user.movieQuotaLimit ?? null,
+    movieQuotaDays: user.movieQuotaDays ?? null,
+    tvQuotaLimit: user.tvQuotaLimit ?? null,
+    tvQuotaDays: user.tvQuotaDays ?? null,
   };
 }
 
@@ -95,7 +105,11 @@ export async function GET(req: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: "No users found" }, { status: 404 });
     }
-    return cacheableJsonResponseWithETag(req, toSeerrUser(user), { maxAge: 0, private: true });
+    const stats = await getUserRequestStats(user.username);
+    return cacheableJsonResponseWithETag(req, toSeerrUser({
+      ...user,
+      requestCount: stats.total,
+    }), { maxAge: 0, private: true });
   }
 
   try {
@@ -112,9 +126,17 @@ export async function GET(req: NextRequest) {
       groups: dbUser.groups,
       createdAt: dbUser.created_at ?? null,
       lastSeenAt: dbUser.last_seen_at ?? null,
-      avatarUrl: null
+      avatarUrl: null,
+      movieQuotaLimit: dbUser.requestLimitMovie ?? null,
+      movieQuotaDays: dbUser.requestLimitMovieDays ?? null,
+      tvQuotaLimit: dbUser.requestLimitSeries ?? null,
+      tvQuotaDays: dbUser.requestLimitSeriesDays ?? null,
     };
-    return cacheableJsonResponseWithETag(req, toSeerrUser(mapped), { maxAge: 0, private: true });
+    const stats = await getUserRequestStats(dbUser.username);
+    return cacheableJsonResponseWithETag(req, toSeerrUser({
+      ...mapped,
+      requestCount: stats.total,
+    }), { maxAge: 0, private: true });
   } catch {
     return new NextResponse("Unauthorized", { status: 401 });
   }

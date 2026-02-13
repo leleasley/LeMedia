@@ -9,6 +9,7 @@ import { refreshUpgradeHintsForAll } from "@/lib/upgrade-finder";
 import { syncProwlarrIndexers } from "@/lib/prowlarr-sync";
 import { importLetterboxdReviews } from "@/lib/letterboxd";
 import { createBackupArchive } from "@/lib/backups";
+import { runSystemAlertChecks } from "@/lib/system-alerts";
 
 export type JobHandler = () => Promise<void>;
 
@@ -68,5 +69,10 @@ export const jobHandlers: Record<string, JobHandler> = {
     logger.info("[Job] Starting backup-snapshot");
     const result = await createBackupArchive({ trigger: "job" });
     logger.info(`[Job] backup-snapshot completed: ${result.name} (${result.sizeBytes} bytes), retention-removed=${result.retention.deleted.length}`);
+  },
+  "system-alerts": async () => {
+    logger.info("[Job] Starting system-alerts");
+    await runSystemAlertChecks();
+    logger.info("[Job] system-alerts completed");
   },
 };

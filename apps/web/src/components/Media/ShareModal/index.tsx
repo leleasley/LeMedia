@@ -4,7 +4,6 @@ import { useState, Fragment } from "react";
 import { Dialog, Transition, Listbox } from "@headlessui/react";
 import { X, Share2, Copy, Check, Clock, ChevronDown } from "lucide-react";
 import { useToast } from "@/components/Providers/ToastProvider";
-import Image from "next/image";
 import { csrfFetch } from "@/lib/csrf-client";
 
 interface ShareModalProps {
@@ -26,7 +25,7 @@ const EXPIRATION_OPTIONS = [
   { value: "never", label: "Never Expires" },
 ] as const;
 
-export function ShareModal({ isOpen, onClose, mediaType, tmdbId, title, backdropPath, posterUrl }: ShareModalProps) {
+export function ShareModal({ isOpen, onClose, mediaType, tmdbId, title }: ShareModalProps) {
   const [expiration, setExpiration] = useState(EXPIRATION_OPTIONS[1]); // Default to 24h
   const [isCreating, setIsCreating] = useState(false);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
@@ -94,8 +93,6 @@ export function ShareModal({ isOpen, onClose, mediaType, tmdbId, title, backdrop
     onClose();
   };
 
-  const imageUrl = posterUrl || (backdropPath ? `https://image.tmdb.org/t/p/w500${backdropPath}` : null);
-
   return (
     <Transition appear show={isOpen} as={Fragment}>
       <Dialog as="div" className="relative z-50" onClose={handleClose}>
@@ -108,7 +105,7 @@ export function ShareModal({ isOpen, onClose, mediaType, tmdbId, title, backdrop
           leaveFrom="opacity-100"
           leaveTo="opacity-0"
         >
-          <div className="fixed inset-0 bg-black/75 backdrop-blur-sm" />
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-xl" />
         </Transition.Child>
 
         <div className="fixed inset-0 overflow-y-auto">
@@ -122,180 +119,180 @@ export function ShareModal({ isOpen, onClose, mediaType, tmdbId, title, backdrop
               leaveFrom="opacity-100 scale-100"
               leaveTo="opacity-0 scale-95"
             >
-              <Dialog.Panel className="w-full max-w-sm transform overflow-hidden rounded-2xl bg-slate-900 border border-white/10 shadow-2xl transition-all">
-                {/* Header with Image */}
-                <div className="relative h-40 overflow-hidden">
-                  {imageUrl ? (
-                    <>
-                      <Image
-                        src={imageUrl}
-                        alt={title}
-                        fill
-                        className="object-cover"
-                        priority
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/80 to-slate-900/40" />
-                    </>
-                  ) : (
-                    <div className="absolute inset-0 bg-gradient-to-br from-slate-800 to-slate-900" />
-                  )}
-                  <div className="absolute inset-0 flex flex-col justify-between p-4">
-                    <div className="flex justify-end">
-                      <button
-                        onClick={handleClose}
-                        className="rounded-full p-2 bg-black/50 hover:bg-black/70 text-white transition-colors backdrop-blur-sm"
-                      >
-                        <X className="h-5 w-5" />
-                      </button>
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2 text-indigo-400 mb-2">
-                        <Share2 className="h-5 w-5" />
-                        <span className="text-sm font-medium">Share</span>
-                      </div>
-                      <h3 className="text-lg font-bold text-white drop-shadow-lg line-clamp-2">{title}</h3>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Modal Content */}
-                <div className="p-4 space-y-4">
-                  {!shareUrl ? (
-                    <>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-3">
-                          <Clock className="inline h-4 w-4 mr-1.5" />
-                          Link Expiration
-                        </label>
-                        <Listbox value={expiration} onChange={setExpiration}>
-                          <div className="relative">
-                            <Listbox.Button className="relative w-full cursor-pointer rounded-lg bg-slate-800 border border-gray-700 py-3 pl-4 pr-10 text-left text-white hover:bg-slate-700 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500/50">
-                              <span className="block truncate">{expiration.label}</span>
-                              <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
-                                <ChevronDown className="h-5 w-5 text-gray-400" aria-hidden="true" />
-                              </span>
-                            </Listbox.Button>
-                            <Transition
-                              as={Fragment}
-                              leave="transition ease-in duration-100"
-                              leaveFrom="opacity-100"
-                              leaveTo="opacity-0"
-                            >
-                              <Listbox.Options className="absolute z-10 mt-2 max-h-60 w-full overflow-auto rounded-lg bg-slate-800 border border-gray-700 py-1 shadow-2xl focus:outline-none">
-                                {EXPIRATION_OPTIONS.map((option) => (
-                                  <Listbox.Option
-                                    key={option.value}
-                                    value={option}
-                                    className={({ active }) =>
-                                      `relative cursor-pointer select-none py-3 px-4 ${
-                                        active ? 'bg-indigo-600 text-white' : 'text-gray-200'
-                                      }`
-                                    }
-                                  >
-                                    {({ selected }) => (
-                                      <span className={`block truncate ${selected ? 'font-semibold' : 'font-normal'}`}>
-                                        {option.label}
-                                      </span>
-                                    )}
-                                  </Listbox.Option>
-                                ))}
-                              </Listbox.Options>
-                            </Transition>
+              <Dialog.Panel className="relative w-full max-w-sm">
+                {/* Animated gradient border glow */}
+                <div className="absolute -inset-[1px] rounded-2xl bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 opacity-60 blur-sm animate-pulse" />
+                <div className="absolute -inset-[1px] rounded-2xl bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 opacity-30" />
+                
+                {/* Main modal container */}
+                <div className="relative w-full rounded-2xl bg-gradient-to-b from-gray-900/95 via-gray-900/98 to-gray-950 border border-white/10 shadow-[0_0_50px_rgba(99,102,241,0.15)] backdrop-blur-2xl overflow-hidden">
+                  {/* Header */}
+                  <div className="relative px-5 py-5">
+                    <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 via-purple-500/5 to-pink-500/5" />
+                    <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+                    
+                    <div className="relative flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="relative">
+                          <div className="absolute inset-0 rounded-xl bg-indigo-500 opacity-20 blur-lg" />
+                          <div className="relative rounded-xl p-2.5 bg-indigo-500/10 border border-indigo-500/20">
+                            <Share2 className="h-5 w-5 text-indigo-400" />
                           </div>
-                        </Listbox>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-3">
-                          Optional Password
-                        </label>
-                        <input
-                          type="password"
-                          value={password}
-                          onChange={(event) => setPassword(event.target.value)}
-                          placeholder="Leave blank for no password"
-                          autoComplete="new-password"
-                          className="w-full rounded-lg border border-gray-700 bg-slate-800 px-4 py-3 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-                        />
-                        <p className="mt-2 text-xs text-gray-400">
-                          Add a password for extra protection. Leave blank to keep it open.
-                        </p>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-3">
-                          Expire After Views
-                        </label>
-                        <input
-                          type="number"
-                          inputMode="numeric"
-                          min={1}
-                          value={maxViews}
-                          onChange={(event) => setMaxViews(event.target.value)}
-                          placeholder="Leave blank for unlimited"
-                          className="w-full rounded-lg border border-gray-700 bg-slate-800 px-4 py-3 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-                        />
-                        <p className="mt-2 text-xs text-gray-400">
-                          Limit how many times this link can be viewed before it expires.
-                        </p>
-                      </div>
-
-                      <div className="bg-slate-800/50 rounded-lg p-4 border border-white/5">
-                        <p className="text-sm text-gray-400">
-                          Create a shareable link to this {mediaType === "movie" ? "movie" : "TV show"}. 
-                          Recipients can view details without needing an account.
-                        </p>
-                      </div>
-
-                      <button
-                        onClick={handleCreateShare}
-                        disabled={isCreating}
-                        className="w-full rounded-lg bg-indigo-600 px-4 py-3 font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg shadow-indigo-600/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60"
-                      >
-                        {isCreating ? "Creating..." : "Create Share Link"}
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4">
-                        <p className="text-sm text-green-400 font-medium">
-                          ✓ Share link created successfully!
-                        </p>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-2">
-                          Share Link
-                        </label>
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            value={shareUrl}
-                            readOnly
-                            className="flex-1 rounded-lg border border-gray-700 bg-slate-800 px-4 py-3 text-white text-sm focus:outline-none"
-                          />
-                          <button
-                            onClick={handleCopy}
-                            className="rounded-lg bg-slate-800 border border-gray-700 px-4 py-3 text-white hover:bg-slate-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60"
-                            aria-label="Copy share link"
-                          >
-                            {copied ? (
-                              <Check className="h-5 w-5 text-green-400" />
-                            ) : (
-                              <Copy className="h-5 w-5" />
-                            )}
-                          </button>
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-semibold text-white">Share</h3>
+                          <p className="text-sm text-gray-400 line-clamp-1">{title}</p>
                         </div>
                       </div>
-
                       <button
                         onClick={handleClose}
-                        className="w-full rounded-lg bg-slate-800 border border-gray-700 px-4 py-3 font-medium text-white hover:bg-slate-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60"
+                        className="flex items-center justify-center w-9 h-9 rounded-xl bg-white/5 border border-white/10 text-gray-400 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all duration-200"
                       >
-                        Done
+                        <X className="h-4 w-4" />
                       </button>
-                    </>
-                  )}
+                    </div>
+                  </div>
+
+                  {/* Modal Content */}
+                  <div className="p-5 space-y-4">
+                    {!shareUrl ? (
+                      <>
+                        <div className="space-y-2">
+                          <label className="flex items-center gap-2 text-sm font-semibold text-gray-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-indigo-400 to-purple-400" />
+                            <Clock className="h-4 w-4" />
+                            Link Expiration
+                          </label>
+                          <Listbox value={expiration} onChange={setExpiration}>
+                            <div className="relative">
+                              <Listbox.Button className="relative w-full cursor-pointer rounded-xl bg-white/5 border border-white/10 py-3 pl-4 pr-10 text-left text-white hover:bg-white/10 hover:border-white/20 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30">
+                                <span className="block truncate">{expiration.label}</span>
+                                <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
+                                  <ChevronDown className="h-5 w-5 text-gray-400" aria-hidden="true" />
+                                </span>
+                              </Listbox.Button>
+                              <Transition
+                                as={Fragment}
+                                leave="transition ease-in duration-100"
+                                leaveFrom="opacity-100"
+                                leaveTo="opacity-0"
+                              >
+                                <Listbox.Options className="absolute z-10 mt-2 max-h-60 w-full overflow-auto rounded-xl bg-gray-900 border border-white/10 py-1 shadow-2xl focus:outline-none">
+                                  {EXPIRATION_OPTIONS.map((option) => (
+                                    <Listbox.Option
+                                      key={option.value}
+                                      value={option}
+                                      className={({ active }) =>
+                                        `relative cursor-pointer select-none py-3 px-4 transition-colors ${
+                                          active ? 'bg-indigo-600 text-white' : 'text-gray-200'
+                                        }`
+                                      }
+                                    >
+                                      {({ selected }) => (
+                                        <span className={`block truncate ${selected ? 'font-semibold' : 'font-normal'}`}>
+                                          {option.label}
+                                        </span>
+                                      )}
+                                    </Listbox.Option>
+                                  ))}
+                                </Listbox.Options>
+                              </Transition>
+                            </div>
+                          </Listbox>
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="flex items-center gap-2 text-sm font-semibold text-gray-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-indigo-400 to-purple-400" />
+                            Password <span className="text-gray-500 font-normal">(optional)</span>
+                          </label>
+                          <input
+                            type="password"
+                            value={password}
+                            onChange={(event) => setPassword(event.target.value)}
+                            placeholder="Leave blank for no password"
+                            autoComplete="new-password"
+                            className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-white text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500/50 focus:bg-white/[0.07] transition-all duration-200"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="flex items-center gap-2 text-sm font-semibold text-gray-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-indigo-400 to-purple-400" />
+                            Max Views <span className="text-gray-500 font-normal">(optional)</span>
+                          </label>
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            min={1}
+                            value={maxViews}
+                            onChange={(event) => setMaxViews(event.target.value)}
+                            placeholder="Leave blank for unlimited"
+                            className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-white text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500/50 focus:bg-white/[0.07] transition-all duration-200"
+                          />
+                        </div>
+
+                        <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4">
+                          <p className="text-sm text-gray-400 leading-relaxed">
+                            Create a shareable link to this {mediaType === "movie" ? "movie" : "TV show"}. 
+                            Recipients can view details without an account.
+                          </p>
+                        </div>
+
+                        <button
+                          onClick={handleCreateShare}
+                          disabled={isCreating}
+                          className="w-full rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 px-4 py-3 font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg shadow-indigo-500/25"
+                        >
+                          {isCreating ? "Creating..." : "Create Share Link"}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <div className="rounded-xl bg-green-500/10 border border-green-500/20 p-4 flex items-center gap-3">
+                          <div className="rounded-lg p-2 bg-green-500/20">
+                            <Check className="h-4 w-4 text-green-400" />
+                          </div>
+                          <p className="text-sm text-green-400 font-medium">
+                            Share link created successfully!
+                          </p>
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="flex items-center gap-2 text-sm font-semibold text-gray-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-green-400 to-emerald-400" />
+                            Share Link
+                          </label>
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              value={shareUrl}
+                              readOnly
+                              className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-white text-sm focus:outline-none"
+                            />
+                            <button
+                              onClick={handleCopy}
+                              className="rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-white hover:bg-white/10 hover:border-white/20 transition-all duration-200"
+                              aria-label="Copy share link"
+                            >
+                              {copied ? (
+                                <Check className="h-5 w-5 text-green-400" />
+                              ) : (
+                                <Copy className="h-5 w-5" />
+                              )}
+                            </button>
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={handleClose}
+                          className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 font-medium text-white hover:bg-white/10 hover:border-white/20 transition-all duration-200"
+                        >
+                          Done
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
               </Dialog.Panel>
             </Transition.Child>

@@ -1,7 +1,7 @@
 import {
   CheckCircleIcon,
   ClockIcon,
-  BellIcon,
+  ArrowDownTrayIcon,
   EyeSlashIcon,
   MinusSmallIcon,
   TrashIcon,
@@ -35,15 +35,15 @@ export function StatusBadgeMini({
   switch (status) {
     case MediaStatus.DOWNLOADING:
       badgeStyle.push(
-        'bg-blue-500 border-blue-400 ring-blue-400 text-blue-100'
+        'bg-amber-500 border-amber-400 ring-amber-400 text-amber-100'
       );
-      indicatorIcon = <ArrowPathIcon />;
+      indicatorIcon = <ArrowDownTrayIcon />;
       break;
     case MediaStatus.PROCESSING:
       badgeStyle.push(
-        'bg-indigo-500 border-indigo-400 ring-indigo-400 text-indigo-100'
+        'bg-blue-500 border-blue-400 ring-blue-400 text-blue-100'
       );
-      indicatorIcon = <ClockIcon />;
+      indicatorIcon = <ArrowPathIcon />;
       break;
     case MediaStatus.AVAILABLE:
       badgeStyle.push(
@@ -55,7 +55,7 @@ export function StatusBadgeMini({
       badgeStyle.push(
         'bg-yellow-500 border-yellow-400 ring-yellow-400 text-yellow-100'
       );
-      indicatorIcon = <BellIcon />;
+      indicatorIcon = <ClockIcon />;
       break;
     case MediaStatus.BLACKLISTED:
       badgeStyle.push('bg-red-500 border-white-400 ring-white-400 text-white');

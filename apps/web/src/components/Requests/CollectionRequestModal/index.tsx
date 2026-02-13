@@ -12,7 +12,7 @@ type MovieItem = {
   title: string;
   posterPath?: string | null;
   releaseDate?: string | null;
-  status?: "available" | "requested" | "pending" | "submitted" | "already_exists" | "already_requested";
+  status?: "available" | "requested" | "pending" | "submitted" | "already_exists" | "already_requested" | "in_library";
 };
 
 type QualityProfile = { id: number; name: string };
@@ -40,11 +40,8 @@ export function CollectionRequestModal(props: {
     const initial: Record<number, boolean> = {};
     props.movies.forEach(movie => {
       const status = statusById[movie.id] ?? movie.status;
-      if (!status || status === "available") {
-        initial[movie.id] = true;
-      } else {
-        initial[movie.id] = false;
-      }
+      // Do not auto-select unknown or non-requestable entries.
+      initial[movie.id] = status === "available";
     });
     return initial;
   }, [props.movies, statusById]);
@@ -55,6 +52,13 @@ export function CollectionRequestModal(props: {
       .filter(([, value]) => value)
       .map(([key]) => Number(key));
   }, [selectable, selected]);
+
+  const addedCount = useMemo(() => {
+    return props.movies.reduce((count, movie) => {
+      const status = statusById[movie.id] ?? movie.status;
+      return status === "in_library" || status === "already_exists" ? count + 1 : count;
+    }, 0);
+  }, [props.movies, statusById]);
 
   const blockedMessage = "Requesting blocked until notifications are applied";
 
@@ -144,9 +148,13 @@ export function CollectionRequestModal(props: {
             <Film className="h-5 w-5 text-purple-400" />
             <span className="text-sm font-semibold text-white">{props.movies.length} Movies</span>
           </div>
-          <div className="flex items-center gap-2 text-sm text-gray-300">
-            <span className="text-emerald-400 font-semibold">{selectedIds.length}</span>
-            <span>selected</span>
+          <div className="flex items-center gap-3 text-sm text-gray-300">
+            <span>
+              <span className="text-cyan-300 font-semibold">{addedCount}</span>/{props.movies.length} added
+            </span>
+            <span>
+              <span className="text-emerald-400 font-semibold">{selectedIds.length}</span> selected
+            </span>
           </div>
         </div>
 
@@ -202,7 +210,7 @@ export function CollectionRequestModal(props: {
                 </div>
                 {effectiveStatus && effectiveStatus !== "available" ? (
                   <span className="rounded-full bg-gradient-to-r from-slate-700/60 to-slate-600/60 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-200 border border-slate-600/30">
-                    {effectiveStatus.replace(/_/g, " ")}
+                    {effectiveStatus === "in_library" ? "added" : effectiveStatus.replace(/_/g, " ")}
                   </span>
                 ) : null}
               </label>

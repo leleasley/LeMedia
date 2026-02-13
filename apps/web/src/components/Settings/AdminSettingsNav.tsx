@@ -104,7 +104,8 @@ export function AdminSettingsNav() {
             color: "amber",
             gradient: "from-amber-500/20 to-orange-500/20",
             routes: [
-                { id: "notifications", label: "Notifications", href: "/admin/settings/notifications", match: /^\/admin\/settings\/notifications/, icon: BellIcon },
+                { id: "notifications", label: "Notifications", href: "/admin/settings/notifications", match: /^\/admin\/settings\/notifications(?!\/system-alerts)/, icon: BellIcon },
+                { id: "system-alerts", label: "System Alerts", href: "/admin/settings/notifications/system-alerts", match: /^\/admin\/settings\/notifications\/system-alerts/, icon: ShieldCheckIcon },
             ]
         },
     ];

@@ -44,15 +44,34 @@ export function SessionResetModal() {
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4">
-      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-background/95 p-6 text-center shadow-2xl">
-        <h2 className="text-xl font-semibold text-white">Session reset required</h2>
-        <p className="mt-3 text-sm text-muted">
-          Your session has been refreshed for security. Click continue to clear local session data and sign in again.
-        </p>
-        <button className="btn mt-6 w-full" onClick={onContinue}>
-          Continue
-        </button>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-xl p-4 animate-in fade-in duration-300">
+      {/* Outer wrapper for animated gradient border */}
+      <div className="relative w-full max-w-md animate-in zoom-in-95 fade-in duration-300">
+        {/* Animated gradient border glow */}
+        <div className="absolute -inset-[1px] rounded-2xl bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-500 opacity-60 blur-sm animate-pulse" />
+        <div className="absolute -inset-[1px] rounded-2xl bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-500 opacity-30" />
+        
+        {/* Main modal container */}
+        <div className="relative w-full rounded-2xl bg-gradient-to-b from-gray-900/95 via-gray-900/98 to-gray-950 border border-white/10 shadow-[0_0_50px_rgba(59,130,246,0.15)] backdrop-blur-2xl overflow-hidden p-6 text-center">
+          <div className="relative mb-4">
+            <div className="absolute inset-0 rounded-xl bg-blue-500 opacity-20 blur-lg mx-auto w-fit" />
+            <div className="relative mx-auto w-fit rounded-xl p-3 bg-blue-500/10 border border-blue-500/20">
+              <svg className="h-6 w-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </div>
+          </div>
+          <h2 className="text-xl font-semibold text-white">Session reset required</h2>
+          <p className="mt-3 text-sm text-gray-400 leading-relaxed">
+            Your session has been refreshed for security. Click continue to clear local session data and sign in again.
+          </p>
+          <button 
+            className="mt-6 w-full rounded-xl px-5 py-3 text-sm font-semibold text-white bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 shadow-lg shadow-blue-500/25 transition-all duration-200" 
+            onClick={onContinue}
+          >
+            Continue
+          </button>
+        </div>
       </div>
     </div>
   );

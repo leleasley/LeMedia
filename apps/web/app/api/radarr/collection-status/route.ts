@@ -43,12 +43,12 @@ export async function POST(req: NextRequest) {
     requestByTmdb.set(reqRow.tmdb_id, reqRow.status);
   }
 
-  const statuses: Record<number, "available" | "requested" | "already_exists"> = {};
+  const statuses: Record<number, "available" | "requested" | "already_exists" | "in_library"> = {};
   for (const id of tmdbIds) {
     const radarrMovie = radarrByTmdb.get(id);
     const reqStatus = requestByTmdb.get(id);
     statuses[id] = radarrMovie?.hasFile
-      ? "available"
+      ? "in_library"
       : reqStatus
         ? "requested"
         : radarrMovie

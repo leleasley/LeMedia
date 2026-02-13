@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { Modal } from "@/components/Common/Modal";
 import { readJson } from "@/lib/fetch-utils";
 import { csrfFetch } from "@/lib/csrf-client";
 import { useToast } from "@/components/Providers/ToastProvider";
 import AdvancedRequester, { RequestOverrides } from "@/components/Requests/AdvancedRequester";
-import { Check, X, Loader2, Eye } from "lucide-react";
+import { Check, X, Loader2, Eye, Film } from "lucide-react";
 import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 import { ReleaseSearchModal } from "@/components/Media/ReleaseSearchModal";
 
@@ -179,18 +180,59 @@ export function RequestMediaModal({
           </div>
         ) : (
           <div className="space-y-5">
-            {/* Poster Preview */}
-            {posterUrl && (
-              <div className="flex items-center gap-4 p-3 rounded-xl bg-gradient-to-r from-purple-500/10 via-indigo-500/10 to-blue-500/10 border border-white/10">
-                <div className="relative h-20 w-14 rounded-lg overflow-hidden shadow-lg flex-shrink-0">
-                  <img src={posterUrl} alt={title} className="object-cover w-full h-full" />
+            {/* Media Preview Card */}
+            <div className="relative rounded-2xl overflow-hidden border border-white/10 bg-gradient-to-br from-white/5 to-white/[0.02]">
+              {/* Backdrop blur effect */}
+              {backdropUrl && (
+                <div className="absolute inset-0">
+                  <Image
+                    src={backdropUrl}
+                    alt=""
+                    fill
+                    className="object-cover opacity-30 blur-sm scale-110"
+                    unoptimized
+                    priority
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-r from-gray-900/90 via-gray-900/70 to-gray-900/90" />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold text-white truncate">{title}</h3>
-                  {year && <p className="text-xs text-gray-400 mt-1">{year}</p>}
+              )}
+              
+              <div className="relative flex gap-4 p-4">
+                {/* Poster */}
+                <div className="relative w-20 h-[120px] rounded-xl overflow-hidden bg-gray-800 flex-shrink-0 ring-1 ring-white/10 shadow-xl">
+                  {posterUrl ? (
+                    <Image
+                      src={posterUrl}
+                      alt={title || ""}
+                      fill
+                      className="object-cover"
+                      unoptimized
+                      priority
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-700 to-gray-800">
+                      <Film className="w-8 h-8 text-gray-500" />
+                    </div>
+                  )}
+                </div>
+                
+                {/* Media Info */}
+                <div className="flex flex-col justify-center min-w-0 py-1">
+                  <h3 className="text-lg font-bold text-white leading-tight truncate">
+                    {title || (mediaType === "movie" ? "Movie" : "Series")}
+                  </h3>
+                  {year && (
+                    <p className="text-sm text-gray-400 mt-1">{year}</p>
+                  )}
+                  <div className="flex items-center gap-2 mt-2">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-gradient-to-r from-indigo-500/20 to-purple-500/20 text-indigo-300 border border-indigo-500/30">
+                      <Film className="w-3 h-3" />
+                      {mediaType === "movie" ? "Movie" : "TV Series"}
+                    </span>
+                  </div>
                 </div>
               </div>
-            )}
+            </div>
 
             {/* Quality Profile Selection */}
             <div className="space-y-2">

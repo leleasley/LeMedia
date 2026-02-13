@@ -1,5 +1,20 @@
 "use client";
 
+import {
+    NOTIFICATION_TYPE_BIT_MEDIA_AUTO_APPROVED,
+    NOTIFICATION_TYPE_BIT_REQUEST_AVAILABLE,
+    NOTIFICATION_TYPE_BIT_REQUEST_DENIED,
+    NOTIFICATION_TYPE_BIT_REQUEST_DOWNLOADING,
+    NOTIFICATION_TYPE_BIT_REQUEST_FAILED,
+    NOTIFICATION_TYPE_BIT_REQUEST_PARTIALLY_AVAILABLE,
+    NOTIFICATION_TYPE_BIT_REQUEST_PENDING,
+    NOTIFICATION_TYPE_BIT_REQUEST_SUBMITTED,
+    NOTIFICATION_TYPE_BIT_SYSTEM_ALERT_HIGH_LATENCY,
+    NOTIFICATION_TYPE_BIT_SYSTEM_ALERT_INDEXERS_UNAVAILABLE,
+    NOTIFICATION_TYPE_BIT_SYSTEM_ALERT_SERVICE_UNREACHABLE,
+    NOTIFICATION_TYPE_BIT_TEST_NOTIFICATION
+} from "@/lib/notification-type-bits";
+
 export type NotificationType = {
     id: number;
     name: string;
@@ -7,15 +22,18 @@ export type NotificationType = {
 };
 
 const notificationTypes: NotificationType[] = [
-    { id: 1, name: "Media Requested", description: "Triggered when a user requests new media" },
-    { id: 2, name: "Media Approved", description: "Triggered when a request is approved" },
-    { id: 4, name: "Media Available", description: "Triggered when requested media becomes available" },
-    { id: 128, name: "Media Partially Available", description: "Triggered when some requested episodes are available" },
-    { id: 256, name: "Media Downloading", description: "Triggered when requested media enters downloading state" },
-    { id: 8, name: "Media Declined", description: "Triggered when a request is declined" },
-    { id: 16, name: "Media Failed", description: "Triggered when media fails to download" },
-    { id: 32, name: "Media Auto-Approved", description: "Triggered when a request is automatically approved" },
-    { id: 64, name: "Test Notification", description: "Test notification event" },
+    { id: NOTIFICATION_TYPE_BIT_REQUEST_PENDING, name: "Media Requested", description: "Triggered when a user requests new media" },
+    { id: NOTIFICATION_TYPE_BIT_REQUEST_SUBMITTED, name: "Media Approved", description: "Triggered when a request is approved" },
+    { id: NOTIFICATION_TYPE_BIT_REQUEST_AVAILABLE, name: "Media Available", description: "Triggered when requested media becomes available" },
+    { id: NOTIFICATION_TYPE_BIT_REQUEST_PARTIALLY_AVAILABLE, name: "Media Partially Available", description: "Triggered when some requested episodes are available" },
+    { id: NOTIFICATION_TYPE_BIT_REQUEST_DOWNLOADING, name: "Media Downloading", description: "Triggered when requested media enters downloading state" },
+    { id: NOTIFICATION_TYPE_BIT_REQUEST_DENIED, name: "Media Declined", description: "Triggered when a request is declined" },
+    { id: NOTIFICATION_TYPE_BIT_REQUEST_FAILED, name: "Media Failed", description: "Triggered when media fails to download" },
+    { id: NOTIFICATION_TYPE_BIT_MEDIA_AUTO_APPROVED, name: "Media Auto-Approved", description: "Triggered when a request is automatically approved" },
+    { id: NOTIFICATION_TYPE_BIT_TEST_NOTIFICATION, name: "Test Notification", description: "Test notification event" },
+    { id: NOTIFICATION_TYPE_BIT_SYSTEM_ALERT_HIGH_LATENCY, name: "System Alert: High Latency", description: "Triggered when service health checks exceed the configured latency threshold" },
+    { id: NOTIFICATION_TYPE_BIT_SYSTEM_ALERT_SERVICE_UNREACHABLE, name: "System Alert: Service Unreachable", description: "Triggered when Sonarr/Radarr/Prowlarr/Jellyfin cannot be reached" },
+    { id: NOTIFICATION_TYPE_BIT_SYSTEM_ALERT_INDEXERS_UNAVAILABLE, name: "System Alert: Indexers Unavailable", description: "Triggered when no enabled indexers are available in Prowlarr" },
 ];
 
 interface NotificationTypeSelectorProps {
@@ -40,7 +58,7 @@ export default function NotificationTypeSelector({
         <div className="space-y-4">
             <div>
                 <div className="text-sm font-semibold text-white">Notification Types</div>
-                <p className="text-xs text-gray-400 mt-1">Choose which request events trigger this endpoint.</p>
+                <p className="text-xs text-gray-400 mt-1">Choose which media and system events trigger this endpoint.</p>
             </div>
             <div className="divide-y divide-white/5 rounded-xl border border-white/10 bg-slate-900/60 px-5 py-4">
                 {notificationTypes.map((type, index) => (

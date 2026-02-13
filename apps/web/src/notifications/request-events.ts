@@ -15,6 +15,15 @@ import { sendGenericWebhook } from "@/notifications/webhook";
 import { notifyUserPushEvent } from "@/notifications/push-events";
 import { logger } from "@/lib/logger";
 import { getMovie, getTv } from "@/lib/tmdb";
+import {
+  NOTIFICATION_TYPE_BIT_REQUEST_AVAILABLE,
+  NOTIFICATION_TYPE_BIT_REQUEST_DENIED,
+  NOTIFICATION_TYPE_BIT_REQUEST_DOWNLOADING,
+  NOTIFICATION_TYPE_BIT_REQUEST_FAILED,
+  NOTIFICATION_TYPE_BIT_REQUEST_PARTIALLY_AVAILABLE,
+  NOTIFICATION_TYPE_BIT_REQUEST_PENDING,
+  NOTIFICATION_TYPE_BIT_REQUEST_SUBMITTED
+} from "@/lib/notification-type-bits";
 
 export type RequestNotificationEvent =
   | "request_pending"
@@ -51,15 +60,15 @@ const DISCORD_COLORS = {
 };
 
 const EVENT_TYPE_MAP: Record<RequestNotificationEvent, number> = {
-  request_pending: 1,
-  request_submitted: 2,
-  request_available: 4,
-  request_denied: 8,
-  request_failed: 16,
-  request_already_exists: 1,
-  request_partially_available: 128,
-  request_downloading: 256,
-  request_removed: 16
+  request_pending: NOTIFICATION_TYPE_BIT_REQUEST_PENDING,
+  request_submitted: NOTIFICATION_TYPE_BIT_REQUEST_SUBMITTED,
+  request_available: NOTIFICATION_TYPE_BIT_REQUEST_AVAILABLE,
+  request_denied: NOTIFICATION_TYPE_BIT_REQUEST_DENIED,
+  request_failed: NOTIFICATION_TYPE_BIT_REQUEST_FAILED,
+  request_already_exists: NOTIFICATION_TYPE_BIT_REQUEST_PENDING,
+  request_partially_available: NOTIFICATION_TYPE_BIT_REQUEST_PARTIALLY_AVAILABLE,
+  request_downloading: NOTIFICATION_TYPE_BIT_REQUEST_DOWNLOADING,
+  request_removed: NOTIFICATION_TYPE_BIT_REQUEST_FAILED
 };
 
 function getAppBaseUrl(): string | null {

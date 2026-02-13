@@ -75,7 +75,7 @@ export function AuthResetModal({ userId, isOpen, onClose }: AuthResetModalProps)
           leaveFrom="opacity-100"
           leaveTo="opacity-0"
         >
-          <div className="fixed inset-0 bg-black/75 transition-opacity" />
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-xl transition-opacity" />
         </Transition.Child>
 
         <div className="fixed inset-0 z-10 overflow-y-auto">
@@ -89,103 +89,119 @@ export function AuthResetModal({ userId, isOpen, onClose }: AuthResetModalProps)
               leaveFrom="opacity-100 translate-y-0 sm:scale-100"
               leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
             >
-              <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-gray-900 border border-white/10 px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:p-6">
-                <div className="absolute right-0 top-0 hidden pr-4 pt-4 sm:block">
-                  <button
-                    type="button"
-                    className="rounded-md bg-transparent text-gray-400 hover:text-gray-500 focus:outline-none"
-                    onClick={onClose}
-                  >
-                    <span className="sr-only">Close</span>
-                    <XMarkIcon className="h-6 w-6" aria-hidden="true" />
-                  </button>
-                </div>
-                <div className="sm:flex sm:items-start">
-                  <div className="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-red-900/20 sm:mx-0 sm:h-10 sm:w-10">
-                    <ShieldExclamationIcon className="h-6 w-6 text-red-500" aria-hidden="true" />
+              <Dialog.Panel className="relative sm:my-8 sm:w-full sm:max-w-lg">
+                {/* Animated gradient border glow */}
+                <div className="absolute -inset-[1px] rounded-2xl bg-gradient-to-r from-red-500 via-rose-500 to-orange-500 opacity-60 blur-sm animate-pulse" />
+                <div className="absolute -inset-[1px] rounded-2xl bg-gradient-to-r from-red-500 via-rose-500 to-orange-500 opacity-30" />
+                
+                {/* Main modal container */}
+                <div className="relative transform overflow-hidden rounded-2xl bg-gradient-to-b from-gray-900/95 via-gray-900/98 to-gray-950 border border-white/10 px-5 pb-5 pt-5 text-left shadow-[0_0_50px_rgba(239,68,68,0.15)] backdrop-blur-2xl sm:p-6">
+                  <div className="absolute right-0 top-0 pr-4 pt-4 sm:pr-5 sm:pt-5">
+                    <button
+                      type="button"
+                      className="flex items-center justify-center w-9 h-9 rounded-xl bg-white/5 border border-white/10 text-gray-400 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all duration-200"
+                      onClick={onClose}
+                    >
+                      <span className="sr-only">Close</span>
+                      <XMarkIcon className="h-4 w-4" aria-hidden="true" />
+                    </button>
                   </div>
-                  <div className="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left w-full">
-                    <Dialog.Title as="h3" className="text-lg font-semibold leading-6 text-white">
-                      Reset Authentication
-                    </Dialog.Title>
-                    <div className="mt-2">
-                      <p className="text-sm text-gray-400">
-                        Select which authentication methods you want to reset for this user. This action cannot be undone.
-                      </p>
-                      
-                      <div className="mt-4 space-y-3">
-                        <label className="flex items-center space-x-3 p-3 rounded-lg border border-white/5 bg-white/5 hover:bg-white/10 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={options.unlinkSso}
-                            onChange={(e) => setOptions({ ...options, unlinkSso: e.target.checked })}
-                            className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500"
-                          />
-                          <div>
-                            <span className="block text-sm font-medium text-white">Unlink SSO (OIDC)</span>
-                            <span className="block text-xs text-gray-400">Disconnect linked external account</span>
-                          </div>
-                        </label>
+                  
+                  <div className="sm:flex sm:items-start">
+                    {/* Icon with glow effect */}
+                    <div className="relative mx-auto flex-shrink-0 sm:mx-0">
+                      <div className="absolute inset-0 rounded-xl bg-red-500 opacity-20 blur-lg" />
+                      <div className="relative flex h-12 w-12 items-center justify-center rounded-xl bg-red-500/10 border border-red-500/20">
+                        <ShieldExclamationIcon className="h-6 w-6 text-red-400" aria-hidden="true" />
+                      </div>
+                    </div>
+                    
+                    <div className="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left w-full">
+                      <Dialog.Title as="h3" className="text-lg font-semibold leading-6 text-white">
+                        Reset Authentication
+                      </Dialog.Title>
+                      <div className="mt-2">
+                        <p className="text-sm text-gray-400 leading-relaxed">
+                          Select which authentication methods you want to reset for this user. This action cannot be undone.
+                        </p>
+                        
+                        <div className="mt-4 space-y-2">
+                          <label className="flex items-center space-x-3 p-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20 cursor-pointer transition-all duration-200">
+                            <input
+                              type="checkbox"
+                              checked={options.unlinkSso}
+                              onChange={(e) => setOptions({ ...options, unlinkSso: e.target.checked })}
+                              className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500"
+                            />
+                            <div>
+                              <span className="block text-sm font-medium text-white">Unlink SSO (OIDC)</span>
+                              <span className="block text-xs text-gray-400">Disconnect linked external account</span>
+                            </div>
+                          </label>
 
-                        <label className="flex items-center space-x-3 p-3 rounded-lg border border-white/5 bg-white/5 hover:bg-white/10 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={options.resetOtp}
-                            onChange={(e) => setOptions({ ...options, resetOtp: e.target.checked })}
-                            className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500"
-                          />
-                          <div>
-                            <span className="block text-sm font-medium text-white">Reset MFA (OTP)</span>
-                            <span className="block text-xs text-gray-400">Clear authenticator app configuration</span>
-                          </div>
-                        </label>
+                          <label className="flex items-center space-x-3 p-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20 cursor-pointer transition-all duration-200">
+                            <input
+                              type="checkbox"
+                              checked={options.resetOtp}
+                              onChange={(e) => setOptions({ ...options, resetOtp: e.target.checked })}
+                              className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500"
+                            />
+                            <div>
+                              <span className="block text-sm font-medium text-white">Reset MFA (OTP)</span>
+                              <span className="block text-xs text-gray-400">Clear authenticator app configuration</span>
+                            </div>
+                          </label>
 
-                        <label className="flex items-center space-x-3 p-3 rounded-lg border border-white/5 bg-white/5 hover:bg-white/10 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={options.removePasskeys}
-                            onChange={(e) => setOptions({ ...options, removePasskeys: e.target.checked })}
-                            className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500"
-                          />
-                          <div>
-                            <span className="block text-sm font-medium text-white">Remove All Passkeys</span>
-                            <span className="block text-xs text-gray-400">Delete all registered WebAuthn credentials</span>
-                          </div>
-                        </label>
+                          <label className="flex items-center space-x-3 p-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20 cursor-pointer transition-all duration-200">
+                            <input
+                              type="checkbox"
+                              checked={options.removePasskeys}
+                              onChange={(e) => setOptions({ ...options, removePasskeys: e.target.checked })}
+                              className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500"
+                            />
+                            <div>
+                              <span className="block text-sm font-medium text-white">Remove All Passkeys</span>
+                              <span className="block text-xs text-gray-400">Delete all registered WebAuthn credentials</span>
+                            </div>
+                          </label>
 
-                        <label className="flex items-center space-x-3 p-3 rounded-lg border border-white/5 bg-white/5 hover:bg-white/10 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={options.logoutSessions}
-                            onChange={(e) => setOptions({ ...options, logoutSessions: e.target.checked })}
-                            className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500"
-                          />
-                          <div>
-                            <span className="block text-sm font-medium text-white">Logout All Sessions</span>
-                            <span className="block text-xs text-gray-400">Invalidate every active device for this user</span>
-                          </div>
-                        </label>
+                          <label className="flex items-center space-x-3 p-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20 cursor-pointer transition-all duration-200">
+                            <input
+                              type="checkbox"
+                              checked={options.logoutSessions}
+                              onChange={(e) => setOptions({ ...options, logoutSessions: e.target.checked })}
+                              className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500"
+                            />
+                            <div>
+                              <span className="block text-sm font-medium text-white">Logout All Sessions</span>
+                              <span className="block text-xs text-gray-400">Invalidate every active device for this user</span>
+                            </div>
+                          </label>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-                <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
-                  <button
-                    type="button"
-                    className="inline-flex w-full justify-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 sm:ml-3 sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
-                    onClick={handleReset}
-                    disabled={resetting}
-                  >
-                    {resetting ? <Loader2 className="h-5 w-5 animate-spin" /> : "Reset Selected"}
-                  </button>
-                  <button
-                    type="button"
-                    className="mt-3 inline-flex w-full justify-center rounded-md bg-white/10 px-3 py-2 text-sm font-semibold text-white shadow-sm ring-1 ring-inset ring-white/10 hover:bg-white/20 sm:mt-0 sm:w-auto"
-                    onClick={onClose}
-                    disabled={resetting}
-                  >
-                    Cancel
-                  </button>
+                  
+                  {/* Footer */}
+                  <div className="mt-5 sm:mt-6 pt-4 border-t border-white/5 flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
+                    <button
+                      type="button"
+                      className="rounded-xl px-5 py-2.5 text-sm font-medium text-gray-300 bg-white/5 border border-white/10 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all duration-200 disabled:opacity-50"
+                      onClick={onClose}
+                      disabled={resetting}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-xl px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 shadow-lg shadow-red-500/25 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                      onClick={handleReset}
+                      disabled={resetting}
+                    >
+                      {resetting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                      Reset Selected
+                    </button>
+                  </div>
                 </div>
               </Dialog.Panel>
             </Transition.Child>

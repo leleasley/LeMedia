@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useLockBodyScroll } from "@/hooks/useLockBodyScroll";
+import { X } from "lucide-react";
 
 export function Modal(props: {
   open: boolean;
@@ -55,17 +56,9 @@ export function Modal(props: {
 
   if (!open) return null;
 
-  const modalStyle = backgroundImage
-    ? {
-        backgroundImage: `linear-gradient(180deg, rgba(17, 24, 39, 0.85) 0%, rgba(17, 24, 39, 0.98) 100%), url(${backgroundImage})`,
-        backgroundSize: "cover",
-        backgroundPosition: "center"
-      }
-    : undefined;
-
   const overlay = (
     <div
-      className={`fixed inset-0 z-[1000] flex ${forceCenter ? "items-center" : "items-end sm:items-center"} justify-center bg-black/80 backdrop-blur-md p-0 sm:p-4 overflow-y-auto animate-in fade-in duration-200`}
+      className={`fixed inset-0 z-[1000] flex ${forceCenter ? "items-center" : "items-end sm:items-center"} justify-center bg-black/80 backdrop-blur-xl p-0 sm:p-4 overflow-y-auto animate-in fade-in duration-300`}
       role="dialog"
       aria-modal="true"
       aria-label={title}
@@ -73,31 +66,52 @@ export function Modal(props: {
         if (e.target === e.currentTarget) handleClose();
       }}
     >
-      <div
-        ref={contentRef}
-        className="w-full sm:max-w-xl rounded-t-2xl sm:rounded-2xl glass-strong border-t sm:border border-white/10 shadow-2xl overflow-hidden max-h-[85vh] sm:max-h-[90vh] animate-in fade-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header with gradient */}
-        <div className="relative px-4 sm:px-6 pt-4 sm:pt-5 pb-3 sm:pb-4 border-b border-white/10" style={modalStyle}>
-          <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-pink-500/10" />
-          <div className="relative flex items-center justify-between">
-            <h2 className="text-base sm:text-xl font-bold text-white tracking-tight">{title}</h2>
-            <button
-              type="button"
-              className="text-gray-400 hover:text-white transition-all duration-200 p-2 hover:bg-white/10 rounded-lg"
-              onClick={handleClose}
-              aria-label="Close"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+      {/* Outer wrapper for animated gradient border */}
+      <div className="relative w-full sm:max-w-xl animate-in fade-in slide-in-from-bottom-6 sm:zoom-in-95 duration-300">
+        {/* Animated gradient border glow */}
+        <div className="absolute -inset-[1px] rounded-t-3xl sm:rounded-3xl bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 opacity-60 blur-sm animate-pulse" />
+        <div className="absolute -inset-[1px] rounded-t-3xl sm:rounded-3xl bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 opacity-30" />
+        
+        {/* Main modal container */}
+        <div
+          ref={contentRef}
+          className="relative w-full rounded-t-3xl sm:rounded-3xl bg-gradient-to-b from-gray-900/95 via-gray-900/98 to-gray-950 border-t sm:border border-white/10 shadow-[0_0_50px_rgba(99,102,241,0.15)] overflow-hidden max-h-[85vh] sm:max-h-[90vh] backdrop-blur-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Background image ambient effect */}
+          {backgroundImage && (
+            <div className="absolute inset-0 overflow-hidden pointer-events-none">
+              <div 
+                className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-15"
+                style={{ backgroundImage: `url(${backgroundImage})` }}
+              />
+              <div className="absolute inset-0 bg-gradient-to-b from-gray-900/70 via-gray-900/90 to-gray-900" />
+            </div>
+          )}
+          
+          {/* Header with animated gradient */}
+          <div className="relative px-5 sm:px-6 pt-5 sm:pt-6 pb-4 sm:pb-5">
+            {/* Subtle animated background gradient */}
+            <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 via-purple-500/5 to-pink-500/5" />
+            <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+            
+            <div className="relative flex items-center justify-between gap-4">
+              <h2 className="text-lg sm:text-xl font-semibold text-white tracking-tight">{title}</h2>
+              <button
+                type="button"
+                className="group flex items-center justify-center w-9 h-9 rounded-xl bg-white/5 border border-white/10 text-gray-400 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all duration-200"
+                onClick={handleClose}
+                aria-label="Close"
+              >
+                <X className="w-4 h-4 transition-transform duration-200 group-hover:scale-110" />
+              </button>
+            </div>
           </div>
-        </div>
-        {/* Content */}
-        <div className="p-4 sm:p-6 overflow-y-auto max-h-[calc(85vh-80px)] sm:max-h-[calc(90vh-80px)]" style={backgroundImage ? modalStyle : undefined}>
-          <div className="text-sm">{children}</div>
+          
+          {/* Content area */}
+          <div className="relative px-5 sm:px-6 pb-5 sm:pb-6 overflow-y-auto max-h-[calc(85vh-80px)] sm:max-h-[calc(90vh-80px)]">
+            <div className="text-sm text-gray-300">{children}</div>
+          </div>
         </div>
       </div>
     </div>

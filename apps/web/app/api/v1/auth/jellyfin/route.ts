@@ -1,19 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/auth";
-import { getJellyfinConfig, setJellyfinConfig } from "@/db";
+import { createUserSession, getJellyfinConfig, getSettingInt, getUserByEmailOrUsername, getUserByJellyfinUserId, getUserRequestStats, linkUserToJellyfin, setJellyfinConfig } from "@/db";
 import { encryptSecret } from "@/lib/encryption";
 import {
   jellyfinAuthenticate,
+  jellyfinLogin,
   validateJellyfinAdmin,
   createJellyfinApiKey,
-  fetchJellyfinServerInfo
+  fetchJellyfinServerInfo,
+  getJellyfinBaseUrl
 } from "@/lib/jellyfin-admin";
 import { z } from "zod";
 import { requireCsrf } from "@/lib/csrf";
 import { logAuditEvent } from "@/lib/audit-log";
-import { getClientIp } from "@/lib/rate-limit";
+import { checkLockout, checkRateLimit, clearFailures, getClientIp, recordFailure } from "@/lib/rate-limit";
 import { invalidateJellyfinCaches } from "@/lib/jellyfin";
 import { logger } from "@/lib/logger";
+import { createSessionToken } from "@/lib/session";
+import { normalizeGroupList } from "@/lib/groups";
+import { randomUUID } from "crypto";
+import { getCookieBase, getRequestContext } from "@/lib/proxy";
 
 const authPayloadSchema = z.object({
   username: z.string().trim().min(1),
@@ -24,6 +30,12 @@ const authPayloadSchema = z.object({
   useSsl: z.boolean().optional(),
   urlBase: z.string().optional(),
   externalUrl: z.string().optional(),
+});
+
+const streamyfinAuthSchema = z.object({
+  username: z.string().trim().min(1),
+  password: z.string().min(1),
+  email: z.string().optional(),
 });
 
 function buildBaseUrl(
@@ -37,24 +49,51 @@ function buildBaseUrl(
   return `${useSsl ? "https" : "http"}://${hostname}${portStr}${path}`;
 }
 
-export async function POST(req: NextRequest) {
-  // Require admin authentication
-  const user = await requireAdmin();
-  if (user instanceof NextResponse) {
-    return user;
-  }
+function formatRetryMessage(retryAfterSec: number): string {
+  const minutes = Math.max(1, Math.ceil(retryAfterSec / 60));
+  return `Too many attempts. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`;
+}
 
-  // Require CSRF token
+function toSeerrUser(user: {
+  id: number;
+  username: string;
+  display_name?: string | null;
+  email?: string | null;
+  groups?: string[] | string | null;
+  avatar_url?: string | null;
+  created_at?: string | null;
+  last_seen_at?: string | null;
+  requestCount?: number;
+  movieQuotaLimit?: number | null;
+  movieQuotaDays?: number | null;
+  tvQuotaLimit?: number | null;
+  tvQuotaDays?: number | null;
+}) {
+  const groups = normalizeGroupList(user.groups);
+  const isAdmin = groups.includes("administrators");
+  const permissions = isAdmin ? 2 : (32 | 262144 | 524288);
+  return {
+    id: user.id,
+    email: user.email ?? null,
+    username: user.username,
+    displayName: user.display_name ?? user.username,
+    permissions,
+    avatar: user.avatar_url ?? null,
+    createdAt: user.created_at ?? null,
+    updatedAt: user.last_seen_at ?? user.created_at ?? null,
+    isAdmin,
+    requestCount: user.requestCount ?? 0,
+    movieQuotaLimit: user.movieQuotaLimit ?? null,
+    movieQuotaDays: user.movieQuotaDays ?? null,
+    tvQuotaLimit: user.tvQuotaLimit ?? null,
+    tvQuotaDays: user.tvQuotaDays ?? null,
+  };
+}
+
+async function handleAdminJellyfinSetup(req: NextRequest, body: unknown, user: { username: string }) {
   const csrfError = requireCsrf(req);
   if (csrfError) {
     return csrfError;
-  }
-
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
   const parsed = authPayloadSchema.safeParse(body);
@@ -189,4 +228,130 @@ export async function POST(req: NextRequest) {
       { status: 401 }
     );
   }
+}
+
+async function handleStreamyfinJellyseerrLogin(req: NextRequest, body: unknown) {
+  const ip = getClientIp(req);
+  const fail = (status: number, message: string, username?: string) => {
+    logger.warn("[API] Streamyfin Jellyseerr auth failed", { status, message, username: username ?? null, ip });
+    return NextResponse.json({ error: message }, { status });
+  };
+
+  const parsed = streamyfinAuthSchema.safeParse(body);
+  if (!parsed.success) {
+    return fail(401, "Invalid username or password");
+  }
+
+  const { username, password } = parsed.data;
+  const rate = await checkRateLimit(`api:v1:auth:jellyfin:${ip}`, { windowMs: 60 * 1000, max: 30 });
+  if (!rate.ok) {
+    return fail(429, formatRetryMessage(rate.retryAfterSec), username);
+  }
+
+  const lockKey = `api:v1:auth:jellyfin:${username.toLowerCase()}:${ip}`;
+  const lock = await checkLockout(lockKey, { windowMs: 15 * 60 * 1000, max: 10, banMs: 10 * 60 * 1000 });
+  if (lock.locked) {
+    return fail(429, formatRetryMessage(lock.retryAfterSec), username);
+  }
+
+  const baseUrl = await getJellyfinBaseUrl();
+  if (!baseUrl) {
+    return fail(503, "Jellyfin is not configured", username);
+  }
+
+  let login;
+  try {
+    login = await jellyfinLogin({
+      baseUrl,
+      username,
+      password,
+      deviceId: Buffer.from(`BOT_lemedia_streamyfin_${username.toLowerCase()}`).toString("base64"),
+      clientIp: ip,
+    });
+  } catch {
+    const failure = await recordFailure(lockKey, { windowMs: 15 * 60 * 1000, max: 10, banMs: 10 * 60 * 1000 });
+    if (failure.locked) {
+      return fail(429, formatRetryMessage(failure.retryAfterSec), username);
+    }
+    return fail(401, "Invalid username or password", username);
+  }
+
+  let user = await getUserByJellyfinUserId(login.userId);
+  if (!user) {
+    // Compatibility fallback: if the Jellyfin user ID was never linked, match by username.
+    // This mirrors the import flow behavior and avoids requiring manual relinking for API clients.
+    user = await getUserByEmailOrUsername(null, login.username);
+  }
+
+  if (!user) {
+    return fail(403, "No linked account found for this Jellyfin user", username);
+  }
+
+  if (user.banned) {
+    return fail(403, "Account suspended", username);
+  }
+
+  await clearFailures(lockKey);
+
+  await linkUserToJellyfin({
+    userId: user.id,
+    jellyfinUserId: login.userId,
+    jellyfinUsername: login.username,
+    jellyfinDeviceId: user.jellyfin_device_id ?? Buffer.from(`BOT_lemedia_${user.username}`).toString("base64"),
+    jellyfinAuthToken: login.accessToken,
+    avatarUrl: user.avatar_url ?? `/avatarproxy/${login.userId}`,
+  });
+
+  const defaultSession = Number(process.env.SESSION_MAX_AGE) || 60 * 60 * 24 * 30;
+  const sessionMaxAge = await getSettingInt("session_max_age", defaultSession);
+  const jti = randomUUID();
+  const token = await createSessionToken({
+    username: user.username,
+    groups: normalizeGroupList(user.groups),
+    maxAgeSeconds: sessionMaxAge,
+    jti,
+  });
+  await createUserSession(user.id, jti, new Date(Date.now() + sessionMaxAge * 1000), {
+    userAgent: req.headers.get("user-agent"),
+    deviceLabel: "Streamyfin",
+    ipAddress: ip,
+  });
+
+  await logAuditEvent({
+    action: "user.login",
+    actor: user.username,
+    metadata: { provider: "jellyfin", client: "streamyfin" },
+    ip,
+  });
+
+  const ctx = getRequestContext(req);
+  const cookieBase = getCookieBase(ctx, true);
+  const requestStats = await getUserRequestStats(user.username);
+  const userPayload = toSeerrUser({
+    ...user,
+    requestCount: requestStats.total,
+    movieQuotaLimit: user.request_limit_movie ?? null,
+    movieQuotaDays: user.request_limit_movie_days ?? null,
+    tvQuotaLimit: user.request_limit_series ?? null,
+    tvQuotaDays: user.request_limit_series_days ?? null,
+  });
+  const freshResponse = NextResponse.json(userPayload, { status: 200 });
+  freshResponse.cookies.set("lemedia_session", token, { ...cookieBase, maxAge: sessionMaxAge });
+  return freshResponse;
+}
+
+export async function POST(req: NextRequest) {
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  const adminUser = await requireAdmin();
+  if (!(adminUser instanceof NextResponse)) {
+    return handleAdminJellyfinSetup(req, body, adminUser);
+  }
+
+  return handleStreamyfinJellyseerrLogin(req, body);
 }

@@ -50,10 +50,25 @@ const EVENT_OPTIONS: Array<{ id: string; label: string }> = [
   { id: "request_available", label: "Available" },
   { id: "request_removed", label: "Removed" },
   { id: "issue_reported", label: "Issue reported" },
-  { id: "issue_resolved", label: "Issue resolved" }
+  { id: "issue_resolved", label: "Issue resolved" },
+  { id: "system_alert_high_latency", label: "System alert: high latency" },
+  { id: "system_alert_service_unreachable", label: "System alert: service unreachable" },
+  { id: "system_alert_indexers_unavailable", label: "System alert: indexers unavailable" }
 ];
 
-const defaultEvents = EVENT_OPTIONS.map(e => e.id);
+const defaultEvents = [
+  "request_pending",
+  "request_submitted",
+  "request_denied",
+  "request_failed",
+  "request_already_exists",
+  "request_partially_available",
+  "request_downloading",
+  "request_available",
+  "request_removed",
+  "issue_reported",
+  "issue_resolved"
+];
 
 const initialForm: FormState = {
   name: "",

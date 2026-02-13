@@ -24,7 +24,8 @@ import {
 } from "lucide-react";
 import { PrefetchLink } from "@/components/Layout/PrefetchLink";
 import { cn } from "@/lib/utils";
-import { MediaStatus } from "@/lib/media-status";
+import { MediaStatus, statusToMediaStatus } from "@/lib/media-status";
+import { HoverMediaCard } from "@/components/Media/HoverMediaCard";
 
 // ─── Types ───
 
@@ -95,39 +96,6 @@ type TmdbDiscoverItem = {
   backdrop_path?: string | null;
 };
 
-type StatusTone = {
-  label: string;
-  className: string;
-  dotColor: string;
-};
-
-// ─── Status helpers ───
-
-function requestStatusTone(status: string): StatusTone {
-  const value = status.toLowerCase();
-  if (["available", "completed"].includes(value))
-    return { label: "Available", className: "bg-emerald-500/15 text-emerald-300 border border-emerald-400/30", dotColor: "bg-emerald-400" };
-  if (["partially_available"].includes(value))
-    return { label: "Partial", className: "bg-purple-500/15 text-purple-300 border border-purple-400/30", dotColor: "bg-purple-400" };
-  if (["pending", "queued", "submitted"].includes(value))
-    return { label: "Pending", className: "bg-sky-500/15 text-sky-300 border border-sky-400/30", dotColor: "bg-sky-400" };
-  if (["downloading", "processing"].includes(value))
-    return { label: "Processing", className: "bg-amber-500/15 text-amber-300 border border-amber-400/30", dotColor: "bg-amber-400" };
-  if (["denied", "failed", "removed"].includes(value))
-    return { label: "Failed", className: "bg-rose-500/15 text-rose-300 border border-rose-400/30", dotColor: "bg-rose-400" };
-  return { label: "Requested", className: "bg-white/10 text-slate-200 border border-white/20", dotColor: "bg-slate-400" };
-}
-
-function mediaStatusTone(mediaStatus?: number): StatusTone {
-  if (mediaStatus === MediaStatus.AVAILABLE)
-    return { label: "Available", className: "bg-emerald-500/15 text-emerald-300 border border-emerald-400/30", dotColor: "bg-emerald-400" };
-  if (mediaStatus === MediaStatus.PARTIALLY_AVAILABLE)
-    return { label: "Partial", className: "bg-purple-500/15 text-purple-300 border border-purple-400/30", dotColor: "bg-purple-400" };
-  if (mediaStatus === MediaStatus.DOWNLOADING || mediaStatus === MediaStatus.PROCESSING)
-    return { label: "Downloading", className: "bg-amber-500/15 text-amber-300 border border-amber-400/30", dotColor: "bg-amber-400" };
-  return { label: "Monitored", className: "bg-white/10 text-slate-200 border border-white/20", dotColor: "bg-slate-400" };
-}
-
 function getGreeting() {
   const hour = new Date().getHours();
   if (hour < 5) return "Late night";
@@ -151,15 +119,6 @@ function HeroShortcut({ href, label, icon: Icon }: { href: string; label: string
       </span>
       <ArrowUpRight className="h-3.5 w-3.5 text-slate-500 transition-all group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-white" />
     </PrefetchLink>
-  );
-}
-
-function StatusDot({ className }: { className: string }) {
-  return (
-    <span className="relative flex h-2 w-2 shrink-0">
-      <span className={cn("absolute inline-flex h-full w-full animate-ping rounded-full opacity-40", className)} />
-      <span className={cn("relative inline-flex h-2 w-2 rounded-full", className)} />
-    </span>
   );
 }
 
@@ -325,21 +284,20 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
     (acc, item) => {
       const v = item.status.toLowerCase();
       acc.total += 1;
-      if (["available", "completed", "partially_available"].includes(v)) acc.available += 1;
+      if (["available", "completed"].includes(v)) acc.available += 1;
+      else if (["partially_available"].includes(v)) acc.partial += 1;
       else if (["pending", "queued", "submitted"].includes(v)) acc.pending += 1;
       else if (["downloading", "processing"].includes(v)) acc.processing += 1;
       else if (["denied", "failed", "removed"].includes(v)) acc.failed += 1;
       return acc;
     },
-    { total: 0, available: 0, pending: 0, processing: 0, failed: 0 }
+    { total: 0, available: 0, partial: 0, pending: 0, processing: 0, failed: 0 }
   );
 
-  const libraryPartial = recentAdded.filter((i) => i.mediaStatus === MediaStatus.PARTIALLY_AVAILABLE).length;
-  const downloadingCount = recentAdded.filter((i) => i.mediaStatus === MediaStatus.DOWNLOADING || i.mediaStatus === MediaStatus.PROCESSING).length;
   const filteredRequests = recentRequests.filter((item) => {
     const value = item.status.toLowerCase();
     if (requestFilter === "pending") return ["pending", "queued", "submitted"].includes(value);
-    if (requestFilter === "ready") return ["available", "completed", "partially_available"].includes(value);
+    if (requestFilter === "ready") return ["available", "completed"].includes(value);
     if (requestFilter === "active") return ["downloading", "processing"].includes(value);
     return true;
   });
@@ -427,13 +385,13 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
                 <div className="h-3 w-px bg-white/[0.08]" />
                 <div className="flex items-center gap-1.5">
                   <CircleDashed className="h-3 w-3 text-purple-400" />
-                  <span className="text-xs font-bold text-purple-200">{libraryPartial}</span>
+                  <span className="text-xs font-bold text-purple-200">{requestStats.partial}</span>
                   <span className="text-[11px] text-slate-500">partial</span>
                 </div>
                 <div className="h-3 w-px bg-white/[0.08]" />
                 <div className="flex items-center gap-1.5">
                   <Download className="h-3 w-3 text-amber-400" />
-                  <span className="text-xs font-bold text-amber-200">{downloadingCount}</span>
+                  <span className="text-xs font-bold text-amber-200">{requestStats.processing}</span>
                   <span className="text-[11px] text-slate-500">active</span>
                 </div>
               </div>
@@ -566,40 +524,21 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
         ) : filteredRequests.length ? (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
-              {pagedRequests.map((item) => {
-                const tone = requestStatusTone(item.status);
+              {pagedRequests.map((item, idx) => {
                 const href = item.type === "movie" ? `/movie/${item.tmdbId}` : `/tv/${item.tmdbId}`;
                 return (
-                  <PrefetchLink
+                  <HoverMediaCard
                     key={item.id}
+                    id={item.tmdbId}
+                    title={item.title}
+                    posterUrl={item.poster ?? item.backdrop}
                     href={href}
-                    className="group overflow-hidden rounded-xl border border-white/[0.06] bg-slate-900/60 transition-all duration-200 hover:border-white/15 hover:shadow-lg hover:shadow-black/20"
-                  >
-                    <div className="relative aspect-video">
-                      {item.backdrop ? (
-                        <Image src={item.backdrop} alt={item.title} fill className="object-cover" unoptimized />
-                      ) : item.poster ? (
-                        <Image src={item.poster} alt={item.title} fill className="object-cover" unoptimized />
-                      ) : (
-                        <div className="absolute inset-0 bg-gradient-to-br from-slate-800 to-slate-900" />
-                      )}
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
-                      {/* Status badge */}
-                      <div className="absolute right-2 top-2">
-                        <span className={cn("flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide backdrop-blur-sm", tone.className)}>
-                          <StatusDot className={tone.dotColor} />
-                          {tone.label}
-                        </span>
-                      </div>
-                      {/* Title + meta */}
-                      <div className="absolute left-2.5 right-2.5 bottom-2">
-                        <p className="line-clamp-1 text-xs font-bold text-white">{item.title}</p>
-                        <p className="mt-0.5 text-[10px] text-slate-400">
-                          {item.year ?? ""}{item.year ? " · " : ""}{item.type === "tv" ? "TV Show" : "Movie"}
-                        </p>
-                      </div>
-                    </div>
-                  </PrefetchLink>
+                    year={item.year}
+                    mediaType={item.type}
+                    mediaStatus={statusToMediaStatus(item.status)}
+                    imagePriority={idx < 8}
+                    stableHover
+                  />
                 );
               })}
             </div>
@@ -692,51 +631,22 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
         ) : recentAdded.length ? (
           <div>
             <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
-              {pagedRecentAdded.map((item) => {
+              {pagedRecentAdded.map((item, idx) => {
                 const type = item.type === "tv" ? "tv" : "movie";
                 const href = type === "movie" ? `/movie/${item.id}` : `/tv/${item.id}`;
-                const tone = mediaStatusTone(item.mediaStatus);
                 return (
-                  <PrefetchLink key={`${type}-${item.id}`} href={href} className="group block">
-                    <div className="overflow-hidden rounded-xl border border-white/[0.06] bg-slate-900/60 transition-all duration-200 hover:border-white/15 hover:shadow-lg hover:shadow-black/20">
-                      <div className="relative aspect-[2/3]">
-                        {item.posterUrl ? (
-                          <Image src={item.posterUrl} alt={item.title} fill className="object-cover" unoptimized />
-                        ) : (
-                          <div className="absolute inset-0 bg-gradient-to-br from-slate-800 to-slate-900" />
-                        )}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
-                        <div className="absolute left-2 right-2 top-2 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-                          <div className="rounded-md border border-white/20 bg-black/55 px-2 py-1 text-xs font-semibold text-white backdrop-blur-sm">
-                            {item.title}
-                          </div>
-                        </div>
-
-                        {item.mediaStatus === MediaStatus.PARTIALLY_AVAILABLE && (
-                          <div className="absolute right-2 top-2">
-                            <span className="flex items-center gap-1 rounded-full border border-purple-400/30 bg-purple-500/20 px-2 py-0.5 text-[10px] font-semibold text-purple-300 backdrop-blur-sm">
-                              <CircleDashed className="h-3 w-3" />
-                              Partial
-                            </span>
-                          </div>
-                        )}
-
-                        <div className="absolute left-2 right-2 bottom-2">
-                          <p className="line-clamp-2 text-xs font-semibold text-white">{item.title}</p>
-                          <div className="mt-1 flex items-center justify-between gap-1">
-                            <span className="text-[10px] uppercase tracking-wide text-slate-400">
-                              {type === "tv" ? "TV" : "Movie"}{item.year ? ` \u00b7 ${item.year}` : ""}
-                            </span>
-                            {item.mediaStatus !== MediaStatus.PARTIALLY_AVAILABLE && (
-                              <span className={cn("inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium", tone.className)}>
-                                {tone.label}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </PrefetchLink>
+                  <HoverMediaCard
+                    key={`${type}-${item.id}`}
+                    id={item.id}
+                    title={item.title}
+                    posterUrl={item.posterUrl}
+                    href={href}
+                    year={item.year}
+                    mediaType={type}
+                    mediaStatus={item.mediaStatus as MediaStatus | undefined}
+                    imagePriority={idx < 12}
+                    stableHover
+                  />
                 );
               })}
             </div>
