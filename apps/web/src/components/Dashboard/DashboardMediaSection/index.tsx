@@ -6,7 +6,7 @@ import { PrefetchLink } from "@/components/Layout/PrefetchLink";
 import { ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fetchAvailabilityStatusBatched } from "@/lib/availability-client";
-import { availabilityToMediaStatus, MediaStatus } from "@/lib/media-status";
+import { MediaStatus, statusToMediaStatus } from "@/lib/media-status";
 
 export interface MediaCard {
     id: number;
@@ -126,8 +126,8 @@ export function DashboardMediaSection({
                     // Priority: item.mediaStatus from API > availability check > statusBadge
                     const finalMediaStatus: MediaStatus | undefined =
                         item.mediaStatus ??
-                        availabilityToMediaStatus(status) ??
-                        availabilityToMediaStatus(item.statusBadge);
+                        statusToMediaStatus(status) ??
+                        statusToMediaStatus(item.statusBadge);
 
                     return (
                         <HoverMediaCard

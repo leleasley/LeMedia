@@ -7,7 +7,7 @@ import { ArrowRightCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { fetchAvailabilityStatusBatched } from "@/lib/availability-client";
 import { tmdbImageUrl } from "@/lib/tmdb-images";
-import { availabilityToMediaStatus } from "@/lib/media-status";
+import { statusToMediaStatus } from "@/lib/media-status";
 
 interface MediaResult {
   id: number;
@@ -91,7 +91,7 @@ export function MediaSlider({ title, url, linkUrl, sliderKey, mediaType }: Media
     const itemStatus = availability[item.id];
 
     // Use shared utility for consistent status mapping
-    const mediaStatus = availabilityToMediaStatus(itemStatus);
+    const mediaStatus = statusToMediaStatus(itemStatus);
 
     return (
       <div key={`${itemMediaType}:${item.id}`} className="w-36 sm:w-36 md:w-44">

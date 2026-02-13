@@ -348,26 +348,29 @@ export default async function Page() {
   });
 
   return (
-    <div className="discover-page-container">
+    <div className="discover-page-root">
       {/* Hero Carousel with Trending Content */}
-      <DiscoverHeroCarousel
-        items={heroItems
-          .filter((item: any) => item.backdrop ?? item.poster)
-          .map((item: any, index: number) => ({
-            id: item.id,
-            title: item.title,
-            overview: item.overview,
-            backdropUrl: item.backdrop,
-            posterUrl: item.poster,
-            rating: item.rating,
-            year: item.year,
-            type: item.type,
-            externalRatings: heroRatings[index]
-          }))}
-      />
+      <div className="discover-hero-bleed">
+        <DiscoverHeroCarousel
+          items={heroItems
+            .filter((item: any) => item.backdrop ?? item.poster)
+            .map((item: any, index: number) => ({
+              id: item.id,
+              title: item.title,
+              overview: item.overview,
+              backdropUrl: item.backdrop,
+              posterUrl: item.poster,
+              rating: item.rating,
+              year: item.year,
+              type: item.type,
+              externalRatings: heroRatings[index]
+            }))}
+        />
+      </div>
+      <div className="discover-hero-mobile-fade md:hidden" aria-hidden="true" />
 
       {/* Regular content */}
-      <div className="mt-8">
+      <div className="discover-page-container mt-8">
         <WatchStatsWidget />
         <DashboardCustomizeClient sliderComponents={sliderComponentsMap} initialSliders={sliders} />
       </div>

@@ -22,6 +22,8 @@ export type RequestNotificationEvent =
   | "request_denied"
   | "request_failed"
   | "request_already_exists"
+  | "request_partially_available"
+  | "request_downloading"
   | "request_available"
   | "request_removed";
 
@@ -55,6 +57,8 @@ const EVENT_TYPE_MAP: Record<RequestNotificationEvent, number> = {
   request_denied: 8,
   request_failed: 16,
   request_already_exists: 1,
+  request_partially_available: 128,
+  request_downloading: 256,
   request_removed: 16
 };
 
@@ -91,6 +95,10 @@ function humanEvent(event: RequestNotificationEvent): string {
       return "Failed";
     case "request_already_exists":
       return "Already exists";
+    case "request_partially_available":
+      return "Partially available";
+    case "request_downloading":
+      return "Downloading";
     case "request_available":
       return "Available";
     case "request_removed":
@@ -114,6 +122,10 @@ function requestStatusColor(event: RequestNotificationEvent) {
       return DISCORD_COLORS.ORANGE;
     case "request_submitted":
       return DISCORD_COLORS.PURPLE;
+    case "request_partially_available":
+      return DISCORD_COLORS.PURPLE;
+    case "request_downloading":
+      return DISCORD_COLORS.ORANGE;
     case "request_available":
       return DISCORD_COLORS.GREEN;
     case "request_denied":

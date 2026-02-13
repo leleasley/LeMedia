@@ -10,6 +10,7 @@ export type Episode = {
     requested?: boolean;
     requestStatus?: string | null;
     requestId?: string | null;
+    downloading?: boolean;
 };
 
 export type Season = {
@@ -17,6 +18,7 @@ export type Season = {
     episode_count: number;
     name: string;
     poster_path: string | null;
+    air_date?: string | null;
 };
 
 export type QualityProfile = { id: number; name: string };

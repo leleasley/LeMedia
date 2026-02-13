@@ -5,6 +5,8 @@ import { getMovie, getTv, tmdbImageUrl } from "@/lib/tmdb";
 import { approveRequest, denyRequest, deleteRequest, markRequestAvailable } from "./actions";
 import { getImageProxyEnabled } from "@/lib/app-settings";
 import { AllRequestsClient } from "@/components/Admin/AllRequestsClient";
+import { getActiveDownloadTmdbIds, shouldForceDownloading } from "@/lib/download-status";
+import { getAvailabilityStatusByTmdbIds } from "@/lib/library-availability";
 
 export const metadata = {
   title: "All Requests - LeMedia",
@@ -28,6 +30,13 @@ export default async function AllRequestsPage() {
   const [imageProxyEnabled, requests] = await Promise.all([
     getImageProxyEnabled(),
     listRequests(200)
+  ]);
+  const activeDownloads = await getActiveDownloadTmdbIds();
+  const movieIds = Array.from(new Set(requests.filter(r => r.request_type === "movie").map(r => Number(r.tmdb_id))));
+  const tvIds = Array.from(new Set(requests.filter(r => r.request_type === "episode").map(r => Number(r.tmdb_id))));
+  const [movieAvailability, tvAvailability] = await Promise.all([
+    movieIds.length ? getAvailabilityStatusByTmdbIds("movie", movieIds).catch(() => ({} as Record<number, string>)) : Promise.resolve({} as Record<number, string>),
+    tvIds.length ? getAvailabilityStatusByTmdbIds("tv", tvIds).catch(() => ({} as Record<number, string>)) : Promise.resolve({} as Record<number, string>)
   ]);
 
   const tmdbResults = await Promise.allSettled(
@@ -59,9 +68,51 @@ export default async function AllRequestsPage() {
         const backdropSource = r.backdrop_path ?? details?.backdrop_path ?? null;
         const poster_path = posterSource ? tmdbImageUrl(posterSource, "w200", imageProxyEnabled) : null;
         const backdrop_path = backdropSource ? tmdbImageUrl(backdropSource, "w500", imageProxyEnabled) : null;
-        return { ...r, poster_path, backdrop_path };
+        const availabilityStatus = r.request_type === "movie"
+          ? movieAvailability[Number(r.tmdb_id)]
+          : tvAvailability[Number(r.tmdb_id)];
+        const forcedDownloading = shouldForceDownloading({
+          status: r.status,
+          tmdbId: r.tmdb_id,
+          mediaType: r.request_type as "movie" | "episode",
+          active: activeDownloads
+        });
+        const status = forcedDownloading
+          ? "downloading"
+          : availabilityStatus === "available"
+            ? "available"
+            : availabilityStatus === "partially_available"
+              ? "partially_available"
+              : r.status;
+        return {
+          ...r,
+          status,
+          poster_path,
+          backdrop_path
+        };
       } catch {
-        return { ...r, poster_path: null, backdrop_path: null };
+        const availabilityStatus = r.request_type === "movie"
+          ? movieAvailability[Number(r.tmdb_id)]
+          : tvAvailability[Number(r.tmdb_id)];
+        const forcedDownloading = shouldForceDownloading({
+          status: r.status,
+          tmdbId: r.tmdb_id,
+          mediaType: r.request_type as "movie" | "episode",
+          active: activeDownloads
+        });
+        const status = forcedDownloading
+          ? "downloading"
+          : availabilityStatus === "available"
+            ? "available"
+            : availabilityStatus === "partially_available"
+              ? "partially_available"
+              : r.status;
+        return {
+          ...r,
+          status,
+          poster_path: null,
+          backdrop_path: null
+        };
       }
     })
   );

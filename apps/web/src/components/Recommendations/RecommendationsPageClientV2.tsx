@@ -11,6 +11,7 @@ import { csrfFetch } from "@/lib/csrf-client";
 import { useToast } from "@/components/Providers/ToastProvider";
 import useSWR from "swr";
 import { AdaptiveSelect } from "@/components/ui/adaptive-select";
+import { useIsTouch } from "@/hooks/useIsTouch";
 
 const fetcher = async (url: string) => {
   const res = await fetch(url, { credentials: "include" });
@@ -57,6 +58,7 @@ const GENRES = [
 ];
 
 export function RecommendationsPageClientV2() {
+  const isTouch = useIsTouch();
   const [page, setPage] = useState(0);
   const [prevPage, setPrevPage] = useState(0);
   const [mode, setMode] = useState<"personalized" | "trending">("personalized");
@@ -386,12 +388,14 @@ export function RecommendationsPageClientV2() {
                           rating={item.rating}
                           description={item.description}
                           mediaType={item.type}
+                          touchInteraction="navigate"
                         />
                         {/* Quick Add Buttons */}
-                        <div className="absolute bottom-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className={`absolute bottom-2 right-2 flex gap-1 transition-opacity ${isTouch ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
                           <button
                             onClick={(e) => {
                               e.preventDefault();
+                              e.stopPropagation();
                               toggleListItem(item.id, item.type, "favorite");
                             }}
                             className={`h-8 w-8 rounded-full flex items-center justify-center backdrop-blur-md border transition-colors ${
@@ -405,6 +409,7 @@ export function RecommendationsPageClientV2() {
                           <button
                             onClick={(e) => {
                               e.preventDefault();
+                              e.stopPropagation();
                               toggleListItem(item.id, item.type, "watchlist");
                             }}
                             className={`h-8 w-8 rounded-full flex items-center justify-center backdrop-blur-md border transition-colors ${
@@ -448,12 +453,14 @@ export function RecommendationsPageClientV2() {
                   rating={item.rating}
                   description={item.description}
                   mediaType={item.type}
+                  touchInteraction="navigate"
                 />
                 {/* Quick Add Buttons */}
-                <div className="absolute bottom-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className={`absolute bottom-2 right-2 flex gap-1 transition-opacity ${isTouch ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
                   <button
                     onClick={(e) => {
                       e.preventDefault();
+                      e.stopPropagation();
                       toggleListItem(item.id, item.type, "favorite");
                     }}
                     className={`h-8 w-8 rounded-full flex items-center justify-center backdrop-blur-md border transition-colors ${
@@ -467,6 +474,7 @@ export function RecommendationsPageClientV2() {
                   <button
                     onClick={(e) => {
                       e.preventDefault();
+                      e.stopPropagation();
                       toggleListItem(item.id, item.type, "watchlist");
                     }}
                     className={`h-8 w-8 rounded-full flex items-center justify-center backdrop-blur-md border transition-colors ${

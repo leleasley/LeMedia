@@ -352,7 +352,7 @@ export async function findActiveRequestByTmdb(input: { requestType: "movie" | "e
     LEFT JOIN app_user u ON u.id = mr.requested_by
     WHERE mr.request_type = $1
       AND mr.tmdb_id = $2
-      AND mr.status IN ('queued','pending','submitted','available','already_exists')
+      AND mr.status IN ('queued','pending','submitted','downloading','partially_available','available','already_exists')
     ORDER BY mr.created_at DESC
     LIMIT 1
     `,
@@ -382,7 +382,7 @@ export async function findActiveRequestsByTmdbIds(input: { requestType: "movie" 
     FROM media_request
     WHERE request_type = $1
       AND tmdb_id = ANY($2::int[])
-      AND status IN ('queued','pending','submitted')
+      AND status IN ('queued','pending','submitted','downloading','partially_available','available','already_exists')
     `,
     [input.requestType, input.tmdbIds]
   );
@@ -401,7 +401,7 @@ export async function findActiveEpisodeRequestItems(input: { tmdbTvId: number; s
       AND r.tmdb_id = $1
       AND i.season = $2
       AND i.episode = ANY($3::int[])
-      AND r.status IN ('queued','pending','submitted')
+      AND r.status IN ('queued','pending','submitted','downloading','partially_available')
     `,
     [input.tmdbTvId, input.season, input.episodeNumbers]
   );
@@ -417,7 +417,7 @@ export async function listActiveEpisodeRequestItemsByTmdb(tmdbTvId: number) {
     JOIN media_request r ON r.id = i.request_id
     WHERE r.request_type = 'episode'
       AND r.tmdb_id = $1
-      AND r.status IN ('queued','pending','submitted')
+      AND r.status IN ('queued','pending','submitted','downloading','partially_available')
     ORDER BY i.season ASC, i.episode ASC
     `,
     [tmdbTvId]
@@ -2690,7 +2690,7 @@ async function ensureSchema() {
         type TEXT NOT NULL CHECK (type IN ('telegram','discord','email','webhook')),
         enabled BOOLEAN NOT NULL DEFAULT TRUE,
         is_global BOOLEAN NOT NULL DEFAULT FALSE,
-        events JSONB NOT NULL DEFAULT '["request_pending","request_submitted","request_denied","request_failed","request_already_exists","request_available","request_removed","issue_reported","issue_resolved"]'::jsonb,
+        events JSONB NOT NULL DEFAULT '["request_pending","request_submitted","request_denied","request_failed","request_already_exists","request_partially_available","request_downloading","request_available","request_removed","issue_reported","issue_resolved"]'::jsonb,
         config JSONB NOT NULL DEFAULT '{}'::jsonb,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
@@ -2698,7 +2698,7 @@ async function ensureSchema() {
     await p.query(`ALTER TABLE notification_endpoint ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE;`);
     await p.query(`ALTER TABLE notification_endpoint ADD COLUMN IF NOT EXISTS is_global BOOLEAN NOT NULL DEFAULT FALSE;`);
     await p.query(
-      `ALTER TABLE notification_endpoint ADD COLUMN IF NOT EXISTS events JSONB NOT NULL DEFAULT '["request_pending","request_submitted","request_denied","request_failed","request_already_exists","request_available","request_removed","issue_reported","issue_resolved"]'::jsonb;`
+      `ALTER TABLE notification_endpoint ADD COLUMN IF NOT EXISTS events JSONB NOT NULL DEFAULT '["request_pending","request_submitted","request_denied","request_failed","request_already_exists","request_partially_available","request_downloading","request_available","request_removed","issue_reported","issue_resolved"]'::jsonb;`
     );
     await p.query(`CREATE INDEX IF NOT EXISTS idx_notification_endpoint_type ON notification_endpoint(type);`);
     await p.query(`CREATE INDEX IF NOT EXISTS idx_notification_endpoint_enabled ON notification_endpoint(enabled);`);
@@ -4265,6 +4265,8 @@ export async function createNotificationEndpoint(input: {
           "request_denied",
           "request_failed",
           "request_already_exists",
+          "request_partially_available",
+          "request_downloading",
           "request_available",
           "request_removed",
           "issue_reported",

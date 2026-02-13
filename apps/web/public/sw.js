@@ -10,7 +10,7 @@
  * - Static assets: Cache-first with network fallback
  */
 
-const CACHE_VERSION = 'v9'; // bump to force clients to update SW
+const CACHE_VERSION = 'v10'; // bump to force clients to update SW
 const CACHE_NAME = `lemedia-${CACHE_VERSION}`;
 const OFFLINE_CACHE = `lemedia-offline-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `lemedia-runtime-${CACHE_VERSION}`;

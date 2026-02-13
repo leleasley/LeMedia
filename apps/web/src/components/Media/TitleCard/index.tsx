@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Film } from "lucide-react";
 import { useEffect, useState } from "react";
 import { StarIcon, ArrowDownTrayIcon, HeartIcon } from "@heroicons/react/24/outline";
@@ -32,6 +33,8 @@ interface TitleCardProps {
   imageFetchPriority?: "high" | "auto" | "low";
   className?: string;
   href?: string;
+  touchInteraction?: "expand" | "navigate";
+  stableHover?: boolean;
 }
 
 export function TitleCard({
@@ -51,13 +54,15 @@ export function TitleCard({
   imageFetchPriority,
   className,
   href,
+  touchInteraction = "expand",
+  stableHover = false,
 }: TitleCardProps) {
   const isTouch = useIsTouch();
+  const router = useRouter();
   const linkUrl = href || (mediaType === "movie" ? `/movie/${id}` : `/tv/${id}`);
   const finalImage = image || posterUrl;
   const finalScore = userScore ?? rating;
   const canRequest =
-    mediaType === "tv" ||
     !mediaStatus ||
     mediaStatus === MediaStatus.UNKNOWN ||
     mediaStatus === MediaStatus.DELETED ||
@@ -98,6 +103,7 @@ export function TitleCard({
       requestsBlocked: boolean;
       isAdmin?: boolean;
       prowlarrEnabled?: boolean;
+      monitoringOption?: string;
       radarrMovie?: { id?: number | null } | null;
       existingSeries?: { id?: number | null } | null;
   }>(
@@ -146,10 +152,12 @@ export function TitleCard({
   return (
     <div className={cn("relative group h-full", className)}>
       <div
-        className={`relative h-full transform-gpu will-change-transform cursor-pointer overflow-hidden rounded-lg sm:rounded-2xl bg-gray-900 outline-none ring-1 transition-all duration-300 ${
-          showDetail
-            ? 'scale-[1.03] shadow-2xl ring-white/20 z-10'
-            : 'scale-100 shadow-md ring-white/5 hover:ring-white/15'
+        className={`relative h-full cursor-pointer overflow-hidden rounded-lg sm:rounded-2xl bg-gray-900 outline-none ring-1 transition-all duration-300 ${
+          stableHover
+            ? (showDetail ? 'shadow-xl ring-white/20 z-10' : 'shadow-md ring-white/5 hover:ring-white/15')
+            : (showDetail
+                ? 'transform-gpu will-change-transform scale-[1.03] shadow-2xl ring-white/20 z-10'
+                : 'transform-gpu will-change-transform scale-100 shadow-md ring-white/5 hover:ring-white/15')
         }`}
         style={{ paddingBottom: '150%' }}
         onMouseEnter={() => {
@@ -158,7 +166,13 @@ export function TitleCard({
           }
         }}
         onMouseLeave={() => setShowDetail(false)}
-        onClick={() => setShowDetail(true)}
+        onClick={() => {
+          if (isTouch && touchInteraction === "navigate") {
+            router.push(linkUrl);
+            return;
+          }
+          setShowDetail(true);
+        }}
         role="link"
         tabIndex={0}
       >
@@ -302,6 +316,7 @@ export function TitleCard({
               isAdmin={Boolean(profileData?.isAdmin)}
               prowlarrEnabled={Boolean(profileData?.prowlarrEnabled)}
               serviceItemId={profileData?.existingSeries?.id ?? null}
+              defaultMonitoringOption={profileData?.monitoringOption ?? "all"}
           />
       )}
       {requestModalOpen && mediaType === "movie" && (

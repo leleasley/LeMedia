@@ -10,7 +10,8 @@ import { notifyRequestAvailable } from "./notification-helper";
 import { getRadarrMovie, radarrQueue } from "./radarr";
 import { getSeries, sonarrQueue } from "./sonarr";
 import { isServiceNotFoundError } from "./fetch-utils";
-import { isSeriesPartiallyAvailable, seriesHasFiles, STATUS_STRINGS } from "./media-status";
+import { seriesHasFiles, STATUS_STRINGS } from "./media-status";
+import { getAvailabilityStatusByTmdbIds } from "./library-availability";
 
 type SyncSummary = {
   processed: number;
@@ -38,6 +39,8 @@ function hasQueueEntry(entry: QueueEntry | undefined): boolean {
 }
 
 const statusNotificationMap: Record<string, RequestNotificationEvent | undefined> = {
+  partially_available: "request_partially_available",
+  downloading: "request_downloading",
   available: "request_available",
   removed: "request_removed"
 };
@@ -45,6 +48,14 @@ const statusNotificationMap: Record<string, RequestNotificationEvent | undefined
 async function maybeSendStatusNotification(request: RequestForSync, status: string) {
   const event = statusNotificationMap[status];
   if (!event) return;
+
+  if (status === "available" && request.request_type === "episode") {
+    const live = await getAvailabilityStatusByTmdbIds("tv", [request.tmdb_id]).catch(() => ({} as Record<number, string>));
+    if (live[request.tmdb_id] !== "available") {
+      return;
+    }
+  }
+
   await notifyRequestEvent(event, {
     requestId: request.id,
     requestType: request.request_type,
@@ -128,31 +139,32 @@ async function syncEpisodeRequest(request: RequestForSync, queueMap: Map<number,
         (ep: any) => ep.seasonNumber === reqItem.season && ep.episodeNumber === reqItem.episode
       );
     })
-    .filter(Boolean) as Array<{ id: number; hasFile: boolean }>;
+    .filter(Boolean) as Array<{ id: number; hasFile: boolean; airDate?: string | null; hasAired?: boolean }>;
 
-  const availableCount = requested.filter(ep => ep.hasFile).length;
+  const today = new Date().toISOString().slice(0, 10);
+  const requestedAired = requested.filter((ep) => {
+    if (ep.hasAired === true) return true;
+    if (ep.hasAired === false) return false;
+    const airDate = typeof ep.airDate === "string" ? ep.airDate.slice(0, 10) : "";
+    // If Sonarr has no air date, treat as relevant so completed requests still resolve.
+    return !airDate || airDate <= today;
+  });
 
-  // Use shared utility to check if series is partially available
-  const isSeriesPartial = isSeriesPartiallyAvailable(series);
+  const availableCount = requestedAired.filter(ep => ep.hasFile).length;
 
-  // If all requested episodes are available
-  if (requested.length && availableCount === requested.length) {
-    // But if the series itself is only partially available, mark as partially_available
-    if (isSeriesPartial) {
-      await updateRequestStatuses(request, STATUS_STRINGS.PARTIALLY_AVAILABLE);
-      return STATUS_STRINGS.PARTIALLY_AVAILABLE;
-    }
+  // If all aired requested episodes are available
+  if (requestedAired.length && availableCount === requestedAired.length) {
     await updateRequestStatuses(request, STATUS_STRINGS.AVAILABLE);
     return STATUS_STRINGS.AVAILABLE;
   }
 
-  // Some but not all requested episodes are available
-  if (requested.length && availableCount > 0) {
+  // Some but not all aired requested episodes are available
+  if (requestedAired.length && availableCount > 0) {
     await updateRequestStatuses(request, STATUS_STRINGS.PARTIALLY_AVAILABLE);
     return STATUS_STRINGS.PARTIALLY_AVAILABLE;
   }
 
-  const hasQueue = requested.some(ep => queueMap.has(ep.id));
+  const hasQueue = requestedAired.some(ep => queueMap.has(ep.id)) || requested.some(ep => queueMap.has(ep.id));
   if (hasQueue) {
     await updateRequestStatuses(request, "downloading");
     return "downloading";

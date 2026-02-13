@@ -1,7 +1,7 @@
 "use client";
 
 import React, { memo } from "react";
-import { Check, CheckCircle, Info, Star, Tv } from "lucide-react";
+import { Check, CheckCircle, Info, Loader2, Star, Tv } from "lucide-react";
 import { Episode } from "./types";
 import CachedImage from "@/components/Common/CachedImage";
 import { tmdbImageUrl } from "@/lib/tmdb-images";
@@ -31,7 +31,8 @@ export const TvEpisodeRow = memo(({
     const airBadge = getAiringBadge(episode.air_date);
     const isRequested = episode.requested ?? false;
     const isAvailable = episode.available ?? false;
-    const isDisabled = isRequested || isAvailable;
+    const isDownloading = episode.downloading ?? episode.requestStatus === "downloading";
+    const isDisabled = isRequested || isAvailable || isDownloading;
 
     return (
         <label
@@ -66,7 +67,13 @@ export const TvEpisodeRow = memo(({
                             Available
                         </span>
                     )}
-                    {isRequested && (
+                    {isDownloading && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/20 border border-amber-500/40 px-2.5 py-0.5 text-xs font-semibold text-amber-300">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            Downloading
+                        </span>
+                    )}
+                    {isRequested && !isAvailable && !isDownloading && (
                         <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/20 border border-blue-500/40 px-2.5 py-0.5 text-xs font-semibold text-blue-300">
                             <Info className="h-3 w-3" />
                             Already requested

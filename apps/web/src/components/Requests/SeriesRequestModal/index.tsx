@@ -24,6 +24,7 @@ type Episode = {
   available?: boolean;
   requested?: boolean;
   requestStatus?: string | null;
+  downloading?: boolean;
 };
 
 type Season = {
@@ -32,6 +33,38 @@ type Season = {
   name: string;
   poster_path: string | null;
 };
+
+type MonitoringOption =
+  | "all"
+  | "future"
+  | "missing"
+  | "existing"
+  | "recent"
+  | "pilot"
+  | "firstSeason"
+  | "lastSeason"
+  | "monitorSpecials"
+  | "unmonitorSpecials"
+  | "none";
+
+const monitoringOptions: Array<{ value: MonitoringOption; label: string }> = [
+  { value: "all", label: "All Episodes" },
+  { value: "future", label: "Future Episodes" },
+  { value: "missing", label: "Missing Episodes" },
+  { value: "existing", label: "Existing Episodes" },
+  { value: "recent", label: "Recent Episodes" },
+  { value: "pilot", label: "Pilot Episode" },
+  { value: "firstSeason", label: "First Season" },
+  { value: "lastSeason", label: "Last Season" },
+  { value: "monitorSpecials", label: "Monitor Specials" },
+  { value: "unmonitorSpecials", label: "Unmonitor Specials" },
+  { value: "none", label: "None" }
+];
+
+function toMonitoringOption(value: string | null | undefined): MonitoringOption {
+  const valid = monitoringOptions.some((option) => option.value === value);
+  return valid ? (value as MonitoringOption) : "all";
+}
 
 export function SeriesRequestModal({
   open,
@@ -49,7 +82,8 @@ export function SeriesRequestModal({
   isLoading = false,
   isAdmin = false,
   prowlarrEnabled = false,
-  serviceItemId = null
+  serviceItemId = null,
+  defaultMonitoringOption = "all"
 }: {
   open: boolean;
   onClose: () => void;
@@ -67,8 +101,10 @@ export function SeriesRequestModal({
   isAdmin?: boolean;
   prowlarrEnabled?: boolean;
   serviceItemId?: number | null;
+  defaultMonitoringOption?: string;
 }) {
   const [selectedQualityProfileId, setSelectedQualityProfileId] = useState<number>(defaultQualityProfileId);
+  const [selectedMonitoringOption, setSelectedMonitoringOption] = useState<MonitoringOption>(toMonitoringOption(defaultMonitoringOption));
   const [errorModal, setErrorModal] = useState<{ title: string; message: string } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitState, setSubmitState] = useState<"idle" | "loading" | "success" | "error">("idle");
@@ -144,6 +180,11 @@ export function SeriesRequestModal({
   }, [open]);
 
   useEffect(() => {
+    if (!open) return;
+    setSelectedMonitoringOption(toMonitoringOption(defaultMonitoringOption));
+  }, [open, defaultMonitoringOption]);
+
+  useEffect(() => {
     if (!open || seasons.length === 0 || prefetchStartedRef.current) return;
     prefetchStartedRef.current = true;
     let cancelled = false;
@@ -194,8 +235,8 @@ export function SeriesRequestModal({
     };
   }, [open, seasons, seasonEpisodes, tmdbId, tvdbId]);
 
-  async function loadSeasonEpisodes(seasonNumber: number) {
-    if (seasonEpisodes[seasonNumber]) return;
+  async function loadSeasonEpisodes(seasonNumber: number): Promise<Episode[]> {
+    if (seasonEpisodes[seasonNumber]) return seasonEpisodes[seasonNumber];
 
     setLoadingEpisodes(prev => new Set(prev).add(seasonNumber));
     try {
@@ -203,7 +244,9 @@ export function SeriesRequestModal({
       const res = await fetch(`/api/v1/tmdb/tv/${tmdbId}/season/${seasonNumber}/fast${seasonParams}`);
       if (res.ok) {
         const data = await res.json();
-        setSeasonEpisodes(prev => ({ ...prev, [seasonNumber]: data.episodes || [] }));
+        const episodes = data.episodes || [];
+        setSeasonEpisodes(prev => ({ ...prev, [seasonNumber]: episodes }));
+        return episodes;
       }
     } catch (err) {
       logger.error("Failed to load episodes", err);
@@ -214,6 +257,7 @@ export function SeriesRequestModal({
         return next;
       });
     }
+    return [];
   }
 
   function toggleSeason(seasonNumber: number) {
@@ -226,7 +270,7 @@ export function SeriesRequestModal({
   }
 
   function toggleEpisode(seasonNumber: number, episodeNumber: number, episode?: Episode) {
-    if (episode?.available || episode?.requested) return;
+    if (episode?.available || episode?.requested || episode?.downloading) return;
 
     setCheckedEpisodes(prev => {
       const seasonChecked = new Set(prev[seasonNumber] || []);
@@ -239,12 +283,11 @@ export function SeriesRequestModal({
     });
   }
 
-  function selectAllInSeason(seasonNumber: number) {
-    const episodes = seasonEpisodes[seasonNumber] || [];
-    const selectable = episodes.filter(e => !(e.available || e.requested)).map(e => e.episode_number);
-    const currentChecked = checkedEpisodes[seasonNumber] || new Set();
+  async function toggleSeasonSelection(seasonNumber: number) {
+    const episodes = seasonEpisodes[seasonNumber] || (await loadSeasonEpisodes(seasonNumber));
+    const selectable = episodes.filter(e => !(e.available || e.requested || e.downloading)).map(e => e.episode_number);
+    const currentChecked = checkedEpisodes[seasonNumber] || new Set<number>();
     const allChecked = selectable.length > 0 && currentChecked.size === selectable.length;
-
     setCheckedEpisodes(prev => ({
       ...prev,
       [seasonNumber]: allChecked ? new Set() : new Set(selectable)
@@ -291,7 +334,8 @@ export function SeriesRequestModal({
         body: JSON.stringify({
           tmdbTvId: tmdbId,
           seasons,
-          qualityProfileId: selectedQualityProfileId
+          qualityProfileId: selectedQualityProfileId,
+          monitoringOption: selectedMonitoringOption
         })
       });
 
@@ -416,6 +460,20 @@ export function SeriesRequestModal({
               </div>
             )}
 
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Monitoring
+              </label>
+              <AdaptiveSelect
+                value={selectedMonitoringOption}
+                onValueChange={(value) => setSelectedMonitoringOption(value as MonitoringOption)}
+                disabled={isSubmitting}
+                options={monitoringOptions}
+                placeholder="Select monitoring"
+                className="w-full"
+              />
+            </div>
+
             {/* Search for Series Packs */}
             {isAdmin && prowlarrEnabled && (
               <button
@@ -440,7 +498,7 @@ export function SeriesRequestModal({
                   const isLoadingEps = loadingEpisodes.has(season.season_number);
                   const episodes = seasonEpisodes[season.season_number] || [];
                   const checkedCount = getCheckedCount(season.season_number);
-                  const selectableCount = episodes.filter(e => !(e.available || e.requested)).length;
+                  const selectableCount = episodes.filter(e => !(e.available || e.requested || e.downloading)).length;
                   const allChecked = selectableCount > 0 && checkedCount === selectableCount;
                   const availableCount = episodes.filter(e => e.available).length;
                   const isSeasonAvailable = episodes.length > 0 && availableCount === episodes.length;
@@ -449,10 +507,7 @@ export function SeriesRequestModal({
                   return (
                     <div key={season.season_number} className="rounded-lg border border-white/10 bg-white/5 overflow-hidden">
                       {/* Season Header */}
-                      <button
-                        onClick={() => toggleSeason(season.season_number)}
-                        className="w-full flex items-center gap-3 p-3 hover:bg-white/5 transition-colors"
-                      >
+                      <div className="w-full flex items-center gap-3 p-3">
                         {/* Season Poster Thumbnail */}
                         <div className="w-10 h-14 rounded overflow-hidden bg-gray-800 flex-shrink-0 relative">
                           {season.poster_path ? (
@@ -496,12 +551,31 @@ export function SeriesRequestModal({
                           </div>
                         </div>
 
-                        {isExpanded ? (
-                          <ChevronUp className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                        ) : (
-                          <ChevronDown className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                        )}
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => toggleSeasonSelection(season.season_number)}
+                          disabled={isSubmitting || isLoadingEps}
+                          className={`flex-shrink-0 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors disabled:opacity-50 ${
+                            allChecked
+                              ? "border-purple-500 bg-purple-500/20 text-purple-200"
+                              : "border-white/20 bg-white/5 text-gray-300 hover:text-white hover:border-white/30"
+                          }`}
+                        >
+                          {isLoadingEps ? "Loading..." : allChecked ? "Season selected" : "Select season"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => toggleSeason(season.season_number)}
+                          className="rounded-md border border-white/15 bg-white/5 p-1.5 text-gray-300 hover:text-white hover:border-white/30 transition-colors"
+                          aria-label={isExpanded ? "Collapse season" : "Expand season"}
+                        >
+                          {isExpanded ? (
+                            <ChevronUp className="h-4 w-4 flex-shrink-0" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4 flex-shrink-0" />
+                          )}
+                        </button>
+                      </div>
 
                       {/* Episodes List */}
                       {isExpanded && (
@@ -515,29 +589,14 @@ export function SeriesRequestModal({
                             <div className="text-center py-6 text-gray-400 text-xs">No episodes found</div>
                           ) : (
                             <div className="p-3 space-y-2">
-                              {/* Select All */}
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  selectAllInSeason(season.season_number);
-                                }}
-                                className="flex items-center gap-2 text-xs text-gray-300 hover:text-white transition-colors mb-2"
-                              >
-                                <div className={`h-4 w-4 rounded border flex items-center justify-center transition-colors ${
-                                  allChecked ? 'bg-purple-500 border-purple-500' : 'border-gray-500'
-                                }`}>
-                                  {allChecked && <Check className="h-3 w-3 text-white" />}
-                                </div>
-                                <span>Select all available</span>
-                              </button>
-
                               {/* Episode List */}
                               <div className="space-y-1 max-h-48 overflow-y-auto">
                                 {episodes.map((episode) => {
                                   const isChecked = checkedEpisodes[season.season_number]?.has(episode.episode_number);
                                   const isAvailable = episode.available ?? false;
                                   const isRequested = episode.requested ?? false;
-                                  const isDisabled = isAvailable || isRequested;
+                                  const isDownloading = episode.downloading ?? episode.requestStatus === "downloading";
+                                  const isDisabled = isAvailable || isRequested || isDownloading;
                                   const isCheckedForUi = Boolean(isChecked || isAvailable);
 
                                   return (
@@ -578,13 +637,19 @@ export function SeriesRequestModal({
                                                 Available
                                               </span>
                                             )}
-                                            {isRequested && (
+                                            {isRequested && !isAvailable && !isDownloading && (
                                               <span className="inline-flex items-center gap-0.5 text-[10px] text-blue-300">
                                                 <Info className="h-2.5 w-2.5" />
                                                 Requested
                                               </span>
                                             )}
-                                            {!isAvailable && !isRequested && episode.air_date && (
+                                            {isDownloading && (
+                                              <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-300">
+                                                <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                                                Downloading
+                                              </span>
+                                            )}
+                                            {!isAvailable && !isRequested && !isDownloading && episode.air_date && (
                                               <span className="text-[10px] text-gray-500">
                                                 {formatDate(episode.air_date)}
                                               </span>

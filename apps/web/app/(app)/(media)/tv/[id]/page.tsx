@@ -9,7 +9,7 @@ import { ExternalRatings } from "@/components/Media/ExternalRatings";
 import { headers } from "next/headers";
 import { MediaReviews } from "@/components/Reviews/MediaReviews";
 import { getUser } from "@/auth";
-import { getReviewStatsForMedia, getReviewsForMedia, getUserByUsername, getUserMediaListStatus, getUserReviewForMedia, upsertUser } from "@/db";
+import { findActiveRequestByTmdb, getReviewStatsForMedia, getReviewsForMedia, getUserByUsername, getUserMediaListStatus, getUserReviewForMedia, upsertUser } from "@/db";
 
 const Params = z.object({ id: z.coerce.number().int() });
 type ParamsInput = { id: string } | Promise<{ id: string }>;
@@ -77,11 +77,13 @@ export default async function TvPage({ params }: { params: ParamsInput }) {
     const detailsPromise = getTvDetailAggregateFast(id);
     const userIdPromise = resolveUserId();
     const ratingsPromise = fetchRatings("tv", id);
+    const activeRequestPromise = findActiveRequestByTmdb({ requestType: "episode", tmdbId: id }).catch(() => null);
 
-    const [details, userId, initialRatings] = await Promise.all([
+    const [details, userId, initialRatings, activeRequest] = await Promise.all([
       detailsPromise,
       userIdPromise,
-      ratingsPromise
+      ratingsPromise,
+      activeRequestPromise
     ]);
 
     const tv = details.tv;
@@ -150,7 +152,8 @@ export default async function TvPage({ params }: { params: ParamsInput }) {
       reviews,
       reviewStats,
       userReview,
-      imageProxyEnabled
+      imageProxyEnabled,
+      requestedBy: activeRequest?.requestedBy ?? null
     };
   } catch (e: any) {
     loadError = e?.message ?? "Unknown error from TMDB.";
@@ -214,6 +217,7 @@ export default async function TvPage({ params }: { params: ParamsInput }) {
             initialData={pageData.initialRatings}
           />
         }
+        requestedBy={pageData.requestedBy ?? null}
         initialListStatus={pageData.listStatus ?? undefined}
       >
         <div className="px-4 mt-8">

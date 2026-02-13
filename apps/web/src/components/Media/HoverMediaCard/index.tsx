@@ -19,6 +19,8 @@ export interface HoverMediaCardProps {
     imagePriority?: boolean;
     imageLoading?: "eager" | "lazy";
     imageFetchPriority?: "high" | "auto" | "low";
+    touchInteraction?: "expand" | "navigate";
+    stableHover?: boolean;
 }
 
 export function HoverMediaCard(props: HoverMediaCardProps) {
@@ -37,6 +39,8 @@ export function HoverMediaCard(props: HoverMediaCardProps) {
             imagePriority={props.imagePriority}
             imageLoading={props.imageLoading}
             imageFetchPriority={props.imageFetchPriority}
+            touchInteraction={props.touchInteraction}
+            stableHover={props.stableHover}
             className={props.className}
         />
     );

@@ -187,9 +187,14 @@ export function resolveMediaStatus(input: {
   availabilityStatus?: AvailabilityStatus | string | null;
   requestStatus?: string | null;
 }): MediaStatus | undefined {
+  const request = statusToMediaStatus(input.requestStatus ?? undefined);
+  // Keep active downloads visible until availability reaches complete.
+  if (request === MediaStatus.DOWNLOADING && input.availabilityStatus !== "available") {
+    return request;
+  }
   const availability = availabilityToMediaStatus(input.availabilityStatus);
   if (availability) return availability;
-  return statusToMediaStatus(input.requestStatus ?? undefined);
+  return request;
 }
 
 /**

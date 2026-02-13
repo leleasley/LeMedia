@@ -57,6 +57,14 @@ export async function register() {
     // Check for debug flags in production
     checkDebugFlagsInProduction();
 
+    // Start the job scheduler (for background notifications, availability checks, etc.)
+    try {
+      const { startJobScheduler } = await import("./lib/jobs");
+      startJobScheduler();
+    } catch (error) {
+      console.error("❌ Failed to start job scheduler:", error);
+    }
+
     const autoMigrations = process.env.AUTO_MIGRATIONS !== "false";
     const allowDuringBuild = process.env.AUTO_MIGRATIONS_ALLOW_BUILD === "true";
     const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";

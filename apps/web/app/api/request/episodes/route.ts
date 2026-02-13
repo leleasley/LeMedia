@@ -12,6 +12,7 @@ import {
   listSeries,
   addSeriesFromLookup,
   getEpisodesForSeries,
+  setSeriesMonitoringOption,
   setEpisodeMonitored,
   episodeSearch,
   seriesSearch
@@ -61,17 +62,33 @@ const SeasonSelection = z.object({
   episodeNumbers: z.array(z.coerce.number().int().min(1)).min(1),
 });
 
+const MonitoringOptionSchema = z.enum([
+  "all",
+  "future",
+  "missing",
+  "existing",
+  "recent",
+  "pilot",
+  "firstSeason",
+  "lastSeason",
+  "monitorSpecials",
+  "unmonitorSpecials",
+  "none"
+]);
+
 const SingleSeasonBody = z.object({
   tmdbTvId: z.coerce.number().int(),
   seasonNumber: z.coerce.number().int().min(1),
   episodeNumbers: z.array(z.coerce.number().int().min(1)).min(1),
-  qualityProfileId: z.coerce.number().int().optional()
+  qualityProfileId: z.coerce.number().int().optional(),
+  monitoringOption: MonitoringOptionSchema.optional()
 });
 
 const MultiSeasonBody = z.object({
   tmdbTvId: z.coerce.number().int(),
   seasons: z.array(SeasonSelection).min(1),
-  qualityProfileId: z.coerce.number().int().optional()
+  qualityProfileId: z.coerce.number().int().optional(),
+  monitoringOption: MonitoringOptionSchema.optional()
 });
 
 const Body = z.union([SingleSeasonBody, MultiSeasonBody]);
@@ -80,6 +97,7 @@ type NormalizedRequest = {
   tmdbTvId: number;
   seasons: Array<{ seasonNumber: number; episodeNumbers: number[] }>;
   qualityProfileId?: number;
+  monitoringOption?: z.infer<typeof MonitoringOptionSchema>;
 };
 
 function normalizeRequestBody(body: z.infer<typeof Body>): NormalizedRequest {
@@ -87,13 +105,15 @@ function normalizeRequestBody(body: z.infer<typeof Body>): NormalizedRequest {
     return {
       tmdbTvId: body.tmdbTvId,
       seasons: body.seasons,
-      qualityProfileId: body.qualityProfileId
+      qualityProfileId: body.qualityProfileId,
+      monitoringOption: body.monitoringOption
     };
   }
   return {
     tmdbTvId: body.tmdbTvId,
     seasons: [{ seasonNumber: body.seasonNumber, episodeNumbers: body.episodeNumbers }],
-    qualityProfileId: body.qualityProfileId
+    qualityProfileId: body.qualityProfileId,
+    monitoringOption: body.monitoringOption
   };
 }
 
@@ -223,19 +243,28 @@ export async function POST(req: NextRequest) {
       const existing = (await listSeries()).find((s: any) => s.tvdbId === tvdbId);
       let series = existing;
       let seriesAdded = false;
+      const sonarrService = await getActiveMediaService("sonarr").catch(() => null);
+      const effectiveMonitoringOption = String(
+        body.monitoringOption ??
+        (sonarrService?.config as any)?.monitoringOption ??
+        "all"
+      );
+      const shouldMonitorEpisodes = effectiveMonitoringOption !== "none";
 
       if (!series) {
         const lookup = await lookupSeriesByTvdb(tvdbId);
         if (!Array.isArray(lookup) || lookup.length === 0) {
           throw new Error(`Sonarr lookup returned nothing for tvdb:${tvdbId}`);
         }
-        const sonarrService = await getActiveMediaService("sonarr").catch(() => null);
-        const monitoringOption = String((sonarrService?.config as any)?.monitoringOption ?? "all");
-        // Add series unmonitored (we only monitor selected eps)
-        series = await addSeriesFromLookup(lookup[0], false, body.qualityProfileId, {
-          monitoringOption
+        series = await addSeriesFromLookup(lookup[0], shouldMonitorEpisodes, body.qualityProfileId, {
+          monitoringOption: effectiveMonitoringOption
         });
         seriesAdded = true;
+      } else if (series.id && body.monitoringOption) {
+        await setSeriesMonitoringOption(series.id, effectiveMonitoringOption).catch(() => null);
+      }
+
+      if (seriesAdded && series?.id) {
         await seriesSearch(series.id);
       }
 
@@ -275,7 +304,7 @@ export async function POST(req: NextRequest) {
 
       const episodeIds = wanted.map((w: RequestedEpisode) => w.id);
 
-      await setEpisodeMonitored(episodeIds, true);
+      await setEpisodeMonitored(episodeIds, shouldMonitorEpisodes);
       await episodeSearch(episodeIds);
 
       const r = await createRequestWithItemsTransaction({

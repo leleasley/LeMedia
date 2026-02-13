@@ -50,6 +50,7 @@ export async function GET(req: NextRequest) {
     qualityProfiles[0]?.id ??
     0
   );
+  const monitoringOption = String((sonarrService?.config as any)?.monitoringOption ?? "all");
 
   let requestsBlocked = true;
   let isAdmin = false;
@@ -81,6 +82,7 @@ export async function GET(req: NextRequest) {
     existingSeries,
     sonarrError,
     defaultQualityProfileId,
+    monitoringOption,
     requestsBlocked,
     availableInJellyfin,
     isAdmin,

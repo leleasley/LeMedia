@@ -10,6 +10,8 @@ const notificationTypes: NotificationType[] = [
     { id: 1, name: "Media Requested", description: "Triggered when a user requests new media" },
     { id: 2, name: "Media Approved", description: "Triggered when a request is approved" },
     { id: 4, name: "Media Available", description: "Triggered when requested media becomes available" },
+    { id: 128, name: "Media Partially Available", description: "Triggered when some requested episodes are available" },
+    { id: 256, name: "Media Downloading", description: "Triggered when requested media enters downloading state" },
     { id: 8, name: "Media Declined", description: "Triggered when a request is declined" },
     { id: 16, name: "Media Failed", description: "Triggered when media fails to download" },
     { id: 32, name: "Media Auto-Approved", description: "Triggered when a request is automatically approved" },

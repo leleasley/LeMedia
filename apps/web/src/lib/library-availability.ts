@@ -1,5 +1,6 @@
 import { listRadarrMovies } from "@/lib/radarr";
-import { listSeries } from "@/lib/sonarr";
+import { listSeries, sonarrQueue } from "@/lib/sonarr";
+import { radarrQueue } from "@/lib/radarr";
 import {
   AvailabilityStatus,
   getSeriesAvailabilityStatus,
@@ -17,6 +18,8 @@ let movieCache: CacheEntry | null = null;
 let tvCache: CacheEntry | null = null;
 let movieStatusCache: StatusCacheEntry | null = null;
 let tvStatusCache: StatusCacheEntry | null = null;
+let movieDownloadingCache: CacheEntry | null = null;
+let tvDownloadingCache: CacheEntry | null = null;
 
 function buildMovieMap(items: any[]): Map<number, boolean> {
   const map = new Map<number, boolean>();
@@ -101,6 +104,40 @@ async function getAvailabilityStatusMap(type: "movie" | "tv"): Promise<Map<numbe
   return map;
 }
 
+async function getDownloadingMap(type: "movie" | "tv"): Promise<Map<number, boolean>> {
+  const now = Date.now();
+  const cache = type === "movie" ? movieDownloadingCache : tvDownloadingCache;
+  if (cache && cache.expiresAt > now) return cache.map;
+
+  if (type === "movie") {
+    const queue: any = await radarrQueue(1, 100).catch(() => ({ records: [] }));
+    const records = Array.isArray(queue?.records) ? queue.records : [];
+    const map = new Map<number, boolean>();
+    for (const item of records) {
+      const tmdbId = Number(item?.movie?.tmdbId ?? item?.tmdbId ?? 0);
+      if (!Number.isFinite(tmdbId) || tmdbId <= 0) continue;
+      const status = String(item?.status ?? item?.trackedDownloadStatus ?? "").toLowerCase();
+      const isActive = status !== "completed" && status !== "failed";
+      if (isActive) map.set(tmdbId, true);
+    }
+    movieDownloadingCache = { expiresAt: now + 15_000, map };
+    return map;
+  }
+
+  const queue: any = await sonarrQueue(1, 100).catch(() => ({ records: [] }));
+  const records = Array.isArray(queue?.records) ? queue.records : [];
+  const map = new Map<number, boolean>();
+  for (const item of records) {
+    const tmdbId = Number(item?.series?.tmdbId ?? item?.tmdbId ?? 0);
+    if (!Number.isFinite(tmdbId) || tmdbId <= 0) continue;
+    const status = String(item?.status ?? item?.trackedDownloadStatus ?? "").toLowerCase();
+    const isActive = status !== "completed" && status !== "failed";
+    if (isActive) map.set(tmdbId, true);
+  }
+  tvDownloadingCache = { expiresAt: now + 15_000, map };
+  return map;
+}
+
 export async function getAvailabilityByTmdbIds(type: "movie" | "tv", ids: number[]) {
   const map = await getAvailabilityMap(type);
   const out: Record<number, boolean> = {};
@@ -112,6 +149,7 @@ export async function getAvailabilityByTmdbIds(type: "movie" | "tv", ids: number
 
 export async function getAvailabilityStatusByTmdbIds(type: "movie" | "tv", ids: number[]) {
   const map = await getAvailabilityStatusMap(type);
+  const downloadingMap = await getDownloadingMap(type);
 
   // Check for active requests (submitted, pending, queued)
   const requestType = type === "movie" ? "movie" : "episode";
@@ -125,9 +163,16 @@ export async function getAvailabilityStatusByTmdbIds(type: "movie" | "tv", ids: 
     const out: Record<number, string> = {};
     for (const id of ids) {
       const availStatus = map.get(id) ?? "unavailable";
-      // If unavailable but has active request, use request status instead
-      if (availStatus === "unavailable" && requestMap.has(id)) {
-        out[id] = requestMap.get(id)!;
+      const requestStatus = requestMap.get(id);
+      if (downloadingMap.get(id)) {
+        out[id] = "downloading";
+      } else
+      // Keep showing downloading until the item is fully available.
+      if (requestStatus === "downloading" && availStatus !== "available") {
+        out[id] = requestStatus;
+      } else if (availStatus === "unavailable" && requestStatus) {
+        // If unavailable but has active request, use request status instead.
+        out[id] = requestStatus;
       } else {
         out[id] = availStatus;
       }
@@ -145,40 +190,56 @@ export async function getAvailabilityStatusByTmdbIds(type: "movie" | "tv", ids: 
       let status = baseStatus;
       let availableSeasons: number[] = [];
 
-      if (hasRecentJellyfinScan) {
+      try {
+        availableSeasons = await getAvailableSeasons({ tmdbId: id });
+      } catch {
+        availableSeasons = [];
+      }
+
+      const seasonCount = availableSeasons.filter((season) => Number(season) > 0).length;
+      let hasJellyfinEpisodes = seasonCount > 0;
+      if (!hasJellyfinEpisodes && hasRecentJellyfinScan) {
         try {
-          availableSeasons = await getAvailableSeasons({ tmdbId: id });
+          hasJellyfinEpisodes = await hasCachedEpisodeAvailability({ tmdbId: id });
         } catch {
-          availableSeasons = [];
-        }
-
-        const seasonCount = availableSeasons.filter((season) => Number(season) > 0).length;
-        let hasJellyfinEpisodes = seasonCount > 0;
-        if (!hasJellyfinEpisodes) {
-          try {
-            hasJellyfinEpisodes = await hasCachedEpisodeAvailability({ tmdbId: id });
-          } catch {
-            hasJellyfinEpisodes = false;
-          }
-        }
-
-        if (hasJellyfinEpisodes) {
-          const tv = await getTv(id).catch(() => null);
-          const totalSeasons = Array.isArray(tv?.seasons)
-            ? tv.seasons.filter((season: any) => Number(season?.season_number ?? 0) > 0).length
-            : Number(tv?.number_of_seasons ?? 0);
-
-          if (totalSeasons > 0) {
-            status = seasonCount >= totalSeasons ? "available" : "partially_available";
-          } else if (status === "unavailable") {
-            status = "available";
-          }
+          hasJellyfinEpisodes = false;
         }
       }
 
-      // If unavailable but has active request, use request status instead
-      if (status === "unavailable" && requestMap.has(id)) {
-        return [id, requestMap.get(id)!] as const;
+      if (hasJellyfinEpisodes) {
+        const tv = await getTv(id).catch(() => null);
+        const today = new Date().toISOString().slice(0, 10);
+        const airedSeasonCount = Array.isArray(tv?.seasons)
+          ? tv.seasons.filter((season: any) => {
+              const seasonNumber = Number(season?.season_number ?? 0);
+              if (!(Number.isFinite(seasonNumber) && seasonNumber > 0)) return false;
+              const airDate = typeof season?.air_date === "string" ? season.air_date.slice(0, 10) : "";
+              // Treat unknown air dates as aired to avoid false "partial" due to missing metadata.
+              return !airDate || airDate <= today;
+            }).length
+          : 0;
+        const totalSeasons = airedSeasonCount > 0
+          ? airedSeasonCount
+          : Number(tv?.number_of_seasons ?? 0);
+
+        if (totalSeasons > 0) {
+          status = seasonCount >= totalSeasons ? "available" : "partially_available";
+        } else if (status === "unavailable") {
+          status = "available";
+        }
+      }
+
+      const requestStatus = requestMap.get(id);
+      if (downloadingMap.get(id)) {
+        return [id, "downloading"] as const;
+      }
+      // Keep showing downloading until the show is fully available.
+      if (requestStatus === "downloading" && status !== "available") {
+        return [id, requestStatus] as const;
+      }
+      // If unavailable but has active request, use request status instead.
+      if (status === "unavailable" && requestStatus) {
+        return [id, requestStatus] as const;
       }
       return [id, status] as const;
     })

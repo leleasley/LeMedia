@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
@@ -16,10 +17,12 @@ import ButtonWithDropdown from "@/components/Common/ButtonWithDropdown";
 import { ArrowDownTrayIcon } from "@heroicons/react/24/outline";
 import { useTrackView } from "@/hooks/useTrackView";
 import { ShareButton } from "@/components/Media/ShareButton";
+import { MediaSocialPanel } from "@/components/Media/MediaSocialPanel";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { logger } from "@/lib/logger";
 import CachedImage from "@/components/Common/CachedImage";
 import { tmdbImageUrl } from "@/lib/tmdb-images";
+import tmdbLogo from "@/assets/tmdb_logo.svg";
 import {
     Select,
     SelectContent,
@@ -97,6 +100,8 @@ type TvAggregateResponse = {
         availableSeasons?: number[];
         defaultQualityProfileId?: number;
         prowlarrEnabled?: boolean;
+        monitoringOption?: string;
+        seasonAvailabilityCounts?: Record<number, { available: number; total: number }>;
     };
     availableInLibrary?: boolean;
     availableSeasons?: number[];
@@ -117,6 +122,42 @@ type TvAggregateResponse = {
     requestedSeasons?: Record<number, { requested: number }>;
     manage?: { itemId?: number | string | null; slug?: string | null; baseUrl?: string | null };
 };
+
+type RequestedBy = {
+    username: string;
+    displayName?: string | null;
+    avatarUrl?: string | null;
+    jellyfinUserId?: string | null;
+};
+
+type TvDownloadProgress = {
+    id: number;
+    title: string;
+    status: string;
+    timeleft: string | null;
+    estimatedCompletionTime: string | null;
+    percentComplete: number;
+    downloadId: string;
+    episode?: {
+        seasonNumber: number | null;
+        episodeNumber: number | null;
+        title: string | null;
+    } | null;
+};
+
+const monitoringOptions = [
+    { value: "all", label: "All Episodes" },
+    { value: "future", label: "Future Episodes" },
+    { value: "missing", label: "Missing Episodes" },
+    { value: "existing", label: "Existing Episodes" },
+    { value: "recent", label: "Recent Episodes" },
+    { value: "pilot", label: "Pilot Episode" },
+    { value: "firstSeason", label: "First Season" },
+    { value: "lastSeason", label: "Last Season" },
+    { value: "monitorSpecials", label: "Monitor Specials" },
+    { value: "unmonitorSpecials", label: "Unmonitor Specials" },
+    { value: "none", label: "None" }
+];
 
 function initials(name: string): string {
     const parts = name.trim().split(/\s+/g).filter(Boolean);
@@ -166,6 +207,7 @@ export function TvDetailClientNew({
     keywordsSlot,
     initialListStatus,
     prefetchedAggregate,
+    requestedBy = null,
     children
 }: {
     tv: TvDetail;
@@ -203,6 +245,7 @@ export function TvDetailClientNew({
     keywordsSlot?: React.ReactNode;
     initialListStatus?: { favorite: boolean; watchlist: boolean } | null;
     prefetchedAggregate?: unknown;
+    requestedBy?: RequestedBy | null;
     children?: React.ReactNode;
 }) {
     const cast = useMemo<CastMember[]>(() => (tv.aggregate_credits?.cast ?? tv.credits?.cast ?? []).slice(0, 12), [tv]);
@@ -224,7 +267,17 @@ export function TvDetailClientNew({
             .map((person) => ({ job: person.job ?? "Crew", person }))
     ].slice(0, 6), [creators, crew, crewRoles]);
 
-    const totalSeasons = useMemo(() => seasons.filter(s => s.season_number !== 0).length, [seasons]);
+    const totalSeasons = useMemo(() => {
+        const today = new Date().toISOString().slice(0, 10);
+        const aired = seasons.filter((season) => {
+            if (season.season_number === 0) return false;
+            const airDate = typeof season.air_date === "string" ? season.air_date.slice(0, 10) : "";
+            // If TMDB doesn't have a season air date yet, don't block "Available".
+            return !airDate || airDate <= today;
+        }).length;
+        if (aired > 0) return aired;
+        return seasons.filter(s => s.season_number !== 0).length;
+    }, [seasons]);
 
     const getTmdbImage = useCallback(
         (path: string | null | undefined, size: string) => tmdbImageUrl(path, size, imageProxyEnabled),
@@ -235,7 +288,7 @@ export function TvDetailClientNew({
     const [loadingSeasons, setLoadingSeasons] = useState<Set<number>>(new Set());
     const [checkedEpisodes, setCheckedEpisodes] = useState<Record<number, Set<number>>>({});
     const [selectedQualityProfileId, setSelectedQualityProfileId] = useState<number>(defaultQualityProfileId);
-    const [monitorEpisodes, setMonitorEpisodes] = useState<boolean>(true);
+    const [monitoringOption, setMonitoringOption] = useState<string>("all");
     const [status, setStatus] = useState<string>("");
     const [submitState, setSubmitState] = useState<"idle" | "loading" | "success" | "error">("idle");
 
@@ -284,12 +337,21 @@ export function TvDetailClientNew({
         async ([url]: [string]): Promise<TvAggregateResponse | null> => fetcher(url),
         []
     );
-    const { data: aggregate } = useSWR<TvAggregateResponse | null>(aggregateKey, aggregateFetcher, {
+    const { data: aggregate, mutate: mutateAggregate } = useSWR<TvAggregateResponse | null>(aggregateKey, aggregateFetcher, {
         revalidateOnFocus: true,
         revalidateIfStale: true,
         refreshInterval: 30000,
         fallbackData: prefetchedAggregate as TvAggregateResponse | null | undefined
     });
+    const { data: downloadProgress } = useSWR<{ downloads: TvDownloadProgress[] }>(
+        tv?.id ? `/api/downloads/progress?type=tv&tmdbId=${tv.id}` : null,
+        async (url: string) => {
+            const res = await fetch(url, { credentials: "include" });
+            if (!res.ok) return { downloads: [] };
+            return (await readJson(res)) as { downloads: TvDownloadProgress[] };
+        },
+        { refreshInterval: 5000, revalidateOnFocus: true }
+    );
 
     useEffect(() => {
         if (aggregate !== undefined) {
@@ -325,6 +387,26 @@ export function TvDetailClientNew({
         }
         if (typeof sonarr.prowlarrEnabled === "boolean") {
             setProwlarrEnabledState(sonarr.prowlarrEnabled);
+        }
+        if (typeof sonarr.monitoringOption === "string" && sonarr.monitoringOption.length > 0) {
+            setMonitoringOption(sonarr.monitoringOption);
+        }
+        if (sonarr.seasonAvailabilityCounts && typeof sonarr.seasonAvailabilityCounts === "object") {
+            setSeasonAvailabilityCounts(prev => {
+                const next: Record<number, { available: number; total: number }> = { ...prev };
+                for (const [seasonStr, counts] of Object.entries(sonarr.seasonAvailabilityCounts || {})) {
+                    const seasonNumber = Number(seasonStr);
+                    if (!Number.isFinite(seasonNumber) || seasonNumber <= 0) continue;
+                    const current = next[seasonNumber];
+                    const incomingAvailable = Number(counts?.available ?? 0);
+                    const incomingTotal = Number(counts?.total ?? 0);
+                    next[seasonNumber] = {
+                        available: Math.max(Number(current?.available ?? 0), Number.isFinite(incomingAvailable) ? incomingAvailable : 0),
+                        total: Math.max(Number(current?.total ?? 0), Number.isFinite(incomingTotal) ? incomingTotal : 0)
+                    };
+                }
+                return next;
+            });
         }
 
         if (typeof aggregate.availableInLibrary === "boolean") {
@@ -376,14 +458,45 @@ export function TvDetailClientNew({
         [availableSeasonsCount, hasAvailableEpisodes, availableInJellyfinState, availableInLibraryState]);
     const isFullyAvailable = useMemo(() => availableSeasonsCount > 0 && availableSeasonsCount >= totalSeasons, [availableSeasonsCount, totalSeasons]);
     const isPartiallyAvailable = useMemo(() => hasAnyAvailable && !isFullyAvailable, [hasAnyAvailable, isFullyAvailable]);
+    const activeDownloads = useMemo(() => {
+        const downloads = Array.isArray(downloadProgress?.downloads) ? downloadProgress.downloads : [];
+        const deduped = new Map<string, TvDownloadProgress>();
+        for (const item of downloads) {
+            const seasonNumber = Number(item.episode?.seasonNumber ?? NaN);
+            const episodeNumber = Number(item.episode?.episodeNumber ?? NaN);
+            const hasEpisodeIdentity =
+                Number.isFinite(seasonNumber) &&
+                Number.isFinite(episodeNumber) &&
+                seasonNumber > 0 &&
+                episodeNumber > 0;
+            const episodeKey = hasEpisodeIdentity
+                ? `${seasonNumber}:${episodeNumber}`
+                : `${item.downloadId || item.id || item.title}`;
+            const existing = deduped.get(episodeKey);
+            if (!existing || Number(item.percentComplete ?? 0) > Number(existing.percentComplete ?? 0)) {
+                deduped.set(episodeKey, item);
+            }
+        }
+        return Array.from(deduped.values()).sort((a, b) => Number(b.percentComplete ?? 0) - Number(a.percentComplete ?? 0));
+    }, [downloadProgress]);
+    const hasActiveDownloads = activeDownloads.length > 0;
+    const isDownloading = hasActiveDownloads || requestStatusState === "downloading";
     const requestLabel = useMemo(() => {
+        if (hasActiveDownloads) return "Downloading";
         if (!requestStatusState) return null;
         if (requestStatusState === "queued") return "Queued";
         if (requestStatusState === "pending") return "Pending";
         if (requestStatusState === "submitted") return "Submitted";
+        if (requestStatusState === "downloading") return "Downloading";
+        if (requestStatusState === "partially_available") return "Partially Available";
         return null;
-    }, [requestStatusState]);
-    const showRequestBadge = Boolean(!hasAnyAvailable && requestLabel);
+    }, [requestStatusState, hasActiveDownloads]);
+    const showRequestBadge = Boolean(
+        !isFullyAvailable &&
+        requestLabel &&
+        !isDownloading &&
+        requestStatusState !== "partially_available"
+    );
 
     const showReport = Boolean(hasAnyAvailable);
     const actionMenu = (
@@ -490,7 +603,18 @@ export function TvDetailClientNew({
                 }
             });
 
-            setSeasonAvailabilityCounts(counts);
+            setSeasonAvailabilityCounts(prev => {
+                const merged: Record<number, { available: number; total: number }> = { ...prev };
+                for (const [seasonStr, value] of Object.entries(counts)) {
+                    const seasonNumber = Number(seasonStr);
+                    const current = merged[seasonNumber];
+                    merged[seasonNumber] = {
+                        available: Math.max(Number(current?.available ?? 0), Number(value?.available ?? 0)),
+                        total: Math.max(Number(current?.total ?? 0), Number(value?.total ?? 0))
+                    };
+                }
+                return merged;
+            });
             setAvailableSeasonsState(prev => {
                 const merged = new Set([...prev, ...newAvailableSeasons]);
                 return Array.from(merged).sort((a, b) => a - b);
@@ -552,7 +676,18 @@ export function TvDetailClientNew({
                         }
                     });
 
-                    setSeasonAvailabilityCounts(counts);
+                    setSeasonAvailabilityCounts(prev => {
+                        const merged: Record<number, { available: number; total: number }> = { ...prev };
+                        for (const [seasonStr, value] of Object.entries(counts)) {
+                            const seasonNumber = Number(seasonStr);
+                            const current = merged[seasonNumber];
+                            merged[seasonNumber] = {
+                                available: Math.max(Number(current?.available ?? 0), Number(value?.available ?? 0)),
+                                total: Math.max(Number(current?.total ?? 0), Number(value?.total ?? 0))
+                            };
+                        }
+                        return merged;
+                    });
                     setAvailableSeasonsState(prev => {
                         const merged = new Set([...prev, ...newAvailableSeasons]);
                         return Array.from(merged).sort((a, b) => a - b);
@@ -630,7 +765,13 @@ export function TvDetailClientNew({
             const res = await csrfFetch("/api/v1/request/episodes", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ tmdbTvId: tv.id, seasonNumber, episodeNumbers, qualityProfileId: selectedQualityProfileId })
+                body: JSON.stringify({
+                    tmdbTvId: tv.id,
+                    seasonNumber,
+                    episodeNumbers,
+                    qualityProfileId: selectedQualityProfileId,
+                    monitoringOption
+                })
             });
             const data = await readJson(res);
             if (!res.ok) {
@@ -669,6 +810,12 @@ export function TvDetailClientNew({
                 return { ...prev, [seasonNumber]: nextEpisodes };
             });
             setSubmitState("success");
+            setRequestedSeasonsState(prev => ({
+                ...prev,
+                [seasonNumber]: {
+                    requested: (prev[seasonNumber]?.requested ?? 0) + episodeNumbers.length
+                }
+            }));
             setCheckedEpisodes(prev => ({ ...prev, [seasonNumber]: new Set() }));
             router.refresh();
             setTimeout(() => {
@@ -683,7 +830,7 @@ export function TvDetailClientNew({
         } finally {
             setIsSubmitting(false);
         }
-    }, [isSubmitting, requestsBlockedState, hasQualityProfiles, checkedEpisodes, tv.id, selectedQualityProfileId, toast, router]);
+    }, [isSubmitting, requestsBlockedState, hasQualityProfiles, checkedEpisodes, tv.id, selectedQualityProfileId, monitoringOption, toast, router]);
 
     const requestFullSeason = useCallback(async (seasonNumber: number) => {
         if (isSubmitting) return;
@@ -712,7 +859,13 @@ export function TvDetailClientNew({
             const res = await csrfFetch("/api/v1/request/episodes", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ tmdbTvId: tv.id, seasonNumber, episodeNumbers, qualityProfileId: selectedQualityProfileId })
+                body: JSON.stringify({
+                    tmdbTvId: tv.id,
+                    seasonNumber,
+                    episodeNumbers,
+                    qualityProfileId: selectedQualityProfileId,
+                    monitoringOption
+                })
             });
             const data = await readJson(res);
             if (!res.ok) {
@@ -733,6 +886,12 @@ export function TvDetailClientNew({
             } else {
                 toast.success(`Successfully requested ${data.count} episode${data.count !== 1 ? 's' : ''}!`, { timeoutMs: 3000 });
             }
+            setRequestedSeasonsState(prev => ({
+                ...prev,
+                [seasonNumber]: {
+                    requested: (prev[seasonNumber]?.requested ?? 0) + episodeNumbers.length
+                }
+            }));
             setStatus("");
             setSeasonQuickOpen(false);
             router.refresh();
@@ -743,7 +902,7 @@ export function TvDetailClientNew({
         } finally {
             setIsSubmitting(false);
         }
-    }, [isSubmitting, requestsBlockedState, hasQualityProfiles, seasonEpisodes, loadSeasonEpisodes, tv.id, selectedQualityProfileId, toast, router]);
+    }, [isSubmitting, requestsBlockedState, hasQualityProfiles, seasonEpisodes, loadSeasonEpisodes, tv.id, selectedQualityProfileId, monitoringOption, toast, router]);
 
     const getCheckedCount = useCallback((seasonNumber: number) => checkedEpisodes[seasonNumber]?.size || 0, [checkedEpisodes]);
     const formatRating = useCallback((rating: number) => (rating ? rating.toFixed(1) : "N/A"), []);
@@ -801,16 +960,25 @@ export function TvDetailClientNew({
                         </div>
                     )}
 
-                    <label className="flex items-center gap-3 cursor-pointer group p-3 rounded-lg hover:bg-white/5 transition-colors">
-                        <div className={`h-5 w-5 rounded border flex items-center justify-center transition-colors ${monitorEpisodes ? 'bg-purple-500 border-purple-500' : 'border-gray-500 group-hover:border-purple-400'}`}>
-                            {monitorEpisodes && <CheckCircle className="h-4 w-4 text-white" />}
-                        </div>
-                        <div className="flex-1">
-                            <span className="text-sm font-medium text-gray-200 group-hover:text-white transition-colors block">Monitor episodes</span>
-                            <span className="text-xs text-gray-400">Automatically search for episodes when they become available</span>
-                        </div>
-                        <input type="checkbox" checked={monitorEpisodes} onChange={(e) => setMonitorEpisodes(e.target.checked)} className="hidden" />
-                    </label>
+                    <div className="text-sm text-gray-300">
+                        <div className="mb-2 font-semibold">Monitoring</div>
+                        <Select
+                            value={monitoringOption}
+                            onValueChange={(value) => setMonitoringOption(value)}
+                            disabled={isSubmitting}
+                        >
+                            <SelectTrigger className="w-full">
+                                <SelectValue placeholder="Select monitoring option" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {monitoringOptions.map((option) => (
+                                    <SelectItem key={option.value} value={option.value}>
+                                        {option.label}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
 
                     {status && (
                         <div className="text-sm text-gray-300 p-3 rounded-lg bg-white/5">
@@ -971,13 +1139,18 @@ export function TvDetailClientNew({
                 {/* Media Title Section */}
                 <div className="media-title">
                     <div className="media-status">
-                        {isFullyAvailable ? (
-                            <div className="inline-flex h-7 items-center gap-1.5 rounded-full border border-indigo-400 bg-indigo-500 px-3 text-xs font-semibold text-white shadow-sm">
+                        {isDownloading ? (
+                            <div className="inline-flex h-7 items-center gap-1.5 rounded-full border border-amber-400 bg-amber-500 px-3 text-xs font-semibold text-white shadow-sm">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                Downloading
+                            </div>
+                        ) : isFullyAvailable ? (
+                            <div className="inline-flex h-7 items-center gap-1.5 rounded-full border border-emerald-400 bg-emerald-500 px-3 text-xs font-semibold text-white shadow-sm">
                                 <CheckCircle className="h-4 w-4" />
                                 Available
                             </div>
                         ) : isPartiallyAvailable ? (
-                            <div className="inline-flex h-7 items-center gap-1.5 rounded-full border border-indigo-400 bg-indigo-500 px-3 text-xs font-semibold text-white shadow-sm">
+                            <div className="inline-flex h-7 items-center gap-1.5 rounded-full border border-purple-400 bg-purple-500 px-3 text-xs font-semibold text-white shadow-sm">
                                 <CheckCircle className="h-4 w-4" />
                                 Partially Available
                             </div>
@@ -1006,6 +1179,33 @@ export function TvDetailClientNew({
                             <span className="media-year">({new Date(tv.first_air_date).getFullYear()})</span>
                         )}
                     </h1>
+
+                    <div className="media-ratings-inline">
+                        {Number(tv.vote_average ?? 0) > 0 && (
+                            <Link
+                                href={`https://www.themoviedb.org/tv/${tv.id}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="media-rating"
+                                title={`TMDB: ${(Number(tv.vote_average ?? 0) * 10).toFixed(0)}%`}
+                            >
+                                <div className="w-4 h-4 sm:w-5 sm:h-5 relative">
+                                    <Image src={tmdbLogo} alt="TMDB" fill className="object-contain" />
+                                </div>
+                                <span className="text-xs sm:text-sm font-bold text-white">
+                                    {(Number(tv.vote_average ?? 0) * 10).toFixed(0)}%
+                                </span>
+                            </Link>
+                        )}
+                        {externalRatingsSlot}
+                    </div>
+
+                    <MediaSocialPanel
+                        tmdbId={tv.id}
+                        mediaType="tv"
+                        requestedBy={requestedBy}
+                        initialWatchlist={initialListStatus?.watchlist ?? null}
+                    />
 
                     {/* Attributes */}
                     <span className="media-attributes">
@@ -1041,7 +1241,7 @@ export function TvDetailClientNew({
                                 className="h-10 w-28 rounded-lg border border-white/10 bg-white/5 opacity-0"
                                 aria-hidden="true"
                             />
-                        ) : canRequestSeries ? (
+                        ) : (canRequestSeries && !isFullyAvailable) ? (
                             <>
                                 <ButtonWithDropdown
                                     text={
@@ -1067,8 +1267,10 @@ export function TvDetailClientNew({
                                     isAdmin={isAdminState}
                                     prowlarrEnabled={prowlarrEnabledState}
                                     serviceItemId={existingSeriesState?.id ?? null}
+                                    defaultMonitoringOption={monitoringOption}
                                     onRequestPlaced={() => {
                                         setRequestModalOpen(false);
+                                        mutateAggregate();
                                         router.refresh();
                                     }}
                                 />
@@ -1143,6 +1345,54 @@ export function TvDetailClientNew({
                         ))}
                     </div>
                     <h2>Seasons</h2>
+                    {activeDownloads.length > 0 && (
+                        <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+                            <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-200">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                Downloading Episodes
+                            </div>
+                            {(() => {
+                                const known = activeDownloads.filter((item) => {
+                                    const season = Number(item.episode?.seasonNumber ?? NaN);
+                                    const episode = Number(item.episode?.episodeNumber ?? NaN);
+                                    return Number.isFinite(season) && Number.isFinite(episode) && season > 0 && episode > 0;
+                                });
+                                const unknownCount = activeDownloads.length - known.length;
+                                return (
+                                    <div className="space-y-2">
+                                        {known.map((item) => {
+                                            const season = Number(item.episode?.seasonNumber ?? 0);
+                                            const episode = Number(item.episode?.episodeNumber ?? 0);
+                                            const episodeLabel = `S${String(season).padStart(2, "0")}E${String(episode).padStart(2, "0")}`;
+                                            const timeLabel = item.timeleft || item.estimatedCompletionTime || "Calculating...";
+                                            return (
+                                                <div key={`${item.downloadId || item.id}-${episodeLabel}`} className="rounded-lg border border-white/10 bg-black/20 p-2.5">
+                                                    <div className="flex items-center justify-between gap-3">
+                                                        <div className="min-w-0">
+                                                            <div className="text-xs font-semibold text-white">
+                                                                {episodeLabel} {item.episode?.title ? `• ${item.episode.title}` : ""}
+                                                            </div>
+                                                            <div className="text-[11px] text-amber-200/90">
+                                                                {Math.max(0, Math.round(Number(item.percentComplete ?? 0)))}% • {timeLabel}
+                                                            </div>
+                                                        </div>
+                                                        <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">
+                                                            {item.status || "downloading"}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                        {unknownCount > 0 && (
+                                            <div className="rounded-lg border border-white/10 bg-black/20 p-2.5 text-[11px] text-amber-100/90">
+                                                {unknownCount} download item{unknownCount !== 1 ? "s" : ""} active (episode info pending from Sonarr queue)
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })()}
+                        </div>
+                    )}
                     <div className="space-y-4">
                         {seasons.length === 0 ? (
                             <div className="p-8 rounded-xl border border-white/5 bg-white/5 text-center text-gray-400">No seasons available for this show.</div>
@@ -1161,8 +1411,8 @@ export function TvDetailClientNew({
                                     onToggleAllInSeason={toggleAllInSeason}
                                     onToggleEpisode={toggleEpisode}
                                     onRequestEpisodes={(seasonNumber) => setEpisodeRequestModal({ open: true, seasonNumber })}
-                                    monitorEpisodes={monitorEpisodes}
-                                    onToggleMonitorEpisodes={setMonitorEpisodes}
+                                    monitorEpisodes={monitoringOption !== "none"}
+                                    onToggleMonitorEpisodes={(checked) => setMonitoringOption(checked ? "all" : "none")}
                                     hasQualityProfiles={hasQualityProfiles}
                                     isSubmitting={isSubmitting}
                                     getAiringBadge={getAiringBadge}
@@ -1223,7 +1473,6 @@ export function TvDetailClientNew({
                         type="tv"
                         tvdbId={tvdbId}
                         jellyfinUrl={playUrlState ?? null}
-                        externalRatingsSlot={externalRatingsSlot}
                     />
                 </div>
             </div>

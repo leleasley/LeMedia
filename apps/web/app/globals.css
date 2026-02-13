@@ -490,9 +490,35 @@
     @apply relative z-20 flex flex-col items-center pt-4 xl:flex-row xl:items-end;
   }
 
-  /* Discover page container - matches media page pattern */
+  /* Discover page - full-bleed hero with gutter-safe content */
+  .discover-page-root {
+    @apply relative;
+  }
+
+  .discover-hero-bleed {
+    @apply relative -mx-3 lg:-mx-6;
+    margin-top: -7rem;
+  }
+
+  .discover-hero {
+    @apply w-full;
+  }
+
   .discover-page-container {
-    @apply relative px-4 md:px-6 lg:px-8;
+    @apply relative px-1 md:px-2 lg:px-3;
+  }
+
+  .discover-hero-mobile-fade {
+    pointer-events: none;
+    position: relative;
+    height: 4.5rem;
+    margin-top: -4.5rem;
+    background: linear-gradient(
+      180deg,
+      transparent 0%,
+      hsl(var(--background) / 0.6) 45%,
+      hsl(var(--background)) 100%
+    );
   }
 
   .media-poster {
@@ -699,6 +725,16 @@
       margin-top: 0;
       padding-top: calc(env(safe-area-inset-top) + 3.5rem);
       @apply -mx-0 px-3;
+      background-color: hsl(var(--background));
+    }
+
+    .discover-hero-bleed {
+      @apply -mx-3;
+      margin-top: calc(-1 * (3.5rem + env(safe-area-inset-top) + 1rem));
+    }
+
+    .discover-page-container {
+      @apply px-0;
     }
 
     .media-facts {

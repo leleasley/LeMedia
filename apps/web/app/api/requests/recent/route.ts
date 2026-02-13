@@ -4,6 +4,8 @@ import { listRecentRequests, updateRequestMetadata } from "@/db";
 import { getMovie, getTv, tmdbImageUrl } from "@/lib/tmdb";
 import { getImageProxyEnabled } from "@/lib/app-settings";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
+import { getActiveDownloadTmdbIds, shouldForceDownloading } from "@/lib/download-status";
+import { getAvailabilityStatusByTmdbIds } from "@/lib/library-availability";
 
 type RecentRequestCard = {
   id: string;
@@ -26,8 +28,15 @@ export async function GET(request: NextRequest) {
   const takeRaw = request.nextUrl.searchParams.get("take");
   const take = Math.min(Math.max(Number(takeRaw ?? 12), 1), 30);
   const imageProxyEnabled = await getImageProxyEnabled();
+  const activeDownloads = await getActiveDownloadTmdbIds();
 
   const recentRequestsRaw = await listRecentRequests(take, user.username).catch(() => []);
+  const movieIds = recentRequestsRaw.filter((req) => req.request_type === "movie").map((req) => req.tmdb_id);
+  const tvIds = recentRequestsRaw.filter((req) => req.request_type !== "movie").map((req) => req.tmdb_id);
+  const [movieAvailability, tvAvailability] = await Promise.all([
+    movieIds.length ? getAvailabilityStatusByTmdbIds("movie", movieIds).catch(() => ({} as Record<number, string>)) : Promise.resolve({} as Record<number, string>),
+    tvIds.length ? getAvailabilityStatusByTmdbIds("tv", tvIds).catch(() => ({} as Record<number, string>)) : Promise.resolve({} as Record<number, string>)
+  ]);
   const tmdbResults = await Promise.allSettled(
     recentRequestsRaw.map((req) => {
       const hasAllLocal = req.poster_path && req.backdrop_path && req.release_year;
@@ -68,6 +77,22 @@ export async function GET(request: NextRequest) {
         const posterUrl = posterPath
           ? tmdbImageUrl(posterPath, "w500", imageProxyEnabled)
           : null;
+        const availabilityStatus =
+          type === "movie"
+            ? movieAvailability[req.tmdb_id]
+            : tvAvailability[req.tmdb_id];
+        const resolvedStatus = shouldForceDownloading({
+          status: req.status,
+          tmdbId: req.tmdb_id,
+          mediaType: type,
+          active: activeDownloads
+        })
+          ? "downloading"
+          : availabilityStatus === "available"
+            ? "available"
+            : availabilityStatus === "partially_available"
+              ? "partially_available"
+              : req.status;
 
         return {
           id: req.id,
@@ -77,7 +102,7 @@ export async function GET(request: NextRequest) {
           poster: posterUrl,
           backdrop: backdropUrl,
           type,
-          status: req.status,
+          status: resolvedStatus,
           username: req.username,
           displayName: (req as any).display_name ?? null,
           avatarUrl: req.avatar_url ?? null,

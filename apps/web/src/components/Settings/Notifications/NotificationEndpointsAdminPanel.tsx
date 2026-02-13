@@ -45,6 +45,8 @@ const EVENT_OPTIONS: Array<{ id: string; label: string }> = [
   { id: "request_denied", label: "Denied" },
   { id: "request_failed", label: "Failed" },
   { id: "request_already_exists", label: "Already exists" },
+  { id: "request_partially_available", label: "Partially available" },
+  { id: "request_downloading", label: "Downloading" },
   { id: "request_available", label: "Available" },
   { id: "request_removed", label: "Removed" },
   { id: "issue_reported", label: "Issue reported" },

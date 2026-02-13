@@ -62,6 +62,24 @@ async function resolveUserId() {
   return created?.id ?? null;
 }
 
+function getDigitalReleaseDate(releaseDates: any, region = (process.env.TMDB_REGION || "GB")): string | null {
+  if (!releaseDates?.results || !Array.isArray(releaseDates.results)) return null;
+  for (const country of releaseDates.results) {
+    if (country?.iso_3166_1 !== region && country?.iso_3166_1 !== "US") continue;
+    const digitalRelease = country?.release_dates?.find((rd: any) => Number(rd?.type) === 4);
+    if (digitalRelease?.release_date) {
+      return String(digitalRelease.release_date).split("T")[0];
+    }
+  }
+  return null;
+}
+
+function formatShortDate(dateStr: string): string {
+  const date = new Date(dateStr);
+  if (Number.isNaN(date.getTime())) return dateStr;
+  return date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+}
+
 export async function generateMetadata({ params }: { params: ParamsInput }) {
   try {
     const { id } = Params.parse(await resolveParams(params));
@@ -103,6 +121,7 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
     const streamingProviders = details.streamingProviders;
     const watchProviders = details.watchProviders;
     const releaseDates = details.releaseDates;
+    const digitalReleaseDate = getDigitalReleaseDate(releaseDates);
     const keywords = details.keywords;
     const imdbId = details.imdbId;
 
@@ -127,6 +146,9 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
     }
     if (movie.genres && movie.genres.length > 0) {
       movieAttributes.push(...movie.genres.map((g: any) => g.name));
+    }
+    if (digitalReleaseDate) {
+      movieAttributes.push(`Digital ${formatShortDate(digitalReleaseDate)}`);
     }
 
     const trailers = (movie.videos?.results ?? [])
@@ -335,7 +357,7 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
 
         <MediaInfoBox
           releaseDate={movie.release_date}
-          digitalReleaseDate={undefined}
+          digitalReleaseDate={digitalReleaseDate ?? undefined}
           runtime={movie.runtime}
           voteAverage={movie.vote_average}
           tmdbId={movie.id}

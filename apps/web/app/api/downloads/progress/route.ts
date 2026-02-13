@@ -23,6 +23,11 @@ export interface DownloadProgress {
   outputPath?: string;
   errorMessage?: string;
   isImporting?: boolean;
+  episode?: {
+    seasonNumber: number | null;
+    episodeNumber: number | null;
+    title: string | null;
+  } | null;
 }
 
 async function getRadarrDownloads(): Promise<DownloadProgress[]> {
@@ -77,6 +82,18 @@ async function getSonarrDownloads(): Promise<DownloadProgress[]> {
         const percentComplete = size > 0 ? ((size - sizeleft) / size) * 100 : 0;
         const isImporting = item.status === "importing" || item.status === "completed";
         
+        const episodeSource = item.episode ?? (Array.isArray(item.episodes) ? item.episodes[0] : null);
+        const parsedFromTitle = /S(\d{1,2})E(\d{1,3})/i.exec(String(item?.title ?? ""));
+        const seasonNumber = Number(
+          episodeSource?.seasonNumber ??
+          episodeSource?.season ??
+          (parsedFromTitle ? parsedFromTitle[1] : NaN)
+        );
+        const episodeNumber = Number(
+          episodeSource?.episodeNumber ??
+          episodeSource?.episode ??
+          (parsedFromTitle ? parsedFromTitle[2] : NaN)
+        );
         const tvdbId = item.series?.tvdbId ?? null;
         const tmdbId = item.series?.tmdbId ?? null;
         return {
@@ -98,6 +115,11 @@ async function getSonarrDownloads(): Promise<DownloadProgress[]> {
           outputPath: item.outputPath || "",
           errorMessage: item.errorMessage,
           isImporting,
+          episode: {
+            seasonNumber: Number.isFinite(seasonNumber) ? seasonNumber : null,
+            episodeNumber: Number.isFinite(episodeNumber) ? episodeNumber : null,
+            title: episodeSource?.title ?? item.episodeTitle ?? null
+          }
         };
       });
   } catch (error) {

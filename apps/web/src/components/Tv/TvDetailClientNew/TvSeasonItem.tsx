@@ -118,9 +118,9 @@ export const TvSeasonItem = memo(({
                                     {seasonAvailableCount}/{seasonTotalCount} Available
                                 </span>
                             )}
-                            {requestedCount > 0 && (
+                            {clampedRequested > 0 && (
                                 <span className="font-medium px-2 py-0.5 rounded text-xs text-sky-300 bg-sky-400/10">
-                                    {requestedCount}/{seasonTotalCount} Requested
+                                    {clampedRequested}/{seasonTotalCount} Requested
                                 </span>
                             )}
                             {checkedCount > 0 && (
