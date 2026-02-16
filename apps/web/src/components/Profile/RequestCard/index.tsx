@@ -62,6 +62,16 @@ export function RequestCard({ request, onImageLoad }: RequestCardProps) {
         borderColor: "border-blue-500/30",
       };
     }
+
+    if (status === "denied") {
+      return {
+        icon: XCircle,
+        label: "Denied",
+        color: "text-red-500",
+        bgColor: "bg-red-500/10",
+        borderColor: "border-red-500/30",
+      };
+    }
     
     return {
       icon: XCircle,

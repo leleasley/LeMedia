@@ -11,6 +11,7 @@ import { logger } from "@/lib/logger";
 import { Check, X, Loader2, ChevronDown, Tv, CheckCircle, Info, Star, Search as SearchIcon, Package } from "lucide-react";
 import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 import { ReleaseSearchModal } from "@/components/Media/ReleaseSearchModal";
+import { emitRequestsChanged } from "@/lib/request-refresh";
 
 type QualityProfile = { id: number; name: string };
 
@@ -192,7 +193,7 @@ export function SeriesRequestModal({
     const seasonParams = tvdbId ? `?tvdbId=${encodeURIComponent(String(tvdbId))}` : "";
 
     const prefetch = async () => {
-      const seasonNumbers = seasons.map(s => s.season_number).filter(sn => !seasonEpisodes[sn]);
+      const seasonNumbers = seasons.map(s => s.season_number);
       if (seasonNumbers.length === 0) return;
 
       const concurrency = 3;
@@ -227,7 +228,7 @@ export function SeriesRequestModal({
       cancelled = true;
       controller.abort();
     };
-  }, [open, seasons, seasonEpisodes, tmdbId, tvdbId]);
+  }, [open, seasons, tmdbId, tvdbId]);
 
   async function loadSeasonEpisodes(seasonNumber: number): Promise<Episode[]> {
     if (seasonEpisodes[seasonNumber]) return seasonEpisodes[seasonNumber];
@@ -374,6 +375,7 @@ export function SeriesRequestModal({
         }
         setSubmitState("success");
         router.refresh();
+        emitRequestsChanged();
         if (onRequestPlaced) onRequestPlaced();
         setTimeout(() => {
           setCheckedEpisodes({});

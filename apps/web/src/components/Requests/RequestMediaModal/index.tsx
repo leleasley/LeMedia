@@ -11,6 +11,7 @@ import AdvancedRequester, { RequestOverrides } from "@/components/Requests/Advan
 import { Check, X, Loader2, Eye, Film } from "lucide-react";
 import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 import { ReleaseSearchModal } from "@/components/Media/ReleaseSearchModal";
+import { emitRequestsChanged } from "@/lib/request-refresh";
 
 type QualityProfile = { id: number; name: string };
 
@@ -127,6 +128,7 @@ export function RequestMediaModal({
         toast.success("Request sent for approval! An admin needs to approve before it is added.", { timeoutMs: 4000 });
         setSubmitState("success");
         router.refresh();
+        emitRequestsChanged();
         if (onRequestPlaced) onRequestPlaced();
         setTimeout(() => onClose(), 2000);
         return;
@@ -135,6 +137,7 @@ export function RequestMediaModal({
       toast.success(`Request submitted successfully!`, { timeoutMs: 3000 });
       setSubmitState("success");
       router.refresh();
+      emitRequestsChanged();
       if (onRequestPlaced) onRequestPlaced();
       setTimeout(() => onClose(), 1500);
     } catch (e: any) {

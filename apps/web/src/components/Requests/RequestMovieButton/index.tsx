@@ -12,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { emitRequestsChanged } from "@/lib/request-refresh";
 
 type QualityProfile = { id: number; name: string };
 
@@ -69,10 +70,12 @@ export function RequestMovieButton(props: {
         });
         setStatus("");
         router.refresh();
+        emitRequestsChanged();
         return;
       }
       setStatus(`Submitted. Request ID: ${j.requestId}`);
       router.refresh();
+      emitRequestsChanged();
     } catch (e: any) {
       setStatus(`Failed: ${e?.message ?? String(e)}`);
     } finally {

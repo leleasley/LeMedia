@@ -34,6 +34,9 @@ export async function GET(req: NextRequest) {
     const enforceMfaAll = rawMfaAll === "1" || rawMfaAll === "true";
 
     const rawSidebarFooter = await getSetting("sidebar_footer_text");
+    const rawJobTimezone = await getSetting("jobs.timezone");
+    const envJobTimezone = process.env.JOBS_TIMEZONE || process.env.TZ || "";
+    const jobTimezone = (rawJobTimezone ?? "").trim() || envJobTimezone.trim();
 
     return jsonResponseWithETag(req, {
         session_max_age: sessionMaxAge,
@@ -42,7 +45,8 @@ export async function GET(req: NextRequest) {
         sso_enabled: ssoEnabled,
         enforce_mfa_admin: enforceMfaAdmin,
         enforce_mfa_all: enforceMfaAll,
-        sidebar_footer_text: rawSidebarFooter
+        sidebar_footer_text: rawSidebarFooter,
+        job_timezone: jobTimezone
     });
 }
 
@@ -67,11 +71,33 @@ export async function PUT(req: NextRequest) {
     const hasMfaAll = enforceMfaAll !== undefined;
     const sidebarFooter = body?.sidebar_footer_text;
     const hasSidebarFooter = sidebarFooter !== undefined;
+    const jobTimezone = body?.job_timezone;
+    const hasJobTimezone = jobTimezone !== undefined;
 
     const changedFields: string[] = [];
 
-    if (!hasSession && !hasImageProxy && !hasOtp && !hasSso && !hasMfaAdmin && !hasMfaAll && !hasSidebarFooter) {
+    if (!hasSession && !hasImageProxy && !hasOtp && !hasSso && !hasMfaAdmin && !hasMfaAll && !hasSidebarFooter && !hasJobTimezone) {
         return NextResponse.json({ error: "No settings provided" }, { status: 400 });
+    }
+
+    if (hasJobTimezone) {
+        if (typeof jobTimezone !== "string") {
+            return NextResponse.json({ error: "Invalid job_timezone" }, { status: 400 });
+        }
+        const normalized = jobTimezone.trim();
+        if (normalized) {
+            try {
+                new Intl.DateTimeFormat("en-GB", { timeZone: normalized }).format(new Date());
+            } catch {
+                return NextResponse.json({ error: "Invalid job_timezone" }, { status: 400 });
+            }
+            await setSetting("jobs.timezone", normalized);
+            process.env.JOBS_TIMEZONE = normalized;
+        } else {
+            await setSetting("jobs.timezone", "");
+            if (process.env.JOBS_TIMEZONE) delete process.env.JOBS_TIMEZONE;
+        }
+        changedFields.push("jobs.timezone");
     }
 
     if (hasSession) {

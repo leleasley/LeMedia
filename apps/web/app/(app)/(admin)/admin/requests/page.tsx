@@ -117,6 +117,52 @@ export default async function AllRequestsPage() {
     })
   );
 
+  const statusPriority = [
+    "pending",
+    "submitted",
+    "downloading",
+    "partially_available",
+    "available",
+    "denied",
+    "failed",
+    "removed",
+    "already_exists"
+  ];
+  const rankStatus = (status: string) => {
+    const idx = statusPriority.indexOf(status);
+    return idx === -1 ? 999 : idx;
+  };
+
+  const mergedMap = new Map<string, (typeof detailedRequests)[number] & { mergedRequestIds?: string[] }>();
+  for (const row of detailedRequests) {
+    if (row.request_type !== "episode") {
+      mergedMap.set(`single:${row.id}`, { ...row, mergedRequestIds: [String(row.id)] });
+      continue;
+    }
+    const key = `episode:${row.tmdb_id}:${row.username}`;
+    const existing = mergedMap.get(key);
+    if (!existing) {
+      mergedMap.set(key, { ...row, mergedRequestIds: [String(row.id)] });
+      continue;
+    }
+    const mergedRequestIds = Array.from(new Set([...(existing.mergedRequestIds ?? [String(existing.id)]), String(row.id)]));
+    const betterStatus = rankStatus(row.status) < rankStatus(existing.status) ? row.status : existing.status;
+    mergedMap.set(key, {
+      ...existing,
+      id: String(existing.id),
+      status: betterStatus,
+      status_reason: existing.status_reason ?? row.status_reason ?? null,
+      poster_path: existing.poster_path ?? row.poster_path,
+      backdrop_path: existing.backdrop_path ?? row.backdrop_path,
+      created_at: existing.created_at > row.created_at ? existing.created_at : row.created_at,
+      mergedRequestIds
+    });
+  }
+
+  const mergedRequests = Array.from(mergedMap.values()).sort((a, b) =>
+    String(b.created_at).localeCompare(String(a.created_at))
+  );
+
   return (
     <section className="space-y-6">
       <div className="flex flex-col gap-3">
@@ -127,7 +173,7 @@ export default async function AllRequestsPage() {
       </div>
 
       <AllRequestsClient
-        initialRequests={detailedRequests}
+        initialRequests={mergedRequests}
         approveRequest={approveRequest}
         denyRequest={denyRequest}
         deleteRequest={deleteRequest}

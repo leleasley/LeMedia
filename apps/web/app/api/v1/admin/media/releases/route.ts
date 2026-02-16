@@ -24,6 +24,7 @@ const QuerySchema = z.object({
   episodeNumber: z.coerce.number().int().min(0).optional(),
   airDate: z.string().trim().max(16).optional(),
   seriesType: z.string().trim().max(50).optional(),
+  strictMatch: z.coerce.number().int().optional(),
   offset: z.coerce.number().int().min(0).default(0),
   limit: z.coerce.number().int().min(1).max(200).default(50)
 }).refine((data) => data.id || data.tmdbId || data.tvdbId || data.title, {
@@ -151,7 +152,8 @@ async function getUltraHdProfileId(fetcher: (path: string, init?: RequestInit) =
 
 function filterProwlarrByIds<T extends { imdbId?: any; tmdbId?: any; tvdbId?: any }>(
   releases: T[],
-  ids: { imdbId?: string | null; tmdbId?: number | null; tvdbId?: number | null }
+  ids: { imdbId?: string | null; tmdbId?: number | null; tvdbId?: number | null },
+  options?: { keepOriginalOnEmpty?: boolean }
 ) {
   if (!releases.length) return releases;
   const imdbNumeric = ids.imdbId ? ids.imdbId.replace(/\D/g, "") : "";
@@ -173,7 +175,8 @@ function filterProwlarrByIds<T extends { imdbId?: any; tmdbId?: any; tvdbId?: an
     return imdbMatch || tmdbMatch || tvdbMatch;
   });
 
-  return filtered.length ? filtered : releases;
+  if (filtered.length) return filtered;
+  return options?.keepOriginalOnEmpty === false ? [] : releases;
 }
 
 export async function GET(req: NextRequest) {
@@ -193,6 +196,7 @@ export async function GET(req: NextRequest) {
     episodeNumber: req.nextUrl.searchParams.get("episodeNumber") ?? undefined,
     airDate: req.nextUrl.searchParams.get("airDate") ?? undefined,
     seriesType: req.nextUrl.searchParams.get("seriesType") ?? undefined,
+    strictMatch: req.nextUrl.searchParams.get("strictMatch") ?? undefined,
     offset: req.nextUrl.searchParams.get("offset") ?? "0",
     limit: req.nextUrl.searchParams.get("limit") ?? "50"
   });
@@ -223,8 +227,10 @@ export async function GET(req: NextRequest) {
       seasonNumber,
       episodeNumber,
       airDate,
-      seriesType: requestedSeriesType
+      seriesType: requestedSeriesType,
+      strictMatch
     } = parsed.data;
+    const strict = Number(strictMatch ?? 0) === 1;
     const releaseTimeout = 120000;
     let releases: any[] = [];
     let usedProwlarr = false;
@@ -277,7 +283,7 @@ export async function GET(req: NextRequest) {
           }
         }
         if (usedTitleSearch) {
-          releases = filterProwlarrByIds(releases, { imdbId, tmdbId });
+          releases = filterProwlarrByIds(releases, { imdbId, tmdbId }, { keepOriginalOnEmpty: !strict });
         }
       } else {
         const episodeTerm = hasEpisodeSearch
@@ -295,14 +301,17 @@ export async function GET(req: NextRequest) {
         const seasonPackAltTerms = hasSeasonPackSearch
           ? buildSeasonPackAltTerms({ title, seasonNumber })
           : [];
-        const searchQueries = [
-          episodeTerm,
-          seasonPackTerm,
-          ...seasonPackAltTerms,
-          tvdbId ? `tvdb:${tvdbId}` : "",
-          tmdbId ? `tmdb:${tmdbId}` : "",
-          title ? title : ""
-        ].filter(Boolean);
+        const strictEpisodeSearch = strict && hasEpisodeSearch;
+        const searchQueries = strictEpisodeSearch
+          ? [episodeTerm].filter(Boolean)
+          : [
+              episodeTerm,
+              seasonPackTerm,
+              ...seasonPackAltTerms,
+              tvdbId ? `tvdb:${tvdbId}` : "",
+              tmdbId ? `tmdb:${tmdbId}` : "",
+              title ? title : ""
+            ].filter(Boolean);
         let usedTitleSearch = false;
         for (const query of searchQueries) {
           releases = await searchProwlarr(query, prowlarrService, releaseTimeout, {
@@ -315,11 +324,11 @@ export async function GET(req: NextRequest) {
           }
         }
         if (usedTitleSearch) {
-          releases = filterProwlarrByIds(releases, { tmdbId, tvdbId });
+          releases = filterProwlarrByIds(releases, { tmdbId, tvdbId }, { keepOriginalOnEmpty: !strict });
         }
       }
 
-      if (!releases.length && title) {
+      if (!strict && !releases.length && title) {
         const fallbackQuery = year ? `${title} ${year}` : title;
         releases = await searchProwlarr(fallbackQuery, prowlarrService, releaseTimeout, {
           type: mediaType,
@@ -481,7 +490,7 @@ export async function GET(req: NextRequest) {
     }
 
     // If Radarr/Sonarr returned no results or isn't configured, fall back to Prowlarr
-    if (!releases.length && title) {
+    if (!strict && !releases.length && title) {
       const prowlarrService = await getActiveMediaService("prowlarr").catch(() => null);
       if (prowlarrService) {
         // For season pack searches, use title only to get all season releases

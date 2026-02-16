@@ -91,6 +91,7 @@ export function ReleaseSearchModal(props: {
   episodeNumber?: number | null;
   airDate?: string | null;
   seriesType?: string | null;
+  strictMatch?: boolean;
 }) {
   const {
     open,
@@ -108,7 +109,8 @@ export function ReleaseSearchModal(props: {
     seasonNumber,
     episodeNumber,
     airDate,
-    seriesType
+    seriesType,
+    strictMatch
   } = props;
   const toast = useToast();
   const isIOS = useIsIOS();
@@ -158,6 +160,7 @@ export function ReleaseSearchModal(props: {
       if (typeof episodeNumber === "number") params.set("episodeNumber", String(episodeNumber));
       if (airDate) params.set("airDate", airDate);
       if (seriesType) params.set("seriesType", seriesType);
+      if (strictMatch) params.set("strictMatch", "1");
       if (mediaId) params.set("id", String(mediaId));
       if (!mediaId && tmdbId) params.set("tmdbId", String(tmdbId));
       if (!mediaId && tvdbId) params.set("tvdbId", String(tvdbId));
@@ -189,6 +192,7 @@ export function ReleaseSearchModal(props: {
     episodeNumber,
     airDate,
     seriesType,
+    strictMatch,
     toast
   ]);
 

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { csrfFetch } from "@/lib/csrf-client";
 import { AnimatedCheckbox } from "@/components/Common/AnimatedCheckbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type SystemAlertsConfig = {
   enabled: boolean;
@@ -139,14 +140,8 @@ export default function NotificationsSystemAlerts() {
   }
 
   const selectableUsers = users.filter((user) => !user.banned);
-  const toggleUser = (userId: number) => {
-    setForm((prev) => {
-      const next = new Set(prev.targetUserIds);
-      if (next.has(userId)) next.delete(userId);
-      else next.add(userId);
-      return { ...prev, targetUserIds: Array.from(next) };
-    });
-  };
+  const selectedTargetUserId = form.targetUserIds[0] ?? null;
+  const selectedTargetUser = selectableUsers.find((user) => user.id === selectedTargetUserId) ?? null;
 
   return (
     <div className="space-y-6">
@@ -200,37 +195,40 @@ export default function NotificationsSystemAlerts() {
 
       <div className="space-y-3">
         <div>
-          <h3 className="text-base font-semibold text-white">Target Users</h3>
-          <p className="text-sm text-gray-400">Choose users to receive system alerts via their assigned notification channels.</p>
+          <h3 className="text-base font-semibold text-white">Target User</h3>
+          <p className="text-sm text-gray-400">Choose which user receives system alerts via their assigned notification channels.</p>
         </div>
-        <div className="grid gap-2 md:grid-cols-2">
-          {selectableUsers.map((user) => {
-            const selected = form.targetUserIds.includes(user.id);
-            const label = user.displayName || user.username;
-            const channelCount = Array.isArray(user.notificationEndpointIds) ? user.notificationEndpointIds.length : 0;
-            return (
-              <label
-                key={user.id}
-                className={`flex items-center justify-between rounded-lg border px-3 py-2 cursor-pointer transition-colors ${
-                  selected ? "border-indigo-500/50 bg-indigo-500/10" : "border-white/10 bg-white/5 hover:bg-white/10"
-                }`}
-              >
-                <div className="min-w-0">
-                  <div className="text-sm text-white truncate">{label}</div>
-                  <div className="text-xs text-gray-400 truncate">@{user.username}</div>
-                </div>
-                <div className="flex items-center gap-3 ml-3">
-                  <span className="text-xs text-gray-400">{channelCount} channel{channelCount === 1 ? "" : "s"}</span>
-                  <input
-                    type="checkbox"
-                    checked={selected}
-                    onChange={() => toggleUser(user.id)}
-                    className="h-4 w-4 rounded border-white/20 bg-white/5 text-indigo-500 focus:ring-indigo-500"
-                  />
-                </div>
-              </label>
-            );
-          })}
+        <div className="max-w-xl space-y-2">
+          <Select
+            value={selectedTargetUserId ? String(selectedTargetUserId) : "none"}
+            onValueChange={(value) => {
+              setForm((prev) => ({
+                ...prev,
+                targetUserIds: value === "none" ? [] : [Number(value)],
+              }));
+            }}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select a user" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">No specific user (global endpoints only)</SelectItem>
+              {selectableUsers.map((user) => {
+                const channelCount = Array.isArray(user.notificationEndpointIds) ? user.notificationEndpointIds.length : 0;
+                const label = user.displayName || user.username;
+                return (
+                  <SelectItem key={user.id} value={String(user.id)}>
+                    {label} (@{user.username}) - {channelCount} channel{channelCount === 1 ? "" : "s"}
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+          {selectedTargetUser ? (
+            <p className="text-xs text-gray-400">
+              Selected user: <span className="text-white">{selectedTargetUser.displayName || selectedTargetUser.username}</span> (@{selectedTargetUser.username})
+            </p>
+          ) : null}
         </div>
       </div>
 

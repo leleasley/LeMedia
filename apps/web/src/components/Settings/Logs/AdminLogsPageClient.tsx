@@ -7,6 +7,7 @@ import { csrfFetch } from "@/lib/csrf-client";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { ConfirmationModal } from "@/components/Common/ConfirmationModal";
 import { logger } from "@/lib/logger";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type AuditRow = {
   id: number;
@@ -29,6 +30,41 @@ type LogsResponse = {
   };
 };
 
+type NotificationChannelSummary = {
+  channel: string;
+  totalAttempts: number;
+  successCount: number;
+  failureCount: number;
+  skippedCount: number;
+  retryCount: number;
+  successRate: number;
+  lastAttemptAt: string | null;
+  lastSuccessAt: string | null;
+  lastFailureAt: string | null;
+  lastError: string | null;
+};
+
+type NotificationFailure = {
+  id: number;
+  endpointId: number;
+  endpointName: string;
+  channel: string;
+  eventType: string;
+  attemptNumber: number;
+  errorMessage: string | null;
+  createdAt: string;
+};
+
+type NotificationReliabilityResponse = {
+  overview: {
+    generatedAt: string;
+    windowDays: number;
+    channels: NotificationChannelSummary[];
+    recentFailures: NotificationFailure[];
+  };
+  users: Array<{ id: number; username: string; displayName: string | null }>;
+};
+
 const ACTION_LABELS: Record<string, string> = {
   "user.login": "Logged in",
   "user.logout": "Logged out",
@@ -38,6 +74,7 @@ const ACTION_LABELS: Record<string, string> = {
   "notification_endpoint.deleted": "Notification endpoint deleted",
   "media_share.created": "Share link created",
   "media_share.revoked": "Share link revoked",
+  "notification_reliability.test_user": "Reliability test sent",
 };
 
 function formatActionLabel(action: string) {
@@ -51,25 +88,36 @@ function formatActionLabel(action: string) {
     .join(" ");
 }
 
-function formatTimestamp(value: string) {
-  // Use a fixed format/timezone to avoid hydration mismatches between server and client.
+function formatTimestamp(value: string | null | undefined) {
+  if (!value) return "-";
   try {
     return new Date(value).toISOString().replace("T", " ").replace("Z", " UTC");
   } catch {
-    return value;
+    return String(value);
   }
+}
+
+function channelTitle(channel: string) {
+  return channel ? channel[0].toUpperCase() + channel.slice(1) : "Unknown";
 }
 
 export function AdminLogsPageClient({
   initialData,
   initialPage,
+  initialReliability,
+  adminUsers,
 }: {
   initialData: LogsResponse;
   initialPage: number;
+  initialReliability: NotificationReliabilityResponse["overview"];
+  adminUsers: NotificationReliabilityResponse["users"];
 }) {
   const router = useRouter();
   const toast = useToast();
   const [page, setPage] = useState(initialPage);
+  const [isClearing, setIsClearing] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState<number>(adminUsers[0]?.id ?? 0);
   const [modalConfig, setModalConfig] = useState<{
     isOpen: boolean;
     title: string;
@@ -78,23 +126,34 @@ export function AdminLogsPageClient({
     variant?: "danger" | "warning" | "info";
   }>({ isOpen: false, title: "", message: "", onConfirm: () => {} });
 
-  const { data, error, isValidating } = useSWR<LogsResponse>(
-    `/api/admin/logs?page=${page}`,
-    { fallbackData: initialData }
-  );
+  const { data, error, isValidating } = useSWR<LogsResponse>(`/api/admin/logs?page=${page}`, {
+    fallbackData: initialData,
+  });
+
+  const { data: reliabilityData, error: reliabilityError, isValidating: reliabilityRefreshing } =
+    useSWR<NotificationReliabilityResponse>("/api/admin/logs/notification-reliability", {
+      fallbackData: { overview: initialReliability, users: adminUsers },
+      refreshInterval: 30_000,
+    });
 
   const rows = useMemo(() => data?.results ?? [], [data?.results]);
   const pageInfo = data?.pageInfo ?? initialData.pageInfo;
   const hasNext = pageInfo.page < pageInfo.pages;
   const hasPrev = pageInfo.page > 1;
 
+  const reliability = reliabilityData?.overview ?? initialReliability;
+  const reliabilityUsers = reliabilityData?.users ?? adminUsers;
+  const channels = reliability.channels ?? [];
+  const failures = reliability.recentFailures ?? [];
+  const totalAttempts = channels.reduce((acc, item) => acc + item.totalAttempts, 0);
+  const totalFailures = channels.reduce((acc, item) => acc + item.failureCount, 0);
+  const totalRetries = channels.reduce((acc, item) => acc + item.retryCount, 0);
+
   const goToPage = (nextPage: number) => {
     setPage(nextPage);
     router.replace(`/admin/settings/logs?page=${nextPage}`);
   };
 
-  const [isClearing, setIsClearing] = useState(false);
-  
   const clearLogs = async () => {
     setIsClearing(true);
     try {
@@ -102,13 +161,9 @@ export function AdminLogsPageClient({
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
       });
-
-      if (!res.ok) {
-        throw new Error("Failed to clear logs");
-      }
+      if (!res.ok) throw new Error("Failed to clear logs");
 
       toast.success("Audit logs cleared successfully");
-      // Optimistically clear cached pages and refetch page 1
       const empty: LogsResponse = {
         results: [],
         pageInfo: { page: 1, pages: 1, results: 0, total: 0, limit: initialData.pageInfo.limit },
@@ -118,141 +173,272 @@ export function AdminLogsPageClient({
       setPage(1);
       router.replace("/admin/settings/logs?page=1");
       await mutate(`/api/admin/logs?page=1`);
-    } catch (error) {
-      logger.error("[AdminLogs] Failed to clear logs", error);
+    } catch (clearError) {
+      logger.error("[AdminLogs] Failed to clear logs", clearError);
       toast.error("Failed to clear audit logs. Please try again.");
     } finally {
       setIsClearing(false);
-      setModalConfig({ ...modalConfig, isOpen: false });
+      setModalConfig((prev) => ({ ...prev, isOpen: false }));
     }
   };
 
-  const handleClearLogs = () => {
-    setModalConfig({
-      isOpen: true,
-      title: "Clear Audit Logs?",
-      message: "Are you sure you want to delete all audit logs? This action cannot be undone.",
-      variant: "danger",
-      onConfirm: () => void clearLogs()
-    });
+  const runReliabilityTest = async () => {
+    if (!selectedUserId) {
+      toast.error("Select a user first.");
+      return;
+    }
+    setIsTesting(true);
+    try {
+      const res = await csrfFetch("/api/admin/logs/notification-reliability", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: selectedUserId }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || "Failed to send test notification");
+      toast.success(`Test sent: ${body.delivered}/${body.eligible} endpoints delivered.`);
+      await mutate("/api/admin/logs/notification-reliability");
+      await mutate(`/api/admin/logs?page=${page}`);
+    } catch (testError) {
+      const message = testError instanceof Error ? testError.message : "Failed to send test notification";
+      toast.error(message);
+    } finally {
+      setIsTesting(false);
+    }
   };
 
   return (
     <section className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-2xl font-semibold text-white">Audit Logs</h2>
-          <p className="text-sm text-muted">
-            Review admin actions and sensitive changes across the system.
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="text-xs text-muted">
-            Total entries: <span className="font-semibold text-white">{pageInfo.total}</span>
-            {isValidating ? <span className="ml-2 text-gray-400">Refreshing…</span> : null}
+      <header className="rounded-2xl border border-sky-500/20 bg-[radial-gradient(circle_at_top_left,_rgba(56,189,248,0.22),_rgba(17,24,39,0.98)_55%)] p-6 shadow-xl shadow-black/20">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.2em] text-sky-200/70">Security + Reliability</p>
+            <h2 className="mt-2 text-2xl font-semibold text-white">Audit Logs & Notification Reliability</h2>
+            <p className="mt-1 text-sm text-slate-300">
+              Track admin actions, delivery health, retries, and endpoint failures from one place.
+            </p>
           </div>
-          {pageInfo.total > 0 && (
-            <button
-              type="button"
-              onClick={handleClearLogs}
-              disabled={isClearing}
-              className="btn btn-sm btn-danger disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isClearing ? "Clearing..." : "Clear All Logs"}
-            </button>
-          )}
-        </div>
-      </div>
-
-      {error ? (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">
-          Failed to load audit logs.
-        </div>
-      ) : null}
-
-      <div className="space-y-3 md:hidden">
-        {rows.length === 0 ? (
-          <div className="rounded-lg border border-gray-700 bg-gray-900 px-4 py-6 text-center text-sm text-gray-400">
-            No audit entries yet.
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="rounded-lg border border-white/10 bg-slate-900/50 px-3 py-2">
+              <div className="text-xs text-slate-400">Attempts</div>
+              <div className="text-lg font-semibold text-white">{totalAttempts}</div>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-slate-900/50 px-3 py-2">
+              <div className="text-xs text-slate-400">Failures</div>
+              <div className="text-lg font-semibold text-rose-200">{totalFailures}</div>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-slate-900/50 px-3 py-2">
+              <div className="text-xs text-slate-400">Retries</div>
+              <div className="text-lg font-semibold text-amber-200">{totalRetries}</div>
+            </div>
           </div>
-        ) : (
-          rows.map((row) => (
-            <div
-              key={row.id}
-              className="rounded-xl border border-gray-800 bg-gradient-to-br from-gray-900 via-gray-900/70 to-gray-950 px-4 py-4 shadow-sm"
-            >
-              <div className="text-xs uppercase tracking-[0.2em] text-gray-500">Activity</div>
-              <div className="mt-1 text-base font-semibold text-white">
-                {formatActionLabel(row.action)}
+        </div>
+      </header>
+
+      <div className="grid gap-6 xl:grid-cols-12">
+        <div className="space-y-4 xl:col-span-7">
+          <div className="rounded-2xl border border-slate-700/80 bg-slate-950/60 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold text-white">Audit Activity</h3>
+                <p className="text-xs text-slate-400">
+                  Total entries: <span className="font-semibold text-slate-100">{pageInfo.total}</span>
+                  {isValidating ? <span className="ml-2 text-slate-500">Refreshing…</span> : null}
+                </p>
               </div>
-              <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-gray-400">
-                <span className="rounded-full bg-gray-800 px-2 py-1 text-gray-300">
-                  {row.actor || "System"}
-                </span>
-                <span>{row.ip ?? "IP unknown"}</span>
-                <span className="text-gray-500">{formatTimestamp(row.created_at)}</span>
+              {pageInfo.total > 0 ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setModalConfig({
+                      isOpen: true,
+                      title: "Clear Audit Logs?",
+                      message: "Delete all audit logs? This action cannot be undone.",
+                      variant: "danger",
+                      onConfirm: () => void clearLogs(),
+                    })
+                  }
+                  disabled={isClearing}
+                  className="btn btn-sm btn-danger disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isClearing ? "Clearing..." : "Clear All Logs"}
+                </button>
+              ) : null}
+            </div>
+          </div>
+
+          {error ? (
+            <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">
+              Failed to load audit logs.
+            </div>
+          ) : null}
+
+          <div className="overflow-hidden rounded-2xl border border-slate-700/80 bg-slate-950/70">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-900 text-left text-xs uppercase tracking-wider text-slate-300">
+                <tr>
+                  <th className="px-4 py-3">Time</th>
+                  <th className="px-4 py-3">Action</th>
+                  <th className="px-4 py-3">Actor</th>
+                  <th className="px-4 py-3">IP</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800">
+                {rows.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-8 text-center text-sm text-slate-400">
+                      No audit entries yet.
+                    </td>
+                  </tr>
+                ) : (
+                  rows.map((row) => (
+                    <tr key={row.id} className="hover:bg-slate-900/70">
+                      <td className="px-4 py-3 text-slate-300">{formatTimestamp(row.created_at)}</td>
+                      <td className="px-4 py-3 font-medium text-white">{formatActionLabel(row.action)}</td>
+                      <td className="px-4 py-3 text-slate-200">{row.actor || "System"}</td>
+                      <td className="px-4 py-3 text-slate-400">{row.ip ?? "-"}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex items-center justify-between rounded-xl border border-slate-800/80 bg-slate-950/50 px-4 py-3 text-sm">
+            <div className="text-slate-400">
+              Page {pageInfo.page} of {pageInfo.pages}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="btn btn-sm btn-outline disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={() => goToPage(pageInfo.page - 1)}
+                disabled={!hasPrev}
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm btn-outline disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={() => goToPage(pageInfo.page + 1)}
+                disabled={!hasNext}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-4 xl:col-span-5">
+          <div className="rounded-2xl border border-slate-700/80 bg-slate-950/60 p-4">
+            <div className="flex items-end justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold text-white">Notification Reliability</h3>
+                <p className="text-xs text-slate-400">
+                  Last {reliability.windowDays} days
+                  {reliabilityRefreshing ? <span className="ml-2 text-slate-500">Refreshing…</span> : null}
+                </p>
               </div>
             </div>
-          ))
-        )}
-      </div>
 
-      <div className="hidden overflow-hidden rounded-lg border border-gray-700 bg-gray-900 md:block">
-        <table className="min-w-full text-sm">
-          <thead className="bg-gray-800 text-left text-xs uppercase tracking-wider text-gray-300">
-            <tr>
-              <th className="px-4 py-3">Time</th>
-              <th className="px-4 py-3">Action</th>
-              <th className="px-4 py-3">Actor</th>
-              <th className="px-4 py-3">IP</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-800">
-            {rows.length === 0 ? (
-              <tr>
-                <td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-400">
-                  No audit entries yet.
-                </td>
-              </tr>
-            ) : (
-              rows.map((row) => (
-                <tr key={row.id} className="hover:bg-gray-800/70">
-                  <td className="px-4 py-3 text-gray-200">
-                    {formatTimestamp(row.created_at)}
-                  </td>
-                  <td className="px-4 py-3 font-medium text-white">
-                    {formatActionLabel(row.action)}
-                  </td>
-                  <td className="px-4 py-3 text-gray-200">{row.actor || "System"}</td>
-                  <td className="px-4 py-3 text-gray-400">{row.ip ?? "-"}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+            {reliabilityError ? (
+              <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-200">
+                Failed to load reliability data.
+              </div>
+            ) : null}
 
-      <div className="flex items-center justify-between text-sm">
-        <div className="text-gray-400">
-          Page {pageInfo.page} of {pageInfo.pages}
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className="btn btn-sm btn-outline disabled:cursor-not-allowed disabled:opacity-50"
-            onClick={() => goToPage(pageInfo.page - 1)}
-            disabled={!hasPrev}
-          >
-            Previous
-          </button>
-          <button
-            type="button"
-            className="btn btn-sm btn-outline disabled:cursor-not-allowed disabled:opacity-50"
-            onClick={() => goToPage(pageInfo.page + 1)}
-            disabled={!hasNext}
-          >
-            Next
-          </button>
+            <div className="mt-4 space-y-3">
+              {channels.length === 0 ? (
+                <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-4 text-sm text-slate-400">
+                  No notification delivery attempts recorded yet.
+                </div>
+              ) : (
+                channels.map((channel) => {
+                  const percent = Math.round(channel.successRate * 100);
+                  return (
+                    <div key={channel.channel} className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm font-semibold text-white">{channelTitle(channel.channel)}</div>
+                        <div className="text-xs text-slate-400">{channel.totalAttempts} attempts</div>
+                      </div>
+                      <div className="mt-2 h-2 rounded-full bg-slate-800">
+                        <div className="h-2 rounded-full bg-emerald-400" style={{ width: `${Math.max(0, Math.min(100, percent))}%` }} />
+                      </div>
+                      <div className="mt-2 grid grid-cols-4 gap-2 text-xs">
+                        <div className="rounded bg-slate-800/80 px-2 py-1 text-slate-100">{percent}% ok</div>
+                        <div className="rounded bg-slate-800/80 px-2 py-1 text-rose-200">{channel.failureCount} fail</div>
+                        <div className="rounded bg-slate-800/80 px-2 py-1 text-amber-200">{channel.retryCount} retries</div>
+                        <div className="rounded bg-slate-800/80 px-2 py-1 text-slate-300">{channel.skippedCount} skipped</div>
+                      </div>
+                      <div className="mt-2 space-y-1 text-[11px] text-slate-400">
+                        <div>Last send: {formatTimestamp(channel.lastAttemptAt)}</div>
+                        {channel.lastError ? <div className="text-rose-300">Last error: {channel.lastError}</div> : null}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-700/80 bg-slate-950/60 p-4">
+            <h4 className="text-sm font-semibold text-white">Send Test To User</h4>
+            <p className="mt-1 text-xs text-slate-400">
+              Sends a live test notification through endpoints assigned to the selected user.
+            </p>
+            <div className="mt-3 flex flex-col gap-2">
+              <Select
+                value={String(selectedUserId)}
+                onValueChange={(value) => setSelectedUserId(Number(value))}
+                disabled={reliabilityUsers.length === 0}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select user" />
+                </SelectTrigger>
+                <SelectContent>
+                  {reliabilityUsers.map((user) => (
+                    <SelectItem key={user.id} value={String(user.id)}>
+                      {user.displayName ? `${user.displayName} (${user.username})` : user.username}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <button
+                type="button"
+                onClick={() => void runReliabilityTest()}
+                disabled={isTesting || reliabilityUsers.length === 0}
+                className="btn btn-sm btn-primary disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isTesting ? "Sending..." : "Send Test Notification"}
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-700/80 bg-slate-950/60 p-4">
+            <h4 className="text-sm font-semibold text-white">Recent Delivery Failures</h4>
+            <div className="mt-3 space-y-2">
+              {failures.length === 0 ? (
+                <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-3 text-xs text-slate-400">
+                  No delivery failures recorded in this window.
+                </div>
+              ) : (
+                failures.map((failure) => (
+                  <div key={failure.id} className="rounded-lg border border-rose-900/40 bg-rose-950/20 p-3 text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium text-rose-100">{failure.endpointName}</span>
+                      <span className="text-rose-300">{channelTitle(failure.channel)}</span>
+                    </div>
+                    <div className="mt-1 text-rose-200/90">
+                      {failure.errorMessage || "Unknown error"}
+                    </div>
+                    <div className="mt-1 text-rose-300/80">
+                      {failure.eventType} • attempt #{failure.attemptNumber} • {formatTimestamp(failure.createdAt)}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -261,7 +447,7 @@ export function AdminLogsPageClient({
         title={modalConfig.title}
         message={modalConfig.message}
         onConfirm={modalConfig.onConfirm}
-        onClose={() => setModalConfig({ ...modalConfig, isOpen: false })}
+        onClose={() => setModalConfig((prev) => ({ ...prev, isOpen: false }))}
         variant={modalConfig.variant}
       />
     </section>

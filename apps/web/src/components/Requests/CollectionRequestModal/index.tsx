@@ -6,6 +6,7 @@ import Image from "next/image";
 import { Modal } from "@/components/Common/Modal";
 import { csrfFetch } from "@/lib/csrf-client";
 import { Check, Loader2, X, Film, Star } from "lucide-react";
+import { emitRequestsChanged } from "@/lib/request-refresh";
 
 type MovieItem = {
   id: number;
@@ -121,6 +122,7 @@ export function CollectionRequestModal(props: {
       setResult(`Requested ${submitted} movie(s). Skipped ${skipped}. Failed ${failed}.`);
       setSubmitState("success");
       router.refresh();
+      emitRequestsChanged();
     } catch (err: any) {
       setResult(err?.message ?? "Unable to request collection");
       setSubmitState("error");

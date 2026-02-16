@@ -4,7 +4,10 @@ import { requireUser } from "@/auth";
 import {
   createRequestWithItemsTransaction,
   upsertUser,
-  listActiveEpisodeRequestItemsByTmdb
+  listActiveEpisodeRequestItemsByTmdb,
+  findActiveRequestByTmdb,
+  addRequestItem,
+  markRequestStatus
 } from "@/db";
 import { getTv, getTvExternalIds } from "@/lib/tmdb";
 import {
@@ -185,6 +188,7 @@ export async function POST(req: NextRequest) {
     const pendingEpisodes = selections.filter(
       (entry) => !existingMap.has(`${entry.seasonNumber}:${entry.episodeNumber}`)
     );
+    const existingRequest = await findActiveRequestByTmdb({ requestType: "episode", tmdbId: body.tmdbTvId });
 
     if (pendingEpisodes.length === 0) {
       response = NextResponse.json(
@@ -200,25 +204,44 @@ export async function POST(req: NextRequest) {
     }
 
     if (!user.isAdmin) {
-      const r = await createRequestWithItemsTransaction({
-        requestType: "episode",
-        tmdbId: body.tmdbTvId,
-        title,
-        userId: dbUser.id,
-        requestStatus: "pending",
-        items: pendingEpisodes.map(ep => ({
-          provider: "sonarr",
-          providerId: null,
-          season: ep.seasonNumber,
-          episode: ep.episodeNumber,
-          status: "pending"
-        })),
-        posterPath: tv?.poster_path ?? null,
-        backdropPath: tv?.backdrop_path ?? null,
-        releaseYear: tv?.first_air_date ? Number(tv.first_air_date.slice(0, 4)) : null
-      });
+      let requestId: string;
+      if (existingRequest?.id) {
+        await Promise.all(
+          pendingEpisodes.map((ep) =>
+            addRequestItem({
+              requestId: existingRequest.id,
+              provider: "sonarr",
+              providerId: null,
+              season: ep.seasonNumber,
+              episode: ep.episodeNumber,
+              status: "pending"
+            })
+          )
+        );
+        await markRequestStatus(existingRequest.id, "pending");
+        requestId = existingRequest.id;
+      } else {
+        const r = await createRequestWithItemsTransaction({
+          requestType: "episode",
+          tmdbId: body.tmdbTvId,
+          title,
+          userId: dbUser.id,
+          requestStatus: "pending",
+          items: pendingEpisodes.map(ep => ({
+            provider: "sonarr",
+            providerId: null,
+            season: ep.seasonNumber,
+            episode: ep.episodeNumber,
+            status: "pending"
+          })),
+          posterPath: tv?.poster_path ?? null,
+          backdropPath: tv?.backdrop_path ?? null,
+          releaseYear: tv?.first_air_date ? Number(tv.first_air_date.slice(0, 4)) : null
+        });
+        requestId = r.id;
+      }
       await notifyRequestEvent("request_pending", {
-        requestId: r.id,
+        requestId,
         requestType: "episode",
         tmdbId: body.tmdbTvId,
         title,
@@ -229,7 +252,7 @@ export async function POST(req: NextRequest) {
       response = NextResponse.json({
         ok: true,
         pending: true,
-        requestId: r.id,
+        requestId,
         tvdbId,
         count: pendingEpisodes.length,
         skipped: skippedEpisodes.length,
@@ -293,9 +316,62 @@ export async function POST(req: NextRequest) {
       }
 
       if (missing.length > 0) {
+        let requestId: string;
+        if (existingRequest?.id) {
+          await Promise.all(
+            pendingEpisodes.map((ep) =>
+              addRequestItem({
+                requestId: existingRequest.id,
+                provider: "sonarr",
+                providerId: series?.id ?? null,
+                season: ep.seasonNumber,
+                episode: ep.episodeNumber,
+                status: "pending"
+              })
+            )
+          );
+          await markRequestStatus(existingRequest.id, "pending", "No files available in Sonarr yet");
+          requestId = existingRequest.id;
+        } else {
+          const r = await createRequestWithItemsTransaction({
+            requestType: "episode",
+            tmdbId: body.tmdbTvId,
+            title,
+            userId: dbUser.id,
+            requestStatus: "pending",
+            statusReason: "No files available in Sonarr yet",
+            items: pendingEpisodes.map((ep) => ({
+              provider: "sonarr",
+              providerId: series?.id ?? null,
+              season: ep.seasonNumber,
+              episode: ep.episodeNumber,
+              status: "pending"
+            })),
+            posterPath: tv?.poster_path ?? null,
+            backdropPath: tv?.backdrop_path ?? null,
+            releaseYear: tv?.first_air_date ? Number(tv.first_air_date.slice(0, 4)) : null
+          });
+          requestId = r.id;
+        }
+        await notifyRequestEvent("request_pending", {
+          requestId,
+          requestType: "episode",
+          tmdbId: body.tmdbTvId,
+          title,
+          username: user.username,
+          userId: dbUser.id,
+          ...tvMeta
+        });
         response = NextResponse.json(
-          { ok: false, error: "missing_episodes", missingEpisodes: missing, skippedEpisodes },
-          { status: 422 }
+          {
+            ok: true,
+            pending: true,
+            requestId,
+            tvdbId,
+            count: pendingEpisodes.length,
+            skipped: skippedEpisodes.length,
+            skippedEpisodes
+          }
         );
         return;
       }
@@ -307,26 +383,45 @@ export async function POST(req: NextRequest) {
       await setEpisodeMonitored(episodeIds, shouldMonitorEpisodes);
       await episodeSearch(episodeIds);
 
-      const r = await createRequestWithItemsTransaction({
-        requestType: "episode",
-        tmdbId: body.tmdbTvId,
-        title,
-        userId: dbUser.id,
-        requestStatus: "queued",
-        finalStatus: "submitted",
-        items: wanted.map(w => ({
-          provider: "sonarr",
-          providerId: series.id,
-          season: w.seasonNumber,
-          episode: w.episodeNumber,
-          status: "submitted"
-        })),
-        posterPath: tv?.poster_path ?? null,
-        backdropPath: tv?.backdrop_path ?? null,
-        releaseYear: tv?.first_air_date ? Number(tv.first_air_date.slice(0, 4)) : null
-      });
+      let requestId: string;
+      if (existingRequest?.id) {
+        await Promise.all(
+          wanted.map((w) =>
+            addRequestItem({
+              requestId: existingRequest.id,
+              provider: "sonarr",
+              providerId: series.id,
+              season: w.seasonNumber,
+              episode: w.episodeNumber,
+              status: "submitted"
+            })
+          )
+        );
+        await markRequestStatus(existingRequest.id, "submitted");
+        requestId = existingRequest.id;
+      } else {
+        const r = await createRequestWithItemsTransaction({
+          requestType: "episode",
+          tmdbId: body.tmdbTvId,
+          title,
+          userId: dbUser.id,
+          requestStatus: "queued",
+          finalStatus: "submitted",
+          items: wanted.map(w => ({
+            provider: "sonarr",
+            providerId: series.id,
+            season: w.seasonNumber,
+            episode: w.episodeNumber,
+            status: "submitted"
+          })),
+          posterPath: tv?.poster_path ?? null,
+          backdropPath: tv?.backdrop_path ?? null,
+          releaseYear: tv?.first_air_date ? Number(tv.first_air_date.slice(0, 4)) : null
+        });
+        requestId = r.id;
+      }
       await notifyRequestEvent("request_submitted", {
-        requestId: r.id,
+        requestId,
         requestType: "episode",
         tmdbId: body.tmdbTvId,
         title,
@@ -337,7 +432,7 @@ export async function POST(req: NextRequest) {
 
       response = NextResponse.json({
         ok: true,
-        requestId: r.id,
+        requestId,
         sonarrSeriesId: series.id,
         tvdbId,
         count: wanted.length,

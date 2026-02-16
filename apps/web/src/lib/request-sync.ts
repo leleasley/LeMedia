@@ -1,9 +1,13 @@
 import {
   RequestForSync,
+  mergeDuplicateEpisodeRequests,
   listRequestsForSync,
   markRequestStatus,
   setRequestItemsStatus,
-  addUserMediaListItem
+  setEpisodeRequestItemsStatuses,
+  addUserMediaListItem,
+  addRequestItem,
+  getRequestForSync
 } from "@/db";
 import { RequestNotificationEvent, notifyRequestEvent } from "@/notifications/request-events";
 import { notifyRequestAvailable } from "./notification-helper";
@@ -77,12 +81,17 @@ async function maybeSendStatusNotification(request: RequestForSync, status: stri
   }
 }
 
-async function updateRequestStatuses(request: RequestForSync, requestStatus: string) {
+async function updateRequestStatuses(request: RequestForSync, requestStatus: string, options?: { syncItemStatuses?: boolean }) {
   if (request.status === requestStatus) {
     return;
   }
 
-  await Promise.all([markRequestStatus(request.id, requestStatus), setRequestItemsStatus(request.id, requestStatus)]);
+  const syncItemStatuses = options?.syncItemStatuses ?? true;
+  const tasks: Array<Promise<unknown>> = [markRequestStatus(request.id, requestStatus)];
+  if (syncItemStatuses) {
+    tasks.push(setRequestItemsStatus(request.id, requestStatus));
+  }
+  await Promise.all(tasks);
   request.status = requestStatus;
   await maybeSendStatusNotification(request, requestStatus);
 }
@@ -130,43 +139,91 @@ async function syncEpisodeRequest(request: RequestForSync, queueMap: Map<number,
   }
 
   const episodes = await getEpisodesForSeries(series.id);
-  const requested = request.items
-    .map(reqItem => {
-      if (reqItem.provider !== "sonarr" || reqItem.season == null || reqItem.episode == null) {
-        return null;
-      }
-      return episodes.find(
-        (ep: any) => ep.seasonNumber === reqItem.season && ep.episodeNumber === reqItem.episode
+  if (Array.isArray(episodes) && episodes.length > 0 && series?.monitored) {
+    const requestedKeys = new Set(
+      request.items
+        .filter(item => item.provider === "sonarr" && item.season != null && item.episode != null)
+        .map(item => `${item.season}:${item.episode}`)
+    );
+    const missingEpisodes = episodes.filter((ep: any) => {
+      const seasonNumber = Number(ep?.seasonNumber);
+      const episodeNumber = Number(ep?.episodeNumber);
+      if (!Number.isFinite(seasonNumber) || !Number.isFinite(episodeNumber)) return false;
+      if (seasonNumber <= 0) return false; // skip specials
+      return !requestedKeys.has(`${seasonNumber}:${episodeNumber}`);
+    });
+    if (missingEpisodes.length) {
+      await Promise.all(
+        missingEpisodes.map((ep: any) =>
+          addRequestItem({
+            requestId: request.id,
+            provider: "sonarr",
+            providerId: series.id ?? null,
+            season: Number(ep.seasonNumber),
+            episode: Number(ep.episodeNumber),
+            status: "submitted"
+          })
+        )
       );
-    })
-    .filter(Boolean) as Array<{ id: number; hasFile: boolean; airDate?: string | null; hasAired?: boolean }>;
+      for (const ep of missingEpisodes) {
+        request.items.push({
+          id: 0,
+          provider: "sonarr",
+          provider_id: series.id ?? null,
+          season: Number(ep.seasonNumber),
+          episode: Number(ep.episodeNumber),
+          status: "submitted"
+        });
+      }
+    }
+  }
+  const byKey = new Map<string, any>();
+  for (const ep of episodes || []) {
+    const seasonNumber = Number(ep?.seasonNumber);
+    const episodeNumber = Number(ep?.episodeNumber);
+    if (!Number.isFinite(seasonNumber) || !Number.isFinite(episodeNumber)) continue;
+    byKey.set(`${seasonNumber}:${episodeNumber}`, ep);
+  }
 
-  const today = new Date().toISOString().slice(0, 10);
-  const requestedAired = requested.filter((ep) => {
-    if (ep.hasAired === true) return true;
-    if (ep.hasAired === false) return false;
-    const airDate = typeof ep.airDate === "string" ? ep.airDate.slice(0, 10) : "";
-    // If Sonarr has no air date, treat as relevant so completed requests still resolve.
-    return !airDate || airDate <= today;
-  });
+  const trackedItems = request.items.filter(
+    reqItem => reqItem.provider === "sonarr" && reqItem.season != null && reqItem.episode != null
+  );
+  const totalRequestedCount = trackedItems.length;
+  let availableCount = 0;
+  let hasQueue = false;
+  const itemStatuses: Array<{ season: number; episode: number; status: string }> = [];
 
-  const availableCount = requestedAired.filter(ep => ep.hasFile).length;
+  for (const reqItem of trackedItems) {
+    const season = Number(reqItem.season);
+    const episode = Number(reqItem.episode);
+    const match = byKey.get(`${season}:${episode}`);
+    if (match?.hasFile) {
+      availableCount += 1;
+      itemStatuses.push({ season, episode, status: "available" });
+      continue;
+    }
+    if (match && queueMap.has(Number(match.id))) {
+      hasQueue = true;
+      itemStatuses.push({ season, episode, status: "downloading" });
+      continue;
+    }
+    itemStatuses.push({ season, episode, status: request.status === "pending" ? "pending" : "submitted" });
+  }
 
-  // If all aired requested episodes are available
-  if (requestedAired.length && availableCount === requestedAired.length) {
-    await updateRequestStatuses(request, STATUS_STRINGS.AVAILABLE);
+  await setEpisodeRequestItemsStatuses(request.id, itemStatuses);
+
+  if (totalRequestedCount > 0 && availableCount === totalRequestedCount) {
+    await updateRequestStatuses(request, STATUS_STRINGS.AVAILABLE, { syncItemStatuses: false });
     return STATUS_STRINGS.AVAILABLE;
   }
 
-  // Some but not all aired requested episodes are available
-  if (requestedAired.length && availableCount > 0) {
-    await updateRequestStatuses(request, STATUS_STRINGS.PARTIALLY_AVAILABLE);
+  if (totalRequestedCount > 0 && availableCount > 0) {
+    await updateRequestStatuses(request, STATUS_STRINGS.PARTIALLY_AVAILABLE, { syncItemStatuses: false });
     return STATUS_STRINGS.PARTIALLY_AVAILABLE;
   }
 
-  const hasQueue = requestedAired.some(ep => queueMap.has(ep.id)) || requested.some(ep => queueMap.has(ep.id));
   if (hasQueue) {
-    await updateRequestStatuses(request, "downloading");
+    await updateRequestStatuses(request, "downloading", { syncItemStatuses: false });
     return "downloading";
   }
 
@@ -530,6 +587,7 @@ export async function syncWatchlists(options?: { userId?: number }) {
 }
 
 export async function syncPendingRequests(): Promise<SyncSummary> {
+  await mergeDuplicateEpisodeRequests().catch(() => null);
   const requests = await listRequestsForSync(100);
   if (!requests.length) {
     return { processed: 0, available: 0, partiallyAvailable: 0, downloading: 0, removed: 0, errors: 0 };
@@ -578,6 +636,57 @@ export async function syncPendingRequests(): Promise<SyncSummary> {
     } catch (err) {
       summary.errors += 1;
     }
+  }
+
+  return summary;
+}
+
+export async function syncRequestById(requestId: string): Promise<SyncSummary> {
+  const request = await getRequestForSync(requestId);
+  if (!request) {
+    return { processed: 0, available: 0, partiallyAvailable: 0, downloading: 0, removed: 0, errors: 0 };
+  }
+
+  const [radarrQueueRes, sonarrQueueRes] = await Promise.all([
+    radarrQueue(1, 200).catch(() => null),
+    sonarrQueue(1, 200).catch(() => null)
+  ]);
+
+  const radarrQueueRecords = normalizeQueueRecords(radarrQueueRes);
+  const sonarrQueueRecords = normalizeQueueRecords(sonarrQueueRes);
+
+  const radarrQueueMap = new Map<number, QueueEntry>();
+  for (const entry of radarrQueueRecords) {
+    if (typeof entry.movieId === "number") {
+      radarrQueueMap.set(entry.movieId, entry);
+    }
+  }
+
+  const sonarrQueueMap = new Map<number, QueueEntry>();
+  for (const entry of sonarrQueueRecords) {
+    if (Array.isArray(entry.episodeIds)) {
+      for (const epId of entry.episodeIds) {
+        if (typeof epId === "number") {
+          sonarrQueueMap.set(epId, entry);
+        }
+      }
+    } else if (typeof entry.episodeId === "number") {
+      sonarrQueueMap.set(entry.episodeId, entry);
+    }
+  }
+
+  const summary: SyncSummary = { processed: 1, available: 0, partiallyAvailable: 0, downloading: 0, removed: 0, errors: 0 };
+  try {
+    const result =
+      request.request_type === "movie"
+        ? await syncMovieRequest(request, radarrQueueMap)
+        : await syncEpisodeRequest(request, sonarrQueueMap);
+    if (result === "available") summary.available += 1;
+    if (result === "partially_available") summary.partiallyAvailable += 1;
+    if (result === "downloading") summary.downloading += 1;
+    if (result === "removed") summary.removed += 1;
+  } catch {
+    summary.errors += 1;
   }
 
   return summary;

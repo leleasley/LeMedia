@@ -5,6 +5,7 @@ import { useToast } from "@/components/Providers/ToastProvider";
 import { AnimatedCheckbox } from "@/components/Common/AnimatedCheckbox";
 import { ConfirmationModal } from "@/components/Common/ConfirmationModal";
 import { csrfFetch } from "@/lib/csrf-client";
+import { AdaptiveSelect, type AdaptiveSelectOption } from "@/components/ui/adaptive-select";
 import useSWR from "swr";
 
 const fetcher = (url: string) => fetch(url, { credentials: "include" }).then((res) => {
@@ -17,6 +18,8 @@ export function AdminSettingsPanel() {
     const toast = useToast();
     const [saving, setSaving] = useState(false);
     const [sessionDays, setSessionDays] = useState<number | "">("");
+    const [jobTimezone, setJobTimezone] = useState("");
+    const [timezoneOptions, setTimezoneOptions] = useState<string[]>([]);
     const [sidebarFooterText, setSidebarFooterText] = useState("");
     const [imageProxyEnabled, setImageProxyEnabled] = useState(true);
     const [otpEnabled, setOtpEnabled] = useState(true);
@@ -80,8 +83,35 @@ export function AdminSettingsPanel() {
                 setEnforceMfaAll(settings.enforce_mfa_all);
             }
             setSidebarFooterText(settings.sidebar_footer_text || "");
+            if (typeof settings.job_timezone === "string") {
+                setJobTimezone(settings.job_timezone);
+            }
         }
     }, [settings]);
+
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        const fallbackZones = [
+            "UTC",
+            "Europe/London",
+            "Europe/Dublin",
+            "Europe/Paris",
+            "Europe/Berlin",
+            "America/New_York",
+            "America/Chicago",
+            "America/Denver",
+            "America/Los_Angeles",
+            "Asia/Dubai",
+            "Asia/Kolkata",
+            "Asia/Singapore",
+            "Asia/Tokyo",
+            "Australia/Sydney"
+        ];
+
+        const supported = (Intl as any)?.supportedValuesOf?.("timeZone");
+        const zones = Array.isArray(supported) && supported.length ? supported : fallbackZones;
+        setTimezoneOptions(zones);
+    }, []);
 
     useEffect(() => {
         if (maintenanceData?.state) {
@@ -158,7 +188,8 @@ export function AdminSettingsPanel() {
                     image_proxy_enabled: imageProxyEnabled,
                     otp_enabled: otpEnabled,
                     sso_enabled: ssoEnabled,
-                    sidebar_footer_text: sidebarFooterText
+                    sidebar_footer_text: sidebarFooterText,
+                    job_timezone: jobTimezone
                 }),
                 credentials: "include"
             });
@@ -319,6 +350,26 @@ export function AdminSettingsPanel() {
                     {!settingsLoading && sessionDays === "" ? (
                         <p className="mt-2 text-xs text-destructive">Unable to load current value or you are not authorized.</p>
                     ) : null}
+                </div>
+
+                <div>
+                    <label className="text-sm font-semibold text-white">Job schedule timezone</label>
+                    <div className="mt-2">
+                        <AdaptiveSelect
+                            value={jobTimezone || "__system__"}
+                            onValueChange={(value) => setJobTimezone(value === "__system__" ? "" : value)}
+                            disabled={settingsLoading}
+                            options={[
+                                { value: "__system__", label: "System default (server timezone)" },
+                                ...(jobTimezone && !timezoneOptions.includes(jobTimezone)
+                                    ? [{ value: jobTimezone, label: jobTimezone } as AdaptiveSelectOption]
+                                    : []),
+                                ...timezoneOptions.map((zone) => ({ value: zone, label: zone }))
+                            ]}
+                            className="w-full max-w-md"
+                        />
+                    </div>
+                    <p className="text-xs text-muted mt-1">Controls cron-based jobs like the weekly digest schedule.</p>
                 </div>
 
                 <div className="border-t border-white/10 pt-4 space-y-4">

@@ -1,14 +1,11 @@
 import { getUser } from "@/auth";
 import AppLayoutClient from "./layout-client";
-import { startJobScheduler } from "@/lib/jobs";
 import "@/lib/webauthn-scheduler"; // Start WebAuthn cleanup scheduler
 import { getMediaIssueCounts, getPendingRequestCount, getRequestCounts, getUserWithHash, getSetting, isSetupComplete } from "@/db";
 import { getImageProxyEnabled } from "@/lib/app-settings";
 import { getMaintenanceState } from "@/lib/maintenance";
 import { withCache } from "@/lib/local-cache";
 import { redirect } from "next/navigation";
-
-startJobScheduler();
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   // Check if setup is required - redirect to setup wizard if not complete

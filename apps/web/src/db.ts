@@ -176,6 +176,7 @@ export async function createRequest(input: {
   title: string;
   userId: number;
   status?: string;
+  statusReason?: string | null;
   posterPath?: string | null;
   backdropPath?: string | null;
   releaseYear?: number | null;
@@ -189,11 +190,12 @@ export async function createRequest(input: {
       title,
       requested_by,
       status,
+      status_reason,
       poster_path,
       backdrop_path,
       release_year
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
     RETURNING id
     `,
     [
@@ -202,6 +204,7 @@ export async function createRequest(input: {
       input.title,
       input.userId,
       input.status ?? "queued",
+      input.statusReason ?? null,
       input.posterPath ?? null,
       input.backdropPath ?? null,
       input.releaseYear ?? null
@@ -227,6 +230,7 @@ export async function createRequestWithItemsTransaction(input: {
   title: string;
   userId: number;
   requestStatus?: string;
+  statusReason?: string | null;
   finalStatus?: string;
   posterPath?: string | null;
   backdropPath?: string | null;
@@ -248,11 +252,12 @@ export async function createRequestWithItemsTransaction(input: {
         title,
         requested_by,
         status,
+        status_reason,
         poster_path,
         backdrop_path,
         release_year
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING id
       `,
       [
@@ -261,6 +266,7 @@ export async function createRequestWithItemsTransaction(input: {
         input.title,
         input.userId,
         requestStatus,
+        input.statusReason ?? null,
         input.posterPath ?? null,
         input.backdropPath ?? null,
         input.releaseYear ?? null
@@ -290,7 +296,7 @@ export async function createRequestWithItemsTransaction(input: {
     }
 
     if (input.finalStatus && input.finalStatus !== requestStatus) {
-      await client.query(`UPDATE media_request SET status = $2 WHERE id = $1`, [requestId, input.finalStatus]);
+      await client.query(`UPDATE media_request SET status = $2, status_reason = NULL WHERE id = $1`, [requestId, input.finalStatus]);
     }
 
     await client.query("COMMIT");
@@ -401,7 +407,7 @@ export async function findActiveEpisodeRequestItems(input: { tmdbTvId: number; s
       AND r.tmdb_id = $1
       AND i.season = $2
       AND i.episode = ANY($3::int[])
-      AND r.status IN ('queued','pending','submitted','downloading','partially_available')
+      AND r.status IN ('queued','pending','submitted','downloading','partially_available','available')
     `,
     [input.tmdbTvId, input.season, input.episodeNumbers]
   );
@@ -417,7 +423,7 @@ export async function listActiveEpisodeRequestItemsByTmdb(tmdbTvId: number) {
     JOIN media_request r ON r.id = i.request_id
     WHERE r.request_type = 'episode'
       AND r.tmdb_id = $1
-      AND r.status IN ('queued','pending','submitted','downloading','partially_available')
+      AND r.status IN ('queued','pending','submitted','downloading','partially_available','available')
     ORDER BY i.season ASC, i.episode ASC
     `,
     [tmdbTvId]
@@ -448,7 +454,7 @@ export async function listRecentRequests(limit = 25, username?: string) {
     const p = getPool();
     const query = username
       ? `
-        SELECT r.id, r.request_type, r.tmdb_id, r.title, r.status, r.created_at,
+        SELECT r.id, r.request_type, r.tmdb_id, r.title, r.status, r.status_reason, r.created_at,
                r.poster_path, r.backdrop_path, r.release_year,
                u.username, u.display_name, u.avatar_url, u.jellyfin_user_id
         FROM media_request r
@@ -458,7 +464,7 @@ export async function listRecentRequests(limit = 25, username?: string) {
         LIMIT $1
         `
       : `
-        SELECT r.id, r.request_type, r.tmdb_id, r.title, r.status, r.created_at,
+        SELECT r.id, r.request_type, r.tmdb_id, r.title, r.status, r.status_reason, r.created_at,
                r.poster_path, r.backdrop_path, r.release_year,
                u.username, u.display_name, u.avatar_url, u.jellyfin_user_id
         FROM media_request r
@@ -475,6 +481,7 @@ export async function listRecentRequests(limit = 25, username?: string) {
       tmdb_id: number;
       title: string;
       status: string;
+      status_reason: string | null;
       created_at: string;
       poster_path: string | null;
       backdrop_path: string | null;
@@ -489,30 +496,54 @@ export async function listRecentRequests(limit = 25, username?: string) {
 
 export async function listRequestsByUsername(username: string, limit = 100) {
   const p = getPool();
-  const res = await p.query(
-    `
-    SELECT r.id, r.request_type, r.tmdb_id, r.title, r.status, r.created_at,
-           r.poster_path, r.backdrop_path, r.release_year,
-           u.username
-    FROM media_request r
-    JOIN app_user u ON u.id = r.requested_by
-    WHERE u.username = $1
-    ORDER BY r.created_at DESC
-    LIMIT $2
-    `,
-    [username, limit]
-  );
+  let res;
+  try {
+    res = await p.query(
+      `
+      SELECT r.id, r.request_type, r.tmdb_id, r.title, r.status, r.status_reason, r.created_at,
+             r.poster_path, r.backdrop_path, r.release_year,
+             u.username,
+             COALESCE(du.display_name, du.username) AS denied_by_name
+      FROM media_request r
+      JOIN app_user u ON u.id = r.requested_by
+      LEFT JOIN app_user du ON du.id = r.denied_by_user_id
+      WHERE u.username = $1
+      ORDER BY r.created_at DESC
+      LIMIT $2
+      `,
+      [username, limit]
+    );
+  } catch (err: any) {
+    // Backward compatibility: instances that have not run migration 017 yet.
+    if (err?.code !== "42703") throw err; // undefined_column
+    res = await p.query(
+      `
+      SELECT r.id, r.request_type, r.tmdb_id, r.title, r.status, r.status_reason, r.created_at,
+             r.poster_path, r.backdrop_path, r.release_year,
+             u.username,
+             NULL::text AS denied_by_name
+      FROM media_request r
+      JOIN app_user u ON u.id = r.requested_by
+      WHERE u.username = $1
+      ORDER BY r.created_at DESC
+      LIMIT $2
+      `,
+      [username, limit]
+    );
+  }
   return res.rows as Array<{
     id: string;
     request_type: string;
     tmdb_id: number;
     title: string;
     status: string;
+    status_reason: string | null;
     created_at: string;
     poster_path: string | null;
     backdrop_path: string | null;
     release_year: number | null;
     username: string;
+    denied_by_name: string | null;
   }>;
 }
 
@@ -569,7 +600,7 @@ export async function listRequestsPaged(input: {
   statuses?: string[];
   requestType?: "movie" | "episode";
   requestedById?: number | null;
-}): Promise<{ total: number; results: Array<{ id: string; request_type: string; tmdb_id: number; title: string; status: string; created_at: string; username: string; user_id: number; poster_path: string | null; backdrop_path: string | null; release_year: number | null }> }> {
+}): Promise<{ total: number; results: Array<{ id: string; request_type: string; tmdb_id: number; title: string; status: string; status_reason: string | null; created_at: string; username: string; user_id: number; poster_path: string | null; backdrop_path: string | null; release_year: number | null }> }> {
   const p = getPool();
   const where: string[] = [];
   const values: Array<string | number | string[]> = [];
@@ -608,7 +639,7 @@ export async function listRequestsPaged(input: {
 
   const res = await p.query(
     `
-    SELECT r.id, r.request_type, r.tmdb_id, r.title, r.status, r.created_at,
+    SELECT r.id, r.request_type, r.tmdb_id, r.title, r.status, r.status_reason, r.created_at,
            r.poster_path, r.backdrop_path, r.release_year,
            u.username, u.id as user_id
     FROM media_request r
@@ -629,6 +660,7 @@ export async function listRequestsPaged(input: {
       tmdb_id: Number(r.tmdb_id),
       title: r.title as string,
       status: r.status as string,
+      status_reason: (r.status_reason ?? null) as string | null,
       created_at: r.created_at as string,
       username: r.username as string,
       user_id: Number(r.user_id),
@@ -662,7 +694,7 @@ export async function getRequestById(requestId: string) {
   const p = getPool();
   const res = await p.query(
     `
-    SELECT r.id, r.request_type, r.tmdb_id, r.title, r.status, r.created_at,
+    SELECT r.id, r.request_type, r.tmdb_id, r.title, r.status, r.status_reason, r.created_at,
            r.poster_path, r.backdrop_path, r.release_year, r.requested_by,
            u.username
     FROM media_request r
@@ -680,6 +712,7 @@ export async function getRequestById(requestId: string) {
     tmdb_id: r.tmdb_id as number,
     title: r.title as string,
     status: r.status as string,
+    status_reason: (r.status_reason ?? null) as string | null,
     created_at: r.created_at as string,
     poster_path: r.poster_path ?? null,
     backdrop_path: r.backdrop_path ?? null,
@@ -719,6 +752,209 @@ export async function setRequestItemsStatus(requestId: string, status: string) {
 export async function setRequestItemsProviderId(requestId: string, providerId: number | null) {
   const p = getPool();
   await p.query(`UPDATE request_item SET provider_id=$2 WHERE request_id=$1`, [requestId, providerId]);
+}
+
+export async function setEpisodeRequestItemsStatuses(
+  requestId: string,
+  statuses: Array<{ season: number; episode: number; status: string }>
+) {
+  if (!statuses.length) return;
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    for (const row of statuses) {
+      await client.query(
+        `
+        UPDATE request_item
+        SET status = $4
+        WHERE request_id = $1
+          AND provider = 'sonarr'
+          AND season = $2
+          AND episode = $3
+        `,
+        [requestId, row.season, row.episode, row.status]
+      );
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+const EPISODE_REQUEST_STATUS_PRIORITY = [
+  "available",
+  "partially_available",
+  "downloading",
+  "submitted",
+  "pending",
+  "queued",
+  "already_exists",
+  "denied",
+  "failed",
+  "removed"
+] as const;
+
+function pickBetterStatus(current: string, incoming: string) {
+  const a = EPISODE_REQUEST_STATUS_PRIORITY.indexOf(current as any);
+  const b = EPISODE_REQUEST_STATUS_PRIORITY.indexOf(incoming as any);
+  if (a === -1) return incoming;
+  if (b === -1) return current;
+  return b < a ? incoming : current;
+}
+
+export async function mergeDuplicateEpisodeRequests(): Promise<{ groupsMerged: number; requestsRemoved: number; itemsMerged: number }> {
+  const client = await getPool().connect();
+  let groupsMerged = 0;
+  let requestsRemoved = 0;
+  let itemsMerged = 0;
+
+  try {
+    await client.query("BEGIN");
+
+    const duplicatesRes = await client.query(
+      `
+      SELECT
+        tmdb_id,
+        requested_by,
+        array_agg(id ORDER BY created_at ASC) AS request_ids
+      FROM media_request
+      WHERE request_type = 'episode'
+        AND status IN ('queued','pending','submitted','downloading','partially_available','available')
+      GROUP BY tmdb_id, requested_by
+      HAVING COUNT(*) > 1
+      `
+    );
+
+    for (const row of duplicatesRes.rows) {
+      const ids = Array.isArray(row.request_ids) ? row.request_ids.map((id: any) => String(id)) : [];
+      if (ids.length < 2) continue;
+      const canonicalId = ids[0];
+      const duplicateIds = ids.slice(1);
+
+      const requestRows = await client.query(
+        `
+        SELECT id, status, status_reason
+        FROM media_request
+        WHERE id = ANY($1::uuid[])
+        `,
+        [ids]
+      );
+
+      let mergedStatus = requestRows.rows.find((r: any) => String(r.id) === canonicalId)?.status ?? "submitted";
+      let mergedReason = requestRows.rows.find((r: any) => String(r.id) === canonicalId)?.status_reason ?? null;
+      for (const req of requestRows.rows) {
+        mergedStatus = pickBetterStatus(mergedStatus, String(req.status));
+        if (!mergedReason && req.status_reason) mergedReason = String(req.status_reason);
+      }
+
+      const canonicalItemsRes = await client.query(
+        `
+        SELECT id, provider, provider_id, season, episode, status
+        FROM request_item
+        WHERE request_id = $1
+        `,
+        [canonicalId]
+      );
+
+      const existingByKey = new Map<string, {
+        id: number;
+        provider: "sonarr" | "radarr";
+        provider_id: number | null;
+        season: number | null;
+        episode: number | null;
+        status: string;
+      }>();
+
+      for (const item of canonicalItemsRes.rows) {
+        const key = `${item.provider}:${item.season ?? "n"}:${item.episode ?? "n"}`;
+        existingByKey.set(key, {
+          id: Number(item.id),
+          provider: item.provider,
+          provider_id: item.provider_id != null ? Number(item.provider_id) : null,
+          season: item.season != null ? Number(item.season) : null,
+          episode: item.episode != null ? Number(item.episode) : null,
+          status: String(item.status)
+        });
+      }
+
+      const duplicateItemsRes = await client.query(
+        `
+        SELECT provider, provider_id, season, episode, status
+        FROM request_item
+        WHERE request_id = ANY($1::uuid[])
+        ORDER BY id ASC
+        `,
+        [duplicateIds]
+      );
+
+      for (const item of duplicateItemsRes.rows) {
+        const provider = item.provider as "sonarr" | "radarr";
+        const providerId = item.provider_id != null ? Number(item.provider_id) : null;
+        const season = item.season != null ? Number(item.season) : null;
+        const episode = item.episode != null ? Number(item.episode) : null;
+        const status = String(item.status);
+        const key = `${provider}:${season ?? "n"}:${episode ?? "n"}`;
+        const existing = existingByKey.get(key);
+
+        if (!existing) {
+          await client.query(
+            `
+            INSERT INTO request_item (request_id, provider, provider_id, season, episode, status)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            `,
+            [canonicalId, provider, providerId, season, episode, status]
+          );
+          existingByKey.set(key, {
+            id: 0,
+            provider,
+            provider_id: providerId,
+            season,
+            episode,
+            status
+          });
+          itemsMerged += 1;
+        } else {
+          const better = pickBetterStatus(existing.status, status);
+          const betterProviderId = existing.provider_id ?? providerId;
+          if (better !== existing.status || betterProviderId !== existing.provider_id) {
+            if (existing.id > 0) {
+              await client.query(
+                `UPDATE request_item SET status = $2, provider_id = $3 WHERE id = $1`,
+                [existing.id, better, betterProviderId]
+              );
+            }
+            existing.status = better;
+            existing.provider_id = betterProviderId;
+          }
+        }
+      }
+
+      await client.query(
+        `
+        UPDATE media_request
+        SET status = $2,
+            status_reason = $3
+        WHERE id = $1
+        `,
+        [canonicalId, mergedStatus, mergedReason]
+      );
+
+      await client.query(`DELETE FROM media_request WHERE id = ANY($1::uuid[])`, [duplicateIds]);
+      groupsMerged += 1;
+      requestsRemoved += duplicateIds.length;
+    }
+
+    await client.query("COMMIT");
+    return { groupsMerged, requestsRemoved, itemsMerged };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 export type RequestSyncItem = {
@@ -801,6 +1037,67 @@ export async function listRequestsForSync(limit = 100): Promise<RequestForSync[]
   }));
 }
 
+export async function getRequestForSync(requestId: string): Promise<RequestForSync | null> {
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT
+      r.id,
+      r.request_type,
+      r.tmdb_id,
+      r.title,
+      r.status,
+      r.created_at,
+      r.requested_by,
+      u.username AS requested_by_username,
+      COALESCE(
+        jsonb_agg(
+          jsonb_build_object(
+            'id', i.id,
+            'provider', i.provider,
+            'provider_id', i.provider_id,
+            'season', i.season,
+            'episode', i.episode,
+            'status', i.status
+          )
+          ORDER BY i.id
+        ) FILTER (WHERE i.id IS NOT NULL),
+        '[]'::jsonb
+      ) AS items
+    FROM media_request r
+    JOIN request_item i ON i.request_id = r.id
+    JOIN app_user u ON u.id = r.requested_by
+    WHERE r.id = $1
+      AND r.status IN ('submitted', 'downloading', 'available', 'partially_available', 'removed')
+    GROUP BY r.id, u.username
+    LIMIT 1
+    `,
+    [requestId]
+  );
+  if (!res.rows.length) return null;
+  const row = res.rows[0];
+  return {
+    id: row.id,
+    request_type: row.request_type,
+    tmdb_id: row.tmdb_id,
+    title: row.title,
+    status: row.status,
+    created_at: row.created_at,
+    requested_by: row.requested_by,
+    username: row.requested_by_username ?? "",
+    items: Array.isArray(row.items)
+      ? row.items.map((item: any) => ({
+          id: Number(item.id),
+          provider: item.provider,
+          provider_id: item.provider_id !== null ? Number(item.provider_id) : null,
+          season: item.season !== null ? Number(item.season) : null,
+          episode: item.episode !== null ? Number(item.episode) : null,
+          status: item.status
+        }))
+      : []
+  };
+}
+
 export async function getRequestWithItems(requestId: string) {
   const r = await getRequestById(requestId);
   if (!r) return null;
@@ -825,9 +1122,24 @@ export async function findRequestIdByNumericId(numericId: number): Promise<strin
   return (res.rows[0]?.id as string | undefined) ?? null;
 }
 
-export async function markRequestStatus(requestId: string, status: string) {
+export async function markRequestStatus(
+  requestId: string,
+  status: string,
+  statusReason?: string | null,
+  deniedByUserId?: number | null
+) {
   const p = getPool();
-  await p.query(`UPDATE media_request SET status=$2 WHERE id=$1`, [requestId, status]);
+  await p.query(
+    `
+    UPDATE media_request
+    SET
+      status = $2,
+      status_reason = $3,
+      denied_by_user_id = CASE WHEN $2 = 'denied' THEN $4::bigint ELSE NULL::bigint END
+    WHERE id = $1
+    `,
+    [requestId, status, statusReason ?? null, deniedByUserId ?? null]
+  );
 }
 
 export async function deleteRequestById(requestId: string) {
@@ -1609,6 +1921,29 @@ export async function listUsers(): Promise<DbUser[]> {
     notificationEndpointIds: Array.isArray(row.notification_endpoint_ids)
       ? row.notification_endpoint_ids.map((id: any) => Number(id)).filter((n: number) => Number.isFinite(n))
       : []
+  }));
+}
+
+export type AdminUserOption = {
+  id: number;
+  username: string;
+  displayName: string | null;
+};
+
+export async function listAdminUserOptions(): Promise<AdminUserOption[]> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT id, username, display_name
+    FROM app_user
+    ORDER BY username ASC
+    `
+  );
+  return res.rows.map((row) => ({
+    id: Number(row.id),
+    username: String(row.username),
+    displayName: row.display_name ? String(row.display_name) : null,
   }));
 }
 
@@ -2719,6 +3054,25 @@ async function ensureSchema() {
       );
     `);
     await p.query(`CREATE INDEX IF NOT EXISTS idx_user_notification_endpoint_user_id ON user_notification_endpoint(user_id);`);
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS notification_delivery_attempt (
+        id BIGSERIAL PRIMARY KEY,
+        endpoint_id BIGINT NOT NULL REFERENCES notification_endpoint(id) ON DELETE CASCADE,
+        endpoint_type TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('success','failure','skipped')),
+        attempt_number INTEGER NOT NULL DEFAULT 1,
+        duration_ms INTEGER,
+        error_message TEXT,
+        target_user_id BIGINT REFERENCES app_user(id) ON DELETE SET NULL,
+        metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_notification_delivery_attempt_created_at ON notification_delivery_attempt(created_at DESC);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_notification_delivery_attempt_endpoint_id ON notification_delivery_attempt(endpoint_id, created_at DESC);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_notification_delivery_attempt_endpoint_type ON notification_delivery_attempt(endpoint_type, created_at DESC);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_notification_delivery_attempt_status ON notification_delivery_attempt(status, created_at DESC);`);
     await p.query(`
       CREATE TABLE IF NOT EXISTS media_issue (
         id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -4418,6 +4772,197 @@ export async function listNotificationEndpointsForUser(userId: number): Promise<
       created_at: r.created_at
     };
   });
+}
+
+export type NotificationDeliveryAttemptStatus = "success" | "failure" | "skipped";
+
+export type NotificationDeliveryAttemptInput = {
+  endpointId: number;
+  endpointType: string;
+  eventType: string;
+  status: NotificationDeliveryAttemptStatus;
+  attemptNumber?: number;
+  durationMs?: number | null;
+  errorMessage?: string | null;
+  targetUserId?: number | null;
+  metadata?: Record<string, unknown> | null;
+};
+
+export async function recordNotificationDeliveryAttempt(input: NotificationDeliveryAttemptInput): Promise<void> {
+  await ensureSchema();
+  const p = getPool();
+  await p.query(
+    `
+    INSERT INTO notification_delivery_attempt (
+      endpoint_id,
+      endpoint_type,
+      event_type,
+      status,
+      attempt_number,
+      duration_ms,
+      error_message,
+      target_user_id,
+      metadata
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+    `,
+    [
+      input.endpointId,
+      input.endpointType,
+      input.eventType,
+      input.status,
+      Math.max(1, Number(input.attemptNumber ?? 1)),
+      input.durationMs ?? null,
+      input.errorMessage ?? null,
+      input.targetUserId ?? null,
+      JSON.stringify(input.metadata ?? {})
+    ]
+  );
+}
+
+export type NotificationReliabilityChannelSummary = {
+  channel: string;
+  totalAttempts: number;
+  successCount: number;
+  failureCount: number;
+  skippedCount: number;
+  retryCount: number;
+  successRate: number;
+  lastAttemptAt: string | null;
+  lastSuccessAt: string | null;
+  lastFailureAt: string | null;
+  lastError: string | null;
+};
+
+export type NotificationReliabilityFailure = {
+  id: number;
+  endpointId: number;
+  endpointName: string;
+  channel: string;
+  eventType: string;
+  attemptNumber: number;
+  errorMessage: string | null;
+  createdAt: string;
+};
+
+export type NotificationReliabilityOverview = {
+  generatedAt: string;
+  windowDays: number;
+  channels: NotificationReliabilityChannelSummary[];
+  recentFailures: NotificationReliabilityFailure[];
+};
+
+export async function getNotificationReliabilityOverview(windowDays = 14): Promise<NotificationReliabilityOverview> {
+  await ensureSchema();
+  const p = getPool();
+  const safeWindowDays = Math.max(1, Math.min(90, Math.floor(windowDays)));
+  const intervalExpr = `${safeWindowDays} days`;
+
+  const channelRes = await p.query(
+    `
+    WITH windowed AS (
+      SELECT *
+      FROM notification_delivery_attempt
+      WHERE created_at >= NOW() - ($1::text)::interval
+    ),
+    grouped AS (
+      SELECT
+        endpoint_type AS channel,
+        COUNT(*)::int AS total_attempts,
+        COUNT(*) FILTER (WHERE status = 'success')::int AS success_count,
+        COUNT(*) FILTER (WHERE status = 'failure')::int AS failure_count,
+        COUNT(*) FILTER (WHERE status = 'skipped')::int AS skipped_count,
+        COUNT(*) FILTER (WHERE attempt_number > 1)::int AS retry_count,
+        MAX(created_at) AS last_attempt_at,
+        MAX(created_at) FILTER (WHERE status = 'success') AS last_success_at,
+        MAX(created_at) FILTER (WHERE status = 'failure') AS last_failure_at
+      FROM windowed
+      GROUP BY endpoint_type
+    )
+    SELECT
+      g.channel,
+      g.total_attempts,
+      g.success_count,
+      g.failure_count,
+      g.skipped_count,
+      g.retry_count,
+      g.last_attempt_at,
+      g.last_success_at,
+      g.last_failure_at,
+      (
+        SELECT nda.error_message
+        FROM notification_delivery_attempt nda
+        WHERE nda.endpoint_type = g.channel
+          AND nda.status = 'failure'
+          AND nda.created_at >= NOW() - ($1::text)::interval
+        ORDER BY nda.created_at DESC
+        LIMIT 1
+      ) AS last_error
+    FROM grouped g
+    ORDER BY g.total_attempts DESC, g.channel ASC
+    `,
+    [intervalExpr]
+  );
+
+  const failureRes = await p.query(
+    `
+    SELECT
+      nda.id,
+      nda.endpoint_id,
+      COALESCE(ne.name, CONCAT('Endpoint #', nda.endpoint_id::text)) AS endpoint_name,
+      nda.endpoint_type,
+      nda.event_type,
+      nda.attempt_number,
+      nda.error_message,
+      nda.created_at
+    FROM notification_delivery_attempt nda
+    LEFT JOIN notification_endpoint ne ON ne.id = nda.endpoint_id
+    WHERE nda.status = 'failure'
+      AND nda.created_at >= NOW() - ($1::text)::interval
+    ORDER BY nda.created_at DESC
+    LIMIT 25
+    `,
+    [intervalExpr]
+  );
+
+  const channels: NotificationReliabilityChannelSummary[] = channelRes.rows.map((row) => {
+    const totalAttempts = Number(row.total_attempts ?? 0);
+    const successCount = Number(row.success_count ?? 0);
+    const failureCount = Number(row.failure_count ?? 0);
+    const skippedCount = Number(row.skipped_count ?? 0);
+    const retryCount = Number(row.retry_count ?? 0);
+    return {
+      channel: String(row.channel),
+      totalAttempts,
+      successCount,
+      failureCount,
+      skippedCount,
+      retryCount,
+      successRate: totalAttempts > 0 ? successCount / totalAttempts : 0,
+      lastAttemptAt: row.last_attempt_at ? String(row.last_attempt_at) : null,
+      lastSuccessAt: row.last_success_at ? String(row.last_success_at) : null,
+      lastFailureAt: row.last_failure_at ? String(row.last_failure_at) : null,
+      lastError: row.last_error ? String(row.last_error) : null,
+    };
+  });
+
+  const recentFailures: NotificationReliabilityFailure[] = failureRes.rows.map((row) => ({
+    id: Number(row.id),
+    endpointId: Number(row.endpoint_id),
+    endpointName: String(row.endpoint_name),
+    channel: String(row.endpoint_type),
+    eventType: String(row.event_type),
+    attemptNumber: Number(row.attempt_number ?? 1),
+    errorMessage: row.error_message ? String(row.error_message) : null,
+    createdAt: String(row.created_at),
+  }));
+
+  return {
+    generatedAt: new Date().toISOString(),
+    windowDays: safeWindowDays,
+    channels,
+    recentFailures,
+  };
 }
 
 export async function getRequestNotificationContext(requestId: string): Promise<{

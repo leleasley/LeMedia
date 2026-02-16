@@ -1,14 +1,22 @@
 import "server-only";
 import { listWeeklyDigestRecipients } from "@/db";
-import { tmdbImageUrl, getUpcomingMoviesAccurateCombined, getUpcomingTvAccurate, getTrendingAll } from "@/lib/tmdb";
+import { tmdbImageUrl, getUpcomingTvAccurate, getTrendingAll, discoverMovies } from "@/lib/tmdb";
 import { sendEmail } from "@/notifications/email";
 import { createUnsubscribeToken } from "@/lib/unsubscribe";
 import { logger } from "@/lib/logger";
 
 const WEEK_DAYS = 7;
-const SOON_DAYS = 30;
-const MAX_ITEMS = 8;
-const MOVIE_PAGES = 3;
+const SOON_DAYS_TV = 30;
+const SOON_DAYS_MOVIES = 60;
+const MAX_ITEMS_WEEK_MOVIES = 8;
+const MAX_ITEMS_WEEK_TV = 8;
+const MAX_ITEMS_SOON_MOVIES = 12;
+const MAX_ITEMS_SOON_TV = 8;
+const MAX_ITEMS_TRENDING = 6;
+const MOVIE_PAGES = 5;
+const MOVIE_POPULARITY_MIN = 12;
+const MOVIE_VOTE_COUNT_MIN = 25;
+const MOVIE_EXCLUDED_GENRES = new Set<number>([10770]);
 
 type DigestItem = {
   id: number;
@@ -49,6 +57,49 @@ function filterByWindow(items: DigestItem[], start: Date, end: Date) {
     if (!date) return false;
     return date >= start && date <= end;
   });
+}
+
+function isCinemaCandidate(item: any) {
+  const popularity = Number(item?.popularity ?? 0);
+  const voteCount = Number(item?.vote_count ?? 0);
+  const genreIds = Array.isArray(item?.genre_ids) ? item.genre_ids : [];
+  if (!item?.release_date) return false;
+  if (genreIds.some((id: number) => MOVIE_EXCLUDED_GENRES.has(id))) return false;
+  return popularity >= MOVIE_POPULARITY_MIN || voteCount >= MOVIE_VOTE_COUNT_MIN;
+}
+
+function sortByDateThenPopularity(a: any, b: any) {
+  const dateCmp = String(a.release_date).localeCompare(String(b.release_date));
+  if (dateCmp !== 0) return dateCmp;
+  return (b.popularity ?? 0) - (a.popularity ?? 0);
+}
+
+async function getUpcomingCinemaMoviesCombined(page = 1) {
+  const today = new Date().toISOString().slice(0, 10);
+  const languageGb = (process.env.TMDB_LANGUAGE || "en-GB").trim();
+  const baseParams: Record<string, string | number | boolean> = {
+    include_adult: false,
+    sort_by: "release_date.asc",
+    "release_date.gte": today,
+    "with_release_type": "2|3"
+  };
+
+  const [gb, us] = await Promise.all([
+    discoverMovies({ ...baseParams, region: "GB", language: languageGb }, page),
+    discoverMovies({ ...baseParams, region: "US", language: "en-US" }, page)
+  ]);
+
+  const seen = new Set<number>();
+  const combined = [...(gb.results ?? []), ...(us.results ?? [])]
+    .filter((movie: any) => {
+      if (!movie?.id) return false;
+      if (seen.has(movie.id)) return false;
+      seen.add(movie.id);
+      return true;
+    })
+    .sort(sortByDateThenPopularity);
+
+  return { results: combined } as { results: any[] };
 }
 
 function mapMovie(item: any): DigestItem | null {
@@ -97,34 +148,33 @@ function buildSection(title: string, items: DigestItem[], baseUrl: string, empty
     `;
   }
 
-  // Build grid with 2 columns for better layout
   const gridItems = items.map((item) => {
     const link = `${baseUrl}/${item.type}/${item.id}`;
     const dateLabel = formatDate(item.date);
     const genreTags = item.genres?.filter(Boolean).map((genre) => 
-      `<span style="display:inline-block;padding:3px 8px;background:rgba(168,85,247,0.2);border:1px solid rgba(168,85,247,0.3);border-radius:4px;font-size:10px;color:#c084fc;margin-right:4px;margin-top:4px;">${genre}</span>`
+      `<span style="display:inline-block;padding:3px 8px;background:#1f2937;border:1px solid rgba(148,163,184,0.25);border-radius:999px;font-size:10px;color:#cbd5e1;margin-right:6px;margin-top:6px;">${genre}</span>`
     ).join('') || '';
     const ratingBadge = item.rating ? 
-      `<span style="display:inline-block;padding:3px 8px;background:rgba(34,197,94,0.2);border:1px solid rgba(34,197,94,0.3);border-radius:4px;font-size:10px;color:#4ade80;margin-left:4px;">⭐ ${item.rating}</span>` 
+      `<span style="display:inline-block;padding:3px 8px;background:#0f766e;border:1px solid rgba(20,184,166,0.4);border-radius:999px;font-size:10px;color:#a7f3d0;margin-left:6px;">Rating ${item.rating}</span>` 
       : '';
     return `
       <td style="width:50%;padding:8px;vertical-align:top;" width="50%">
-        <table cellpadding="0" cellspacing="0" width="100%" style="background:linear-gradient(135deg, #1e293b 0%, #334155 100%);border-radius:12px;overflow:hidden;border:1px solid rgba(148,163,184,0.1);">
+        <table cellpadding="0" cellspacing="0" width="100%" style="background:#111827;border-radius:14px;overflow:hidden;border:1px solid rgba(148,163,184,0.12);">
           <tr>
             <td style="padding:0;">
               ${item.posterUrl ? `
                 <a href="${link}" style="display:block;">
-                  <img src="${item.posterUrl}" alt="${item.title}" width="100%" style="display:block;width:100%;height:auto;max-height:280px;object-fit:cover;" />
+                  <img src="${item.posterUrl}" alt="${item.title}" width="100%" style="display:block;width:100%;height:auto;max-height:300px;object-fit:cover;" />
                 </a>
-              ` : `<div style="width:100%;height:280px;background:#334155;"></div>`}
+              ` : `<div style="width:100%;height:300px;background:#1f2937;"></div>`}
             </td>
           </tr>
           <tr>
-            <td style="padding:14px;">
-              <div style="font-size:15px;font-weight:700;color:#f8fafc;margin-bottom:6px;line-height:1.3;">${item.title}</div>
+            <td style="padding:16px;">
+              <div style="font-size:16px;font-weight:700;color:#f8fafc;margin-bottom:6px;line-height:1.3;">${item.title}</div>
               <div style="font-size:12px;color:#94a3b8;margin-bottom:8px;">${dateLabel}${ratingBadge}</div>
-              <div style="margin-top:8px;line-height:1.5;">${genreTags}</div>
-              <a href="${link}" style="display:inline-block;margin-top:12px;padding:8px 16px;background:linear-gradient(135deg, #9333ea 0%, #7e22ce 100%);color:#ffffff;text-decoration:none;border-radius:6px;font-size:13px;font-weight:600;border:1px solid rgba(147,51,234,0.3);">View Details</a>
+              <div style="margin-top:8px;line-height:1.6;">${genreTags}</div>
+              <a href="${link}" style="display:inline-block;margin-top:12px;padding:9px 16px;background:#f59e0b;color:#111827;text-decoration:none;border-radius:999px;font-size:12px;font-weight:700;letter-spacing:0.02em;">View Details</a>
             </td>
           </tr>
         </table>
@@ -132,7 +182,6 @@ function buildSection(title: string, items: DigestItem[], baseUrl: string, empty
     `;
   });
 
-  // Build rows with 2 items per row
   let rows = "";
   for (let i = 0; i < gridItems.length; i += 2) {
     rows += `<tr>${gridItems[i]}${gridItems[i + 1] || '<td style="width:50%;"></td>'}</tr>`;
@@ -156,6 +205,7 @@ function buildEmailHtml(params: {
 }) {
   const appName = process.env.NEXT_PUBLIC_APP_NAME || "LeMedia";
   const logoUrl = `${params.baseUrl}/login-logo.png`;
+  const runDate = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 
   return `
   <!DOCTYPE html>
@@ -175,22 +225,32 @@ function buildEmailHtml(params: {
     </noscript>
     <![endif]-->
   </head>
-  <body style="margin:0;padding:0;background:#0b1220;">
-    <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#0b1220;padding:24px 0;">
+  <body style="margin:0;padding:0;background:#0b0f14;font-family:'Trebuchet MS', Arial, sans-serif;">
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">Cinema-first releases and big debuts for the week.</div>
+    <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#0b0f14;padding:28px 0;">
       <tr>
         <td align="center">
-          <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:680px;margin:0 auto;background:#111827;border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,0.08);">
+          <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:700px;margin:0 auto;background:#0f172a;border-radius:18px;overflow:hidden;border:1px solid rgba(148,163,184,0.18);">
 
             <!-- Header with Logo -->
             <tr>
-              <td style="padding:32px 24px;background:linear-gradient(135deg,#0f172a,#1e293b);text-align:center;">
+              <td style="padding:32px 28px;background:linear-gradient(135deg,#0f172a 0%, #111827 45%, #0b1324 100%);text-align:left;">
                 <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
                   <tr>
-                    <td align="center">
-                      <img src="${logoUrl}" alt="${appName}" width="64" height="64" style="display:block;margin:0 auto 16px;border-radius:12px;" />
-                      <div style="font-size:28px;font-weight:700;color:#f8fafc;margin-bottom:8px;line-height:1.2;">${appName}</div>
-                      <div style="font-size:16px;font-weight:600;color:#60a5fa;margin-bottom:8px;letter-spacing:0.05em;">Weekly Coming Soon</div>
-                      <div style="font-size:14px;color:#94a3b8;line-height:1.5;max-width:480px;margin:0 auto;">Discover the latest movies and TV shows releasing this week and beyond.</div>
+                    <td>
+                      <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
+                        <tr>
+                          <td style="width:72px;vertical-align:top;">
+                            <img src="${logoUrl}" alt="${appName}" width="64" height="64" style="display:block;border-radius:14px;" />
+                          </td>
+                          <td style="vertical-align:top;">
+                            <div style="font-size:12px;letter-spacing:0.24em;text-transform:uppercase;color:#93c5fd;margin-bottom:8px;">Weekly Digest</div>
+                            <div style="font-size:28px;font-weight:800;color:#f8fafc;margin-bottom:6px;line-height:1.1;">Cinema-first releases</div>
+                            <div style="font-size:14px;color:#94a3b8;line-height:1.6;max-width:460px;">Bigger releases, true theater windows, and the most anticipated drops in the next few weeks.</div>
+                            <div style="font-size:12px;color:#64748b;margin-top:10px;">Week of ${runDate}</div>
+                          </td>
+                        </tr>
+                      </table>
                     </td>
                   </tr>
                 </table>
@@ -199,24 +259,24 @@ function buildEmailHtml(params: {
 
             <!-- Content -->
             <tr>
-              <td style="padding:24px 16px;">
+              <td style="padding:24px 16px;background:#0b1220;">
                 <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
                   <!-- Trending This Week -->
                   <tr>
                     <td style="padding:8px;">
-                      <div style="font-size:22px;font-weight:700;background:linear-gradient(135deg, #f59e0b 0%, #ef4444 50%, #ec4899 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:16px;padding:0 8px;">🔥 Trending This Week</div>
+                      <div style="font-size:20px;font-weight:700;color:#f8fafc;margin-bottom:16px;padding:0 8px;">Trending this week</div>
                       ${buildSection("Trending", params.trending, params.baseUrl, "No trending content this week.")}
                     </td>
                   </tr>
 
                   <!-- Divider -->
-                  <tr><td style="height:32px;padding:0 8px;"><div style="border-bottom:2px solid rgba(148,163,184,0.2);"></div></td></tr>
+                  <tr><td style="height:28px;padding:0 8px;"><div style="border-bottom:1px solid rgba(148,163,184,0.2);"></div></td></tr>
 
                   <!-- Out this week - Movies -->
                   <tr>
                     <td style="padding:8px;">
-                      <div style="font-size:20px;font-weight:700;color:#f8fafc;margin-bottom:16px;padding:0 8px;">🎬 Out This Week — Movies</div>
-                      ${buildSection("Out this week movies", params.weekMovies, params.baseUrl, "No movies releasing in the next 7 days.")}
+                      <div style="font-size:20px;font-weight:700;color:#f8fafc;margin-bottom:16px;padding:0 8px;">Out this week - movies</div>
+                      ${buildSection("Out this week movies", params.weekMovies, params.baseUrl, "No cinema releases in the next 7 days.")}
                     </td>
                   </tr>
 
@@ -226,19 +286,19 @@ function buildEmailHtml(params: {
                   <!-- Out this week - TV -->
                   <tr>
                     <td style="padding:8px;">
-                      <div style="font-size:20px;font-weight:700;color:#f8fafc;margin-bottom:16px;padding:0 8px;">📺 Out This Week — TV</div>
+                      <div style="font-size:20px;font-weight:700;color:#f8fafc;margin-bottom:16px;padding:0 8px;">Out this week - TV</div>
                       ${buildSection("Out this week tv", params.weekTv, params.baseUrl, "No TV releases in the next 7 days.")}
                     </td>
                   </tr>
 
                   <!-- Divider -->
-                  <tr><td style="height:32px;padding:0 8px;"><div style="border-bottom:2px solid rgba(148,163,184,0.2);"></div></td></tr>
+                  <tr><td style="height:28px;padding:0 8px;"><div style="border-bottom:1px solid rgba(148,163,184,0.2);"></div></td></tr>
 
                   <!-- Coming soon - Movies -->
                   <tr>
                     <td style="padding:8px;">
-                      <div style="font-size:20px;font-weight:700;color:#f8fafc;margin-bottom:16px;padding:0 8px;">🍿 Coming Soon — Movies</div>
-                      ${buildSection("Coming soon movies", params.soonMovies, params.baseUrl, "No movies scheduled in the next 30 days.")}
+                      <div style="font-size:20px;font-weight:700;color:#f8fafc;margin-bottom:16px;padding:0 8px;">Coming soon - movies</div>
+                      ${buildSection("Coming soon movies", params.soonMovies, params.baseUrl, "No cinema releases scheduled in the next 60 days.")}
                     </td>
                   </tr>
 
@@ -248,7 +308,7 @@ function buildEmailHtml(params: {
                   <!-- Coming soon - TV -->
                   <tr>
                     <td style="padding:8px;">
-                      <div style="font-size:20px;font-weight:700;color:#f8fafc;margin-bottom:16px;padding:0 8px;">📡 Coming Soon — TV</div>
+                      <div style="font-size:20px;font-weight:700;color:#f8fafc;margin-bottom:16px;padding:0 8px;">Coming soon - TV</div>
                       ${buildSection("Coming soon tv", params.soonTv, params.baseUrl, "No TV releases scheduled in the next 30 days.")}
                     </td>
                   </tr>
@@ -258,7 +318,7 @@ function buildEmailHtml(params: {
 
             <!-- Footer -->
             <tr>
-              <td style="padding:24px;background:#0f172a;border-top:1px solid rgba(148,163,184,0.15);">
+              <td style="padding:24px;background:#0b1220;border-top:1px solid rgba(148,163,184,0.15);">
                 <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
                   <tr>
                     <td align="center">
@@ -300,13 +360,13 @@ function buildTextDigest(params: {
     return `${title}:\n${lines}\n`;
   };
   return [
-    "LeMedia Weekly Coming Soon",
+    "LeMedia Weekly Digest",
     "",
     renderList("Trending this week", params.trending),
-    renderList("Out this week — Movies", params.weekMovies),
-    renderList("Out this week — TV", params.weekTv),
-    renderList("Coming soon — Movies", params.soonMovies),
-    renderList("Coming soon — TV", params.soonTv),
+    renderList("Out this week - Movies", params.weekMovies),
+    renderList("Out this week - TV", params.weekTv),
+    renderList("Coming soon - Movies", params.soonMovies),
+    renderList("Coming soon - TV", params.soonTv),
     "",
     `Unsubscribe: ${params.unsubscribeUrl}`
   ].join("\n");
@@ -314,7 +374,7 @@ function buildTextDigest(params: {
 
 async function buildDigestContent() {
   const moviePages = await Promise.all(
-    Array.from({ length: MOVIE_PAGES }, (_, index) => getUpcomingMoviesAccurateCombined(index + 1))
+    Array.from({ length: MOVIE_PAGES }, (_, index) => getUpcomingCinemaMoviesCombined(index + 1))
   );
   const movieSeen = new Set<number>();
   const movieResults = moviePages
@@ -322,10 +382,11 @@ async function buildDigestContent() {
     .filter((item: any) => {
       if (!item?.id) return false;
       if (movieSeen.has(item.id)) return false;
+      if (!isCinemaCandidate(item)) return false;
       movieSeen.add(item.id);
       return true;
     })
-    .sort((a: any, b: any) => String(a.release_date).localeCompare(String(b.release_date)));
+    .sort(sortByDateThenPopularity);
 
   const [tvData, trendingData] = await Promise.all([
     getUpcomingTvAccurate(1),
@@ -348,7 +409,7 @@ async function buildDigestContent() {
       trendingSeen.add(key);
       return item.media_type === 'movie' || item.media_type === 'tv';
     })
-    .slice(0, 6)
+    .slice(0, MAX_ITEMS_TRENDING)
     .map((item: any) => {
       if (item.media_type === 'movie') return mapMovie(item);
       if (item.media_type === 'tv') return mapTv(item);
@@ -359,14 +420,15 @@ async function buildDigestContent() {
   const today = new Date();
   const weekEnd = daysFromNow(WEEK_DAYS);
   const soonStart = daysFromNow(WEEK_DAYS + 1);
-  const soonEnd = daysFromNow(SOON_DAYS);
+  const soonEndMovies = daysFromNow(SOON_DAYS_MOVIES);
+  const soonEndTv = daysFromNow(SOON_DAYS_TV);
 
   return {
     trending,
-    weekMovies: filterByWindow(movies, today, weekEnd).slice(0, MAX_ITEMS),
-    weekTv: filterByWindow(tv, today, weekEnd).slice(0, MAX_ITEMS),
-    soonMovies: filterByWindow(movies, soonStart, soonEnd).slice(0, MAX_ITEMS),
-    soonTv: filterByWindow(tv, soonStart, soonEnd).slice(0, MAX_ITEMS)
+    weekMovies: filterByWindow(movies, today, weekEnd).slice(0, MAX_ITEMS_WEEK_MOVIES),
+    weekTv: filterByWindow(tv, today, weekEnd).slice(0, MAX_ITEMS_WEEK_TV),
+    soonMovies: filterByWindow(movies, soonStart, soonEndMovies).slice(0, MAX_ITEMS_SOON_MOVIES),
+    soonTv: filterByWindow(tv, soonStart, soonEndTv).slice(0, MAX_ITEMS_SOON_TV)
   };
 }
 

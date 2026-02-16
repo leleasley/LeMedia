@@ -725,7 +725,6 @@
       margin-top: 0;
       padding-top: calc(env(safe-area-inset-top) + 3.5rem);
       @apply -mx-0 px-3;
-      background-color: hsl(var(--background));
     }
 
     .discover-hero-bleed {

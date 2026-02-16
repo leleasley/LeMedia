@@ -4,6 +4,8 @@ import { useState } from "react";
 import Image from "next/image";
 import { formatDate } from "@/lib/dateFormat";
 import { useRouter } from "next/navigation";
+import { emitRequestsChanged } from "@/lib/request-refresh";
+import { Modal } from "@/components/Common/Modal";
 
 const statusClasses: Record<string, string> = {
   available: "bg-emerald-500/10 text-emerald-100 border border-emerald-500/30",
@@ -28,6 +30,16 @@ function StatusBadge({ status }: { status: string }) {
       {formatStatusLabel(status)}
     </span>
   );
+}
+
+function isNextRedirectError(err: unknown) {
+  const digest = typeof (err as { digest?: unknown })?.digest === "string"
+    ? (err as { digest: string }).digest
+    : "";
+  const message = typeof (err as { message?: unknown })?.message === "string"
+    ? (err as { message: string }).message
+    : "";
+  return digest.includes("NEXT_REDIRECT") || message.includes("NEXT_REDIRECT");
 }
 
 type Request = {
@@ -58,9 +70,13 @@ export function RequestsListClient({
   markRequestAvailable: (formData: FormData) => Promise<void>;
 }) {
   const [optimisticRemovals, setOptimisticRemovals] = useState<Set<string | number>>(new Set());
+  const [denyModalOpen, setDenyModalOpen] = useState(false);
+  const [denyReason, setDenyReason] = useState("");
+  const [denyTargetId, setDenyTargetId] = useState<string | number | null>(null);
+  const [denySubmitting, setDenySubmitting] = useState(false);
   const router = useRouter();
 
-  const handleAction = async (action: string, requestId: string | number) => {
+  const handleAction = async (action: "approve" | "deny" | "delete" | "markAvailable", requestId: string | number, reason?: string | null) => {
     // Optimistically remove from UI
     if (action === "approve" || action === "deny" || action === "delete") {
       setOptimisticRemovals(prev => new Set(prev).add(requestId));
@@ -68,13 +84,41 @@ export function RequestsListClient({
     
     const formData = new FormData();
     formData.append("requestId", String(requestId));
+    if (action === "deny" && reason) {
+      formData.append("reason", reason);
+    }
 
-    if (action === "approve") await approveRequest(formData);
-    else if (action === "deny") await denyRequest(formData);
-    else if (action === "delete") await deleteRequest(formData);
-    else if (action === "markAvailable") await markRequestAvailable(formData);
+    try {
+      if (action === "approve") await approveRequest(formData);
+      else if (action === "deny") await denyRequest(formData);
+      else if (action === "delete") await deleteRequest(formData);
+      else if (action === "markAvailable") await markRequestAvailable(formData);
+    } catch (err) {
+      if (!isNextRedirectError(err)) throw err;
+    }
     
     router.refresh();
+    emitRequestsChanged();
+  };
+
+  const openDenyModal = (requestId: string | number) => {
+    setDenyTargetId(requestId);
+    setDenyReason("");
+    setDenyModalOpen(true);
+  };
+
+  const confirmDeny = async () => {
+    if (denyTargetId == null || denySubmitting) return;
+    setDenySubmitting(true);
+    try {
+      const reason = denyReason.trim().slice(0, 500) || null;
+      await handleAction("deny", denyTargetId, reason);
+      setDenyModalOpen(false);
+      setDenyTargetId(null);
+      setDenyReason("");
+    } finally {
+      setDenySubmitting(false);
+    }
   };
 
   const visiblePending = initialPending.filter(r => !optimisticRemovals.has(r.id));
@@ -82,6 +126,49 @@ export function RequestsListClient({
 
   return (
     <>
+      <Modal
+        open={denyModalOpen}
+        title="Deny Request"
+        onClose={() => {
+          if (denySubmitting) return;
+          setDenyModalOpen(false);
+          setDenyTargetId(null);
+          setDenyReason("");
+        }}
+      >
+        <div className="space-y-3">
+          <textarea
+            value={denyReason}
+            onChange={(e) => setDenyReason(e.target.value.slice(0, 500))}
+            placeholder="Optional reason"
+            className="min-h-[110px] w-full rounded-lg border border-white/10 bg-white/5 p-3 text-sm text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-rose-500/40"
+          />
+          <div className="text-right text-xs text-white/40">{denyReason.length}/500</div>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => {
+                setDenyModalOpen(false);
+                setDenyTargetId(null);
+                setDenyReason("");
+              }}
+              disabled={denySubmitting}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn btn-error btn-sm"
+              onClick={confirmDeny}
+              disabled={denySubmitting}
+            >
+              Confirm Deny
+            </button>
+          </div>
+        </div>
+      </Modal>
+
       <div className="rounded-lg border border-white/10 bg-slate-900/60 overflow-hidden shadow-lg shadow-black/10">
         <div className="p-6 border-b border-white/10">
           <h3 className="text-lg font-semibold text-white">Pending approval</h3>
@@ -110,7 +197,7 @@ export function RequestsListClient({
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <button onClick={() => handleAction("approve", r.id)} className="btn btn-primary text-xs">Approve</button>
-                    <button onClick={() => handleAction("deny", r.id)} className="btn text-xs">Deny</button>
+                    <button onClick={() => openDenyModal(r.id)} className="btn text-xs">Deny</button>
                   </div>
                 </div>
               ))}
@@ -147,7 +234,7 @@ export function RequestsListClient({
                       <td className="p-4">
                         <div className="flex gap-2">
                           <button onClick={() => handleAction("approve", r.id)} className="btn btn-primary text-xs">Approve</button>
-                          <button onClick={() => handleAction("deny", r.id)} className="btn text-xs">Deny</button>
+                          <button onClick={() => openDenyModal(r.id)} className="btn text-xs">Deny</button>
                         </div>
                       </td>
                     </tr>

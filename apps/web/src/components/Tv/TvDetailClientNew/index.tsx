@@ -9,6 +9,7 @@ import { ChevronDown, ChevronUp, Star, Tv, Eye, Users, CheckCircle, Info, Check,
 import { Modal } from "@/components/Common/Modal";
 import { readJson } from "@/lib/fetch-utils";
 import { csrfFetch } from "@/lib/csrf-client";
+import { emitRequestsChanged } from "@/lib/request-refresh";
 import { MediaInfoBox } from "@/components/Media/MediaInfoBox";
 import { MediaActionMenu } from "@/components/Media/MediaActionMenu";
 import { MediaListButtons } from "@/components/Media/MediaListButtons";
@@ -267,17 +268,10 @@ export function TvDetailClientNew({
             .map((person) => ({ job: person.job ?? "Crew", person }))
     ].slice(0, 6), [creators, crew, crewRoles]);
 
-    const totalSeasons = useMemo(() => {
-        const today = new Date().toISOString().slice(0, 10);
-        const aired = seasons.filter((season) => {
-            if (season.season_number === 0) return false;
-            const airDate = typeof season.air_date === "string" ? season.air_date.slice(0, 10) : "";
-            // If TMDB doesn't have a season air date yet, don't block "Available".
-            return !airDate || airDate <= today;
-        }).length;
-        if (aired > 0) return aired;
-        return seasons.filter(s => s.season_number !== 0).length;
-    }, [seasons]);
+    const totalSeasons = useMemo(
+        () => seasons.filter((season) => season.season_number !== 0).length,
+        [seasons]
+    );
 
     const getTmdbImage = useCallback(
         (path: string | null | undefined, size: string) => tmdbImageUrl(path, size, imageProxyEnabled),
@@ -456,8 +450,14 @@ export function TvDetailClientNew({
         availableInJellyfinState === true ||
         availableInLibraryState,
         [availableSeasonsCount, hasAvailableEpisodes, availableInJellyfinState, availableInLibraryState]);
-    const isFullyAvailable = useMemo(() => availableSeasonsCount > 0 && availableSeasonsCount >= totalSeasons, [availableSeasonsCount, totalSeasons]);
-    const isPartiallyAvailable = useMemo(() => hasAnyAvailable && !isFullyAvailable, [hasAnyAvailable, isFullyAvailable]);
+    const isFullyAvailable = useMemo(() => {
+        if (requestStatusState === "partially_available") return false;
+        return availableSeasonsCount > 0 && availableSeasonsCount >= totalSeasons;
+    }, [availableSeasonsCount, totalSeasons, requestStatusState]);
+    const isPartiallyAvailable = useMemo(() => {
+        if (requestStatusState === "partially_available") return true;
+        return hasAnyAvailable && !isFullyAvailable;
+    }, [hasAnyAvailable, isFullyAvailable, requestStatusState]);
     const activeDownloads = useMemo(() => {
         const downloads = Array.isArray(downloadProgress?.downloads) ? downloadProgress.downloads : [];
         const deduped = new Map<string, TvDownloadProgress>();
@@ -818,6 +818,7 @@ export function TvDetailClientNew({
             }));
             setCheckedEpisodes(prev => ({ ...prev, [seasonNumber]: new Set() }));
             router.refresh();
+            emitRequestsChanged();
             setTimeout(() => {
                 setEpisodeRequestModal(null);
                 setSubmitState("idle");
@@ -895,6 +896,7 @@ export function TvDetailClientNew({
             setStatus("");
             setSeasonQuickOpen(false);
             router.refresh();
+            emitRequestsChanged();
         } catch (err: unknown) {
             const error = err as Error;
             toast.error(`Failed to submit request: ${error?.message ?? String(err)}`, { timeoutMs: 4000 });

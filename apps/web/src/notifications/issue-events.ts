@@ -12,7 +12,7 @@ import { DiscordEmbed, sendDiscordWebhook } from "@/notifications/discord";
 import { sendEmail } from "@/notifications/email";
 import { sendTelegramMessage } from "@/notifications/telegram";
 import { sendGenericWebhook } from "@/notifications/webhook";
-import { logger } from "@/lib/logger";
+import { deliverWithReliability, NotificationDeliverySkipError } from "@/notifications/reliability";
 
 export type IssueNotificationEvent = "issue_reported" | "issue_resolved";
 
@@ -144,38 +144,51 @@ export async function notifyIssueEvent(event: IssueNotificationEvent, ctx: Issue
 
   await Promise.all(
     endpoints.map(async endpoint => {
-      try {
-        if (endpoint.type === "discord") {
-          const config = endpoint.config as DiscordConfig;
-          const webhookUrl = String(config?.webhookUrl ?? "");
-          await sendDiscordWebhook({ webhookUrl, embeds: [discordEmbed] });
-          return;
+      await deliverWithReliability(
+        {
+          endpointId: endpoint.id,
+          endpointType: endpoint.type,
+          eventType: event,
+          targetUserId: ctx.userId ?? null,
+          metadata: { issueId: ctx.issueId, tmdbId: ctx.tmdbId, mediaType: ctx.mediaType }
+        },
+        async () => {
+          if (endpoint.type === "discord") {
+            const config = endpoint.config as DiscordConfig;
+            const webhookUrl = String(config?.webhookUrl ?? "");
+            if (!webhookUrl) throw new NotificationDeliverySkipError("Discord webhook URL is not configured");
+            await sendDiscordWebhook({ webhookUrl, embeds: [discordEmbed] });
+            return;
+          }
+          if (endpoint.type === "telegram") {
+            const config = endpoint.config as TelegramConfig;
+            const botToken = String(config?.botToken ?? "");
+            const chatId = String(config?.chatId ?? "");
+            if (!botToken || !chatId) throw new NotificationDeliverySkipError("Telegram bot token or chat ID missing");
+            await sendTelegramMessage({ botToken, chatId, text: plain });
+            return;
+          }
+          if (endpoint.type === "email") {
+            const config = endpoint.config as EmailConfig;
+            const configuredTo = String(config?.to ?? "").trim();
+            if (!configuredTo && config?.userEmailRequired && !userEmail) {
+              throw new NotificationDeliverySkipError("Endpoint requires user email, but user has no email");
+            }
+            const to = configuredTo || String(userEmail ?? "").trim();
+            if (!to) throw new NotificationDeliverySkipError("No recipient email configured");
+            await sendEmail({ to, subject: "[LeMedia] Issue reported", text: plain, smtp: config });
+            return;
+          }
+          if (endpoint.type === "webhook") {
+            const config = endpoint.config as WebhookConfig;
+            const url = String(config?.url ?? "");
+            if (!url) throw new NotificationDeliverySkipError("Webhook URL is not configured");
+            await sendGenericWebhook({ url, body: payload });
+            return;
+          }
+          throw new NotificationDeliverySkipError(`Unsupported endpoint type for issue events: ${endpoint.type}`);
         }
-        if (endpoint.type === "telegram") {
-          const config = endpoint.config as TelegramConfig;
-          const botToken = String(config?.botToken ?? "");
-          const chatId = String(config?.chatId ?? "");
-          await sendTelegramMessage({ botToken, chatId, text: plain });
-          return;
-        }
-        if (endpoint.type === "email") {
-          const config = endpoint.config as EmailConfig;
-          const configuredTo = String(config?.to ?? "").trim();
-          if (!configuredTo && config?.userEmailRequired && !userEmail) return;
-          const to = configuredTo || String(userEmail ?? "").trim();
-          if (!to) return;
-          await sendEmail({ to, subject: "[LeMedia] Issue reported", text: plain, smtp: config });
-          return;
-        }
-        if (endpoint.type === "webhook") {
-          const config = endpoint.config as WebhookConfig;
-          const url = String(config?.url ?? "");
-          await sendGenericWebhook({ url, body: payload });
-          return;
-        }
-      } catch (err) {
-        logger.error(`[notify] issue event failed endpoint=${endpoint.id} type=${endpoint.type}`, err);
-      }
+      );
     })
   );
 }

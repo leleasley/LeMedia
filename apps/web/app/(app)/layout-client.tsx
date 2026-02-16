@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { PrefetchLink } from "@/components/Layout/PrefetchLink";
 import Image from "next/image";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ModeToggle } from "@/components/ui/mode-toggle";
 import { AlertTriangle, Settings, LayoutGrid, Compass, Film, Tv, Inbox, Users, CalendarDays, Activity, Star, Sparkles } from "lucide-react";
 import { MobileNav } from "@/components/Layout/MobileNav";
@@ -16,6 +16,7 @@ import { PWAInstallButton } from "@/components/PWA/InstallButton";
 import { WebPushPrompt } from "@/components/Push/WebPushPrompt";
 import { PullToRefresh } from "@/components/PWA/PullToRefresh";
 import { SessionResetModal } from "@/components/auth/SessionResetModal";
+import { subscribeRequestsChanged } from "@/lib/request-refresh";
 
 interface AppLayoutClientProps {
     children: React.ReactNode;
@@ -158,6 +159,7 @@ export default function AppLayoutClient({
     maintenance,
     sidebarFooterText = "LeMedia v0.1.0"
 }: AppLayoutClientProps) {
+    const router = useRouter();
     const pathname = usePathname();
     const searchParams = useSearchParams();
     const searchParamsKey = searchParams?.toString() ?? "";
@@ -318,6 +320,21 @@ export default function AppLayoutClient({
             mainContent.scrollTo({ top: 0, left: 0, behavior: "auto" });
         }
     }, [pathname]);
+
+    useEffect(() => {
+        let timeout: ReturnType<typeof setTimeout> | null = null;
+        const unsubscribe = subscribeRequestsChanged(() => {
+            if (timeout) return;
+            timeout = setTimeout(() => {
+                timeout = null;
+                router.refresh();
+            }, 250);
+        });
+        return () => {
+            if (timeout) clearTimeout(timeout);
+            unsubscribe();
+        };
+    }, [router]);
 
     const linkClass = (isActive: boolean) => cn(
         "flex items-center gap-4 px-4 py-3 mx-2 rounded-lg transition-all text-sm font-medium border-l-4",

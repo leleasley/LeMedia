@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getUser } from "@/auth";
-import { getPool } from "@/db";
+import { getNotificationReliabilityOverview, getPool, listAdminUserOptions } from "@/db";
 import { AdminLogsPageClient } from "@/components/Settings/Logs/AdminLogsPageClient";
 
 export const metadata = {
@@ -54,6 +54,10 @@ export default async function AdminLogsPage({
     ip: string | null;
     created_at: string;
   }>;
+  const [initialReliability, adminUsers] = await Promise.all([
+    getNotificationReliabilityOverview(14),
+    listAdminUserOptions()
+  ]);
 
   return (
     <AdminLogsPageClient
@@ -68,6 +72,8 @@ export default async function AdminLogsPage({
         },
       }}
       initialPage={page}
+      initialReliability={initialReliability}
+      adminUsers={adminUsers}
     />
   );
 }

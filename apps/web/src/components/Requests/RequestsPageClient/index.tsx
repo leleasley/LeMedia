@@ -9,6 +9,8 @@ type RequestItem = {
   title: string;
   request_type: string;
   status: string;
+  status_reason?: string | null;
+  denied_by_name?: string | null;
   created_at: string;
   posterUrl?: string | null;
   tmdb_id: number;
@@ -290,6 +292,18 @@ export function RequestsPageClient({ initialRequests }: { initialRequests: Reque
                         
                         <div className="mt-3 space-y-2">
                           <StatusBadge status={r.status} download={download} />
+                          {r.status === "denied" ? (
+                            <div className="space-y-1 rounded-lg border border-red-500/20 bg-red-500/5 px-2 py-1.5">
+                              <p className="text-[11px] font-semibold text-red-200/90">
+                                Denied by {r.denied_by_name ?? "Admin"}
+                              </p>
+                              {r.status_reason ? (
+                                <p className="text-[11px] text-red-200/80 line-clamp-2">
+                                  Reason: {r.status_reason}
+                                </p>
+                              ) : null}
+                            </div>
+                          ) : null}
                           {!download && (
                             <p className="text-xs text-white/40 font-medium">
                               📅 {formatDate(r.created_at)}
@@ -348,7 +362,21 @@ export function RequestsPageClient({ initialRequests }: { initialRequests: Reque
                           <TypeBadge type={r.request_type} />
                         </td>
                         <td className="p-4">
-                          <StatusBadge status={r.status} download={download} />
+                          <div className="space-y-2">
+                            <StatusBadge status={r.status} download={download} />
+                            {r.status === "denied" ? (
+                              <div className="rounded-md border border-red-500/20 bg-red-500/5 px-2 py-1">
+                                <p className="text-[11px] font-semibold text-red-200/90">
+                                  Denied by {r.denied_by_name ?? "Admin"}
+                                </p>
+                                {r.status_reason ? (
+                                  <p className="text-[11px] text-red-200/80 line-clamp-2">
+                                    Reason: {r.status_reason}
+                                  </p>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </div>
                         </td>
                         <td className="p-4 pr-6 text-right">
                           <span className="text-sm text-white/40 font-medium">

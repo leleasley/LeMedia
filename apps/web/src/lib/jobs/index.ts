@@ -1,5 +1,5 @@
 import "server-only";
-import { getPool, listJobs, recordJobFailure, updateJobRun, updateJobSchedule, type Job } from "@/db";
+import { getPool, getSetting, listJobs, recordJobFailure, updateJobRun, updateJobSchedule, type Job } from "@/db";
 import { jobHandlers } from "./definitions";
 import { logger } from "@/lib/logger";
 import cronParser from "cron-parser";
@@ -114,8 +114,27 @@ export function getJobRuntimeMetrics(): JobRuntimeMetrics[] {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+function normalizeJobTimezone(value?: string | null) {
+  const trimmed = String(value ?? "").trim();
+  return trimmed ? trimmed : undefined;
+}
+
 function getJobTimezone() {
-  return process.env.JOBS_TIMEZONE || process.env.TZ || undefined;
+  return normalizeJobTimezone(process.env.JOBS_TIMEZONE) || normalizeJobTimezone(process.env.TZ) || undefined;
+}
+
+async function primeJobTimezoneFromSettings() {
+  try {
+    const raw = await getSetting("jobs.timezone");
+    const normalized = normalizeJobTimezone(raw);
+    if (normalized) {
+      process.env.JOBS_TIMEZONE = normalized;
+    } else if (process.env.JOBS_TIMEZONE) {
+      delete process.env.JOBS_TIMEZONE;
+    }
+  } catch {
+    // Ignore failures; fallback to env defaults.
+  }
 }
 
 function getCronParser() {
@@ -231,6 +250,8 @@ async function runJob(job: Job) {
 
 export function startJobScheduler() {
   if (schedulerInterval || isBuildPhase || process.env.NODE_ENV === "test") return;
+
+  void primeJobTimezoneFromSettings();
 
   // Run every minute to check for pending jobs
   schedulerInterval = setInterval(async () => {

@@ -260,13 +260,16 @@ export async function denyRequest(formData: FormData) {
   if (!user.isAdmin) redirect("/");
 
   const requestId = String(formData.get("requestId") ?? "");
+  const rawReason = String(formData.get("reason") ?? "").trim();
+  const reason = rawReason.length > 0 ? rawReason.slice(0, 500) : null;
   if (!requestId) redirect("/admin/requests");
 
   const data = await getRequestWithItems(requestId);
   if (!data) redirect("/admin/requests");
-  if (data.request.status !== "pending") redirect("/admin/requests");
+  const deniableStatuses = new Set(["pending", "submitted", "downloading", "partially_available"]);
+  if (!deniableStatuses.has(data.request.status)) redirect("/admin/requests");
 
-  await markRequestStatus(requestId, "denied");
+  await markRequestStatus(requestId, "denied", reason, user.id);
   await setRequestItemsStatus(requestId, "denied");
   const ctx = await getRequestNotificationContext(requestId);
   if (ctx) {
@@ -279,7 +282,7 @@ export async function denyRequest(formData: FormData) {
       userId: ctx.user_id
     });
   }
-  await setFlash("success", "Request denied");
+  await setFlash("success", reason ? `Request denied: ${reason}` : "Request denied");
   await refreshRequestsPage();
   redirect("/admin/requests");
 }

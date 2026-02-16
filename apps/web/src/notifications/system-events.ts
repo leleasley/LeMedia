@@ -13,6 +13,7 @@ import { sendTelegramMessage } from "@/notifications/telegram";
 import { sendGenericWebhook } from "@/notifications/webhook";
 import { logger } from "@/lib/logger";
 import { getNotificationTypeMaskForSystemEvent } from "@/lib/notification-type-bits";
+import { deliverWithReliability, NotificationDeliverySkipError } from "@/notifications/reliability";
 
 export type SystemAlertEvent =
   | "system_alert_high_latency"
@@ -160,122 +161,130 @@ export async function notifySystemAlertEventWithDelivery(
     endpoints.map(async (endpoint) => {
       const endpointType = String((endpoint as any)?.type ?? "");
       const configAny = (endpoint as any)?.config ?? {};
-      try {
-        if (endpointType === "discord") {
-          const config = configAny as DiscordConfig;
-          const webhookUrl = String(config?.webhookUrl ?? "");
-          await sendDiscordWebhook({ webhookUrl, embeds: [embed] });
-          delivered += 1;
-          return;
-        }
-        if (endpointType === "telegram") {
-          const config = configAny as TelegramConfig;
-          const botToken = String(config?.botToken ?? "");
-          const chatId = String(config?.chatId ?? "");
-          await sendTelegramMessage({ botToken, chatId, text: summary });
-          delivered += 1;
-          return;
-        }
-        if (endpointType === "email") {
-          const config = configAny as EmailConfig;
-          const to = String(config?.to ?? "").trim();
-          if (!to) return;
-          await sendEmail({ to, subject: emailSubject, text: summary, smtp: config });
-          delivered += 1;
-          return;
-        }
-        if (endpointType === "webhook") {
-          const config = configAny as WebhookConfig;
-          const url = String(config?.url ?? "");
-          await sendGenericWebhook({ url, body: webhookPayload });
-          delivered += 1;
-          return;
-        }
-        if (endpointType === "slack") {
-          const webhookUrl = String(configAny?.webhookUrl ?? "");
-          if (!webhookUrl) return;
-          const res = await fetch(webhookUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              text: `[LeMedia] ${ctx.title}`,
-              blocks: [{ type: "section", text: { type: "mrkdwn", text: summary } }]
-            })
-          });
-          if (!res.ok) throw new Error(`Slack webhook failed: HTTP ${res.status}`);
-          delivered += 1;
-          return;
-        }
-        if (endpointType === "gotify") {
-          const baseUrl = String(configAny?.baseUrl ?? "").replace(/\/+$/, "");
-          const token = String(configAny?.token ?? "");
-          if (!baseUrl || !token) return;
-          const res = await fetch(`${baseUrl}/message?token=${encodeURIComponent(token)}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              title: ctx.title,
-              message: summary,
-              priority: 8
-            })
-          });
-          if (!res.ok) throw new Error(`Gotify request failed: HTTP ${res.status}`);
-          delivered += 1;
-          return;
-        }
-        if (endpointType === "ntfy") {
-          const topic = String(configAny?.topic ?? "");
-          const baseUrl = String(configAny?.baseUrl ?? "https://ntfy.sh").replace(/\/+$/, "");
-          if (!topic) return;
-          const res = await fetch(`${baseUrl}/${encodeURIComponent(topic)}`, {
-            method: "POST",
-            headers: { "Content-Type": "text/plain" },
-            body: summary
-          });
-          if (!res.ok) throw new Error(`ntfy request failed: HTTP ${res.status}`);
-          delivered += 1;
-          return;
-        }
-        if (endpointType === "pushbullet") {
-          const accessToken = String(configAny?.accessToken ?? "");
-          if (!accessToken) return;
-          const res = await fetch("https://api.pushbullet.com/v2/pushes", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Access-Token": accessToken
-            },
-            body: JSON.stringify({
-              type: "note",
-              title: ctx.title,
-              body: summary
-            })
-          });
-          if (!res.ok) throw new Error(`Pushbullet request failed: HTTP ${res.status}`);
-          delivered += 1;
-          return;
-        }
-        if (endpointType === "pushover") {
-          const apiToken = String(configAny?.apiToken ?? "");
-          const userKey = String(configAny?.userKey ?? "");
-          if (!apiToken || !userKey) return;
-          const params = new URLSearchParams({
-            token: apiToken,
-            user: userKey,
+      const result = await deliverWithReliability(
+        {
+          endpointId: endpoint.id,
+          endpointType,
+          eventType: event,
+          metadata: {
             title: ctx.title,
-            message: summary
-          });
-          const res = await fetch("https://api.pushover.net/1/messages.json", {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: params.toString()
-          });
-          if (!res.ok) throw new Error(`Pushover request failed: HTTP ${res.status}`);
-          delivered += 1;
-          return;
+            serviceName: ctx.serviceName ?? null,
+            serviceType: ctx.serviceType ?? null,
+          }
+        },
+        async () => {
+          if (endpointType === "discord") {
+            const config = configAny as DiscordConfig;
+            const webhookUrl = String(config?.webhookUrl ?? "");
+            if (!webhookUrl) throw new NotificationDeliverySkipError("Discord webhook URL is not configured");
+            await sendDiscordWebhook({ webhookUrl, embeds: [embed] });
+            return;
+          }
+          if (endpointType === "telegram") {
+            const config = configAny as TelegramConfig;
+            const botToken = String(config?.botToken ?? "");
+            const chatId = String(config?.chatId ?? "");
+            if (!botToken || !chatId) throw new NotificationDeliverySkipError("Telegram bot token or chat ID missing");
+            await sendTelegramMessage({ botToken, chatId, text: summary });
+            return;
+          }
+          if (endpointType === "email") {
+            const config = configAny as EmailConfig;
+            const to = String(config?.to ?? "").trim();
+            if (!to) throw new NotificationDeliverySkipError("No recipient email configured");
+            await sendEmail({ to, subject: emailSubject, text: summary, smtp: config });
+            return;
+          }
+          if (endpointType === "webhook") {
+            const config = configAny as WebhookConfig;
+            const url = String(config?.url ?? "");
+            if (!url) throw new NotificationDeliverySkipError("Webhook URL is not configured");
+            await sendGenericWebhook({ url, body: webhookPayload });
+            return;
+          }
+          if (endpointType === "slack") {
+            const webhookUrl = String(configAny?.webhookUrl ?? "");
+            if (!webhookUrl) throw new NotificationDeliverySkipError("Slack webhook URL is not configured");
+            const res = await fetch(webhookUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                text: `[LeMedia] ${ctx.title}`,
+                blocks: [{ type: "section", text: { type: "mrkdwn", text: summary } }]
+              })
+            });
+            if (!res.ok) throw new Error(`Slack webhook failed: HTTP ${res.status}`);
+            return;
+          }
+          if (endpointType === "gotify") {
+            const baseUrl = String(configAny?.baseUrl ?? "").replace(/\/+$/, "");
+            const token = String(configAny?.token ?? "");
+            if (!baseUrl || !token) throw new NotificationDeliverySkipError("Gotify base URL or token missing");
+            const res = await fetch(`${baseUrl}/message?token=${encodeURIComponent(token)}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                title: ctx.title,
+                message: summary,
+                priority: 8
+              })
+            });
+            if (!res.ok) throw new Error(`Gotify request failed: HTTP ${res.status}`);
+            return;
+          }
+          if (endpointType === "ntfy") {
+            const topic = String(configAny?.topic ?? "");
+            const baseUrl = String(configAny?.baseUrl ?? "https://ntfy.sh").replace(/\/+$/, "");
+            if (!topic) throw new NotificationDeliverySkipError("ntfy topic is not configured");
+            const res = await fetch(`${baseUrl}/${encodeURIComponent(topic)}`, {
+              method: "POST",
+              headers: { "Content-Type": "text/plain" },
+              body: summary
+            });
+            if (!res.ok) throw new Error(`ntfy request failed: HTTP ${res.status}`);
+            return;
+          }
+          if (endpointType === "pushbullet") {
+            const accessToken = String(configAny?.accessToken ?? "");
+            if (!accessToken) throw new NotificationDeliverySkipError("Pushbullet access token is not configured");
+            const res = await fetch("https://api.pushbullet.com/v2/pushes", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Access-Token": accessToken
+              },
+              body: JSON.stringify({
+                type: "note",
+                title: ctx.title,
+                body: summary
+              })
+            });
+            if (!res.ok) throw new Error(`Pushbullet request failed: HTTP ${res.status}`);
+            return;
+          }
+          if (endpointType === "pushover") {
+            const apiToken = String(configAny?.apiToken ?? "");
+            const userKey = String(configAny?.userKey ?? "");
+            if (!apiToken || !userKey) throw new NotificationDeliverySkipError("Pushover token or user key missing");
+            const params = new URLSearchParams({
+              token: apiToken,
+              user: userKey,
+              title: ctx.title,
+              message: summary
+            });
+            const res = await fetch("https://api.pushover.net/1/messages.json", {
+              method: "POST",
+              headers: { "Content-Type": "application/x-www-form-urlencoded" },
+              body: params.toString()
+            });
+            if (!res.ok) throw new Error(`Pushover request failed: HTTP ${res.status}`);
+            return;
+          }
+          throw new NotificationDeliverySkipError(`Unsupported endpoint type for system alerts: ${endpointType}`);
         }
-      } catch (err) {
-        logger.error(`[notify] system alert failed endpoint=${endpoint.id} type=${endpointType}`, err);
+      );
+      if (result.status === "success") {
+        delivered += 1;
       }
     })
   );
