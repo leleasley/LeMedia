@@ -139,44 +139,7 @@ async function syncEpisodeRequest(request: RequestForSync, queueMap: Map<number,
   }
 
   const episodes = await getEpisodesForSeries(series.id);
-  if (Array.isArray(episodes) && episodes.length > 0 && series?.monitored) {
-    const requestedKeys = new Set(
-      request.items
-        .filter(item => item.provider === "sonarr" && item.season != null && item.episode != null)
-        .map(item => `${item.season}:${item.episode}`)
-    );
-    const missingEpisodes = episodes.filter((ep: any) => {
-      const seasonNumber = Number(ep?.seasonNumber);
-      const episodeNumber = Number(ep?.episodeNumber);
-      if (!Number.isFinite(seasonNumber) || !Number.isFinite(episodeNumber)) return false;
-      if (seasonNumber <= 0) return false; // skip specials
-      return !requestedKeys.has(`${seasonNumber}:${episodeNumber}`);
-    });
-    if (missingEpisodes.length) {
-      await Promise.all(
-        missingEpisodes.map((ep: any) =>
-          addRequestItem({
-            requestId: request.id,
-            provider: "sonarr",
-            providerId: series.id ?? null,
-            season: Number(ep.seasonNumber),
-            episode: Number(ep.episodeNumber),
-            status: "submitted"
-          })
-        )
-      );
-      for (const ep of missingEpisodes) {
-        request.items.push({
-          id: 0,
-          provider: "sonarr",
-          provider_id: series.id ?? null,
-          season: Number(ep.seasonNumber),
-          episode: Number(ep.episodeNumber),
-          status: "submitted"
-        });
-      }
-    }
-  }
+  // New-season auto-requests are handled by the dedicated job.
   const byKey = new Map<string, any>();
   for (const ep of episodes || []) {
     const seasonNumber = Number(ep?.seasonNumber);
@@ -228,6 +191,93 @@ async function syncEpisodeRequest(request: RequestForSync, queueMap: Map<number,
   }
 
   return null;
+}
+
+async function autoRequestMissingEpisodesForSeries(request: RequestForSync) {
+  const item = request.items.find(i => i.provider === "sonarr");
+  if (!item || !item.provider_id) return { added: 0 };
+
+  const series = await getSeries(item.provider_id).catch(() => null);
+  if (!series?.id || !series?.monitored) return { added: 0 };
+
+  const episodes = await getEpisodesForSeries(series.id).catch(() => []);
+  if (!Array.isArray(episodes) || episodes.length === 0) return { added: 0 };
+
+  const requestedKeys = new Set(
+    request.items
+      .filter(item => item.provider === "sonarr" && item.season != null && item.episode != null)
+      .map(item => `${item.season}:${item.episode}`)
+  );
+
+  const missingEpisodes = episodes.filter((ep: any) => {
+    const seasonNumber = Number(ep?.seasonNumber);
+    const episodeNumber = Number(ep?.episodeNumber);
+    if (!Number.isFinite(seasonNumber) || !Number.isFinite(episodeNumber)) return false;
+    if (seasonNumber <= 0) return false;
+    return !requestedKeys.has(`${seasonNumber}:${episodeNumber}`);
+  });
+
+  if (!missingEpisodes.length) return { added: 0 };
+
+  await Promise.all(
+    missingEpisodes.map((ep: any) =>
+      addRequestItem({
+        requestId: request.id,
+        provider: "sonarr",
+        providerId: series.id ?? null,
+        season: Number(ep.seasonNumber),
+        episode: Number(ep.episodeNumber),
+        status: "submitted"
+      })
+    )
+  );
+
+  const missingEpisodeIds = missingEpisodes
+    .map((ep: any) => Number(ep?.id))
+    .filter((id: number) => Number.isFinite(id) && id > 0);
+  if (missingEpisodeIds.length > 0) {
+    await setEpisodeMonitored(missingEpisodeIds, true).catch(() => null);
+    await episodeSearch(missingEpisodeIds).catch(() => null);
+  }
+
+  if (request.status !== "pending" && request.status !== "queued") {
+    await updateRequestStatuses(request, "submitted", { syncItemStatuses: false });
+  }
+
+  await notifyRequestEvent("request_submitted", {
+    requestId: request.id,
+    requestType: request.request_type,
+    tmdbId: request.tmdb_id,
+    title: request.title,
+    username: request.username || "Unknown",
+    userId: request.requested_by,
+    sonarrSeriesId: series.id ?? null,
+    tvdbId: series?.tvdbId ?? null
+  });
+
+  return { added: missingEpisodes.length };
+}
+
+export async function syncNewSeasonsAutoRequests(): Promise<{ processed: number; added: number; errors: number }> {
+  const requests = await listRequestsForSync(200);
+  if (!requests.length) return { processed: 0, added: 0, errors: 0 };
+
+  let processed = 0;
+  let added = 0;
+  let errors = 0;
+
+  for (const request of requests) {
+    if (request.request_type !== "episode") continue;
+    processed += 1;
+    try {
+      const result = await autoRequestMissingEpisodesForSeries(request);
+      added += result.added;
+    } catch {
+      errors += 1;
+    }
+  }
+
+  return { processed, added, errors };
 }
 
 import { listUsersWithWatchlistSync, createRequestWithItemsTransaction, findActiveRequestByTmdb, getUserTraktToken, upsertUserTraktToken, getTraktConfig } from "@/db";

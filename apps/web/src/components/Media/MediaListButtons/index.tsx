@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { HeartIcon, StarIcon } from "@heroicons/react/24/outline";
+import { HeartIcon, StarIcon, ListBulletIcon } from "@heroicons/react/24/outline";
 import { HeartIcon as HeartIconSolid, StarIcon as StarIconSolid } from "@heroicons/react/24/solid";
 import { cn } from "@/lib/utils";
 import { csrfFetch } from "@/lib/csrf-client";
 import { useToast } from "@/components/Providers/ToastProvider";
 import Button from "@/components/Common/Button";
+import { AddToListModal } from "@/components/Lists";
 
 type MediaType = "movie" | "tv";
 
@@ -16,17 +17,20 @@ export function MediaListButtons({
   className,
   initialFavorite,
   initialWatchlist,
+  title,
 }: {
   tmdbId: number;
   mediaType: MediaType;
   className?: string;
   initialFavorite?: boolean | null;
   initialWatchlist?: boolean | null;
+  title?: string;
 }) {
   const [favorite, setFavorite] = useState(Boolean(initialFavorite));
   const [watchlist, setWatchlist] = useState(Boolean(initialWatchlist));
   const [loading, setLoading] = useState(initialFavorite == null || initialWatchlist == null);
   const [saving, setSaving] = useState(false);
+  const [listModalOpen, setListModalOpen] = useState(false);
   const toast = useToast();
 
   useEffect(() => {
@@ -87,37 +91,56 @@ export function MediaListButtons({
   };
 
   return (
-    <div className={cn("flex flex-wrap items-center gap-2", className)}>
-      <Button
-        buttonType="ghost"
-        buttonSize="md"
-        onClick={() => toggle("favorite")}
-        disabled={loading || saving}
-        className="z-40"
-        aria-label={favorite ? "Remove from favorites" : "Add to favorites"}
-        aria-pressed={favorite}
-      >
-        {favorite ? (
-          <HeartIconSolid className="h-4 w-4 text-red-500" />
-        ) : (
-          <HeartIcon className="h-4 w-4 text-red-500" />
-        )}
-      </Button>
-      <Button
-        buttonType="ghost"
-        buttonSize="md"
-        onClick={() => toggle("watchlist")}
-        disabled={loading || saving}
-        className="z-40"
-        aria-label={watchlist ? "Remove from watchlist" : "Add to watchlist"}
-        aria-pressed={watchlist}
-      >
-        {watchlist ? (
-          <StarIconSolid className="h-4 w-4 text-yellow-500" />
-        ) : (
-          <StarIcon className="h-4 w-4 text-yellow-500" />
-        )}
-      </Button>
-    </div>
+    <>
+      <div className={cn("flex flex-wrap items-center gap-2", className)}>
+        <Button
+          buttonType="ghost"
+          buttonSize="md"
+          onClick={() => toggle("favorite")}
+          disabled={loading || saving}
+          className="z-40"
+          aria-label={favorite ? "Remove from favorites" : "Add to favorites"}
+          aria-pressed={favorite}
+        >
+          {favorite ? (
+            <HeartIconSolid className="h-4 w-4 text-red-500" />
+          ) : (
+            <HeartIcon className="h-4 w-4 text-red-500" />
+          )}
+        </Button>
+        <Button
+          buttonType="ghost"
+          buttonSize="md"
+          onClick={() => toggle("watchlist")}
+          disabled={loading || saving}
+          className="z-40"
+          aria-label={watchlist ? "Remove from watchlist" : "Add to watchlist"}
+          aria-pressed={watchlist}
+        >
+          {watchlist ? (
+            <StarIconSolid className="h-4 w-4 text-yellow-500" />
+          ) : (
+            <StarIcon className="h-4 w-4 text-yellow-500" />
+          )}
+        </Button>
+        <Button
+          buttonType="ghost"
+          buttonSize="md"
+          onClick={() => setListModalOpen(true)}
+          disabled={loading}
+          className="z-40"
+          aria-label="Add to list"
+        >
+          <ListBulletIcon className="h-4 w-4 text-blue-500" />
+        </Button>
+      </div>
+      <AddToListModal
+        open={listModalOpen}
+        onClose={() => setListModalOpen(false)}
+        tmdbId={tmdbId}
+        mediaType={mediaType}
+        title={title ?? "Unknown"}
+      />
+    </>
   );
 }

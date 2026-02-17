@@ -1,4 +1,4 @@
-import { syncPendingRequests, syncWatchlists } from "@/lib/request-sync";
+import { syncNewSeasonsAutoRequests, syncPendingRequests, syncWatchlists } from "@/lib/request-sync";
 import { logger } from "@/lib/logger";
 import { sendWeeklyDigest } from "@/notifications/weekly-digest";
 import { purgeExpiredSessions } from "@/db";
@@ -23,6 +23,11 @@ export const jobHandlers: Record<string, JobHandler> = {
     logger.info("[Job] Starting watchlist-sync");
     const result = await syncWatchlists();
     logger.info(`[Job] watchlist-sync completed: ${result.createdCount} created, ${result.errors} errors`);
+  },
+  "new-season-autorequest": async () => {
+    logger.info("[Job] Starting new-season-autorequest");
+    const result = await syncNewSeasonsAutoRequests();
+    logger.info(`[Job] new-season-autorequest completed: ${result.processed} checked, ${result.added} added, ${result.errors} errors`);
   },
   "weekly-digest": async () => {
     logger.info("[Job] Starting weekly-digest");

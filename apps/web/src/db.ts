@@ -3194,6 +3194,7 @@ async function ensureSchema() {
       INSERT INTO jobs (name, schedule, interval_seconds, type, run_on_start)
       VALUES
           ('request-sync', '*/5 * * * *', 300, 'system', TRUE),
+          ('new-season-autorequest', '*/15 * * * *', 900, 'system', TRUE),
           ('watchlist-sync', '0 * * * *', 3600, 'system', FALSE),
           ('letterboxd-import', '0 4 * * *', 86400, 'system', FALSE),
           ('weekly-digest', '0 9 * * 1', 604800, 'system', FALSE),
@@ -3202,12 +3203,22 @@ async function ensureSchema() {
           ('jellyfin-availability-sync', '0 */4 * * *', 14400, 'system', FALSE),
           ('upgrade-finder-4k', '0 3 * * *', 86400, 'system', FALSE),
           ('prowlarr-indexer-sync', '*/5 * * * *', 300, 'system', TRUE),
+          ('plex-availability-sync', '0 */4 * * *', 14400, 'system', FALSE),
           ('system-alerts', '*/5 * * * *', 300, 'system', TRUE),
           ('backup-snapshot', '30 2 * * *', 86400, 'system', FALSE)
       ON CONFLICT (name) DO NOTHING;
     `);
   })();
   return ensureSchemaPromise;
+}
+
+/**
+ * Eagerly initialize the database schema and seed data (jobs, tables, etc.).
+ * Call this at server startup to ensure all schema and seed rows exist
+ * before the job scheduler or any requests need them.
+ */
+export async function initializeDatabase() {
+  await ensureSchema();
 }
 
 async function bootstrapDashboardSlidersForUser(userId: number) {
@@ -6680,4 +6691,722 @@ export async function getRecentJellyfinScans(limit = 10): Promise<JellyfinScanLo
     [limit]
   );
   return res.rows;
+}
+
+// ==================== CUSTOM LISTS ====================
+
+export interface CustomList {
+  id: number;
+  userId: number;
+  name: string;
+  description: string | null;
+  isPublic: boolean;
+  shareId: string;
+  shareSlug: string | null;
+  mood: string | null;
+  occasion: string | null;
+  coverTmdbId: number | null;
+  coverMediaType: "movie" | "tv" | null;
+  customCoverImagePath: string | null;
+  customCoverImageSize: number | null;
+  customCoverImageMimeType: string | null;
+  itemCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CustomListItem {
+  id: number;
+  listId: number;
+  tmdbId: number;
+  mediaType: "movie" | "tv";
+  position: number;
+  note: string | null;
+  addedAt: string;
+}
+
+export async function createCustomList(input: {
+  userId: number;
+  name: string;
+  description?: string;
+  isPublic?: boolean;
+  mood?: string;
+  occasion?: string;
+}): Promise<CustomList> {
+  const p = getPool();
+  const shareSlug = await generateUniqueCustomListSlug(input.name);
+  const res = await p.query(
+    `INSERT INTO custom_list (user_id, name, description, is_public, share_slug, mood, occasion)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING id, user_id as "userId", name, description, is_public as "isPublic",
+               share_id as "shareId", share_slug as "shareSlug", mood, occasion,
+               cover_tmdb_id as "coverTmdbId",
+               cover_media_type as "coverMediaType",
+               custom_cover_image_path as "customCoverImagePath",
+               custom_cover_image_size as "customCoverImageSize",
+               custom_cover_image_mime_type as "customCoverImageMimeType",
+               item_count as "itemCount",
+               created_at as "createdAt", updated_at as "updatedAt"`,
+    [
+      input.userId,
+      input.name,
+      input.description || null,
+      input.isPublic ?? false,
+      shareSlug,
+      input.mood || null,
+      input.occasion || null,
+    ]
+  );
+  return res.rows[0];
+}
+
+export async function getCustomListById(listId: number): Promise<CustomList | null> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, user_id as "userId", name, description, is_public as "isPublic",
+          share_id as "shareId", share_slug as "shareSlug", mood, occasion,
+          cover_tmdb_id as "coverTmdbId",
+          cover_media_type as "coverMediaType",
+          custom_cover_image_path as "customCoverImagePath",
+          custom_cover_image_size as "customCoverImageSize",
+          custom_cover_image_mime_type as "customCoverImageMimeType",
+          item_count as "itemCount",
+          created_at as "createdAt", updated_at as "updatedAt"
+     FROM custom_list WHERE id = $1`,
+    [listId]
+  );
+  const row = res.rows[0] || null;
+  if (row && !row.shareSlug) {
+    const shareSlug = await generateUniqueCustomListSlug(row.name, row.id);
+    await p.query(`UPDATE custom_list SET share_slug = $1 WHERE id = $2`, [shareSlug, row.id]);
+    row.shareSlug = shareSlug;
+  }
+  return row;
+}
+
+export async function getCustomListByShareId(shareIdOrSlug: string): Promise<CustomList | null> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, user_id as "userId", name, description, is_public as "isPublic",
+          share_id as "shareId", share_slug as "shareSlug", mood, occasion,
+          cover_tmdb_id as "coverTmdbId",
+          cover_media_type as "coverMediaType",
+          custom_cover_image_path as "customCoverImagePath",
+          custom_cover_image_size as "customCoverImageSize",
+          custom_cover_image_mime_type as "customCoverImageMimeType",
+          item_count as "itemCount",
+          created_at as "createdAt", updated_at as "updatedAt"
+     FROM custom_list WHERE (share_id::text = $1 OR share_slug = $1) AND is_public = TRUE`,
+    [shareIdOrSlug]
+  );
+  const row = res.rows[0] || null;
+  if (row && !row.shareSlug) {
+    const shareSlug = await generateUniqueCustomListSlug(row.name, row.id);
+    await p.query(`UPDATE custom_list SET share_slug = $1 WHERE id = $2`, [shareSlug, row.id]);
+    row.shareSlug = shareSlug;
+  }
+  return row;
+}
+
+export async function listUserCustomLists(userId: number): Promise<CustomList[]> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, user_id as "userId", name, description, is_public as "isPublic",
+          share_id as "shareId", share_slug as "shareSlug", mood, occasion,
+          cover_tmdb_id as "coverTmdbId",
+          cover_media_type as "coverMediaType",
+          custom_cover_image_path as "customCoverImagePath",
+          custom_cover_image_size as "customCoverImageSize",
+          custom_cover_image_mime_type as "customCoverImageMimeType",
+          item_count as "itemCount",
+          created_at as "createdAt", updated_at as "updatedAt"
+     FROM custom_list WHERE user_id = $1 ORDER BY updated_at DESC`,
+    [userId]
+  );
+  return res.rows;
+}
+
+export async function updateCustomList(
+  listId: number,
+  userId: number,
+  updates: {
+    name?: string;
+    description?: string;
+    isPublic?: boolean;
+    shareSlug?: string;
+    mood?: string;
+    occasion?: string;
+  }
+): Promise<CustomList | null> {
+  const p = getPool();
+  const sets: string[] = [];
+  const values: any[] = [];
+  let idx = 1;
+
+  if (updates.shareSlug !== undefined) {
+    const normalizedSlug = normalizeCustomListSlug(updates.shareSlug);
+    if (!normalizedSlug) {
+      throw new Error("Invalid share slug");
+    }
+    const slugConflict = await p.query(
+      `SELECT id FROM custom_list WHERE share_slug = $1 AND id <> $2 LIMIT 1`,
+      [normalizedSlug, listId]
+    );
+    if (slugConflict.rows.length) {
+      throw new Error("Share slug already in use");
+    }
+    sets.push(`share_slug = $${idx++}`);
+    values.push(normalizedSlug);
+  } else if (updates.name !== undefined) {
+    const shareSlug = await generateUniqueCustomListSlug(updates.name, listId);
+    sets.push(`share_slug = $${idx++}`);
+    values.push(shareSlug);
+  }
+
+  if (updates.name !== undefined) {
+    sets.push(`name = $${idx++}`);
+    values.push(updates.name);
+  }
+  if (updates.description !== undefined) {
+    sets.push(`description = $${idx++}`);
+    values.push(updates.description);
+  }
+  if (updates.mood !== undefined) {
+    sets.push(`mood = $${idx++}`);
+    values.push(updates.mood);
+  }
+  if (updates.occasion !== undefined) {
+    sets.push(`occasion = $${idx++}`);
+    values.push(updates.occasion);
+  }
+  if (updates.isPublic !== undefined) {
+    sets.push(`is_public = $${idx++}`);
+    values.push(updates.isPublic);
+  }
+
+  if (sets.length === 0) return getCustomListById(listId);
+
+  sets.push(`updated_at = NOW()`);
+  values.push(listId, userId);
+
+  const res = await p.query(
+    `UPDATE custom_list SET ${sets.join(", ")}
+     WHERE id = $${idx++} AND user_id = $${idx}
+     RETURNING id, user_id as "userId", name, description, is_public as "isPublic",
+               share_id as "shareId", share_slug as "shareSlug", mood, occasion,
+               cover_tmdb_id as "coverTmdbId",
+               cover_media_type as "coverMediaType",
+               custom_cover_image_path as "customCoverImagePath",
+               custom_cover_image_size as "customCoverImageSize",
+               custom_cover_image_mime_type as "customCoverImageMimeType",
+               item_count as "itemCount",
+               created_at as "createdAt", updated_at as "updatedAt"`,
+    values
+  );
+  return res.rows[0] || null;
+}
+
+function slugifyCustomListName(name: string): string {
+  const trimmed = name.trim().toLowerCase();
+  const slug = trimmed
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || "list";
+}
+
+function normalizeCustomListSlug(input: string): string {
+  const trimmed = input.trim().toLowerCase();
+  return trimmed.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+async function generateUniqueCustomListSlug(name: string, listId?: number): Promise<string> {
+  const base = slugifyCustomListName(name);
+  const p = getPool();
+  let candidate = base;
+  let suffix = 2;
+
+  while (true) {
+    const res = await p.query(
+      `SELECT id FROM custom_list WHERE share_slug = $1 ${listId ? "AND id <> $2" : ""} LIMIT 1`,
+      listId ? [candidate, listId] : [candidate]
+    );
+    if (!res.rows.length) return candidate;
+    candidate = `${base}-${suffix++}`;
+  }
+}
+
+export async function deleteCustomList(listId: number, userId: number): Promise<{ deleted: boolean; imagePath: string | null }> {
+  const p = getPool();
+  const client = await p.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Get image path before deletion
+    const getRes = await client.query(
+      `SELECT custom_cover_image_path FROM custom_list WHERE id = $1 AND user_id = $2`,
+      [listId, userId]
+    );
+    const imagePath = getRes.rows[0]?.custom_cover_image_path ?? null;
+
+    // Delete the list
+    const delRes = await client.query(
+      `DELETE FROM custom_list WHERE id = $1 AND user_id = $2`,
+      [listId, userId]
+    );
+
+    await client.query("COMMIT");
+    return { deleted: (delRes.rowCount ?? 0) > 0, imagePath };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function addCustomListItem(input: {
+  listId: number;
+  tmdbId: number;
+  mediaType: "movie" | "tv";
+  note?: string;
+}): Promise<CustomListItem> {
+  const p = getPool();
+  // Get max position
+  const posRes = await p.query(
+    `SELECT COALESCE(MAX(position), -1) + 1 as next_pos FROM custom_list_item WHERE list_id = $1`,
+    [input.listId]
+  );
+  const nextPos = posRes.rows[0]?.next_pos ?? 0;
+
+  const res = await p.query(
+    `INSERT INTO custom_list_item (list_id, tmdb_id, media_type, position, note)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (list_id, tmdb_id, media_type) DO UPDATE SET note = EXCLUDED.note
+     RETURNING id, list_id as "listId", tmdb_id as "tmdbId", media_type as "mediaType",
+               position, note, added_at as "addedAt"`,
+    [input.listId, input.tmdbId, input.mediaType, nextPos, input.note || null]
+  );
+  return res.rows[0];
+}
+
+export async function removeCustomListItem(
+  listId: number,
+  tmdbId: number,
+  mediaType: "movie" | "tv"
+): Promise<boolean> {
+  const p = getPool();
+  const res = await p.query(
+    `DELETE FROM custom_list_item WHERE list_id = $1 AND tmdb_id = $2 AND media_type = $3`,
+    [listId, tmdbId, mediaType]
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
+export async function listCustomListItems(listId: number): Promise<CustomListItem[]> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, list_id as "listId", tmdb_id as "tmdbId", media_type as "mediaType",
+            position, note, added_at as "addedAt"
+     FROM custom_list_item WHERE list_id = $1 ORDER BY position ASC`,
+    [listId]
+  );
+  return res.rows;
+}
+
+export async function reorderCustomListItems(listId: number, itemIds: number[]): Promise<void> {
+  const p = getPool();
+  const client = await p.connect();
+  try {
+    await client.query("BEGIN");
+    for (let i = 0; i < itemIds.length; i++) {
+      await client.query(
+        `UPDATE custom_list_item SET position = $1 WHERE id = $2 AND list_id = $3`,
+        [i, itemIds[i], listId]
+      );
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function setCustomListCover(
+  listId: number,
+  userId: number,
+  tmdbId: number,
+  mediaType: "movie" | "tv"
+): Promise<void> {
+  const p = getPool();
+  await p.query(
+    `UPDATE custom_list SET cover_tmdb_id = $1, cover_media_type = $2, updated_at = NOW()
+     WHERE id = $3 AND user_id = $4`,
+    [tmdbId, mediaType, listId, userId]
+  );
+}
+
+export async function setCustomListCoverImage(
+  listId: number,
+  userId: number,
+  imagePath: string,
+  imageSize: number,
+  mimeType: string,
+  oldImagePath?: string | null
+): Promise<void> {
+  const p = getPool();
+  const client = await p.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Clear TMDB cover and set custom image
+    await client.query(
+      `UPDATE custom_list SET 
+        custom_cover_image_path = $1,
+        custom_cover_image_size = $2,
+        custom_cover_image_mime_type = $3,
+        cover_tmdb_id = NULL,
+        cover_media_type = NULL,
+        updated_at = NOW()
+       WHERE id = $4 AND user_id = $5`,
+      [imagePath, imageSize, mimeType, listId, userId]
+    );
+
+    // Note: File deletion is handled by the API endpoint, not here
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function removeCustomListCoverImage(
+  listId: number,
+  userId: number
+): Promise<{ imagePath: string | null }> {
+  const p = getPool();
+  const res = await p.query(
+    `UPDATE custom_list 
+     SET custom_cover_image_path = NULL,
+         custom_cover_image_size = NULL,
+         custom_cover_image_mime_type = NULL,
+         updated_at = NOW()
+     WHERE id = $1 AND user_id = $2
+     RETURNING custom_cover_image_path`,
+    [listId, userId]
+  );
+  if (!res.rows.length) {
+    return { imagePath: null };
+  }
+  return { imagePath: res.rows[0].custom_cover_image_path ?? null };
+}
+
+// ==================== TASTE PROFILE & QUIZ ====================
+
+export interface UserTasteProfile {
+  id: number;
+  userId: number;
+  genreAction: number | null;
+  genreAdventure: number | null;
+  genreAnimation: number | null;
+  genreComedy: number | null;
+  genreCrime: number | null;
+  genreDocumentary: number | null;
+  genreDrama: number | null;
+  genreFamily: number | null;
+  genreFantasy: number | null;
+  genreHistory: number | null;
+  genreHorror: number | null;
+  genreMusic: number | null;
+  genreMystery: number | null;
+  genreRomance: number | null;
+  genreScifi: number | null;
+  genreThriller: number | null;
+  genreWar: number | null;
+  genreWestern: number | null;
+  preferNewReleases: boolean | null;
+  preferClassics: boolean | null;
+  preferForeign: boolean | null;
+  preferIndie: boolean | null;
+  minRating: number | null;
+  moodIntense: number | null;
+  moodLighthearted: number | null;
+  moodThoughtful: number | null;
+  moodExciting: number | null;
+  preferMovies: number | null;
+  preferTv: number | null;
+  preferShort: boolean | null;
+  preferLong: boolean | null;
+  extendedPreferences: Record<string, any>;
+  quizCompleted: boolean;
+  quizCompletedAt: string | null;
+  quizVersion: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function getUserTasteProfile(userId: number): Promise<UserTasteProfile | null> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, user_id as "userId",
+            genre_action as "genreAction", genre_adventure as "genreAdventure",
+            genre_animation as "genreAnimation", genre_comedy as "genreComedy",
+            genre_crime as "genreCrime", genre_documentary as "genreDocumentary",
+            genre_drama as "genreDrama", genre_family as "genreFamily",
+            genre_fantasy as "genreFantasy", genre_history as "genreHistory",
+            genre_horror as "genreHorror", genre_music as "genreMusic",
+            genre_mystery as "genreMystery", genre_romance as "genreRomance",
+            genre_scifi as "genreScifi", genre_thriller as "genreThriller",
+            genre_war as "genreWar", genre_western as "genreWestern",
+            prefer_new_releases as "preferNewReleases", prefer_classics as "preferClassics",
+            prefer_foreign as "preferForeign", prefer_indie as "preferIndie",
+            min_rating as "minRating",
+            mood_intense as "moodIntense", mood_lighthearted as "moodLighthearted",
+            mood_thoughtful as "moodThoughtful", mood_exciting as "moodExciting",
+            prefer_movies as "preferMovies", prefer_tv as "preferTv",
+            prefer_short as "preferShort", prefer_long as "preferLong",
+            extended_preferences as "extendedPreferences",
+            quiz_completed as "quizCompleted", quiz_completed_at as "quizCompletedAt",
+            quiz_version as "quizVersion",
+            created_at as "createdAt", updated_at as "updatedAt"
+     FROM user_taste_profile WHERE user_id = $1`,
+    [userId]
+  );
+  return res.rows[0] || null;
+}
+
+export async function upsertUserTasteProfile(
+  userId: number,
+  updates: Partial<Omit<UserTasteProfile, "id" | "userId" | "createdAt" | "updatedAt">>
+): Promise<UserTasteProfile> {
+  const p = getPool();
+  
+  // Build dynamic upsert
+  const fields: string[] = ["user_id"];
+  const values: any[] = [userId];
+  const placeholders: string[] = ["$1"];
+  const updateSets: string[] = [];
+  let idx = 2;
+
+  const fieldMap: Record<string, string> = {
+    genreAction: "genre_action",
+    genreAdventure: "genre_adventure",
+    genreAnimation: "genre_animation",
+    genreComedy: "genre_comedy",
+    genreCrime: "genre_crime",
+    genreDocumentary: "genre_documentary",
+    genreDrama: "genre_drama",
+    genreFamily: "genre_family",
+    genreFantasy: "genre_fantasy",
+    genreHistory: "genre_history",
+    genreHorror: "genre_horror",
+    genreMusic: "genre_music",
+    genreMystery: "genre_mystery",
+    genreRomance: "genre_romance",
+    genreScifi: "genre_scifi",
+    genreThriller: "genre_thriller",
+    genreWar: "genre_war",
+    genreWestern: "genre_western",
+    preferNewReleases: "prefer_new_releases",
+    preferClassics: "prefer_classics",
+    preferForeign: "prefer_foreign",
+    preferIndie: "prefer_indie",
+    minRating: "min_rating",
+    moodIntense: "mood_intense",
+    moodLighthearted: "mood_lighthearted",
+    moodThoughtful: "mood_thoughtful",
+    moodExciting: "mood_exciting",
+    preferMovies: "prefer_movies",
+    preferTv: "prefer_tv",
+    preferShort: "prefer_short",
+    preferLong: "prefer_long",
+    extendedPreferences: "extended_preferences",
+    quizCompleted: "quiz_completed",
+    quizCompletedAt: "quiz_completed_at",
+    quizVersion: "quiz_version",
+  };
+
+  for (const [key, dbField] of Object.entries(fieldMap)) {
+    if (key in updates) {
+      fields.push(dbField);
+      placeholders.push(`$${idx}`);
+      updateSets.push(`${dbField} = EXCLUDED.${dbField}`);
+      values.push((updates as any)[key]);
+      idx++;
+    }
+  }
+
+  updateSets.push("updated_at = NOW()");
+
+  const res = await p.query(
+    `INSERT INTO user_taste_profile (${fields.join(", ")})
+     VALUES (${placeholders.join(", ")})
+     ON CONFLICT (user_id) DO UPDATE SET ${updateSets.join(", ")}
+     RETURNING id, user_id as "userId",
+            genre_action as "genreAction", genre_adventure as "genreAdventure",
+            genre_animation as "genreAnimation", genre_comedy as "genreComedy",
+            genre_crime as "genreCrime", genre_documentary as "genreDocumentary",
+            genre_drama as "genreDrama", genre_family as "genreFamily",
+            genre_fantasy as "genreFantasy", genre_history as "genreHistory",
+            genre_horror as "genreHorror", genre_music as "genreMusic",
+            genre_mystery as "genreMystery", genre_romance as "genreRomance",
+            genre_scifi as "genreScifi", genre_thriller as "genreThriller",
+            genre_war as "genreWar", genre_western as "genreWestern",
+            prefer_new_releases as "preferNewReleases", prefer_classics as "preferClassics",
+            prefer_foreign as "preferForeign", prefer_indie as "preferIndie",
+            min_rating as "minRating",
+            mood_intense as "moodIntense", mood_lighthearted as "moodLighthearted",
+            mood_thoughtful as "moodThoughtful", mood_exciting as "moodExciting",
+            prefer_movies as "preferMovies", prefer_tv as "preferTv",
+            prefer_short as "preferShort", prefer_long as "preferLong",
+            extended_preferences as "extendedPreferences",
+            quiz_completed as "quizCompleted", quiz_completed_at as "quizCompletedAt",
+            quiz_version as "quizVersion",
+            created_at as "createdAt", updated_at as "updatedAt"`,
+    values
+  );
+  return res.rows[0];
+}
+
+export interface UserQuizState {
+  id: number;
+  userId: number;
+  currentStep: number;
+  totalSteps: number;
+  answers: Record<string, any>;
+  startedAt: string;
+  updatedAt: string;
+}
+
+export async function getUserQuizState(userId: number): Promise<UserQuizState | null> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, user_id as "userId", current_step as "currentStep",
+            total_steps as "totalSteps", answers, started_at as "startedAt",
+            updated_at as "updatedAt"
+     FROM user_quiz_state WHERE user_id = $1`,
+    [userId]
+  );
+  return res.rows[0] || null;
+}
+
+export async function upsertUserQuizState(
+  userId: number,
+  updates: { currentStep?: number; totalSteps?: number; answers?: Record<string, any> }
+): Promise<UserQuizState> {
+  const p = getPool();
+  const res = await p.query(
+    `INSERT INTO user_quiz_state (user_id, current_step, total_steps, answers)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (user_id) DO UPDATE SET
+       current_step = COALESCE($2, user_quiz_state.current_step),
+       total_steps = COALESCE($3, user_quiz_state.total_steps),
+       answers = COALESCE($4, user_quiz_state.answers),
+       updated_at = NOW()
+     RETURNING id, user_id as "userId", current_step as "currentStep",
+               total_steps as "totalSteps", answers, started_at as "startedAt",
+               updated_at as "updatedAt"`,
+    [userId, updates.currentStep ?? 0, updates.totalSteps ?? 12, updates.answers ?? {}]
+  );
+  return res.rows[0];
+}
+
+export async function deleteUserQuizState(userId: number): Promise<void> {
+  const p = getPool();
+  await p.query(`DELETE FROM user_quiz_state WHERE user_id = $1`, [userId]);
+}
+
+// ==================== BULK REQUESTS ====================
+
+export async function createBulkRequests(input: {
+  userId: number;
+  username: string;
+  items: Array<{
+    requestType: "movie" | "episode";
+    tmdbId: number;
+    title: string;
+    posterPath?: string;
+    backdropPath?: string;
+    releaseYear?: number;
+  }>;
+}): Promise<{ created: number; skipped: number; requestIds: string[] }> {
+  const p = getPool();
+  const client = await p.connect();
+  let created = 0;
+  let skipped = 0;
+  const requestIds: string[] = [];
+
+  try {
+    await client.query("BEGIN");
+
+    for (const item of input.items) {
+      // Check if active request exists
+      const existing = await client.query(
+        `SELECT id FROM media_request 
+         WHERE tmdb_id = $1 AND request_type = $2 AND status IN ('queued', 'pending', 'submitted')`,
+        [item.tmdbId, item.requestType]
+      );
+
+      if (existing.rows.length > 0) {
+        skipped++;
+        continue;
+      }
+
+      const reqId = randomUUID();
+      await client.query(
+        `INSERT INTO media_request (id, request_type, tmdb_id, title, requested_by, status, poster_path, backdrop_path, release_year)
+         VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8)`,
+        [reqId, item.requestType, item.tmdbId, item.title, input.userId, item.posterPath, item.backdropPath, item.releaseYear]
+      );
+
+      await client.query(
+        `INSERT INTO request_item (request_id, provider, status)
+         VALUES ($1, $2, 'pending')`,
+        [reqId, item.requestType === "movie" ? "radarr" : "sonarr"]
+      );
+
+      requestIds.push(reqId);
+      created++;
+    }
+
+    await client.query("COMMIT");
+    return { created, skipped, requestIds };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function bulkUpdateRequestStatus(
+  requestIds: string[],
+  status: string,
+  statusReason?: string,
+  deniedByUserId?: number
+): Promise<number> {
+  if (requestIds.length === 0) return 0;
+  const p = getPool();
+  
+  let query = `UPDATE media_request SET status = $1, updated_at = NOW()`;
+  const values: any[] = [status];
+  let idx = 2;
+
+  if (statusReason !== undefined) {
+    query += `, status_reason = $${idx++}`;
+    values.push(statusReason);
+  }
+  if (deniedByUserId !== undefined) {
+    query += `, denied_by_user_id = $${idx++}`;
+    values.push(deniedByUserId);
+  }
+
+  query += ` WHERE id = ANY($${idx})`;
+  values.push(requestIds);
+
+  const res = await p.query(query, values);
+  return res.rowCount ?? 0;
 }

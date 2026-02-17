@@ -44,7 +44,8 @@ const nextConfig = {
       { protocol: "https", hostname: "image.tmdb.org" },
       { protocol: "https", hostname: "artworks.thetvdb.com" },
       { protocol: "https", hostname: "gravatar.com" },
-      { protocol: "https", hostname: "plex.tv" }
+      { protocol: "https", hostname: "plex.tv" },
+      { protocol: "https", hostname: "api.qrserver.com" }
     ],
     // Allow local image proxy paths
     domains: [],
@@ -74,7 +75,7 @@ const nextConfig = {
       "default-src 'self'",
       `script-src ${scriptSources}`,
       "style-src 'self' 'unsafe-inline' https://challenges.cloudflare.com https://unpkg.com",
-      "img-src 'self' data: blob: https://image.tmdb.org https://artworks.thetvdb.com https://gravatar.com https://plex.tv",
+      "img-src 'self' data: blob: https://image.tmdb.org https://artworks.thetvdb.com https://gravatar.com https://plex.tv https://api.qrserver.com",
       "font-src 'self' data:",
       "connect-src 'self' https://api.themoviedb.org https://www.omdbapi.com https://challenges.cloudflare.com https://*.cloudflare.com",
       "frame-src 'self' https://www.youtube-nocookie.com https://challenges.cloudflare.com https://*.cloudflare.com",

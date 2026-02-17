@@ -57,33 +57,41 @@ export async function register() {
     // Check for debug flags in production
     checkDebugFlagsInProduction();
 
-    // Start the job scheduler (for background notifications, availability checks, etc.)
-    try {
-      const { startJobScheduler } = await import("./lib/jobs");
-      startJobScheduler();
-    } catch (error) {
-      console.error("❌ Failed to start job scheduler:", error);
-    }
-
+    // --- Step 1: Run database migrations first ---
     const autoMigrations = process.env.AUTO_MIGRATIONS !== "false";
     const allowDuringBuild = process.env.AUTO_MIGRATIONS_ALLOW_BUILD === "true";
     const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
-
-    if (!autoMigrations) {
-      console.log("✓ Database migrations disabled (AUTO_MIGRATIONS=false)");
-      return;
-    }
 
     if (isBuildPhase && !allowDuringBuild) {
       console.log("✓ Skipping migrations during build phase");
       return;
     }
 
-    const { runMigrations } = await import("./lib/migrations");
+    if (autoMigrations) {
+      const { runMigrations } = await import("./lib/migrations");
+      try {
+        await runMigrations();
+      } catch (error) {
+        console.error("❌ Failed to run migrations during startup:", error);
+      }
+    } else {
+      console.log("✓ Database migrations disabled (AUTO_MIGRATIONS=false)");
+    }
+
+    // --- Step 2: Initialize database schema & seed jobs eagerly ---
     try {
-      await runMigrations();
+      const { initializeDatabase } = await import("./db");
+      await initializeDatabase();
     } catch (error) {
-      console.error("❌ Failed to run migrations during startup:", error);
+      console.error("❌ Failed to initialize database schema:", error);
+    }
+
+    // --- Step 3: Start the job scheduler (runs immediately, then every 60s) ---
+    try {
+      const { startJobScheduler } = await import("./lib/jobs");
+      startJobScheduler();
+    } catch (error) {
+      console.error("❌ Failed to start job scheduler:", error);
     }
   }
 }

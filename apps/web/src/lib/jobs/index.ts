@@ -248,71 +248,70 @@ async function runJob(job: Job) {
   }
 }
 
+async function schedulerTick() {
+  try {
+    const pool = getPool();
+    const lock = await pool.query("SELECT pg_try_advisory_lock($1) AS locked", [SCHEDULER_LOCK_ID]);
+    if (!lock.rows?.[0]?.locked) {
+      return;
+    }
+
+    const jobs = await listJobs();
+    const now = new Date();
+
+    for (const job of jobs) {
+      if (!job.enabled) continue;
+
+      let nextRun = job.nextRun ? new Date(job.nextRun) : null;
+      if (nextRun && isCronSchedule(job.schedule) && now < nextRun) {
+        const expectedNext = computeNextRun(job.schedule, job.intervalSeconds, now);
+        if (Math.abs(expectedNext.getTime() - nextRun.getTime()) > 60 * 1000) {
+          await updateJobSchedule(job.id, job.schedule, job.intervalSeconds, expectedNext);
+          nextRun = expectedNext;
+        }
+      }
+
+      let shouldRun = false;
+
+      if (!nextRun) {
+          // First time seeing this job
+          if (job.runOnStart) {
+              shouldRun = true;
+          } else {
+              // Initialize nextRun
+              const computedNextRun = computeNextRun(job.schedule, job.intervalSeconds, now);
+              await updateJobRun(job.id, new Date(0), computedNextRun);
+              continue;
+          }
+      } else if (now >= nextRun) {
+          shouldRun = true;
+      }
+
+      if (shouldRun) {
+          void runJob(job);
+      }
+    }
+    await pool.query("SELECT pg_advisory_unlock($1)", [SCHEDULER_LOCK_ID]);
+  } catch (err) {
+    logger.error("[Job] Scheduler error", err);
+    try {
+      await getPool().query("SELECT pg_advisory_unlock($1)", [SCHEDULER_LOCK_ID]);
+    } catch {
+      // Ignore unlock errors if connection failed
+    }
+  }
+}
+
 export function startJobScheduler() {
   if (schedulerInterval || isBuildPhase || process.env.NODE_ENV === "test") return;
 
   void primeJobTimezoneFromSettings();
 
-  // Run every minute to check for pending jobs
-  schedulerInterval = setInterval(async () => {
-    try {
-      const pool = getPool();
-      const lock = await pool.query("SELECT pg_try_advisory_lock($1) AS locked", [SCHEDULER_LOCK_ID]);
-      if (!lock.rows?.[0]?.locked) {
-        return;
-      }
+  // Run the first tick immediately so jobs start without delay
+  void schedulerTick();
 
-      const jobs = await listJobs();
-      const now = new Date();
-
-      for (const job of jobs) {
-        if (!job.enabled) continue;
-
-        let nextRun = job.nextRun ? new Date(job.nextRun) : null;
-        if (nextRun && isCronSchedule(job.schedule) && now < nextRun) {
-          const expectedNext = computeNextRun(job.schedule, job.intervalSeconds, now);
-          if (Math.abs(expectedNext.getTime() - nextRun.getTime()) > 60 * 1000) {
-            await updateJobSchedule(job.id, job.schedule, job.intervalSeconds, expectedNext);
-            nextRun = expectedNext;
-          }
-        }
-
-        // Check if it's time to run
-        // If nextRun is null (first run), run immediately if runOnStart is true,
-        // OR if lastRun is null (never ran) and runOnStart is true.
-        // Actually, db migration sets next_run to NULL initially.
-
-        let shouldRun = false;
-
-        if (!nextRun) {
-            // First time seeing this job
-            if (job.runOnStart) {
-                shouldRun = true;
-            } else {
-                // Initialize nextRun
-                const nextRun = computeNextRun(job.schedule, job.intervalSeconds, now);
-                await updateJobRun(job.id, new Date(0), nextRun); // Set lastRun to epoch to indicate initialized
-                continue;
-            }
-        } else if (now >= nextRun) {
-            // Time to run the job
-            shouldRun = true;
-        }
-
-        if (shouldRun) {
-            void runJob(job);
-        }
-      }
-      await pool.query("SELECT pg_advisory_unlock($1)", [SCHEDULER_LOCK_ID]);
-    } catch (err) {
-      logger.error("[Job] Scheduler error", err);
-      try {
-        await getPool().query("SELECT pg_advisory_unlock($1)", [SCHEDULER_LOCK_ID]);
-      } catch {
-        // Ignore unlock errors if connection failed
-      }
-    }
-  }, 60 * 1000);
+  // Then continue checking every 60 seconds
+  schedulerInterval = setInterval(schedulerTick, 60 * 1000);
 
   logger.info("[Job] Scheduler started");
 }

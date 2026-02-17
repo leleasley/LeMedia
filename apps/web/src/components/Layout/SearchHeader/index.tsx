@@ -298,6 +298,17 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
                                 Favorites
                             </Link>
                             <Link
+                                href="/lists"
+                                prefetch={false}
+                                className="ios-pressable flex items-center gap-3 px-4 py-2.5 text-sm text-white/90 hover:text-white hover:bg-white/10 transition-colors"
+                                onClick={() => setMenuOpen(false)}
+                            >
+                                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                                </svg>
+                                My Lists
+                            </Link>
+                            <Link
                                 href="/requests"
                                 prefetch={false}
                                 className="ios-pressable flex items-center gap-3 px-4 py-2.5 text-sm text-white/90 hover:text-white hover:bg-white/10 transition-colors"

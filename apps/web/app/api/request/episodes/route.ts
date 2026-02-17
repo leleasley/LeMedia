@@ -268,7 +268,7 @@ export async function POST(req: NextRequest) {
       let seriesAdded = false;
       const sonarrService = await getActiveMediaService("sonarr").catch(() => null);
       const effectiveMonitoringOption = String(
-        body.monitoringOption ??
+        (user.isAdmin ? body.monitoringOption : undefined) ??
         (sonarrService?.config as any)?.monitoringOption ??
         "all"
       );
@@ -283,7 +283,7 @@ export async function POST(req: NextRequest) {
           monitoringOption: effectiveMonitoringOption
         });
         seriesAdded = true;
-      } else if (series.id && body.monitoringOption) {
+      } else if (series.id && user.isAdmin && body.monitoringOption) {
         await setSeriesMonitoringOption(series.id, effectiveMonitoringOption).catch(() => null);
       }
 

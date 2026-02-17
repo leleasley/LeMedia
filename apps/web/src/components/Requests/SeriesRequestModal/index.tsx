@@ -323,15 +323,19 @@ export function SeriesRequestModal({
         }))
         .filter(season => season.episodeNumbers.length > 0);
 
+      const payload: Record<string, unknown> = {
+        tmdbTvId: tmdbId,
+        seasons,
+        qualityProfileId: selectedQualityProfileId
+      };
+      if (isAdmin) {
+        payload.monitoringOption = selectedMonitoringOption;
+      }
+
       const res = await csrfFetch("/api/v1/request/episodes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          tmdbTvId: tmdbId,
-          seasons,
-          qualityProfileId: selectedQualityProfileId,
-          monitoringOption: selectedMonitoringOption
-        })
+        body: JSON.stringify(payload)
       });
 
       const j = await readJson(res);
@@ -514,20 +518,22 @@ export function SeriesRequestModal({
               </div>
             )}
 
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 text-sm font-semibold text-gray-200">
-                <span className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-violet-400 to-purple-400"></span>
-                Monitoring
-              </label>
-              <AdaptiveSelect
-                value={selectedMonitoringOption}
-                onValueChange={(value) => setSelectedMonitoringOption(value as MonitoringOption)}
-                disabled={isSubmitting}
-                options={monitoringOptions}
-                placeholder="Select monitoring"
-                className="w-full"
-              />
-            </div>
+            {isAdmin && (
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 text-sm font-semibold text-gray-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-violet-400 to-purple-400"></span>
+                  Monitoring
+                </label>
+                <AdaptiveSelect
+                  value={selectedMonitoringOption}
+                  onValueChange={(value) => setSelectedMonitoringOption(value as MonitoringOption)}
+                  disabled={isSubmitting}
+                  options={monitoringOptions}
+                  placeholder="Select monitoring"
+                  className="w-full"
+                />
+              </div>
+            )}
 
             {/* Search for Series Packs */}
             {isAdmin && prowlarrEnabled && (
