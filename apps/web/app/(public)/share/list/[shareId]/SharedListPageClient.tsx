@@ -2,9 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { Share2, Check, Globe, Calendar, Star, Film, Tv, ArrowRight } from "lucide-react";
-import { HoverMediaCard } from "@/components/Media/HoverMediaCard";
+import { useMemo, useState } from "react";
+import { Share2, Check, Globe, Star, Film, Tv, ArrowRight } from "lucide-react";
 
 interface ListItem {
   id: number;
@@ -19,12 +18,15 @@ interface ListItem {
 
 interface SharedListPageClientProps {
   list: {
+    id: number;
     name: string;
     description: string | null;
     itemCount: number;
     createdAt: string;
     coverTmdbId?: number | null;
     coverMediaType?: "movie" | "tv" | null;
+    customCoverImagePath?: string | null;
+    updatedAt?: string | null;
     mood?: string | null;
     occasion?: string | null;
   };
@@ -33,15 +35,10 @@ interface SharedListPageClientProps {
 
 export function SharedListPageClient({ list, items }: SharedListPageClientProps) {
   const [copied, setCopied] = useState(false);
-  const [shareUrl, setShareUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    setShareUrl(window.location.href);
-  }, []);
 
   const copyShareLink = async () => {
-    if (!shareUrl) return;
+    if (typeof window === "undefined") return;
+    const shareUrl = window.location.href;
     await navigator.clipboard.writeText(shareUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -56,14 +53,22 @@ export function SharedListPageClient({ list, items }: SharedListPageClientProps)
     return items.find(i => i.posterUrl);
   }, [items, list.coverTmdbId, list.coverMediaType]);
 
+  const customCoverUrl = useMemo(() => {
+    if (!list.customCoverImagePath) return null;
+    const query = list.updatedAt ? `?v=${encodeURIComponent(list.updatedAt)}` : "";
+    return `/api/v1/lists/${list.id}/cover/image${query}`;
+  }, [list.customCoverImagePath, list.id, list.updatedAt]);
+
+  const heroCoverUrl = customCoverUrl || coverItem?.posterUrl || null;
+
   return (
     <div className="min-h-screen bg-[#0b0f19] text-white selection:bg-blue-500/30">
       {/* Hero Header */}
       <div className="relative w-full overflow-hidden border-b border-white/5">
-        {coverItem?.posterUrl && (
+        {heroCoverUrl && (
           <div className="absolute inset-0 z-0">
             <Image
-              src={coverItem.posterUrl}
+              src={heroCoverUrl}
               alt=""
               fill
               className="object-cover opacity-[0.15] blur-3xl scale-110 select-none"
@@ -137,7 +142,7 @@ export function SharedListPageClient({ list, items }: SharedListPageClientProps)
             </div>
             <h3 className="text-2xl font-bold text-white mb-3">No items yet</h3>
             <p className="text-base text-gray-400 max-w-md mb-8 leading-relaxed">
-              The owner hasn't added any movies or TV shows to this list yet.
+              The owner hasn&apos;t added any movies or TV shows to this list yet.
             </p>
           </div>
         ) : (

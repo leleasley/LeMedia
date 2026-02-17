@@ -52,10 +52,15 @@ export async function GET(req: NextRequest) {
 
     return jsonResponseWithETag(req, {
       list: {
+        id: list.id,
         name: list.name,
         description: list.description,
         itemCount: list.itemCount,
         createdAt: list.createdAt,
+        coverTmdbId: list.coverTmdbId,
+        coverMediaType: list.coverMediaType,
+        customCoverImagePath: list.customCoverImagePath,
+        updatedAt: list.updatedAt,
         mood: list.mood,
         occasion: list.occasion,
       },

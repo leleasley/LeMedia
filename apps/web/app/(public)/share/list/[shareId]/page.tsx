@@ -78,12 +78,15 @@ export default async function SharedListPage({
   return (
     <SharedListPageClient
       list={{
+        id: Number(list.id),
         name: list.name,
         description: list.description,
         itemCount: list.itemCount,
         createdAt: list.createdAt,
         coverTmdbId: list.coverTmdbId ?? null,
         coverMediaType: list.coverMediaType ?? null,
+        customCoverImagePath: list.customCoverImagePath ?? null,
+        updatedAt: list.updatedAt ?? null,
         mood: list.mood ?? null,
         occasion: list.occasion ?? null,
       }}

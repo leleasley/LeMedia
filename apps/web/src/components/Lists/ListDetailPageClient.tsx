@@ -174,7 +174,6 @@ export function ListDetailPageClient({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [coverQuery, setCoverQuery] = useState("");
   const [uploading, setUploading] = useState(false);
 
   const sensors = useSensors(
@@ -450,14 +449,22 @@ export function ListDetailPageClient({
     return items.find(i => i.posterUrl);
   }, [items, list.coverTmdbId, list.coverMediaType]);
 
+  const customCoverUrl = useMemo(() => {
+    if (!list.customCoverImagePath) return null;
+    const query = list.updatedAt ? `?v=${encodeURIComponent(list.updatedAt)}` : "";
+    return `/api/v1/lists/${listId}/cover/image${query}`;
+  }, [list.customCoverImagePath, list.updatedAt, listId]);
+
+  const heroCoverUrl = customCoverUrl || coverItem?.posterUrl || null;
+
   return (
     <div className="pb-12">
       {/* Hero Header */}
       <div className="relative w-full border-b border-white/5 overflow-hidden">
-        {coverItem?.posterUrl && (
+        {heroCoverUrl && (
           <div className="absolute inset-0 z-0">
             <Image
-              src={coverItem.posterUrl}
+              src={heroCoverUrl}
               alt=""
               fill
               className="object-cover opacity-[0.15] blur-3xl scale-110 select-none"
@@ -764,7 +771,7 @@ export function ListDetailPageClient({
                   {list.customCoverImagePath ? (
                     <>
                       <img
-                        src={`/api/v1/lists/${listId}/cover/image?v=${Date.now()}`}
+                        src={customCoverUrl ?? `/api/v1/lists/${listId}/cover/image`}
                         alt="Custom cover"
                         className="w-16 h-20 object-cover rounded mb-2"
                       />

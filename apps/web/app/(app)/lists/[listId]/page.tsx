@@ -147,6 +147,9 @@ export default async function ListDetailPage({
           itemCount: Number(list.itemCount),
           coverTmdbId: list.coverTmdbId ?? null,
           coverMediaType: list.coverMediaType ?? null,
+          customCoverImagePath: list.customCoverImagePath ?? null,
+          customCoverImageSize: list.customCoverImageSize ?? null,
+          customCoverImageMimeType: list.customCoverImageMimeType ?? null,
           updatedAt: list.updatedAt ?? null,
         }}
       initialItems={enrichedItems}
