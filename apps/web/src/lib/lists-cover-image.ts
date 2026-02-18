@@ -61,7 +61,7 @@ export async function handleListCoverImageRequest(
 
     const mimeType = mimeTypes[ext] || "application/octet-stream";
 
-    return new NextResponse(data, {
+    return new NextResponse(new Uint8Array(data), {
       headers: {
         "Content-Type": mimeType,
         "Cache-Control": "public, max-age=31536000, immutable",

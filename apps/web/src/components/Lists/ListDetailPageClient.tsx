@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { HoverMediaCard } from "@/components/Media/HoverMediaCard";
 import { Modal } from "@/components/Common/Modal";
+import { ListSocialBar } from "@/components/Social/ListSocialBar";
 import {
   DndContext,
   closestCenter,
@@ -532,6 +533,9 @@ export function ListDetailPageClient({
                 </div>
               )}
             </div>
+
+            {/* Social interactions bar */}
+            {list.isPublic && <ListSocialBar listId={listId} allowComments={true} allowReactions={true} allowRemix={true} isOwner={true} />}
 
             <div className="flex flex-wrap items-start gap-2 lg:pt-7">
               {list.isPublic && (

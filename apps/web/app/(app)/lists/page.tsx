@@ -13,11 +13,8 @@ export default async function ListsPage() {
 
   return (
     <>
-      {/* Full-width hero header with client-side interactivity */}
       <ListsPageHero />
-
-      {/* List grid container */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-8 mt-8">
+      <div className="mt-6">
         <ListsPageClient imageProxyEnabled={imageProxyEnabled} />
       </div>
     </>

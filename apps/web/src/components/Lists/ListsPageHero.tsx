@@ -1,35 +1,45 @@
 "use client";
 
-import { Plus } from "lucide-react";
+import { Plus, ListChecks } from "lucide-react";
 
 export function ListsPageHero() {
   const handleCreateClick = () => {
-    // Dispatch a custom event that ListsPageClient will listen for
     window.dispatchEvent(new CustomEvent('openCreateListModal'));
   };
 
   return (
-    <div className="w-full bg-gradient-to-b from-blue-900/20 via-blue-900/10 to-transparent border-b border-white/5">
-      <div className="max-w-7xl mx-auto px-4 sm:px-8 py-12">
-        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6">
-          <div className="space-y-3 flex-1">
-            <h1 className="text-3xl sm:text-4xl font-bold text-white tracking-tight leading-tight">
-              Your Collections
-            </h1>
-            <p className="text-base text-gray-400 leading-relaxed max-w-2xl">
-              Manage and share your personal movie and TV show lists
-            </p>
+    <section className="space-y-6">
+      <div className="relative overflow-hidden rounded-2xl md:rounded-3xl border border-white/10 bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-transparent p-6 md:p-8">
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iMC4wMyI+PGNpcmNsZSBjeD0iMzAiIGN5PSIzMCIgcj0iMiIvPjwvZz48L2c+PC9zdmc+')] opacity-50" />
+        <div className="relative">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 ring-1 ring-white/10">
+                <ListChecks className="w-7 h-7 text-indigo-300" />
+              </div>
+              <div>
+                <h1 className="text-2xl md:text-3xl font-bold text-white">Your Lists</h1>
+                <p className="text-sm text-white/60 mt-1">Curate, organize, and share your favorite movies and TV shows</p>
+              </div>
+            </div>
+            <button
+              onClick={handleCreateClick}
+              className="hidden sm:inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold text-sm transition-all hover:shadow-lg hover:shadow-indigo-500/25 active:scale-[0.98]"
+            >
+              <Plus className="w-4 h-4" />
+              New List
+            </button>
           </div>
-          
+          {/* Mobile button */}
           <button
             onClick={handleCreateClick}
-            className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold transition-all hover:shadow-lg hover:shadow-blue-500/30 active:scale-95"
+            className="sm:hidden mt-4 w-full inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold text-sm transition-all active:scale-[0.98]"
           >
-            <Plus className="w-5 h-5" />
+            <Plus className="w-4 h-4" />
             New List
           </button>
         </div>
       </div>
-    </div>
+    </section>
   );
 }

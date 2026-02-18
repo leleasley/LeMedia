@@ -6,7 +6,7 @@ import { PrefetchLink } from "@/components/Layout/PrefetchLink";
 import Image from "next/image";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ModeToggle } from "@/components/ui/mode-toggle";
-import { AlertTriangle, Settings, LayoutGrid, Compass, Film, Tv, Inbox, Users, CalendarDays, Activity, Star, Sparkles } from "lucide-react";
+import { AlertTriangle, Settings, LayoutGrid, Compass, Film, Tv, Inbox, Users, CalendarDays, Activity, Star, Sparkles, Heart, Bell, Search } from "lucide-react";
 import { MobileNav } from "@/components/Layout/MobileNav";
 import { SearchHeader } from "@/components/Layout/SearchHeader";
 import { cn } from "@/lib/utils";
@@ -420,6 +420,25 @@ export default function AppLayoutClient({
                                 <PrefetchLink href="/calendar" className={linkClass(pathname === "/calendar")}>
                                     <CalendarDays className="h-5 w-5" />
                                     <span>Calendar</span>
+                                </PrefetchLink>
+                            </div>
+                        </div>
+
+                        {/* Social Section */}
+                        <div>
+                            <h3 className="text-xs font-bold text-gray-500 mb-2 px-6 uppercase tracking-wider">Social</h3>
+                            <div className="space-y-1">
+                                <PrefetchLink href="/social" className={linkClass(pathname === "/social")}>
+                                    <Heart className="h-5 w-5" />
+                                    <span>Feed</span>
+                                </PrefetchLink>
+                                <PrefetchLink href="/friends" className={linkClass(pathname === "/friends")}>
+                                    <Users className="h-5 w-5" />
+                                    <span>Friends</span>
+                                </PrefetchLink>
+                                <PrefetchLink href="/social/discover" className={linkClass(pathname === "/social/discover")}>
+                                    <Search className="h-5 w-5" />
+                                    <span>Discover People</span>
                                 </PrefetchLink>
                             </div>
                         </div>
