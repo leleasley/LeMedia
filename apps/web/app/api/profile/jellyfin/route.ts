@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUser, requireUser } from "@/auth";
 import { getUserByJellyfinUserId, getUserWithHash, linkUserToJellyfin, unlinkUserFromJellyfin } from "@/db";
 import { getJellyfinBaseUrl, jellyfinLogin } from "@/lib/jellyfin-admin";
+import { verifyMfaCode } from "@/lib/mfa-reauth";
 import { z } from "zod";
 import { requireCsrf } from "@/lib/csrf";
 import { jsonResponseWithETag } from "@/lib/api-optimization";
@@ -9,7 +10,8 @@ import { logger } from "@/lib/logger";
 
 const linkSchema = z.object({
   username: z.string().min(1),
-  password: z.string().min(1)
+  password: z.string().min(1),
+  mfaCode: z.string().min(1)
 });
 
 function buildDeviceId(username: string) {
@@ -51,6 +53,8 @@ export async function POST(req: NextRequest) {
 
   const dbUser = await getUserWithHash(user.username);
   if (!dbUser) return NextResponse.json({ error: "User not found" }, { status: 404 });
+  const mfaCheck = verifyMfaCode(dbUser.mfa_secret, body.mfaCode);
+  if (!mfaCheck.ok) return NextResponse.json({ error: mfaCheck.message }, { status: 400 });
 
   const baseUrl = await getJellyfinBaseUrl();
   if (!baseUrl) {
@@ -96,9 +100,13 @@ export async function DELETE(req: NextRequest) {
   if (!user.username) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const csrf = requireCsrf(req);
   if (csrf) return csrf;
+  const body = await req.json().catch(() => ({}));
+  const mfaCode = typeof body?.mfaCode === "string" ? body.mfaCode : "";
 
   const dbUser = await getUserWithHash(user.username);
   if (!dbUser) return NextResponse.json({ error: "User not found" }, { status: 404 });
+  const mfaCheck = verifyMfaCode(dbUser.mfa_secret, mfaCode);
+  if (!mfaCheck.ok) return NextResponse.json({ error: mfaCheck.message }, { status: 400 });
 
   await unlinkUserFromJellyfin(dbUser.id);
   return NextResponse.json({ linked: false });

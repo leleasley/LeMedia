@@ -36,6 +36,8 @@ export default async function LoginPage() {
   const ssoProviderType = oidcConfig?.providerType ?? (oidcConfig?.duoApiHostname ? "duo_websdk" : "oidc");
   const jellyfinConfig = await getJellyfinConfig();
   const jellyfinEnabled = Boolean(jellyfinConfig.hostname?.trim());
+  const googleOauthEnabled = Boolean(process.env.GOOGLE_OAUTH_CLIENT_ID?.trim() && process.env.GOOGLE_OAUTH_CLIENT_SECRET?.trim());
+  const githubOauthEnabled = Boolean(process.env.GITHUB_OAUTH_CLIENT_ID?.trim() && process.env.GITHUB_OAUTH_CLIENT_SECRET?.trim());
 
   if (existingSession?.username) {
     redirect(from || "/");
@@ -48,6 +50,8 @@ export default async function LoginPage() {
       oidcEnabled={oidcEnabled}
       jellyfinEnabled={jellyfinEnabled}
       ssoProviderType={ssoProviderType}
+      googleOauthEnabled={googleOauthEnabled}
+      githubOauthEnabled={githubOauthEnabled}
     />
   );
 }

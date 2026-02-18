@@ -6,6 +6,7 @@ import { getCookieBase, getRequestContext } from "@/lib/proxy";
 import { requireCsrf } from "@/lib/csrf";
 import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/rate-limit";
+import { verifyPassword } from "@/lib/auth-utils";
 
 export async function POST(req: NextRequest) {
     const ctx = getRequestContext(req);
@@ -22,6 +23,14 @@ export async function POST(req: NextRequest) {
         const dbUser = await getUserWithHash(appUser.username);
         if (!dbUser) {
             return NextResponse.redirect(new URL("/login", base));
+        }
+        const payload = await req.json().catch(() => ({}));
+        const password = typeof payload?.password === "string" ? payload.password : "";
+        if (!password) {
+            return NextResponse.json({ error: "Password is required" }, { status: 400 });
+        }
+        if (!dbUser.password_hash || !(await verifyPassword(password, dbUser.password_hash))) {
+            return NextResponse.json({ error: "Current password is incorrect" }, { status: 400 });
         }
 
         // Clear any existing MFA and sessions for this user

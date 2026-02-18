@@ -263,6 +263,34 @@ To enable Turnstile on login forms:
    TURNSTILE_SECRET_KEY=your-secret-key
    ```
 
+### Google & GitHub OAuth (Sign-in + Linked Accounts)
+
+LeMedia supports OAuth for Google and GitHub.
+
+Environment variables (already included in `.env.example`):
+```bash
+GOOGLE_OAUTH_CLIENT_ID=
+GOOGLE_OAUTH_CLIENT_SECRET=
+GITHUB_OAUTH_CLIENT_ID=
+GITHUB_OAUTH_CLIENT_SECRET=
+```
+
+Provider callback URLs to register:
+- Google: `https://your-domain.com/api/auth/oauth/google/callback`
+- GitHub: `https://your-domain.com/api/auth/oauth/github/callback`
+
+Replace `https://your-domain.com` with your `APP_BASE_URL`.
+
+How it works:
+- Login page shows Google/GitHub under "Other sign in methods".
+- OAuth login only works for accounts that are already linked.
+- Users must sign in normally first, then link providers from `Settings > Profile > Linked Accounts`.
+- Linking/unlinking is protected by MFA re-auth in the app.
+
+Notes:
+- Apple OAuth is not required and is not configured by default.
+- If Cloudflare Turnstile is configured, OAuth start is also protected by Turnstile verification.
+
 ### Multi-Factor Authentication
 
 MFA can be enabled globally in Admin Settings > General. When enabled:
@@ -286,9 +314,10 @@ LeMedia supports multiple authentication methods:
 1. **Local Auth**: Username/password stored in database with bcrypt hashing
 2. **MFA**: Optional TOTP verification after password
 3. **WebAuthn**: Passwordless login with security keys/passkeys
-4. **OIDC/SSO**: Redirect to external identity provider
-5. **Jellyfin**: Authenticate against your Jellyfin server
-6. **Header-based**: Trust headers from reverse proxy (Authelia/Authentik)
+4. **Google/GitHub OAuth**: Sign in with linked provider accounts
+5. **OIDC/SSO**: Redirect to external identity provider
+6. **Jellyfin**: Authenticate against your Jellyfin server
+7. **Header-based**: Trust headers from reverse proxy (Authelia/Authentik)
 
 Session is maintained via secure HTTP-only cookies with configurable expiry.
 
@@ -310,7 +339,7 @@ Migrations run automatically on startup.
 - **Frontend**: Next.js 16 with App Router and React 19
 - **Backend**: Next.js API routes
 - **Database**: PostgreSQL with automatic migrations
-- **Authentication**: Multi-method (local, MFA, WebAuthn, OIDC, Jellyfin, headers)
+- **Authentication**: Multi-method (local, MFA, WebAuthn, Google/GitHub OAuth, OIDC, Jellyfin, headers)
 - **Deployment**: Docker + Docker Compose
 - **Media Services**: Sonarr, Radarr, Jellyfin APIs
 

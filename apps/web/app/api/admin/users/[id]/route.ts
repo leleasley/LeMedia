@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/auth";
-import { getPool } from "@/db";
+import { getPool, listUserOAuthAccounts } from "@/db";
 import { requireCsrf } from "@/lib/csrf";
 import { jsonResponseWithETag } from "@/lib/api-optimization";
 import { logAuditEvent } from "@/lib/audit-log";
@@ -48,6 +48,10 @@ export async function GET(
             return jsonResponseWithETag(request, { error: "Unauthorized" }, { status: 401 });
         }
 
+        const oauthAccounts = await listUserOAuthAccounts(Number(user.id));
+        const googleAccount = oauthAccounts.find((account) => account.provider === "google") ?? null;
+        const githubAccount = oauthAccounts.find((account) => account.provider === "github") ?? null;
+
         return jsonResponseWithETag(request, {
             id: user.id,
             email: user.email,
@@ -61,6 +65,10 @@ export async function GET(
             traktUsername: user.trakt_username ?? null,
             jellyfinUserId: user.jellyfin_user_id,
             jellyfinUsername: user.jellyfin_username,
+            googleLinked: Boolean(googleAccount),
+            googleEmail: googleAccount?.providerEmail ?? null,
+            githubLinked: Boolean(githubAccount),
+            githubLogin: githubAccount?.providerLogin ?? null,
             avatarUrl: user.avatar_url || (user.jellyfin_user_id ? `/avatarproxy/${user.jellyfin_user_id}` : null),
         });
     } catch (error) {

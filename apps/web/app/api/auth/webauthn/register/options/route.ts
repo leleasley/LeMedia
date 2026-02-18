@@ -6,9 +6,13 @@ import { logger } from "@/lib/logger";
 import { createWebAuthnChallenge, listUserCredentials, getUserWithHash } from "@/db";
 import { getCookieBase, getRequestContext } from "@/lib/proxy";
 import { getClientIp, checkRateLimit } from "@/lib/rate-limit";
+import { requireCsrf } from "@/lib/csrf";
+import { verifyMfaCode } from "@/lib/mfa-reauth";
 
-export async function GET(req: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
+    const csrf = requireCsrf(req);
+    if (csrf) return csrf;
     const ip = getClientIp(req);
     
     // Rate limit: 20 registration attempts per hour per IP
@@ -28,6 +32,12 @@ export async function GET(req: NextRequest) {
     const dbUser = await getUserWithHash(user.username);
     if (!dbUser) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+    const payload = await req.json().catch(() => ({}));
+    const mfaCode = typeof payload?.mfaCode === "string" ? payload.mfaCode : "";
+    const mfaCheck = verifyMfaCode(dbUser.mfa_secret, mfaCode);
+    if (!mfaCheck.ok) {
+      return NextResponse.json({ error: mfaCheck.message }, { status: 400 });
     }
     const ctx = getRequestContext(req);
     const rpID = new URL(ctx.base).hostname;

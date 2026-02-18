@@ -11,6 +11,7 @@ import { UserSessionsPanel } from "@/components/Profile/UserSessionsPanel";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { LinkedAccountsPanel } from "@/components/LinkedAccounts/LinkedAccountsPanel";
 import { csrfFetch } from "@/lib/csrf-client";
+import { Modal } from "@/components/Common/Modal";
 
 interface AssignedEndpoint {
   id: number;
@@ -87,6 +88,10 @@ export function ProfileSettingsPageClient({
   const { data: apiTokenData, mutate: mutateApiToken, isLoading: apiTokenLoading } = useSWR<{ token: string | null }>("/api/profile/api-token", securityFetcher);
   const [apiTokenVisible, setApiTokenVisible] = useState(false);
   const [apiTokenSaving, setApiTokenSaving] = useState(false);
+  const [passwordPromptOpen, setPasswordPromptOpen] = useState(false);
+  const [passwordPromptValue, setPasswordPromptValue] = useState("");
+  const [passwordPromptError, setPasswordPromptError] = useState<string | null>(null);
+  const [passwordPromptAction, setPasswordPromptAction] = useState<null | ((password: string) => Promise<void>)>(null);
   const toast = useToast();
 
   const passkeyCount = passkeysData ? passkeysData.length : null;
@@ -100,42 +105,121 @@ export function ProfileSettingsPageClient({
 
   const apiToken = apiTokenData?.token ?? null;
 
+  function requestPassword(action: (password: string) => Promise<void>) {
+    setPasswordPromptValue("");
+    setPasswordPromptError(null);
+    setPasswordPromptAction(() => action);
+    setPasswordPromptOpen(true);
+  }
+
   async function rotateApiToken() {
-    setApiTokenSaving(true);
-    try {
-      const res = await csrfFetch("/api/profile/api-token", { method: "POST", credentials: "include" });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(body?.error || "Failed to rotate API token");
+    requestPassword(async (password) => {
+      if (!password) throw new Error("Password is required");
+      setApiTokenSaving(true);
+      try {
+        const res = await csrfFetch("/api/profile/api-token", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password })
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(body?.error || "Failed to rotate API token");
+        }
+        toast.success(apiToken ? "API token rotated" : "API token generated");
+        mutateApiToken();
+        setPasswordPromptOpen(false);
+      } finally {
+        setApiTokenSaving(false);
       }
-      toast.success(apiToken ? "API token rotated" : "API token generated");
-      mutateApiToken();
-    } catch (err: any) {
-      toast.error(err?.message ?? "Unable to rotate API token");
-    } finally {
-      setApiTokenSaving(false);
-    }
+    });
   }
 
   async function revokeApiToken() {
-    setApiTokenSaving(true);
-    try {
-      const res = await csrfFetch("/api/profile/api-token", { method: "DELETE", credentials: "include" });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(body?.error || "Failed to revoke API token");
+    requestPassword(async (password) => {
+      if (!password) throw new Error("Password is required");
+      setApiTokenSaving(true);
+      try {
+        const res = await csrfFetch("/api/profile/api-token", {
+          method: "DELETE",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password })
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(body?.error || "Failed to revoke API token");
+        }
+        toast.success("API token revoked");
+        mutateApiToken();
+        setPasswordPromptOpen(false);
+      } finally {
+        setApiTokenSaving(false);
       }
-      toast.success("API token revoked");
-      mutateApiToken();
-    } catch (err: any) {
-      toast.error(err?.message ?? "Unable to revoke API token");
-    } finally {
-      setApiTokenSaving(false);
-    }
+    });
   }
 
   return (
     <div className="min-h-screen">
+      <Modal
+        open={passwordPromptOpen}
+        title="Confirm with password"
+        onClose={() => {
+          if (apiTokenSaving) return;
+          setPasswordPromptOpen(false);
+          setPasswordPromptValue("");
+          setPasswordPromptError(null);
+          setPasswordPromptAction(null);
+        }}
+        forceCenter
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-gray-300">Enter your current password to continue.</p>
+          <input
+            type="password"
+            autoComplete="current-password"
+            value={passwordPromptValue}
+            onChange={(event) => {
+              setPasswordPromptValue(event.target.value);
+              setPasswordPromptError(null);
+            }}
+            className="w-full rounded-lg border border-white/20 bg-black/30 px-3 py-2 text-white outline-none focus:border-white/40"
+            placeholder="Current password"
+          />
+          {passwordPromptError ? <p className="text-xs text-red-300">{passwordPromptError}</p> : null}
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                setPasswordPromptOpen(false);
+                setPasswordPromptValue("");
+                setPasswordPromptError(null);
+                setPasswordPromptAction(null);
+              }}
+              disabled={apiTokenSaving}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={async () => {
+                if (!passwordPromptAction) return;
+                try {
+                  await passwordPromptAction(passwordPromptValue);
+                } catch (err: any) {
+                  setPasswordPromptError(err?.message ?? "Password validation failed");
+                }
+              }}
+              disabled={apiTokenSaving || !passwordPromptValue}
+            >
+              {apiTokenSaving ? "Verifying..." : "Continue"}
+            </button>
+          </div>
+        </div>
+      </Modal>
       <div className="mt-10 text-white space-y-8">
         {activeTab === "general" && (
           <ProfileSettings

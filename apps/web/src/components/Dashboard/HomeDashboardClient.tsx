@@ -5,22 +5,28 @@ import useSWR from "swr";
 import Image from "next/image";
 import {
   ArrowUpRight,
+  Calendar,
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
   CircleDashed,
   Clock,
   Compass,
-  Dices,
   Download,
   Film,
+  Flame,
+  Heart,
   Layers,
   Library,
   Loader2,
   Play,
   Sparkles,
+  Star,
+  TrendingUp,
   Tv,
+  Users,
   XCircle,
+  Zap,
 } from "lucide-react";
 import { PrefetchLink } from "@/components/Layout/PrefetchLink";
 import { cn } from "@/lib/utils";
@@ -65,35 +71,56 @@ type ServiceHealth = {
   ok: boolean;
 };
 
-type SurpriseResult = {
-  id: number;
-  title: string;
-  year: string;
-  poster: string | null;
-  backdrop: string | null;
-  type: "movie" | "tv";
-  overview: string;
-  tmdbRating: number | null;
-  voteCount: number | null;
-  imdbId: string | null;
-  runtime: number | null;
-  genres: string[];
+type WatchStats = {
+  totalMoviesWatched: number;
+  totalEpisodesWatched: number;
+  totalSeriesWatched: number;
+  totalHoursWatched: number;
+  moviesThisWeek: number;
+  episodesThisWeek: number;
+  favoriteGenres: Array<{ name: string; count: number }>;
 };
 
-type GenreItem = {
-  id: number;
+type AchievementLevel = {
+  hoursThisWeek: number;
+  level: "casual" | "watcher" | "binge" | "marathon" | "legendary";
+  nextMilestone: number;
+  progress: number;
+};
+
+type UpcomingEpisode = {
+  seriesId: number;
+  seriesName: string;
+  seriesPoster: string | null;
+  seasonNumber: number;
+  episodeNumber: number;
+  episodeName: string;
+  airDate: string;
+  daysUntil: number;
+};
+
+type PersonalizedRecommendation = {
+  id: string;
   name: string;
+  type: string;
+  tmdbId: number | null;
+  mediaType: "movie" | "tv" | null;
+  posterPath: string | null;
+  backdropPath: string | null;
+  year?: number;
+  source: "jellyfin" | "tmdb";
+  reasoning?: string; // Why this was recommended
 };
 
-type TmdbDiscoverItem = {
-  id: number;
-  title?: string;
-  name?: string;
-  overview?: string;
-  release_date?: string;
-  first_air_date?: string;
-  poster_path?: string | null;
-  backdrop_path?: string | null;
+type FriendActivity = {
+  id: string;
+  type: string;
+  userId: number;
+  username: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  metadata: any;
+  createdAt: string;
 };
 
 function getGreeting() {
@@ -178,14 +205,30 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
     { refreshInterval: 120000, revalidateOnFocus: false }
   );
 
-  const { data: movieGenresData } = useSWR<{ genres: GenreItem[] }>(
-    "/api/v1/tmdb/genres?type=movie",
-    { revalidateOnFocus: false }
+  // NEW: Personal dashboard data
+  const { data: watchStatsData } = useSWR<WatchStats>(
+    "/api/v1/my-activity/stats",
+    { refreshInterval: 300000, revalidateOnFocus: false } // 5 min cache
   );
 
-  const { data: tvGenresData } = useSWR<{ genres: GenreItem[] }>(
-    "/api/v1/tmdb/genres?type=tv",
-    { revalidateOnFocus: false }
+  const { data: achievementData } = useSWR<AchievementLevel>(
+    "/api/v1/my-activity/achievements",
+    { refreshInterval: 300000, revalidateOnFocus: false }
+  );
+
+  const { data: upcomingEpisodesData } = useSWR<{ items: UpcomingEpisode[] }>(
+    "/api/v1/my-activity/upcoming-episodes",
+    { refreshInterval: 3600000, revalidateOnFocus: false } // 1 hour cache
+  );
+
+  const { data: personalizedRecsData } = useSWR<{ items: PersonalizedRecommendation[] }>(
+    "/api/v1/my-activity/recommendations",
+    { refreshInterval: 3600000, revalidateOnFocus: false }
+  );
+
+  const { data: friendsActivityData } = useSWR<{ events: FriendActivity[] }>(
+    "/api/v1/social/feed?type=friends&limit=5",
+    { refreshInterval: 60000, revalidateOnFocus: true }
   );
 
   const [greeting, setGreeting] = useState("Welcome");
@@ -194,90 +237,28 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
   const [requestPage, setRequestPage] = useState(0);
   const [recentAddedPage, setRecentAddedPage] = useState(0);
 
-  const [surpriseType, setSurpriseType] = useState<"movie" | "tv">("movie");
-  const [selectedGenreId, setSelectedGenreId] = useState<number | null>(null);
-  const [surpriseRated, setSurpriseRated] = useState<"any" | "top">("any");
-  const [surpriseStep, setSurpriseStep] = useState<"idle" | "type" | "rating" | "genre" | "loading" | "result">("idle");
-  const [surpriseFading, setSurpriseFading] = useState(false);
-  const [surpriseLoading, setSurpriseLoading] = useState(false);
-  const [surpriseResult, setSurpriseResult] = useState<SurpriseResult | null>(null);
-
-  const transitionSurprise = useCallback((next: "idle" | "type" | "rating" | "genre" | "loading" | "result") => {
-    setSurpriseFading(true);
-    setTimeout(() => {
-      setSurpriseStep(next);
-      setSurpriseFading(false);
-    }, 180);
-  }, []);
-
-  const generateSurprise = useCallback(async () => {
-    const randomPage = Math.floor(Math.random() * 5) + 1;
-    const params = new URLSearchParams({
-      page: String(randomPage),
-      sort_by: "popularity.desc",
-      "vote_count.gte": surpriseRated === "top" ? "500" : "120",
-    });
-    if (surpriseRated === "top") {
-      params.set("vote_average.gte", "7");
-    }
-    if (selectedGenreId) params.set("with_genres", String(selectedGenreId));
-    const endpoint = `/api/v1/tmdb/discover/${surpriseType}?${params.toString()}`;
-
-    setSurpriseLoading(true);
-    transitionSurprise("loading");
-    try {
-      const res = await fetch(endpoint);
-      const data = await res.json();
-      const results = (Array.isArray(data?.results) ? data.results : []) as TmdbDiscoverItem[];
-      const candidates = results.filter((item) => item.poster_path || item.backdrop_path);
-      if (!candidates.length) {
-        setSurpriseResult(null);
-        transitionSurprise("idle");
-        return;
-      }
-      const picked = candidates[Math.floor(Math.random() * candidates.length)];
-      const detailEndpoint = surpriseType === "movie"
-        ? `/api/v1/movie/${picked.id}?details=1`
-        : `/api/v1/tv/${picked.id}?details=1`;
-      const detailRes = await fetch(detailEndpoint);
-      const detailJson = await detailRes.json();
-      const media = surpriseType === "movie" ? detailJson?.details?.movie : detailJson?.details?.tv;
-      const title = surpriseType === "movie" ? picked.title : picked.name;
-      const dateValue = surpriseType === "movie" ? picked.release_date : picked.first_air_date;
-
-      setSurpriseResult({
-        id: picked.id,
-        title: title || "Untitled",
-        year: typeof dateValue === "string" ? dateValue.slice(0, 4) : "",
-        poster: picked.poster_path ? `https://image.tmdb.org/t/p/w500${picked.poster_path}` : null,
-        backdrop: picked.backdrop_path ? `https://image.tmdb.org/t/p/w1280${picked.backdrop_path}` : null,
-        type: surpriseType,
-        overview: picked.overview ?? "",
-        tmdbRating: typeof media?.vote_average === "number" ? media.vote_average : null,
-        voteCount: typeof media?.vote_count === "number" ? media.vote_count : null,
-        imdbId: typeof media?.imdb_id === "string" ? media.imdb_id : null,
-        runtime: typeof media?.runtime === "number"
-          ? media.runtime
-          : Array.isArray(media?.episode_run_time) && media.episode_run_time.length > 0
-          ? Number(media.episode_run_time[0]) || null
-          : null,
-        genres: Array.isArray(media?.genres) ? media.genres.map((g: { name?: string }) => g?.name).filter(Boolean) : [],
-      });
-      transitionSurprise("result");
-    } catch {
-      setSurpriseResult(null);
-      transitionSurprise("idle");
-    } finally {
-      setSurpriseLoading(false);
-    }
-  }, [selectedGenreId, surpriseType, surpriseRated, transitionSurprise]);
-
   const recentRequests = useMemo(() => recentRequestsData?.items ?? [], [recentRequestsData]);
   const recentAdded = useMemo(() => recentAddedData?.items ?? [], [recentAddedData]);
   const continueWatching = useMemo(() => continueWatchingData?.items ?? [], [continueWatchingData]);
   const services = useMemo(() => healthData?.services ?? [], [healthData]);
-  const movieGenres = movieGenresData?.genres ?? [];
-  const tvGenres = tvGenresData?.genres ?? [];
+  
+  // NEW: Derived data for personal widgets with defensive array checks
+  const watchStats = watchStatsData || null;
+  const achievement = achievementData || null;
+  const upcomingEpisodes = useMemo(() => {
+    const items = upcomingEpisodesData?.items;
+    return Array.isArray(items) ? items : [];
+  }, [upcomingEpisodesData]);
+  
+  const personalizedRecs = useMemo(() => {
+    const items = personalizedRecsData?.items;
+    return Array.isArray(items) ? items : [];
+  }, [personalizedRecsData]);
+  
+  const friendsActivity = useMemo(() => {
+    const events = friendsActivityData?.events;
+    return Array.isArray(events) ? events : [];
+  }, [friendsActivityData]);
 
   // Derived stats
   const requestStats = recentRequests.reduce(
@@ -313,7 +294,6 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
     () => recentAdded.slice(recentAddedPage * recentAddedPerPage, (recentAddedPage + 1) * recentAddedPerPage),
     [recentAdded, recentAddedPage]
   );
-  const activeGenres = surpriseType === "tv" ? tvGenres : movieGenres;
 
   useEffect(() => {
     setRequestPage((prev) => Math.min(prev, requestsPageCount - 1));
@@ -322,11 +302,6 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
   useEffect(() => {
     setRecentAddedPage((prev) => Math.min(prev, recentAddedPageCount - 1));
   }, [recentAddedPageCount]);
-
-  useEffect(() => {
-    setSelectedGenreId(null);
-    setSurpriseRated("any");
-  }, [surpriseType]);
 
   useEffect(() => {
     setGreeting(getGreeting());
@@ -418,6 +393,157 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
           </div>
         </div>
       </section>
+
+      {/* ─── Personal Stats Grid ─── */}
+      <div className="grid gap-4 md:grid-cols-2">
+        {/* Watch Stats Widget */}
+        <section className="relative overflow-hidden rounded-xl border border-white/[0.08] bg-gradient-to-br from-[#0d1323] to-[#131b35] p-5">
+          <div className="absolute right-0 top-0 h-32 w-32 -translate-y-8 translate-x-8 rounded-full bg-sky-500/10 blur-2xl" />
+          <div className="relative">
+            <div className="mb-4 flex items-center gap-2.5">
+              <TrendingUp className="h-5 w-5 text-sky-400" />
+              <h2 className="text-lg font-bold text-white">Your Activity</h2>
+            </div>
+            {watchStats && watchStats.totalHoursWatched !== undefined ? (
+              <div className="space-y-4">
+                {/* Achievement Badge */}
+                {achievement && achievement.level && (
+                  <div className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 p-3">
+                    <div className={cn(
+                      "flex h-12 w-12 items-center justify-center rounded-full",
+                      achievement.level === "legendary" ? "bg-gradient-to-br from-amber-400/20 to-orange-400/20" :
+                      achievement.level === "marathon" ? "bg-gradient-to-br from-purple-400/20 to-pink-400/20" :
+                      achievement.level === "binge" ? "bg-gradient-to-br from-blue-400/20 to-cyan-400/20" :
+                      achievement.level === "watcher" ? "bg-gradient-to-br from-green-400/20 to-emerald-400/20" :
+                      "bg-gradient-to-br from-slate-400/20 to-gray-400/20"
+                    )}>
+                      {achievement.level === "legendary" ? "👑" :
+                       achievement.level === "marathon" ? "🔥" :
+                       achievement.level === "binge" ? "⚡" :
+                       achievement.level === "watcher" ? "⭐" : "📺"}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-white capitalize">{achievement.level} Level</p>
+                      <p className="text-xs text-slate-400">{achievement.hoursThisWeek}h this week</p>
+                      <div className="mt-1.5 h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-sky-400 to-indigo-400 transition-all"
+                          style={{ width: `${Math.min((achievement.progress / achievement.nextMilestone) * 100, 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Stats Grid */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <p className="text-2xl font-bold text-white">{watchStats.moviesThisWeek}</p>
+                        <p className="text-xs text-slate-400">Movies this week</p>
+                      </div>
+                      <Film className="h-5 w-5 text-sky-400/60" />
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <p className="text-2xl font-bold text-white">{watchStats.episodesThisWeek}</p>
+                        <p className="text-xs text-slate-400">Episodes this week</p>
+                      </div>
+                      <Tv className="h-5 w-5 text-indigo-400/60" />
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <p className="text-2xl font-bold text-white">{watchStats.totalHoursWatched.toFixed(0)}</p>
+                        <p className="text-xs text-slate-400">Total hours</p>
+                      </div>
+                      <Clock className="h-5 w-5 text-purple-400/60" />
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <p className="text-2xl font-bold text-white">{watchStats.totalMoviesWatched + watchStats.totalEpisodesWatched}</p>
+                        <p className="text-xs text-slate-400">Total watched</p>
+                      </div>
+                      <CheckCircle2 className="h-5 w-5 text-emerald-400/60" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="py-8 text-center text-sm text-slate-500">
+                <Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin text-slate-600" />
+                Loading stats...
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* Upcoming Episodes Widget */}
+        <section className="relative overflow-hidden rounded-xl border border-white/[0.08] bg-gradient-to-br from-[#0d1323] to-[#131b35] p-5">
+          <div className="absolute right-0 bottom-0 h-32 w-32 translate-x-8 translate-y-8 rounded-full bg-purple-500/10 blur-2xl" />
+          <div className="relative">
+            <div className="mb-4 flex items-center gap-2.5">
+              <Calendar className="h-5 w-5 text-purple-400" />
+              <h2 className="text-lg font-bold text-white">Upcoming This Week</h2>
+            </div>
+            {upcomingEpisodes && Array.isArray(upcomingEpisodes) && upcomingEpisodes.length > 0 ? (
+              <div className="space-y-2">
+                {upcomingEpisodes.slice(0, 5).map((episode, idx) => (
+                  <PrefetchLink
+                    key={`${episode.seriesId}-${episode.seasonNumber}-${episode.episodeNumber}`}
+                    href={`/tv/${episode.seriesId}`}
+                    className="group flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 p-3 transition-all hover:border-white/20 hover:bg-white/10"
+                  >
+                    <div className="relative h-12 w-8 shrink-0 overflow-hidden rounded bg-slate-800">
+                      {episode.seriesPoster && (
+                        <Image
+                          src={`https://image.tmdb.org/t/p/w92${episode.seriesPoster}`}
+                          alt={episode.seriesName}
+                          fill
+                          className="object-cover"
+                          unoptimized
+                        />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="truncate text-sm font-semibold text-white group-hover:text-sky-300 transition-colors">
+                        {episode.seriesName}
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        S{episode.seasonNumber}E{episode.episodeNumber} • {episode.episodeName}
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-end shrink-0">
+                      <span className={cn(
+                        "text-xs font-semibold",
+                        episode.daysUntil === 0 ? "text-emerald-400" :
+                        episode.daysUntil === 1 ? "text-amber-400" :
+                        "text-slate-400"
+                      )}>
+                        {episode.daysUntil === 0 ? "Today" :
+                         episode.daysUntil === 1 ? "Tomorrow" :
+                         `${episode.daysUntil}d`}
+                      </span>
+                    </div>
+                  </PrefetchLink>
+                ))}
+              </div>
+            ) : (
+              <div className="py-8 text-center">
+                <Calendar className="mx-auto mb-2 h-8 w-8 text-slate-700" />
+                <p className="text-sm text-slate-500">No upcoming episodes this week</p>
+                <p className="mt-1 text-xs text-slate-600">Add shows to your favorites or watchlist</p>
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
 
       {/* ─── Continue Watching ─── */}
       {continueWatching.length > 0 && (
@@ -680,227 +806,136 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
         )}
       </section>
 
-      {/* ─── Surprise Me ─── */}
-      <section className="relative overflow-hidden rounded-2xl border border-white/[0.08] bg-gradient-to-r from-[#0d1323] to-[#131b35]">
-        <div className="p-5 md:p-6">
-          <div className={cn("min-h-[180px] transition-opacity duration-200", surpriseFading ? "opacity-0" : "opacity-100")}>
-            {surpriseStep === "idle" && (
-              <div className="flex min-h-[180px] flex-col justify-between">
-                <div>
-                  <h3 className="flex items-center gap-2.5 text-lg font-bold text-white">
-                    <Dices className="h-5 w-5 text-indigo-400" />
-                    Surprise Me
-                  </h3>
-                  <p className="mt-1 text-sm text-slate-400">Not sure what to watch? Get a random recommendation.</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => transitionSurprise("type")}
-                  className="inline-flex w-fit items-center gap-2 rounded-xl border border-indigo-400/30 bg-indigo-500/15 px-4 py-2 text-sm font-semibold text-indigo-200 transition hover:border-indigo-400/50 hover:bg-indigo-500/25"
-                >
-                  <Dices className="h-4 w-4" />
-                  Start Surprise
-                </button>
-              </div>
-            )}
-
-            {surpriseStep === "type" && (
-              <div className="flex min-h-[180px] flex-col justify-between">
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Question 1</p>
-                  <h4 className="text-lg font-semibold text-white">What do you fancy right now?</h4>
-                  <div className="mt-3 inline-flex rounded-lg border border-white/10 bg-white/[0.03] p-0.5">
-                    {[
-                      { key: "movie", label: "Movie" },
-                      { key: "tv", label: "TV Show" },
-                    ].map((option) => (
-                      <button
-                        key={option.key}
-                        type="button"
-                        onClick={() => setSurpriseType(option.key as "movie" | "tv")}
-                        className={cn(
-                          "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                          surpriseType === option.key ? "bg-white/15 text-white" : "text-slate-400 hover:text-slate-200"
-                        )}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => transitionSurprise("idle")}
-                    className="rounded-lg border border-white/15 bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:bg-white/[0.08]"
-                  >
-                    Back
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => transitionSurprise("rating")}
-                    className="rounded-lg border border-indigo-400/30 bg-indigo-500/15 px-3 py-1.5 text-xs font-semibold text-indigo-200 transition hover:bg-indigo-500/25"
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {surpriseStep === "rating" && (
-              <div className="flex min-h-[180px] flex-col justify-between">
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Question 2</p>
-                  <h4 className="text-lg font-semibold text-white">Would you like a highly rated {surpriseType === "movie" ? "movie" : "show"}?</h4>
-                  <div className="mt-3 inline-flex rounded-lg border border-white/10 bg-white/[0.03] p-0.5">
-                    {[
-                      { key: "any", label: "Any" },
-                      { key: "top", label: "Highly Rated" },
-                    ].map((option) => (
-                      <button
-                        key={option.key}
-                        type="button"
-                        onClick={() => setSurpriseRated(option.key as "any" | "top")}
-                        className={cn(
-                          "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                          surpriseRated === option.key ? "bg-white/15 text-white" : "text-slate-400 hover:text-slate-200"
-                        )}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => transitionSurprise("type")}
-                    className="rounded-lg border border-white/15 bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:bg-white/[0.08]"
-                  >
-                    Back
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => transitionSurprise("genre")}
-                    className="rounded-lg border border-indigo-400/30 bg-indigo-500/15 px-3 py-1.5 text-xs font-semibold text-indigo-200 transition hover:bg-indigo-500/25"
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {surpriseStep === "genre" && (
-              <div className="flex min-h-[180px] flex-col justify-between">
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Question 3</p>
-                  <h4 className="text-lg font-semibold text-white">What genre do you fancy?</h4>
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedGenreId(null)}
-                      className={cn(
-                        "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-                        selectedGenreId === null
-                          ? "border-indigo-300/60 bg-indigo-400/20 text-indigo-100"
-                          : "border-white/15 bg-white/5 text-slate-300 hover:text-white"
-                      )}
-                    >
-                      Any genre
-                    </button>
-                    {activeGenres.slice(0, 14).map((genre) => (
-                      <button
-                        key={genre.id}
-                        type="button"
-                        onClick={() => setSelectedGenreId(genre.id)}
-                        className={cn(
-                          "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-                          selectedGenreId === genre.id
-                            ? "border-indigo-300/60 bg-indigo-400/20 text-indigo-100"
-                            : "border-white/15 bg-white/5 text-slate-300 hover:text-white"
-                        )}
-                      >
-                        {genre.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => transitionSurprise("rating")}
-                    className="rounded-lg border border-white/15 bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:bg-white/[0.08]"
-                  >
-                    Back
-                  </button>
-                  <button
-                    type="button"
-                    onClick={generateSurprise}
-                    disabled={surpriseLoading}
-                    className="rounded-lg border border-indigo-400/30 bg-indigo-500/15 px-3 py-1.5 text-xs font-semibold text-indigo-200 transition hover:bg-indigo-500/25 disabled:opacity-50"
-                  >
-                    Generate now
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {surpriseStep === "loading" && (
-              <div className="flex min-h-[180px] flex-col items-center justify-center gap-3 text-center">
-                <Loader2 className="h-8 w-8 animate-spin text-indigo-300" />
-                <p className="text-base font-semibold text-white">Generating now</p>
-                <p className="text-sm text-slate-400">Pulling a random {surpriseType === "movie" ? "movie" : "show"} from TMDB.</p>
-              </div>
-            )}
-
-            {surpriseStep === "result" && surpriseResult && (
-              <div className="grid gap-4 sm:grid-cols-[120px_1fr]">
-                <PrefetchLink href={surpriseResult.type === "movie" ? `/movie/${surpriseResult.id}` : `/tv/${surpriseResult.id}`} className="group block">
-                  <div className="relative aspect-[2/3] overflow-hidden rounded-lg border border-white/10 bg-slate-900/60">
-                    {surpriseResult.poster ? (
-                      <Image src={surpriseResult.poster} alt={surpriseResult.title} fill className="object-cover" unoptimized />
-                    ) : (
-                      <div className="absolute inset-0 bg-gradient-to-br from-slate-800 to-slate-900" />
-                    )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
-                    <div className="absolute left-2 top-2 rounded-md border border-white/20 bg-black/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
-                      {surpriseResult.type}
-                    </div>
-                  </div>
-                </PrefetchLink>
-                <div className="space-y-2">
-                  <h4 className="text-lg font-bold text-white">{surpriseResult.title}</h4>
-                  <p className="line-clamp-2 text-sm text-slate-400">{surpriseResult.overview || "No overview available."}</p>
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-                    {surpriseResult.year && <span className="rounded-md bg-white/[0.06] px-2 py-0.5">{surpriseResult.year}</span>}
-                    {surpriseResult.tmdbRating && <span className="rounded-md bg-white/[0.06] px-2 py-0.5">TMDB {surpriseResult.tmdbRating.toFixed(1)}</span>}
-                    {surpriseResult.runtime && <span className="rounded-md bg-white/[0.06] px-2 py-0.5">{surpriseResult.runtime}m</span>}
-                    {surpriseResult.genres.slice(0, 3).map((g) => (
-                      <span key={g} className="rounded-md bg-white/[0.06] px-2 py-0.5">{g}</span>
-                    ))}
-                  </div>
-                  <div className="flex items-center gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={generateSurprise}
-                      className="rounded-lg border border-indigo-400/30 bg-indigo-500/15 px-3 py-1.5 text-xs font-semibold text-indigo-200 transition hover:bg-indigo-500/25"
-                    >
-                      Roll again
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => transitionSurprise("type")}
-                      className="rounded-lg border border-white/15 bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:bg-white/[0.08]"
-                    >
-                      Change choices
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
+      {/* ─── Personalized Recommendations ─── */}
+      {personalizedRecs && Array.isArray(personalizedRecs) && personalizedRecs.length > 0 && (
+        <section>
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="flex items-center gap-2.5 text-lg font-bold text-white">
+                <Sparkles className="h-5 w-5 text-indigo-400" />
+                For You
+              </h2>
+              {personalizedRecs[0]?.reasoning && (
+                <p className="mt-1 text-xs text-slate-400">{personalizedRecs[0].reasoning}</p>
+              )}
+            </div>
+            <PrefetchLink href="/recommendations" className="group flex items-center gap-1 text-sm text-slate-400 transition-colors hover:text-white">
+              See all
+              <ArrowUpRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+            </PrefetchLink>
           </div>
-        </div>
-      </section>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+            {personalizedRecs.slice(0, 6).map((rec, idx) => {
+              const type = rec.type.toLowerCase().includes("series") || rec.type.toLowerCase().includes("tv") ? "tv" : "movie";
+              const tmdbId = rec.tmdbId || parseInt(rec.id, 10);
+              const href = type === "movie" ? `/movie/${tmdbId}` : `/tv/${tmdbId}`;
+              const posterUrl = rec.posterPath ? `https://image.tmdb.org/t/p/w500${rec.posterPath}` : null;
+              const year = rec.year ? rec.year.toString() : undefined;
+              
+              return (
+                <div key={rec.id} className="space-y-1.5">
+                  <HoverMediaCard
+                    id={tmdbId}
+                    title={rec.name}
+                    posterUrl={posterUrl}
+                    href={href}
+                    year={year}
+                    mediaType={type}
+                    imagePriority={idx < 6}
+                    stableHover
+                  />
+                  {rec.reasoning && (
+                    <p className="text-xs text-slate-400 px-0.5">{rec.reasoning}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* ─── Friends Activity ─── */}
+      {friendsActivity && Array.isArray(friendsActivity) && friendsActivity.length > 0 && (
+        <section>
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="flex items-center gap-2.5 text-lg font-bold text-white">
+              <Users className="h-5 w-5 text-blue-400" />
+              Friends Activity
+            </h2>
+            <PrefetchLink href="/social" className="group flex items-center gap-1 text-sm text-slate-400 transition-colors hover:text-white">
+              See all
+              <ArrowUpRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+            </PrefetchLink>
+          </div>
+          <div className="space-y-3">
+            {friendsActivity.map((activity) => {
+              const ActivityIcon = 
+                activity.type === "review" ? Star :
+                activity.type === "favorite" || activity.type === "save_list" ? Heart :
+                activity.type === "list_create" ? Library :
+                activity.type === "reaction" ? Zap :
+                Users;
+
+              let activityText = "";
+              let mediaTitle = "";
+              let mediaHref = "";
+
+              if (activity.type === "review" && activity.metadata) {
+                mediaTitle = activity.metadata.title || "Unknown";
+                const tmdbId = activity.metadata.tmdbId;
+                const mediaType = activity.metadata.mediaType || "movie";
+                mediaHref = mediaType === "movie" ? `/movie/${tmdbId}` : `/tv/${tmdbId}`;
+                activityText = `rated ${mediaTitle}`;
+              } else if (activity.type === "favorite" && activity.metadata) {
+                mediaTitle = activity.metadata.title || "Unknown";
+                const tmdbId = activity.metadata.tmdbId;
+                const mediaType = activity.metadata.mediaType || "movie";
+                mediaHref = mediaType === "movie" ? `/movie/${tmdbId}` : `/tv/${tmdbId}`;
+                activityText = `added ${mediaTitle} to favorites`;
+              } else if (activity.type === "list_create" && activity.metadata) {
+                const listName = activity.metadata.listName || "a list";
+                activityText = `created "${listName}"`;
+                mediaHref = `/lists/${activity.metadata.listId}`;
+              } else if (activity.type === "save_list" && activity.metadata) {
+                const listName = activity.metadata.listName || "a list";
+                activityText = `saved "${listName}"`;
+                mediaHref = `/lists/${activity.metadata.listId}`;
+              } else if (activity.type === "reaction" && activity.metadata) {
+                const listName = activity.metadata.listName || "a list";
+                activityText = `reacted to "${listName}"`;
+                mediaHref = `/lists/${activity.metadata.listId}`;
+              } else {
+                activityText = "had some activity";
+              }
+
+              return (
+                <div key={activity.id} className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 p-3 transition-all hover:border-white/15 hover:bg-white/10">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500/20 to-purple-500/20">
+                    <ActivityIcon className="h-5 w-5 text-blue-300" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-white">
+                      <PrefetchLink href={`/u/${activity.username}`} className="font-semibold hover:text-blue-300 transition-colors">
+                        {activity.displayName || activity.username}
+                      </PrefetchLink>
+                      {" "}
+                      <span className="text-slate-400">{activityText}</span>
+                    </p>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {new Date(activity.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                    </p>
+                  </div>
+                  {mediaHref && (
+                    <PrefetchLink href={mediaHref} className="shrink-0 text-slate-400 hover:text-white transition-colors">
+                      <ArrowUpRight className="h-4 w-4" />
+                    </PrefetchLink>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

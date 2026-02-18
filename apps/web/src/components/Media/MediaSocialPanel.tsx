@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { StarIcon } from "@heroicons/react/24/solid";
+import { StarIcon, ListBulletIcon } from "@heroicons/react/24/solid";
 import { getAvatarSrc, shouldBypassNextImage } from "@/lib/avatar";
 
 type RequestedBy = {
@@ -19,6 +19,11 @@ type MediaSocialPanelProps = {
   initialWatchlist?: boolean | null;
 };
 
+type UserList = {
+  id: number;
+  name: string;
+};
+
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/g).filter(Boolean);
   if (!parts.length) return "?";
@@ -27,6 +32,8 @@ function initials(name: string): string {
 
 export function MediaSocialPanel({ tmdbId, mediaType, requestedBy, initialWatchlist }: MediaSocialPanelProps) {
   const [watchlist, setWatchlist] = useState<boolean | null>(initialWatchlist ?? null);
+  const [userLists, setUserLists] = useState<UserList[]>([]);
+  const [listsLoading, setListsLoading] = useState(true);
 
   useEffect(() => {
     if (initialWatchlist != null) return;
@@ -45,11 +52,31 @@ export function MediaSocialPanel({ tmdbId, mediaType, requestedBy, initialWatchl
     };
   }, [tmdbId, mediaType, initialWatchlist]);
 
+  useEffect(() => {
+    let active = true;
+    setListsLoading(true);
+    fetch(`/api/v1/lists/containing?tmdbId=${tmdbId}&mediaType=${mediaType}`, { credentials: "include" })
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => {
+        if (!active || !data) return;
+        setUserLists(data.lists || []);
+      })
+      .catch(() => {
+        if (active) setUserLists([]);
+      })
+      .finally(() => {
+        if (active) setListsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [tmdbId, mediaType]);
+
   const requestedLabel = requestedBy?.username
     ? `Requested by ${requestedBy.displayName?.trim() || requestedBy.username}`
     : null;
 
-  if (watchlist === null && !requestedBy) return null;
+  if (watchlist === null && !requestedBy && userLists.length === 0 && !listsLoading) return null;
 
   const avatarSrc = requestedBy
     ? (requestedBy.jellyfinUserId ? `/avatarproxy/${requestedBy.jellyfinUserId}` : getAvatarSrc({
@@ -61,7 +88,7 @@ export function MediaSocialPanel({ tmdbId, mediaType, requestedBy, initialWatchl
     : null;
 
   return (
-    <div className="mt-3 flex flex-wrap gap-2">
+    <div id="media-social-info" className="mt-3 flex flex-wrap gap-2">
       {watchlist !== null && (
         <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-gray-200">
           <StarIcon className={`h-3.5 w-3.5 ${watchlist ? "text-yellow-400" : "text-gray-400"}`} />
@@ -86,6 +113,14 @@ export function MediaSocialPanel({ tmdbId, mediaType, requestedBy, initialWatchl
             </span>
           )}
           <span className="inline-flex items-center gap-1">{requestedLabel}</span>
+        </div>
+      )}
+      {!listsLoading && userLists.length > 0 && (
+        <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-gray-200">
+          <ListBulletIcon className="h-3.5 w-3.5 text-blue-400" />
+          <span>
+            In {userLists.length === 1 ? userLists[0].name : `${userLists.length} lists`}
+          </span>
         </div>
       )}
     </div>

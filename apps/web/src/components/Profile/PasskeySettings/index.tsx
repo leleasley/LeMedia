@@ -7,6 +7,7 @@ import { csrfFetch } from "@/lib/csrf-client";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { ConfirmationModal } from "@/components/Common/ConfirmationModal";
 import { logger } from "@/lib/logger";
+import { Modal } from "@/components/Common/Modal";
 
 interface Credential {
   id: string;
@@ -23,6 +24,11 @@ export function PasskeySettings() {
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  const [mfaModalOpen, setMfaModalOpen] = useState(false);
+  const [mfaCode, setMfaCode] = useState("");
+  const [mfaError, setMfaError] = useState<string | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [pendingRegister, setPendingRegister] = useState(false);
 
   const [modalConfig, setModalConfig] = useState<{
     isOpen: boolean;
@@ -50,11 +56,15 @@ export function PasskeySettings() {
     fetchCredentials();
   }, []);
 
-  const handleRegister = async () => {
+  const performRegister = async (code: string) => {
     setRegistering(true);
     setError(null);
     try {
-      const optionsRes = await fetch("/api/auth/webauthn/register/options");
+      const optionsRes = await csrfFetch("/api/auth/webauthn/register/options", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mfaCode: code })
+      });
       if (!optionsRes.ok) throw new Error("Failed to get registration options");
       const options = await optionsRes.json();
 
@@ -63,7 +73,7 @@ export function PasskeySettings() {
       const verifyRes = await csrfFetch("/api/auth/webauthn/register/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(attResp),
+        body: JSON.stringify({ ...attResp, mfaCode: code }),
       });
 
       const verification = await verifyRes.json();
@@ -80,6 +90,14 @@ export function PasskeySettings() {
     }
   };
 
+  const handleRegister = async () => {
+    setPendingRegister(true);
+    setPendingDeleteId(null);
+    setMfaCode("");
+    setMfaError(null);
+    setMfaModalOpen(true);
+  };
+
   const handleDelete = (id: string) => {
     setModalConfig({
       isOpen: true,
@@ -87,20 +105,33 @@ export function PasskeySettings() {
       message: "Are you sure you want to remove this passkey? You won't be able to use it to sign in anymore.",
       variant: "danger",
       onConfirm: async () => {
-        try {
-          const res = await csrfFetch(`/api/auth/webauthn/credentials/${id}`, { method: "DELETE" });
-          if (res.ok) {
-            setCredentials(credentials.filter(c => c.id !== id));
-            toast.success("Passkey removed");
-          } else {
-            toast.error("Failed to remove passkey");
-          }
-        } catch (err) {
-          logger.error("[Passkeys] Failed to delete credential", err);
-          toast.error("An error occurred while removing the passkey");
-        }
+        setPendingRegister(false);
+        setPendingDeleteId(id);
+        setMfaCode("");
+        setMfaError(null);
+        setMfaModalOpen(true);
       }
     });
+  };
+
+  const handleDeleteWithMfa = async (id: string, code: string) => {
+    try {
+      const res = await csrfFetch(`/api/auth/webauthn/credentials/${id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mfaCode: code })
+      });
+      if (res.ok) {
+        setCredentials(credentials.filter(c => c.id !== id));
+        toast.success("Passkey removed");
+      } else {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || "Failed to remove passkey");
+      }
+    } catch (err: any) {
+      logger.error("[Passkeys] Failed to delete credential", err);
+      throw new Error(err?.message || "An error occurred while removing the passkey");
+    }
   };
 
   const startEditing = (cred: Credential) => {
@@ -131,6 +162,82 @@ export function PasskeySettings() {
 
   return (
     <div className="rounded-2xl md:rounded-3xl glass-strong p-6 md:p-10 border border-white/10 shadow-xl">
+      <Modal
+        open={mfaModalOpen}
+        title="Verify with MFA"
+        onClose={() => {
+          if (registering) return;
+          setMfaModalOpen(false);
+          setMfaCode("");
+          setMfaError(null);
+          setPendingDeleteId(null);
+          setPendingRegister(false);
+        }}
+        forceCenter
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-gray-300">Enter your 6-digit authenticator code to continue.</p>
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={6}
+            value={mfaCode}
+            onChange={(event) => {
+              setMfaCode(event.target.value.replace(/\D/g, "").slice(0, 6));
+              setMfaError(null);
+            }}
+            className="w-full rounded-lg border border-white/20 bg-black/30 px-3 py-2 text-white outline-none focus:border-white/40"
+            placeholder="123456"
+          />
+          {mfaError ? <p className="text-xs text-red-300">{mfaError}</p> : null}
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                setMfaModalOpen(false);
+                setMfaCode("");
+                setMfaError(null);
+                setPendingDeleteId(null);
+                setPendingRegister(false);
+              }}
+              disabled={registering}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={async () => {
+                if (mfaCode.length < 6) {
+                  setMfaError("Enter your 6-digit MFA code");
+                  return;
+                }
+                try {
+                  if (pendingRegister) {
+                    await performRegister(mfaCode);
+                    setMfaModalOpen(false);
+                    setPendingRegister(false);
+                    return;
+                  }
+                  if (pendingDeleteId) {
+                    await handleDeleteWithMfa(pendingDeleteId, mfaCode);
+                    setMfaModalOpen(false);
+                    setPendingDeleteId(null);
+                    return;
+                  }
+                } catch (err: any) {
+                  setMfaError(err?.message || "Verification failed");
+                }
+              }}
+              disabled={registering || mfaCode.length < 6}
+            >
+              {registering ? "Verifying..." : "Continue"}
+            </button>
+          </div>
+        </div>
+      </Modal>
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-4">
           <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-purple-500/10 ring-1 ring-purple-500/20">

@@ -21,6 +21,8 @@ type LoginPageClientProps = {
   from: string;
   oidcEnabled: boolean;
   jellyfinEnabled: boolean;
+  googleOauthEnabled?: boolean;
+  githubOauthEnabled?: boolean;
   ssoProviderType?: "oidc" | "duo_websdk";
 };
 
@@ -52,7 +54,15 @@ function openSsoPopup(url: string) {
   return window.open(url, ssoPopupName, features);
 }
 
-export function LoginPageClient({ csrfToken, from, oidcEnabled, jellyfinEnabled, ssoProviderType }: LoginPageClientProps) {
+export function LoginPageClient({
+  csrfToken,
+  from,
+  oidcEnabled,
+  jellyfinEnabled,
+  googleOauthEnabled = false,
+  githubOauthEnabled = false,
+  ssoProviderType
+}: LoginPageClientProps) {
   const router = useRouter();
   const toast = useToast();
   const ssoPopupRef = useRef<Window | null>(null);
@@ -299,6 +309,32 @@ export function LoginPageClient({ csrfToken, from, oidcEnabled, jellyfinEnabled,
                       >
                         <Image src="/images/jellyfin.svg" alt="Jellyfin" width={16} height={16} />
                         Sign in with Jellyfin
+                      </DropdownMenuItem>
+                    ) : null}
+                    {googleOauthEnabled ? (
+                      <DropdownMenuItem
+                        onSelect={() => {
+                          if (isTurnstileEnabled && !turnstileToken) return;
+                          redirectToSso(`/api/v1/auth/oauth/google/start?from=${encodeURIComponent(from)}&turnstile_token=${encodeURIComponent(turnstileToken)}`);
+                        }}
+                        disabled={isTurnstileEnabled && !turnstileToken}
+                        className={`cursor-pointer gap-2 px-3 py-2 text-sm ${isTurnstileEnabled && !turnstileToken ? "opacity-50" : ""}`}
+                      >
+                        <Image src="/google-login.svg" alt="Google" width={16} height={16} />
+                        Continue with Google
+                      </DropdownMenuItem>
+                    ) : null}
+                    {githubOauthEnabled ? (
+                      <DropdownMenuItem
+                        onSelect={() => {
+                          if (isTurnstileEnabled && !turnstileToken) return;
+                          redirectToSso(`/api/v1/auth/oauth/github/start?from=${encodeURIComponent(from)}&turnstile_token=${encodeURIComponent(turnstileToken)}`);
+                        }}
+                        disabled={isTurnstileEnabled && !turnstileToken}
+                        className={`cursor-pointer gap-2 px-3 py-2 text-sm ${isTurnstileEnabled && !turnstileToken ? "opacity-50" : ""}`}
+                      >
+                        <Image src="/github-login.svg" alt="GitHub" width={16} height={16} />
+                        Continue with GitHub
                       </DropdownMenuItem>
                     ) : null}
                   </DropdownMenuContent>

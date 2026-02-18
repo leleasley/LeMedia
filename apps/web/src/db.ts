@@ -2257,6 +2257,16 @@ export async function createJellyfinUser(input: {
 }
 
 export type MfaSessionType = "verify" | "setup";
+export type OAuthProvider = "google" | "github";
+
+export type UserOAuthAccount = {
+  provider: OAuthProvider;
+  providerUserId: string;
+  providerEmail: string | null;
+  providerLogin: string | null;
+  linkedAt: string;
+  updatedAt: string;
+};
 
 export type MfaSessionRecord = {
   id: string;
@@ -2305,6 +2315,22 @@ async function ensureUserSchema() {
     `);
     await p.query(`CREATE INDEX IF NOT EXISTS idx_mfa_session_user_id ON mfa_session(user_id);`);
     await p.query(`CREATE INDEX IF NOT EXISTS idx_mfa_session_expires_at ON mfa_session(expires_at);`);
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS user_oauth_account (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+        provider TEXT NOT NULL CHECK (provider IN ('google','github')),
+        provider_user_id TEXT NOT NULL,
+        provider_email TEXT,
+        provider_login TEXT,
+        linked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (provider, provider_user_id),
+        UNIQUE (user_id, provider)
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_user_oauth_account_user_id ON user_oauth_account(user_id);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_user_oauth_account_provider ON user_oauth_account(provider);`);
 
     await p.query(`
       CREATE TABLE IF NOT EXISTS user_credential (
@@ -2953,6 +2979,104 @@ export async function createMfaSession(input: {
     secret: row.secret,
     expires_at: row.expires_at
   };
+}
+
+export async function listUserOAuthAccounts(userId: number): Promise<UserOAuthAccount[]> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT provider, provider_user_id, provider_email, provider_login, linked_at, updated_at
+    FROM user_oauth_account
+    WHERE user_id = $1
+    ORDER BY linked_at DESC
+    `,
+    [userId]
+  );
+  return res.rows.map((row) => ({
+    provider: row.provider as OAuthProvider,
+    providerUserId: row.provider_user_id,
+    providerEmail: row.provider_email ?? null,
+    providerLogin: row.provider_login ?? null,
+    linkedAt: row.linked_at,
+    updatedAt: row.updated_at
+  }));
+}
+
+export async function getUserOAuthAccount(userId: number, provider: OAuthProvider): Promise<UserOAuthAccount | null> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT provider, provider_user_id, provider_email, provider_login, linked_at, updated_at
+    FROM user_oauth_account
+    WHERE user_id = $1 AND provider = $2
+    LIMIT 1
+    `,
+    [userId, provider]
+  );
+  if (!res.rows.length) return null;
+  const row = res.rows[0];
+  return {
+    provider: row.provider as OAuthProvider,
+    providerUserId: row.provider_user_id,
+    providerEmail: row.provider_email ?? null,
+    providerLogin: row.provider_login ?? null,
+    linkedAt: row.linked_at,
+    updatedAt: row.updated_at
+  };
+}
+
+export async function getUserByOAuthAccount(provider: OAuthProvider, providerUserId: string): Promise<DbUserWithHash | null> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT user_id
+    FROM user_oauth_account
+    WHERE provider = $1 AND provider_user_id = $2
+    LIMIT 1
+    `,
+    [provider, providerUserId]
+  );
+  if (!res.rows.length) return null;
+  return getUserWithHashById(Number(res.rows[0].user_id));
+}
+
+export async function upsertUserOAuthAccount(input: {
+  userId: number;
+  provider: OAuthProvider;
+  providerUserId: string;
+  providerEmail?: string | null;
+  providerLogin?: string | null;
+}) {
+  await ensureUserSchema();
+  const p = getPool();
+  await p.query(
+    `
+    INSERT INTO user_oauth_account (user_id, provider, provider_user_id, provider_email, provider_login, linked_at, updated_at)
+    VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+    ON CONFLICT (user_id, provider)
+    DO UPDATE
+      SET provider_user_id = EXCLUDED.provider_user_id,
+          provider_email = EXCLUDED.provider_email,
+          provider_login = EXCLUDED.provider_login,
+          updated_at = NOW()
+    `,
+    [input.userId, input.provider, input.providerUserId, input.providerEmail ?? null, input.providerLogin ?? null]
+  );
+}
+
+export async function unlinkUserOAuthAccount(userId: number, provider: OAuthProvider) {
+  await ensureUserSchema();
+  const p = getPool();
+  await p.query(
+    `
+    DELETE FROM user_oauth_account
+    WHERE user_id = $1 AND provider = $2
+    `,
+    [userId, provider]
+  );
 }
 
 export async function getMfaSessionById(id: string): Promise<MfaSessionRecord | null> {
@@ -7109,6 +7233,26 @@ export async function removeCustomListCoverImage(
     return { imagePath: null };
   }
   return { imagePath: res.rows[0].custom_cover_image_path ?? null };
+}
+
+export async function getListsContainingMedia(
+  userId: number,
+  tmdbId: number,
+  mediaType: "movie" | "tv"
+): Promise<Array<{ id: number; name: string }>> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT cl.id, cl.name
+     FROM custom_list cl
+     INNER JOIN custom_list_item cli ON cli.list_id = cl.id
+     WHERE cl.user_id = $1 AND cli.tmdb_id = $2 AND cli.media_type = $3
+     ORDER BY cl.name ASC`,
+    [userId, tmdbId, mediaType]
+  );
+  return res.rows.map(row => ({
+    id: Number(row.id),
+    name: row.name
+  }));
 }
 
 // ==================== TASTE PROFILE & QUIZ ====================

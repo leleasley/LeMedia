@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
     });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized")
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    return NextResponse.json({ error: "Unable to load feed" }, { status: 500 });
+      return NextResponse.json({ error: "Unauthorized", events: [], hasMore: false }, { status: 401 });
+    return NextResponse.json({ error: "Unable to load feed", events: [], hasMore: false }, { status: 500 });
   }
 }

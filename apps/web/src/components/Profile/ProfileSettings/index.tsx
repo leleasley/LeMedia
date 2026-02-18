@@ -8,6 +8,7 @@ import { Loader2, Film, Tv, RefreshCw } from "lucide-react";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { Button } from "@/components/ui/button";
 import { csrfFetch } from "@/lib/csrf-client";
+import { Modal } from "@/components/Common/Modal";
 import { RegionSelector } from "@/components/Common/RegionSelector";
 import { LanguageSelector } from "@/components/Common/LanguageSelector";
 import { Switch } from "@headlessui/react";
@@ -125,6 +126,14 @@ export function ProfileSettings({
   const [apiTokenCreating, setApiTokenCreating] = useState(false);
   const [newApiToken, setNewApiToken] = useState<string | null>(null);
   const [apiTokenError, setApiTokenError] = useState<string | null>(null);
+  const [mfaPromptOpen, setMfaPromptOpen] = useState(false);
+  const [mfaPromptCode, setMfaPromptCode] = useState("");
+  const [mfaPromptError, setMfaPromptError] = useState<string | null>(null);
+  const [pendingPasswordPayload, setPendingPasswordPayload] = useState<any | null>(null);
+  const [tokenPasswordPromptOpen, setTokenPasswordPromptOpen] = useState(false);
+  const [tokenPasswordValue, setTokenPasswordValue] = useState("");
+  const [tokenPasswordError, setTokenPasswordError] = useState<string | null>(null);
+  const [tokenPasswordAction, setTokenPasswordAction] = useState<null | ((password: string) => Promise<void>)>(null);
   const showPassword = section === "all" || section === "security";
 
   const fetcher = async (url: string) => {
@@ -168,60 +177,65 @@ export function ProfileSettings({
     }
   }, [showPassword, loadApiTokens]);
 
+  function requestTokenPassword(action: (password: string) => Promise<void>) {
+    setTokenPasswordValue("");
+    setTokenPasswordError(null);
+    setTokenPasswordAction(() => action);
+    setTokenPasswordPromptOpen(true);
+  }
+
   const handleCreateApiToken = async () => {
     const name = apiTokenName.trim();
     if (!name) {
       toast.error("Enter a name for the API token");
       return;
     }
-    setApiTokenCreating(true);
-    setApiTokenError(null);
-    setNewApiToken(null);
-    try {
-      const res = await csrfFetch("/api/profile/api-tokens", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name })
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body?.error || "Failed to create API token");
+    requestTokenPassword(async (password) => {
+      if (!password) throw new Error("Password is required");
+      setApiTokenCreating(true);
+      setApiTokenError(null);
+      setNewApiToken(null);
+      try {
+        const res = await csrfFetch("/api/profile/api-tokens", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, password })
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body?.error || "Failed to create API token");
+        }
+        const data = await res.json();
+        if (data?.tokenInfo) {
+          setApiTokens(prev => [data.tokenInfo, ...prev]);
+        }
+        setNewApiToken(data?.token ?? null);
+        setApiTokenName("");
+        setTokenPasswordPromptOpen(false);
+        toast.success("API token created");
+      } finally {
+        setApiTokenCreating(false);
       }
-      const data = await res.json();
-      if (data?.tokenInfo) {
-        setApiTokens(prev => [data.tokenInfo, ...prev]);
-      }
-      setNewApiToken(data?.token ?? null);
-      setApiTokenName("");
-      toast.success("API token created");
-    } catch (err: any) {
-      const msg = err?.message ?? "Failed to create API token";
-      setApiTokenError(msg);
-      toast.error(msg);
-    } finally {
-      setApiTokenCreating(false);
-    }
+    });
   };
 
   const handleRevokeApiToken = async (id: number) => {
-    setApiTokenError(null);
-    try {
+    requestTokenPassword(async (password) => {
+      if (!password) throw new Error("Password is required");
+      setApiTokenError(null);
       const res = await csrfFetch("/api/profile/api-tokens", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id })
+        body: JSON.stringify({ id, password })
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body?.error || "Failed to revoke API token");
       }
       setApiTokens(prev => prev.filter(token => token.id !== id));
+      setTokenPasswordPromptOpen(false);
       toast.success("API token revoked");
-    } catch (err: any) {
-      const msg = err?.message ?? "Failed to revoke API token";
-      setApiTokenError(msg);
-      toast.error(msg);
-    }
+    });
   };
 
   const { data, error: profileError, isLoading, mutate } = useSWR<ProfileResponse>("/api/v1/profile", fetcher);
@@ -248,6 +262,52 @@ export function ProfileSettings({
 
   function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm(prev => ({ ...prev, [key]: value }));
+  }
+
+  async function submitProfile(payload: any): Promise<boolean> {
+    setSaving(true);
+    try {
+      const res = await csrfFetch("/api/v1/profile", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error ?? "Failed to update profile");
+      }
+      const data: UpdateResponse = await res.json();
+      setInitialData(data.user);
+      setForm(prev => ({
+        ...prev,
+        username: data.user.username,
+        displayName: data.user.displayName ?? "",
+        email: data.user.email ?? "",
+        discordUserId: form.discordUserId,
+        letterboxdUsername: data.user.letterboxdUsername ?? form.letterboxdUsername,
+        discoverRegion: data.user.discoverRegion ?? null,
+        originalLanguage: data.user.originalLanguage ?? null,
+        watchlistSyncMovies: data.user.watchlistSyncMovies ?? false,
+        watchlistSyncTv: data.user.watchlistSyncTv ?? false,
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: ""
+      }));
+      mutate();
+      setSuccess("Profile updated. Please sign in again to use new details.");
+      setRequireLogout(data.requireLogout);
+      toast.success("Profile updated");
+      return true;
+    } catch (err: any) {
+      const msg = err?.message ?? "Profile update failed";
+      setFormError(msg);
+      toast.error(msg);
+      return false;
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -321,47 +381,15 @@ export function ProfileSettings({
       return;
     }
 
-    setSaving(true);
-    try {
-      const res = await csrfFetch("/api/v1/profile", {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(payload)
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data?.error ?? "Failed to update profile");
-      }
-      const data: UpdateResponse = await res.json();
-      setInitialData(data.user);
-      setForm(prev => ({
-        ...prev,
-        username: data.user.username,
-        displayName: data.user.displayName ?? "",
-        email: data.user.email ?? "",
-        discordUserId: form.discordUserId,
-        letterboxdUsername: data.user.letterboxdUsername ?? form.letterboxdUsername,
-        discoverRegion: data.user.discoverRegion ?? null,
-        originalLanguage: data.user.originalLanguage ?? null,
-        watchlistSyncMovies: data.user.watchlistSyncMovies ?? false,
-        watchlistSyncTv: data.user.watchlistSyncTv ?? false,
-        currentPassword: "",
-        newPassword: "",
-        confirmPassword: ""
-      }));
-      mutate();
-      setSuccess("Profile updated. Please sign in again to use new details.");
-      setRequireLogout(data.requireLogout);
-      toast.success("Profile updated");
-    } catch (err: any) {
-      const msg = err?.message ?? "Profile update failed";
-      setFormError(msg);
-      toast.error(msg);
-    } finally {
-      setSaving(false);
+    if (payload.newPassword) {
+      setPendingPasswordPayload(payload);
+      setMfaPromptCode("");
+      setMfaPromptError(null);
+      setMfaPromptOpen(true);
+      return;
     }
+
+    await submitProfile(payload);
   }
 
   const [syncing, setSyncing] = useState(false);
@@ -389,6 +417,130 @@ export function ProfileSettings({
 
   return (
     <div className="space-y-6">
+      <Modal
+        open={mfaPromptOpen}
+        title="Verify with MFA"
+        onClose={() => {
+          if (saving) return;
+          setMfaPromptOpen(false);
+          setMfaPromptCode("");
+          setMfaPromptError(null);
+          setPendingPasswordPayload(null);
+        }}
+        forceCenter
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-gray-300">Enter your authenticator code to continue with this sensitive change.</p>
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={6}
+            value={mfaPromptCode}
+            onChange={(event) => {
+              setMfaPromptCode(event.target.value.replace(/\D/g, "").slice(0, 6));
+              setMfaPromptError(null);
+            }}
+            className="w-full rounded-lg border border-white/10 bg-black/30 px-4 py-3 text-white placeholder:text-white/30 outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 transition-all text-sm"
+            placeholder="123456"
+          />
+          {mfaPromptError ? <p className="text-xs text-red-300">{mfaPromptError}</p> : null}
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setMfaPromptOpen(false);
+                setMfaPromptCode("");
+                setMfaPromptError(null);
+                setPendingPasswordPayload(null);
+              }}
+              disabled={saving}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={async () => {
+                if (!pendingPasswordPayload) return;
+                if (mfaPromptCode.length < 6) {
+                  setMfaPromptError("Enter your 6-digit MFA code");
+                  return;
+                }
+                const ok = await submitProfile({ ...pendingPasswordPayload, mfaCode: mfaPromptCode });
+                if (ok) {
+                  setMfaPromptOpen(false);
+                  setMfaPromptCode("");
+                  setMfaPromptError(null);
+                  setPendingPasswordPayload(null);
+                }
+              }}
+              disabled={saving || mfaPromptCode.length < 6}
+            >
+              {saving ? "Verifying..." : "Verify & Continue"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+      <Modal
+        open={tokenPasswordPromptOpen}
+        title="Confirm with password"
+        onClose={() => {
+          if (apiTokenCreating) return;
+          setTokenPasswordPromptOpen(false);
+          setTokenPasswordValue("");
+          setTokenPasswordError(null);
+          setTokenPasswordAction(null);
+        }}
+        forceCenter
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-gray-300">Enter your current password to continue.</p>
+          <input
+            type="password"
+            autoComplete="current-password"
+            value={tokenPasswordValue}
+            onChange={(event) => {
+              setTokenPasswordValue(event.target.value);
+              setTokenPasswordError(null);
+            }}
+            className="w-full rounded-lg border border-white/10 bg-black/30 px-4 py-3 text-white placeholder:text-white/30 outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 transition-all text-sm"
+            placeholder="Current password"
+          />
+          {tokenPasswordError ? <p className="text-xs text-red-300">{tokenPasswordError}</p> : null}
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setTokenPasswordPromptOpen(false);
+                setTokenPasswordValue("");
+                setTokenPasswordError(null);
+                setTokenPasswordAction(null);
+              }}
+              disabled={apiTokenCreating}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={async () => {
+                if (!tokenPasswordAction) return;
+                try {
+                  await tokenPasswordAction(tokenPasswordValue);
+                } catch (err: any) {
+                  const msg = err?.message ?? "Password validation failed";
+                  setTokenPasswordError(msg);
+                  setApiTokenError(msg);
+                }
+              }}
+              disabled={apiTokenCreating || !tokenPasswordValue}
+            >
+              {apiTokenCreating ? "Verifying..." : "Continue"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
       {isLoading ? (
         <div className="rounded-2xl md:rounded-3xl glass-strong p-8 md:p-12 flex items-center justify-center border border-white/10 shadow-2xl">
           <Loader2 className="mr-3 h-6 w-6 animate-spin text-foreground/70" />

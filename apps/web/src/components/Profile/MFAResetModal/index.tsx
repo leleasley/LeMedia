@@ -8,17 +8,28 @@ import { csrfFetch } from "@/lib/csrf-client";
 export function MFAResetModal() {
     const [isOpen, setIsOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
+    const [password, setPassword] = useState("");
     const toast = useToast();
 
     async function handleReset() {
+        if (!password) {
+            toast.error("Enter your current password");
+            return;
+        }
         setIsLoading(true);
         try {
-            const res = await csrfFetch("/api/v1/profile/mfa/reset", { method: "POST" });
+            const res = await csrfFetch("/api/v1/profile/mfa/reset", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ password })
+            });
             if (!res.ok) {
-                throw new Error("Failed to reset MFA");
+                const body = await res.json().catch(() => ({}));
+                throw new Error(body?.error || "Failed to reset MFA");
             }
             // The API will redirect, but we can show a message in case
             toast.success("MFA reset initiated. Redirecting to setup...");
+            setPassword("");
             // Let the redirect happen
             window.location.href = res.url || "/mfa_setup";
         } catch (err: any) {
@@ -58,10 +69,25 @@ export function MFAResetModal() {
                         <p className="text-sm text-gray-300 mb-6">
                             You will be signed out and taken to set up MFA again. Make sure you have your authenticator app ready.
                         </p>
+                        <label className="block text-sm text-gray-300 mb-2" htmlFor="mfa-reset-password">
+                            Current password
+                        </label>
+                        <input
+                            id="mfa-reset-password"
+                            type="password"
+                            autoComplete="current-password"
+                            value={password}
+                            onChange={(event) => setPassword(event.target.value)}
+                            className="w-full rounded-lg border border-white/20 bg-black/30 px-3 py-2 text-white outline-none focus:border-white/40 mb-6"
+                            placeholder="Enter your password"
+                        />
 
                         <div className="flex gap-3 justify-end">
                             <button
-                                onClick={() => setIsOpen(false)}
+                                onClick={() => {
+                                    setIsOpen(false);
+                                    setPassword("");
+                                }}
                                 disabled={isLoading}
                                 className="px-4 py-2 rounded-lg border border-white/20 text-white hover:bg-white/5 text-sm font-semibold transition-colors disabled:opacity-50"
                             >

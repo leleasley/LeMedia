@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/auth";
-import { getPool } from "@/db";
+import { getPool, getUserWithHash } from "@/db";
 import { requireCsrf } from "@/lib/csrf";
 import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/rate-limit";
 import { logger } from "@/lib/logger";
+import { verifyMfaCode } from "@/lib/mfa-reauth";
 
 export async function POST(
     request: NextRequest,
@@ -17,6 +18,16 @@ export async function POST(
         }
         const csrf = requireCsrf(request);
         if (csrf) return csrf;
+        const body = await request.json().catch(() => ({}));
+        const mfaCode = typeof body?.mfaCode === "string" ? body.mfaCode : "";
+        const adminDbUser = await getUserWithHash(currentUser.username);
+        if (!adminDbUser) {
+            return NextResponse.json({ error: "Admin user not found" }, { status: 404 });
+        }
+        const mfaCheck = verifyMfaCode(adminDbUser.mfa_secret, mfaCode);
+        if (!mfaCheck.ok) {
+            return NextResponse.json({ error: mfaCheck.message }, { status: 400 });
+        }
 
         const db = getPool();
         const { id } = await params;

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/auth";
-import { addUserPasswordHistory, getUserPasswordHistory, getUserTraktTokenStatus, getUserWithHash, updateUserPasswordById, updateUserProfile } from "@/db";
+import { addUserPasswordHistory, getUserPasswordHistory, getUserTraktTokenStatus, getUserWithHash, listUserOAuthAccounts, updateUserPasswordById, updateUserProfile } from "@/db";
 import { hashPassword, verifyPassword } from "@/lib/auth-utils";
 import { z } from "zod";
 import { requireCsrf } from "@/lib/csrf";
@@ -9,6 +9,7 @@ import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/rate-limit";
 import { getPasswordPolicyResult } from "@/lib/password-policy";
 import { logger } from "@/lib/logger";
+import { verifyMfaCode } from "@/lib/mfa-reauth";
 
 const UpdateSchema = z.object({
   username: z.string().trim().min(1).optional(),
@@ -16,6 +17,7 @@ const UpdateSchema = z.object({
   email: z.union([z.string().trim().email(), z.literal("")]).optional(),
   newPassword: z.string().min(8).optional(),
   currentPassword: z.string().min(1).optional(),
+  mfaCode: z.string().min(1).optional(),
   discordUserId: z
     .union([z.string().trim().regex(/^\d+$/), z.literal("")])
     .optional(),
@@ -39,7 +41,12 @@ export async function GET(req: NextRequest) {
     const dbUser = await getUserWithHash(user.username);
     if (!dbUser) return jsonResponseWithETag(req, { error: "User not found" }, { status: 404 });
 
-    const traktStatus = await getUserTraktTokenStatus(dbUser.id);
+    const [traktStatus, oauthAccounts] = await Promise.all([
+      getUserTraktTokenStatus(dbUser.id),
+      listUserOAuthAccounts(dbUser.id)
+    ]);
+    const googleAccount = oauthAccounts.find((account) => account.provider === "google") ?? null;
+    const githubAccount = oauthAccounts.find((account) => account.provider === "github") ?? null;
 
     return cacheableJsonResponseWithETag(req, {
       user: {
@@ -54,6 +61,10 @@ export async function GET(req: NextRequest) {
         traktUsername: dbUser.trakt_username,
         traktLinked: traktStatus.linked,
         traktTokenExpiresAt: traktStatus.expiresAt,
+        googleLinked: Boolean(googleAccount),
+        googleEmail: googleAccount?.providerEmail ?? null,
+        githubLinked: Boolean(githubAccount),
+        githubLogin: githubAccount?.providerLogin ?? null,
         avatarUrl: dbUser.avatar_url,
         avatarVersion: dbUser.avatar_version ?? null,
         discoverRegion: dbUser.discover_region,
@@ -140,6 +151,10 @@ export async function PATCH(req: NextRequest) {
       }
       if (!dbUser.password_hash || !(await verifyPassword(body.currentPassword, dbUser.password_hash))) {
         return NextResponse.json({ error: "Current password is incorrect" }, { status: 400 });
+      }
+      const mfaCheck = verifyMfaCode(dbUser.mfa_secret, body.mfaCode ?? "");
+      if (!mfaCheck.ok) {
+        return NextResponse.json({ error: mfaCheck.message }, { status: 400 });
       }
       const newPassword = body.newPassword ?? "";
       const policy = getPasswordPolicyResult({ password: newPassword, username: dbUser.username });
