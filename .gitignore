@@ -6,6 +6,7 @@
 # Dependencies
 node_modules
 apps/web/node_modules
+.npmrc
 
 # Build outputs
 apps/web/.next
