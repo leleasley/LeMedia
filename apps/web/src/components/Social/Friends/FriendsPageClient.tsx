@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -55,11 +55,7 @@ export function FriendsPageClient() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
 
-  useEffect(() => {
-    fetchData();
-  }, [tab]);
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       if (tab === "friends") {
@@ -86,7 +82,11 @@ export function FriendsPageClient() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [tab, toast]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const handleFriendAction = async (action: string, opts: { targetUserId?: number; requestId?: number }) => {
     try {
@@ -332,6 +332,7 @@ function UserAvatar({ src, name, size = "md", user }: { src?: string | null; nam
   return (
     <div className={`${sizeMap[size]} rounded-xl overflow-hidden bg-gradient-to-br from-indigo-600 to-purple-700 flex-shrink-0`}>
       {bypass ? (
+        // eslint-disable-next-line @next/next/no-img-element
         <img src={imgSrc} alt={alt} className="object-cover w-full h-full" />
       ) : imgSrc && !imgSrc.startsWith("data:") ? (
         <Image src={imgSrc} alt={alt} width={64} height={64} className="object-cover w-full h-full" />

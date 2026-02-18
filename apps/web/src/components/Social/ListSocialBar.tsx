@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -67,12 +67,7 @@ export function ListSocialBar({
   const [submitting, setSubmitting] = useState(false);
   const [commentsLoading, setCommentsLoading] = useState(false);
 
-  useEffect(() => {
-    fetchReactions();
-    checkSaved();
-  }, [listId]);
-
-  const fetchReactions = async () => {
+  const fetchReactions = useCallback(async () => {
     try {
       const res = await fetch(`/api/v1/lists/${listId}/reactions`, { credentials: "include" });
       if (res.ok) {
@@ -80,7 +75,7 @@ export function ListSocialBar({
         setReactions(data.reactions || []);
       }
     } catch { /* ignore */ }
-  };
+  }, [listId]);
 
   const fetchComments = async () => {
     try {
@@ -97,7 +92,7 @@ export function ListSocialBar({
     }
   };
 
-  const checkSaved = async () => {
+  const checkSaved = useCallback(async () => {
     try {
       const res = await fetch(`/api/v1/lists/${listId}/save`, { credentials: "include" });
       if (res.ok) {
@@ -105,7 +100,12 @@ export function ListSocialBar({
         setSaved(data.saved);
       }
     } catch { /* ignore */ }
-  };
+  }, [listId]);
+
+  useEffect(() => {
+    fetchReactions();
+    checkSaved();
+  }, [fetchReactions, checkSaved]);
 
   const handleReaction = async (reaction: string) => {
     try {
@@ -389,6 +389,7 @@ function CommentCard({
       <Link href={`/u/${comment.username}`} className="flex-shrink-0">
         <div className="w-8 h-8 rounded-full overflow-hidden bg-gradient-to-br from-indigo-600 to-purple-700">
           {bypass ? (
+            // eslint-disable-next-line @next/next/no-img-element
             <img src={avatarSrc} alt={getAvatarAlt(comment)} className="object-cover w-full h-full" />
           ) : (
             <Image src={avatarSrc} alt={getAvatarAlt(comment)} width={32} height={32} className="object-cover w-full h-full" />

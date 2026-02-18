@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import {
@@ -92,11 +92,7 @@ export function PublicProfileClient({
   const [showReportModal, setShowReportModal] = useState(false);
   const [listTab, setListTab] = useState<"pinned" | "recent" | "popular">("pinned");
 
-  useEffect(() => {
-    fetchProfile();
-  }, [username]);
-
-  const fetchProfile = async () => {
+  const fetchProfile = useCallback(async () => {
     try {
       setLoading(true);
       const res = await fetch(`/api/v1/social/users/${encodeURIComponent(username)}`, { credentials: "include" });
@@ -114,7 +110,11 @@ export function PublicProfileClient({
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast, username]);
+
+  useEffect(() => {
+    fetchProfile();
+  }, [fetchProfile]);
 
   const handleFriendAction = async (action: string, targetUserId?: number, requestId?: number) => {
     try {
@@ -263,6 +263,7 @@ export function PublicProfileClient({
           <div className="relative">
             <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-2xl ring-4 ring-[#0b1120] overflow-hidden bg-gradient-to-br from-indigo-600 to-purple-700 flex-shrink-0 shadow-2xl relative">
               {avatarBypass ? (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img src={avatarSrc} alt={getAvatarAlt(profile)} className="object-cover w-full h-full" />
               ) : (
                 <Image src={avatarSrc} alt={getAvatarAlt(profile)} fill className="object-cover" />
@@ -675,6 +676,7 @@ function FriendsOnlyProfileBanner({
     <div className="text-center py-20">
       <div className="w-24 h-24 rounded-2xl overflow-hidden bg-gradient-to-br from-indigo-600 to-purple-700 mx-auto mb-6 ring-4 ring-[#0b1120] relative">
         {avatarBypass ? (
+          // eslint-disable-next-line @next/next/no-img-element
           <img src={avatarSrc} alt={getAvatarAlt(profile)} className="object-cover w-full h-full" />
         ) : (
           <Image src={avatarSrc} alt={getAvatarAlt(profile)} fill className="object-cover" />

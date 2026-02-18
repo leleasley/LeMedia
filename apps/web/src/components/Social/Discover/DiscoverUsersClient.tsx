@@ -50,12 +50,12 @@ export function DiscoverUsersClient() {
     } finally {
       setLoading(false);
     }
-  }, [searchQuery, filter]);
+  }, [searchQuery, filter, toast]);
 
   useEffect(() => {
     const timeout = setTimeout(fetchUsers, searchQuery ? 300 : 0);
     return () => clearTimeout(timeout);
-  }, [fetchUsers]);
+  }, [fetchUsers, searchQuery]);
 
   const handleSendRequest = async (userId: number) => {
     try {
@@ -195,6 +195,7 @@ function UserCard({
         <Link href={`/u/${user.username}`} className="flex-shrink-0">
           <div className="w-12 h-12 rounded-xl overflow-hidden bg-gradient-to-br from-indigo-600 to-purple-700">
             {bypass ? (
+              // eslint-disable-next-line @next/next/no-img-element
               <img src={avatarSrc} alt={getAvatarAlt(user)} className="object-cover w-full h-full" />
             ) : (
               <Image src={avatarSrc} alt={getAvatarAlt(user)} width={48} height={48} className="object-cover w-full h-full" />

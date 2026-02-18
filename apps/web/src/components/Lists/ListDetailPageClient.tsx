@@ -739,7 +739,8 @@ export function ListDetailPageClient({
                       }`}
                     >
                       {item.posterUrl ? (
-                         <img src={item.posterUrl} alt="" className="w-full h-full object-cover" />
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={item.posterUrl} alt="" className="w-full h-full object-cover" />
                       ) : (
                         <div className="w-full h-full bg-gray-800" />
                       )}
@@ -774,6 +775,7 @@ export function ListDetailPageClient({
                 >
                   {list.customCoverImagePath ? (
                     <>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={customCoverUrl ?? `/api/v1/lists/${listId}/cover/image`}
                         alt="Custom cover"

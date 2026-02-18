@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -96,16 +96,12 @@ export function ListsPageClient({ imageProxyEnabled }: { imageProxyEnabled: bool
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
 
   useEffect(() => {
-    fetchLists();
-  }, []);
-
-  useEffect(() => {
     const handleOpenCreateModal = () => setCreateModalOpen(true);
     window.addEventListener("openCreateListModal", handleOpenCreateModal);
     return () => window.removeEventListener("openCreateListModal", handleOpenCreateModal);
   }, []);
 
-  const fetchLists = async () => {
+  const fetchLists = useCallback(async () => {
     try {
       setLoading(true);
       const res = await fetch("/api/v1/lists", { credentials: "include" });
@@ -140,7 +136,11 @@ export function ListsPageClient({ imageProxyEnabled }: { imageProxyEnabled: bool
     } finally {
       setLoading(false);
     }
-  };
+  }, [imageProxyEnabled]);
+
+  useEffect(() => {
+    fetchLists();
+  }, [fetchLists]);
 
   const filteredAndSorted = useMemo(() => {
     let result = [...lists];

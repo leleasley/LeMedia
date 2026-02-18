@@ -37,7 +37,7 @@ export function QuizPageClient({ alreadyCompleted }: QuizPageClientProps) {
             Your Taste Profile is Ready!
           </h1>
           <p className="text-gray-400 mb-8 max-w-md mx-auto">
-            We've already personalized your recommendations based on your preferences.
+            We&apos;ve already personalized your recommendations based on your preferences.
             Your recommendations are now tailored to your taste.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">

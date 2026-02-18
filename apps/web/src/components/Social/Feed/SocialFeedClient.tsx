@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -36,6 +36,11 @@ export function SocialFeedClient() {
   const [feedType, setFeedType] = useState<FeedType>("friends");
   const [hasMore, setHasMore] = useState(false);
   const [nextBefore, setNextBefore] = useState<string | null>(null);
+  const nextBeforeRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    nextBeforeRef.current = nextBefore;
+  }, [nextBefore]);
 
   const fetchFeed = useCallback(async (reset: boolean = false) => {
     try {
@@ -47,7 +52,7 @@ export function SocialFeedClient() {
       }
 
       const params = new URLSearchParams({ type: feedType, limit: "20" });
-      if (!reset && nextBefore) params.set("before", nextBefore);
+      if (!reset && nextBeforeRef.current) params.set("before", nextBeforeRef.current);
 
       const res = await fetch(`/api/v1/social/feed?${params}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load feed");
@@ -67,11 +72,11 @@ export function SocialFeedClient() {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [feedType, nextBefore]);
+  }, [feedType, toast]);
 
   useEffect(() => {
     fetchFeed(true);
-  }, [feedType]);
+  }, [fetchFeed]);
 
   return (
     <div className="pb-12">
@@ -165,6 +170,7 @@ function FeedEventCard({ event }: { event: SocialEvent }) {
       <Link href={`/u/${event.username}`} className="flex-shrink-0">
         <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-indigo-600 to-purple-700">
           {bypass ? (
+            // eslint-disable-next-line @next/next/no-img-element
             <img src={avatarSrc} alt={event.username} className="object-cover w-full h-full" />
           ) : (
             <Image src={avatarSrc} alt={event.username} width={40} height={40} className="object-cover w-full h-full" />
