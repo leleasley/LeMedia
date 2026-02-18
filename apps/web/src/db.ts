@@ -6735,9 +6735,11 @@ export async function createCustomList(input: {
 }): Promise<CustomList> {
   const p = getPool();
   const shareSlug = await generateUniqueCustomListSlug(input.name);
+  const isPublic = input.isPublic ?? false;
+  const visibility = isPublic ? "public" : "private";
   const res = await p.query(
-    `INSERT INTO custom_list (user_id, name, description, is_public, share_slug, mood, occasion)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `INSERT INTO custom_list (user_id, name, description, is_public, visibility, share_slug, mood, occasion)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING id, user_id as "userId", name, description, is_public as "isPublic",
                share_id as "shareId", share_slug as "shareSlug", mood, occasion,
                cover_tmdb_id as "coverTmdbId",
@@ -6751,7 +6753,8 @@ export async function createCustomList(input: {
       input.userId,
       input.name,
       input.description || null,
-      input.isPublic ?? false,
+      isPublic,
+      visibility,
       shareSlug,
       input.mood || null,
       input.occasion || null,
@@ -6796,7 +6799,9 @@ export async function getCustomListByShareId(shareIdOrSlug: string): Promise<Cus
           custom_cover_image_mime_type as "customCoverImageMimeType",
           item_count as "itemCount",
           created_at as "createdAt", updated_at as "updatedAt"
-     FROM custom_list WHERE (share_id::text = $1 OR share_slug = $1) AND is_public = TRUE`,
+     FROM custom_list
+     WHERE (share_id::text = $1 OR share_slug = $1)
+       AND (is_public = TRUE OR visibility = 'public')`,
     [shareIdOrSlug]
   );
   const row = res.rows[0] || null;
@@ -6882,6 +6887,8 @@ export async function updateCustomList(
   if (updates.isPublic !== undefined) {
     sets.push(`is_public = $${idx++}`);
     values.push(updates.isPublic);
+    sets.push(`visibility = $${idx++}`);
+    values.push(updates.isPublic ? "public" : "private");
   }
 
   if (sets.length === 0) return getCustomListById(listId);

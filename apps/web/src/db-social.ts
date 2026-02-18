@@ -243,6 +243,7 @@ export async function updateUserProfile(
 
 export async function sendFriendRequest(fromUserId: number, toUserId: number, message?: string): Promise<FriendRequest> {
   const p = getPool();
+  if (fromUserId === toUserId) throw new Error("Cannot send friend request to yourself");
 
   // Check if blocked
   const blocked = await p.query(
@@ -570,14 +571,14 @@ export async function addListComment(listId: number, userId: number, content: st
   return { ...comment, ...user.rows[0], replyCount: 0 };
 }
 
-export async function updateListComment(commentId: number, userId: number, content: string): Promise<ListComment | null> {
+export async function updateListComment(listId: number, commentId: number, userId: number, content: string): Promise<ListComment | null> {
   const p = getPool();
   const res = await p.query(
     `UPDATE list_comment SET content = $1, edited = true, updated_at = NOW()
-     WHERE id = $2 AND user_id = $3
+     WHERE list_id = $2 AND id = $3 AND user_id = $4
      RETURNING id, list_id as "listId", user_id as "userId", parent_id as "parentId",
                content, edited, created_at as "createdAt", updated_at as "updatedAt"`,
-    [content, commentId, userId]
+    [content, listId, commentId, userId]
   );
   if (res.rows.length === 0) return null;
   const comment = res.rows[0];
@@ -590,13 +591,13 @@ export async function updateListComment(commentId: number, userId: number, conte
   return { ...comment, ...user.rows[0] };
 }
 
-export async function deleteListComment(commentId: number, userId: number, isAdmin: boolean = false): Promise<boolean> {
+export async function deleteListComment(listId: number, commentId: number, userId: number, isAdmin: boolean = false): Promise<boolean> {
   const p = getPool();
   let res;
   if (isAdmin) {
-    res = await p.query(`DELETE FROM list_comment WHERE id = $1`, [commentId]);
+    res = await p.query(`DELETE FROM list_comment WHERE list_id = $1 AND id = $2`, [listId, commentId]);
   } else {
-    res = await p.query(`DELETE FROM list_comment WHERE id = $1 AND user_id = $2`, [commentId, userId]);
+    res = await p.query(`DELETE FROM list_comment WHERE list_id = $1 AND id = $2 AND user_id = $3`, [listId, commentId, userId]);
   }
   return (res.rowCount ?? 0) > 0;
 }
@@ -730,6 +731,8 @@ export async function getFriendsFeed(
     OR (se.visibility = 'friends' AND se.user_id IN (SELECT friend_id FROM friend_edge WHERE user_id = $1))
     OR se.visibility = 'public'
   )
+  AND (u.banned IS NULL OR u.banned = false)
+  AND (u.show_activity = TRUE OR se.user_id = $1)
   AND se.user_id NOT IN (SELECT blocked_id FROM user_block WHERE blocker_id = $1)
   AND se.user_id NOT IN (SELECT blocker_id FROM user_block WHERE blocked_id = $1)`;
 
@@ -757,7 +760,9 @@ export async function getFriendsFeed(
 export async function getPublicFeed(limit: number = 30, before?: string): Promise<SocialEvent[]> {
   const p = getPool();
   const params: unknown[] = [limit];
-  let whereClause = `se.visibility = 'public'`;
+  let whereClause = `se.visibility = 'public'
+    AND (u.banned IS NULL OR u.banned = false)
+    AND u.show_activity = TRUE`;
 
   if (before) {
     params.push(before);

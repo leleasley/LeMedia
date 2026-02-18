@@ -22,9 +22,12 @@ export async function PATCH(
     const csrf = requireCsrf(req);
     if (csrf) return csrf;
 
-    const { commentId } = await params;
+    const { listId, commentId } = await params;
+    const listIdNum = parseInt(listId);
     const id = parseInt(commentId);
-    if (isNaN(id)) return NextResponse.json({ error: "Invalid comment ID" }, { status: 400 });
+    if (isNaN(listIdNum) || isNaN(id)) {
+      return NextResponse.json({ error: "Invalid list or comment ID" }, { status: 400 });
+    }
 
     const body = await req.json();
     const content = body.content;
@@ -32,7 +35,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Invalid content" }, { status: 400 });
     }
 
-    const updated = await updateListComment(id, user.id, content);
+    const updated = await updateListComment(listIdNum, id, user.id, content);
     if (!updated) return NextResponse.json({ error: "Comment not found" }, { status: 404 });
 
     return NextResponse.json({ comment: updated });
@@ -52,11 +55,14 @@ export async function DELETE(
     const csrf = requireCsrf(req);
     if (csrf) return csrf;
 
-    const { commentId } = await params;
+    const { listId, commentId } = await params;
+    const listIdNum = parseInt(listId);
     const id = parseInt(commentId);
-    if (isNaN(id)) return NextResponse.json({ error: "Invalid comment ID" }, { status: 400 });
+    if (isNaN(listIdNum) || isNaN(id)) {
+      return NextResponse.json({ error: "Invalid list or comment ID" }, { status: 400 });
+    }
 
-    const deleted = await deleteListComment(id, user.id, user.isAdmin);
+    const deleted = await deleteListComment(listIdNum, id, user.id, user.isAdmin);
     if (!deleted) return NextResponse.json({ error: "Comment not found" }, { status: 404 });
 
     return NextResponse.json({ success: true });

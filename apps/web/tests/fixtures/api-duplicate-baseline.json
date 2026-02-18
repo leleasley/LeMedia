@@ -1,6 +1,6 @@
 {
   "generatedAt": "2026-02-11T10:02:02.968Z",
-  "pairCount": 154,
+  "pairCount": 155,
   "pairs": [
     {
       "base": "/admin/jellyfin/import/route.ts",
@@ -545,6 +545,10 @@
     {
       "base": "/tmdb/movie/[id]/recommendations/route.ts",
       "v1": "/v1/tmdb/movie/[id]/recommendations/route.ts"
+    },
+    {
+      "base": "/tmdb/movie/[id]/route.ts",
+      "v1": "/v1/tmdb/movie/[id]/route.ts"
     },
     {
       "base": "/tmdb/movie/[id]/similar/route.ts",

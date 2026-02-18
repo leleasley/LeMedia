@@ -59,6 +59,7 @@ const FriendActionSchema = z.object({
 
 const KNOWN_CLIENT_ERRORS = new Set([
   "targetUserId required", "requestId required",
+  "Cannot send friend request to yourself",
   "Cannot send friend request", "Already friends",
   "User not found", "User is not accepting friend requests",
   "Friend request not found or already responded",
@@ -79,6 +80,9 @@ export async function POST(req: NextRequest) {
       case "send_request": {
         if (!parsed.targetUserId) {
           return NextResponse.json({ error: "targetUserId required" }, { status: 400 });
+        }
+        if (parsed.targetUserId === userId) {
+          return NextResponse.json({ error: "Cannot send friend request to yourself" }, { status: 400 });
         }
 
         // Rate limit: 20 friend requests per hour
