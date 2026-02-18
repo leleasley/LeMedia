@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { authenticator } from "otplib";
+import { verifySync } from "otplib";
 import { getMfaSessionById, deleteMfaSessionById, getUserMfaSecretById, getUserById, getSettingInt, createUserSession } from "@/db";
 import { createSessionToken } from "@/lib/session";
 import { ensureCsrfCookie, getCookieBase, getRequestContext, sanitizeRelativePath } from "@/lib/proxy";
@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
     return redirectToLogin(base, "Your account is not configured for MFA");
   }
 
-  if (!authenticator.check(code, secret)) {
+  if (!verifySync({ token: code, secret }).valid) {
     const failure = await recordFailure(lockKey, { windowMs: 10 * 60 * 1000, max: 5, banMs: 10 * 60 * 1000 });
     if (failure.locked) {
       return redirectToMfa(base, formatRetry(failure.retryAfterSec));

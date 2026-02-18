@@ -9,7 +9,7 @@ export const metadata = {
 };
 import { getMfaSessionById, getUserById } from "@/db";
 import { resolveTotpIssuer } from "@/lib/server-utils";
-import { authenticator } from "otplib";
+import { generateURI } from "otplib";
 import { toDataURL } from "qrcode";
 import { MfaSetupForm } from "@/components/auth/MfaSetupForm";
 
@@ -34,7 +34,11 @@ export default async function MfaSetupPage() {
     redirect("/login");
   }
 
-  const otpAuthUrl = authenticator.keyuri(user.username, resolveTotpIssuer(), session.secret);
+  const otpAuthUrl = generateURI({
+    issuer: resolveTotpIssuer(),
+    label: user.username,
+    secret: session.secret,
+  });
   const qrCode = await toDataURL(otpAuthUrl);
   const formattedSecret = session.secret.toUpperCase().match(/.{1,4}/g)?.join(" ") ?? session.secret;
 

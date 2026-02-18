@@ -12,7 +12,7 @@ import { getJellyfinBaseUrl, jellyfinLogin } from "@/lib/jellyfin-admin";
 import { createSessionToken } from "@/lib/session";
 import { ensureCsrfCookie, getCookieBase, getRequestContext, isSameOriginRequest, sanitizeRelativePath } from "@/lib/proxy";
 import { isValidCsrfToken } from "@/lib/csrf";
-import { authenticator } from "otplib";
+import { generateSecret } from "otplib";
 import { checkLockout, checkRateLimit, clearFailures, getClientIp, recordFailure, rateLimitResponse } from "@/lib/rate-limit";
 import { logAuditEvent } from "@/lib/audit-log";
 import { randomUUID } from "crypto";
@@ -143,7 +143,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (otpEnabled && !user.mfa_secret) {
-    const secret = authenticator.generateSecret();
+    const secret = generateSecret();
     const setupSession = await createMfaSession({
       userId: user.id,
       type: "setup",

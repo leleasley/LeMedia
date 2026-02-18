@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { authenticator } from "otplib";
+import { verifySync } from "otplib";
 import { getMfaSessionById, deleteMfaSessionById, setUserMfaSecretById } from "@/db";
 import { ensureCsrfCookie, getCookieBase, getRequestContext } from "@/lib/proxy";
 import { isValidCsrfToken } from "@/lib/csrf";
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
     return redirectToSetup("Enter the verification code after scanning the QR code");
   }
 
-  if (!authenticator.check(code, session.secret)) {
+  if (!verifySync({ token: code, secret: session.secret }).valid) {
     const failure = await recordFailure(lockKey, { windowMs: 10 * 60 * 1000, max: 5, banMs: 10 * 60 * 1000 });
     if (failure.locked) {
       return redirectToSetup(formatRetry(failure.retryAfterSec));

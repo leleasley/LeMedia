@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { authenticator } from "otplib";
+import { generateSecret } from "otplib";
 import { requireUser } from "@/auth";
 import { createMfaSession, getUserWithHash } from "@/db";
 import { getCookieBase, getRequestContext } from "@/lib/proxy";
@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.redirect(new URL("/login", base));
         }
 
-        const secret = authenticator.generateSecret();
+        const secret = generateSecret();
         const setupSession = await createMfaSession({
             userId: dbUser.id,
             type: "setup",

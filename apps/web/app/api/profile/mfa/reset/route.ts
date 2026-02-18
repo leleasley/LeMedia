@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { authenticator } from "otplib";
+import { generateSecret } from "otplib";
 import { requireUser } from "@/auth";
 import { createMfaSession, deleteMfaSessionsForUser, getUserWithHash, resetUserMfaById } from "@/db";
 import { getCookieBase, getRequestContext } from "@/lib/proxy";
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
         });
 
         // Create a fresh setup session and send the user to setup
-        const secret = authenticator.generateSecret();
+        const secret = generateSecret();
         const setupSession = await createMfaSession({
             userId: dbUser.id,
             type: "setup",
