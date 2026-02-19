@@ -662,7 +662,7 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
               <div className="flex items-center justify-between border-t border-white/[0.06] pt-3">
                 <button
                   type="button"
-                  onClick={() => setRequestPage((prev) => Math.max(0, prev - 1))}
+                  onClick={() => setRequestPage(Math.max(0, requestPage - 1))}
                   disabled={requestPage === 0}
                   className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:bg-white/[0.09] disabled:opacity-40"
                 >
@@ -674,7 +674,7 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
                 </span>
                 <button
                   type="button"
-                  onClick={() => setRequestPage((prev) => Math.min(requestsPageCount - 1, prev + 1))}
+                  onClick={() => setRequestPage(Math.min(requestsPageCount - 1, requestPage + 1))}
                   disabled={requestPage >= requestsPageCount - 1}
                   className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:bg-white/[0.09] disabled:opacity-40"
                 >
