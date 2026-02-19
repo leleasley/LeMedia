@@ -84,3 +84,30 @@ export function clearMediaServiceCache(type?: MediaService["type"]) {
         cache.clear();
     }
 }
+
+export async function listActiveMediaServicesOfType(type: MediaService["type"]): Promise<ActiveMediaService[]> {
+    const pool = getPool();
+    const res = await pool.query<MediaService & { api_key_encrypted: string }>(
+        `SELECT id, name, type, base_url, config, enabled, created_at, updated_at, api_key_encrypted
+         FROM media_service WHERE type = $1 AND enabled = TRUE ORDER BY created_at`,
+        [type]
+    );
+    return res.rows.map(row => ({
+        ...row,
+        apiKey: decryptSecret(row.api_key_encrypted),
+        config: (typeof row.config === "object" && row.config) || {},
+    }));
+}
+
+export async function listAllActiveMediaServices(): Promise<ActiveMediaService[]> {
+    const pool = getPool();
+    const res = await pool.query<MediaService & { api_key_encrypted: string }>(
+        `SELECT id, name, type, base_url, config, enabled, created_at, updated_at, api_key_encrypted
+         FROM media_service WHERE enabled = TRUE ORDER BY type, created_at`
+    );
+    return res.rows.map(row => ({
+        ...row,
+        apiKey: decryptSecret(row.api_key_encrypted),
+        config: (typeof row.config === "object" && row.config) || {},
+    }));
+}

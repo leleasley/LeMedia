@@ -20,7 +20,10 @@ import {
     ClockIcon,
     ShareIcon,
     ChevronDownIcon,
-    ComputerDesktopIcon
+    ComputerDesktopIcon,
+    ArrowDownTrayIcon,
+    CircleStackIcon,
+    SignalIcon
 } from "@heroicons/react/24/outline";
 
 type SettingsRoute = {
@@ -108,6 +111,17 @@ export function AdminSettingsNav() {
                 { id: "system-alerts", label: "System Alerts", href: "/admin/settings/notifications/system-alerts", match: /^\/admin\/settings\/notifications\/system-alerts/, icon: ShieldCheckIcon },
             ]
         },
+        {
+            id: "monitoring",
+            label: "Monitoring",
+            icon: SignalIcon,
+            color: "teal",
+            gradient: "from-teal-500/20 to-cyan-500/20",
+            routes: [
+                { id: "downloads", label: "Downloads", href: "/admin/settings/downloads", match: /^\/admin\/settings\/downloads/, icon: ArrowDownTrayIcon },
+                { id: "storage", label: "Storage", href: "/admin/settings/storage", match: /^\/admin\/settings\/storage/, icon: CircleStackIcon },
+            ]
+        },
     ];
 
     const colorStyles: Record<string, { text: string; bg: string; border: string; activeBg: string; activeText: string }> = {
@@ -116,6 +130,7 @@ export function AdminSettingsNav() {
         blue: { text: "text-blue-400", bg: "bg-blue-500/10", border: "border-blue-500/20", activeBg: "bg-blue-500/20", activeText: "text-blue-200" },
         emerald: { text: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/20", activeBg: "bg-emerald-500/20", activeText: "text-emerald-200" },
         amber: { text: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/20", activeBg: "bg-amber-500/20", activeText: "text-amber-200" },
+        teal: { text: "text-teal-400", bg: "bg-teal-500/10", border: "border-teal-500/20", activeBg: "bg-teal-500/20", activeText: "text-teal-200" },
     };
 
     const allRoutes = groups.flatMap(g => g.routes);
