@@ -544,8 +544,19 @@ export default function AppLayoutClient({
                                 <Settings className="h-3.5 w-3.5 flex-shrink-0 text-gray-600" />
                             </PrefetchLink>
                         )}
-                        <div className="px-4 py-2 text-[10px] text-gray-600 text-center border-t border-white/[0.04]">
-                            {sidebarFooterText}
+                        <div className="px-4 py-3 border-t border-white/[0.04]">
+                            <div className="text-[10px] text-gray-600 text-center mb-2">
+                                {sidebarFooterText}
+                            </div>
+                            <div className="flex justify-center gap-2 text-[9px]">
+                                <PrefetchLink href="/privacy" className="text-gray-600 hover:text-gray-400 transition">
+                                    Privacy
+                                </PrefetchLink>
+                                <span className="text-gray-700">·</span>
+                                <PrefetchLink href="/cookies" className="text-gray-600 hover:text-gray-400 transition">
+                                    Cookies
+                                </PrefetchLink>
+                            </div>
                         </div>
                     </div>
                 </aside>

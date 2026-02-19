@@ -1,6 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { useEffect, useState, useCallback } from "react";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { CsrfTokenInput } from "@/components/Common/CsrfTokenInput";
@@ -115,6 +116,16 @@ export function LoginForm({
             >
                 {submitLabel}
             </button>
+
+            <div className="mt-4 pt-4 border-t border-white/10 flex justify-center gap-3 text-[10px]">
+                <Link href="/privacy" className="text-gray-400 hover:text-gray-300 transition">
+                    Privacy
+                </Link>
+                <span className="text-gray-600">·</span>
+                <Link href="/cookies" className="text-gray-400 hover:text-gray-300 transition">
+                    Cookies
+                </Link>
+            </div>
         </form>
     );
 }

@@ -8,6 +8,7 @@ import { LoginForm } from "@/components/auth/LoginForm";
 import { SessionResetModal } from "@/components/auth/SessionResetModal";
 import { ImageFader } from "@/components/Common/ImageFader";
 import { Modal } from "@/components/Common/Modal";
+import { CookieConsentBanner } from "@/components/Common/CookieConsentBanner";
 import { startAuthentication } from "@simplewebauthn/browser";
 import { ChevronDown, Fingerprint, KeyRound } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -210,6 +211,8 @@ export function LoginPageClient({
       <div className="absolute top-4 right-4 z-50">
         <ModeToggle />
       </div>
+
+      <CookieConsentBanner />
 
       <div className="relative z-10 w-full max-w-[460px]">
         <div className="relative z-40 mt-4 sm:mt-10 flex flex-col items-center px-4 sm:mx-auto sm:w-full sm:max-w-md">
