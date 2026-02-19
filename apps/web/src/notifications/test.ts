@@ -45,7 +45,7 @@ export async function sendTestNotification(endpoint: NotificationEndpointFull) {
     return;
   }
 
-  const exhaustive: never = endpoint.type;
-  throw new Error(`Unsupported endpoint type: ${exhaustive}`);
+  const exhaustive: never = endpoint;
+  throw new Error(`Unsupported endpoint type: ${(exhaustive as { type: string }).type}`);
 }
 

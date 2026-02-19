@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getUser } from "@/auth";
+import { logger } from "@/lib/logger";
 import {
   createBulkRequests,
   getUserByUsername,
@@ -100,12 +101,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     if (err instanceof z.ZodError) {
+      logger.warn("[bulk/requests] Invalid request payload", { issues: err.issues });
       return NextResponse.json(
-        { error: "Invalid request", details: err.issues },
+        { error: "Invalid request" },
         { status: 400 }
       );
     }
-    console.error("Bulk request error:", err);
+    logger.error("[bulk/requests] Unexpected error", err);
     return NextResponse.json(
       { error: "Unable to create requests" },
       { status: 500 }

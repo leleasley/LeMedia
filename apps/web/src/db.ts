@@ -3797,7 +3797,11 @@ export type NotificationEndpointConfig =
   | WebhookConfig
   | Record<string, unknown>; // Fallback for unknown configs
 
-export type NotificationEndpointFull = NotificationEndpointPublic & { config: NotificationEndpointConfig };
+export type NotificationEndpointFull =
+  | (NotificationEndpointPublic & { type: "discord"; config: DiscordConfig })
+  | (NotificationEndpointPublic & { type: "telegram"; config: TelegramConfig })
+  | (NotificationEndpointPublic & { type: "email"; config: EmailConfig })
+  | (NotificationEndpointPublic & { type: "webhook"; config: WebhookConfig });
 
 export async function listNotificationEndpoints(): Promise<NotificationEndpointPublic[]> {
   await ensureSchema();

@@ -8,6 +8,7 @@ import {
   upsertUser,
 } from "@/db";
 import { requireCsrf } from "@/lib/csrf";
+import { logger } from "@/lib/logger";
 import {
   validateImageFile,
   saveUploadedImage,
@@ -122,7 +123,7 @@ export async function POST(
       list: updatedList,
     });
   } catch (err) {
-    console.error("Error uploading cover image:", err);
+    logger.error("[lists/cover POST] Error uploading cover image", err);
     if (err instanceof Error && err.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -172,7 +173,7 @@ export async function DELETE(
       list: updatedList,
     });
   } catch (err) {
-    console.error("Error removing cover image:", err);
+    logger.error("[lists/cover DELETE] Error removing cover image", err);
     if (err instanceof Error && err.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

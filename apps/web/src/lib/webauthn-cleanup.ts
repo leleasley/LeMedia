@@ -1,5 +1,6 @@
 import "server-only";
 import { getPool } from "@/db";
+import { logger } from "@/lib/logger";
 
 /**
  * Clean up expired WebAuthn challenges
@@ -11,7 +12,7 @@ export async function cleanupExpiredChallenges() {
     `DELETE FROM webauthn_challenge WHERE expires_at < NOW()`
   );
   if (result.rowCount && result.rowCount > 0) {
-    console.log(`[WebAuthn] Cleaned up ${result.rowCount} expired challenges`);
+    logger.info(`[WebAuthn] Cleaned up ${result.rowCount} expired challenges`);
   }
   return result.rowCount || 0;
 }

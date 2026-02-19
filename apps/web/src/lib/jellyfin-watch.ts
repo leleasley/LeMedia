@@ -172,7 +172,7 @@ export async function getRecentlyWatchedWithDetails(userId: string, limit = 30):
             tmdbId: item.ProviderIds?.Tmdb ? parseInt(item.ProviderIds.Tmdb, 10) : null
         }));
     } catch (error) {
-        console.error("[getRecentlyWatchedWithDetails] Error:", error);
+        logger.error("[getRecentlyWatchedWithDetails] Error", error);
         return [];
     }
 }
@@ -246,7 +246,7 @@ export async function getThisMonthStats(userId: string): Promise<{
             hoursLastMonth: lastMonth.hours
         };
     } catch (error) {
-        console.error("[getThisMonthStats] Error:", error);
+        logger.error("[getThisMonthStats] Error", error);
         return {
             moviesThisMonth: 0,
             episodesThisMonth: 0,
@@ -322,7 +322,7 @@ export async function getAchievementLevel(userId: string): Promise<{
             progress: Math.min(progress, nextMilestone)
         };
     } catch (error) {
-        console.error("[getAchievementLevel] Error:", error);
+        logger.error("[getAchievementLevel] Error", error);
         return {
             hoursThisWeek: 0,
             level: "casual",

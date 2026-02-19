@@ -1,5 +1,6 @@
 import "server-only";
 import { cleanupExpiredChallenges, getWebAuthnStats } from "@/lib/webauthn-cleanup";
+import { logger } from "@/lib/logger";
 
 let cleanupInterval: NodeJS.Timeout | null = null;
 const isBuildPhase =
@@ -17,17 +18,17 @@ export function startWebAuthnCleanup() {
   
   // Run immediately on startup
   cleanupExpiredChallenges().catch(err => 
-    console.error("[WebAuthn Cleanup] Initial cleanup failed:", err)
+    logger.error("[WebAuthn Cleanup] Initial cleanup failed", err)
   );
   
   // Then run every hour
   cleanupInterval = setInterval(() => {
     cleanupExpiredChallenges().catch(err => 
-      console.error("[WebAuthn Cleanup] Failed:", err)
+      logger.error("[WebAuthn Cleanup] Failed", err)
     );
   }, 60 * 60 * 1000); // 1 hour
   
-  console.log("[WebAuthn Cleanup] Scheduled to run every hour");
+  logger.info("[WebAuthn Cleanup] Scheduled to run every hour");
 }
 
 /**
@@ -37,7 +38,7 @@ export function stopWebAuthnCleanup() {
   if (cleanupInterval) {
     clearInterval(cleanupInterval);
     cleanupInterval = null;
-    console.log("[WebAuthn Cleanup] Stopped");
+    logger.info("[WebAuthn Cleanup] Stopped");
   }
 }
 
@@ -49,7 +50,7 @@ if (process.env.NODE_ENV === "production" && !isBuildPhase) {
 // Log stats on startup
 if (process.env.NODE_ENV !== "test" && !isBuildPhase) {
   getWebAuthnStats().then(stats => {
-    console.log("[WebAuthn Stats]", {
+    logger.info("[WebAuthn Stats]", {
       totalCredentials: stats.total_credentials,
       usersWithPasskeys: stats.users_with_passkeys,
       activeChallenges: stats.active_challenges,

@@ -315,7 +315,7 @@ export function LoginPageClient({
                       <DropdownMenuItem
                         onSelect={() => {
                           if (isTurnstileEnabled && !turnstileToken) return;
-                          redirectToSso(`/api/v1/auth/oauth/google/start?from=${encodeURIComponent(from)}&turnstile_token=${encodeURIComponent(turnstileToken)}`);
+                          startSsoFlow(`/api/v1/auth/oauth/google/start?from=${encodeURIComponent(from)}&turnstile_token=${encodeURIComponent(turnstileToken)}`);
                         }}
                         disabled={isTurnstileEnabled && !turnstileToken}
                         className={`cursor-pointer gap-2 px-3 py-2 text-sm ${isTurnstileEnabled && !turnstileToken ? "opacity-50" : ""}`}
@@ -328,7 +328,7 @@ export function LoginPageClient({
                       <DropdownMenuItem
                         onSelect={() => {
                           if (isTurnstileEnabled && !turnstileToken) return;
-                          redirectToSso(`/api/v1/auth/oauth/github/start?from=${encodeURIComponent(from)}&turnstile_token=${encodeURIComponent(turnstileToken)}`);
+                          startSsoFlow(`/api/v1/auth/oauth/github/start?from=${encodeURIComponent(from)}&turnstile_token=${encodeURIComponent(turnstileToken)}`);
                         }}
                         disabled={isTurnstileEnabled && !turnstileToken}
                         className={`cursor-pointer gap-2 px-3 py-2 text-sm ${isTurnstileEnabled && !turnstileToken ? "opacity-50" : ""}`}

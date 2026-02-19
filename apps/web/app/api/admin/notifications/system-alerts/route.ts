@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdmin } from "@/auth";
+import { logger } from "@/lib/logger";
 import { requireCsrf } from "@/lib/csrf";
 import { getSystemAlertsConfig, setSystemAlertsConfig } from "@/lib/system-alerts-config";
 import { listUsers } from "@/db";
@@ -45,7 +46,8 @@ export async function PUT(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
   const parsed = UpdateSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid payload", issues: parsed.error.issues }, { status: 400 });
+    logger.warn("[system-alerts] Invalid settings payload", { issues: parsed.error.issues });
+    return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
 
   if (parsed.data.requestTimeoutMs < parsed.data.latencyThresholdMs) {

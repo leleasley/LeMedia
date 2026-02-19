@@ -1,4 +1,5 @@
 import { createNotification } from "@/db";
+import { logger } from "@/lib/logger";
 
 type NotificationType = 
   | "request_approved" 
@@ -28,7 +29,7 @@ export async function sendUserNotification(params: {
       metadata: params.metadata
     });
   } catch (error) {
-    console.error("Failed to create notification:", error);
+    logger.error("Failed to create notification", error);
   }
 }
 

@@ -1,6 +1,7 @@
 import "server-only";
 import { getUserPushSubscriptions, updatePushSubscriptionLastUsed, deletePushSubscription } from "@/db";
 import { sendPushNotification, configureWebPush } from "@/lib/web-push";
+import { logger } from "@/lib/logger";
 
 // Configure web push on module load
 configureWebPush();
@@ -30,9 +31,9 @@ export async function notifyUserPushEvent(
         if (result.shouldDelete) {
           try {
             await deletePushSubscription(userId, sub.endpoint);
-            console.log(`[WebPush] Deleted stale subscription for user ${userId}`);
+            logger.info(`[WebPush] Deleted stale subscription for user ${userId}`);
           } catch (deleteErr) {
-            console.error("[WebPush] Failed to delete stale subscription:", deleteErr);
+            logger.error("[WebPush] Failed to delete stale subscription", deleteErr);
           }
         } else if (result.success) {
           await updatePushSubscriptionLastUsed(sub.id);
@@ -50,10 +51,10 @@ export async function notifyUserPushEvent(
       (r) => r.status === "fulfilled" && r.value.deleted
     ).length;
 
-    console.log(
+    logger.info(
       `[WebPush] Sent ${successCount}/${subscriptions.length} notifications to user ${userId}${deletedCount > 0 ? ` (cleaned up ${deletedCount} stale)` : ""}`
     );
   } catch (err) {
-    console.error("[WebPush] Failed to notify user:", err);
+    logger.error("[WebPush] Failed to notify user", err);
   }
 }

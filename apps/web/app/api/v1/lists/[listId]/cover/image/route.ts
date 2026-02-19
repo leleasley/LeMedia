@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/auth";
 import { getCustomListById, getUserByUsername, upsertUser } from "@/db";
 import { defaultListCoverDeps, handleListCoverImageRequest } from "@/lib/lists-cover-image";
+import { logger } from "@/lib/logger";
 
 async function resolveOptionalUserId(): Promise<number | null> {
   const user = await getUser().catch(() => null);
@@ -30,7 +31,7 @@ export async function GET(
     const { listId } = await params;
     return handleListCoverImageRequest(listId, coverImageRouteDeps);
   } catch (err) {
-    console.error("Error serving image:", err);
+    logger.error("[lists/cover/image] Error serving image", err);
     return NextResponse.json({ error: "Failed to serve image" }, { status: 500 });
   }
 }

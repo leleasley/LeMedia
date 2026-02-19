@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getUser } from "@/auth";
+import { logger } from "@/lib/logger";
 import {
   deleteCustomList,
   getCustomListById,
@@ -131,7 +132,8 @@ export async function PATCH(
       return NextResponse.json({ error: "Share slug already in use" }, { status: 409 });
     }
     if (err instanceof z.ZodError) {
-      return NextResponse.json({ error: "Invalid request", details: err.issues }, { status: 400 });
+      logger.warn("[lists/[listId] PATCH] Invalid request payload", { issues: err.issues });
+      return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
     return NextResponse.json({ error: "Unable to update list" }, { status: 500 });
   }

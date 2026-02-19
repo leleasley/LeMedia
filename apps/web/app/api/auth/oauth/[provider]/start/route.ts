@@ -26,6 +26,7 @@ export async function GET(
   const base = ctx.base;
   const from = sanitizeRelativePath(req.nextUrl.searchParams.get("from"));
   const turnstileToken = req.nextUrl.searchParams.get("turnstile_token") ?? "";
+  const popupRequested = req.nextUrl.searchParams.get("popup") === "1";
   const ip = getClientIp(req);
 
   const rate = await checkRateLimit(`oauth:start:${provider}:${ip}`, { windowMs: 60 * 1000, max: 20 });
@@ -74,5 +75,10 @@ export async function GET(
   res.cookies.set("lemedia_oauth_link_user", "", { ...cookieBase, maxAge: 0 });
   res.cookies.set("lemedia_oauth_link_return", "", { ...cookieBase, maxAge: 0 });
   res.cookies.set("lemedia_login_redirect", from, { ...cookieBase, maxAge: 60 * 30 });
+  if (popupRequested) {
+    res.cookies.set("lemedia_sso_popup", "1", { ...cookieBase, maxAge: 60 * 10 });
+  } else {
+    res.cookies.set("lemedia_sso_popup", "", { ...cookieBase, maxAge: 0 });
+  }
   return res;
 }

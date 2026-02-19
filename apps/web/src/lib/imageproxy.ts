@@ -60,9 +60,7 @@ class ImageProxy {
       }
     }
 
-    console.info(`Cleared ${deletedImages} stale image(s) from cache '${key}'`, {
-      label: "Image Cache",
-    });
+    logger.info(`Cleared ${deletedImages} stale image(s) from cache '${key}'`, { label: "Image Cache" });
   }
 
   public static async getImageStats(
@@ -186,11 +184,9 @@ class ImageProxy {
       await promises.access(directory);
     } catch (e: any) {
       if (e?.code === "ENOENT") {
-        console.debug(
+        logger.debug(
           `Cache directory '${cacheKey}' does not exist; nothing to clear.`,
-          {
-            label: "Image Cache",
-          }
+          { label: "Image Cache" }
         );
         return;
       }
@@ -203,9 +199,7 @@ class ImageProxy {
 
       await promises.rm(directory, { recursive: true });
 
-      console.debug(`Cleared ${files[0]} from cache '${this.key}'`, {
-        label: "Image Cache",
-      });
+      logger.debug(`Cleared ${files[0]} from cache '${this.key}'`, { label: "Image Cache" });
     } catch (e: any) {
       logger.error("Failed to clear cached image", e, { label: "Image Cache" });
     }
@@ -278,7 +272,7 @@ class ImageProxy {
         imageBuffer: buffer,
       };
     } catch (e: any) {
-      console.debug("Something went wrong caching image.", {
+      logger.debug("Something went wrong caching image.", {
         label: "Image Cache",
         errorMessage: e?.message,
       });

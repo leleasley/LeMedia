@@ -1,3 +1,5 @@
+import { logger } from "@/lib/logger";
+
 export async function verifyTurnstileToken(token: string, ip?: string): Promise<boolean> {
   const secretKey = process.env.TURNSTILE_SECRET_KEY;
 
@@ -26,7 +28,7 @@ export async function verifyTurnstileToken(token: string, ip?: string): Promise<
     const data = await response.json();
     return data.success === true;
   } catch (error) {
-    console.error("Turnstile verification error:", error);
+    logger.error("Turnstile verification error", error);
     return false;
   }
 }

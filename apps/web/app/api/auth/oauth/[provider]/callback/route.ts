@@ -30,6 +30,7 @@ function clearOauthCookies(res: NextResponse, cookieBase: ReturnType<typeof getC
   res.cookies.set("lemedia_oauth_mode", "", { ...cookieBase, maxAge: 0 });
   res.cookies.set("lemedia_oauth_link_user", "", { ...cookieBase, maxAge: 0 });
   res.cookies.set("lemedia_oauth_link_return", "", { ...cookieBase, maxAge: 0 });
+  res.cookies.set("lemedia_sso_popup", "", { ...cookieBase, maxAge: 0 });
 }
 
 function loginError(base: string, cookieBase: ReturnType<typeof getCookieBase>, message: string) {
@@ -159,7 +160,11 @@ export async function GET(
   });
 
   const from = sanitizeRelativePath(req.cookies.get("lemedia_login_redirect")?.value);
-  const res = NextResponse.redirect(new URL(from || "/", base), { status: 303 });
+  const popupRequested = req.cookies.get("lemedia_sso_popup")?.value === "1";
+  const redirectTarget = popupRequested
+    ? (() => { const url = new URL("/auth/popup-complete", base); if (from) url.searchParams.set("from", from); return url; })()
+    : new URL(from || "/", base);
+  const res = NextResponse.redirect(redirectTarget, { status: 303 });
   res.cookies.set("lemedia_session", token, { ...cookieBase, maxAge: sessionMaxAge });
   res.cookies.set("lemedia_flash", "", { ...cookieBase, maxAge: 0 });
   res.cookies.set("lemedia_flash_error", "", { ...cookieBase, maxAge: 0 });

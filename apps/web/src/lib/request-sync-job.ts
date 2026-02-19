@@ -41,7 +41,7 @@ async function runSync() {
 
         const summary = await syncPendingRequests();
         if (summary.processed > 0) {
-          console.info(
+          logger.info(
             `[request-sync] Synced ${summary.processed} request(s): available=${summary.available} downloading=${summary.downloading} removed=${summary.removed} errors=${summary.errors}`
           );
         }

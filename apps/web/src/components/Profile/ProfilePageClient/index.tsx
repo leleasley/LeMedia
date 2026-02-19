@@ -25,6 +25,8 @@ interface ProfilePageClientProps {
     traktUsername?: string | null;
     discordUserId?: string | null;
     letterboxdUsername?: string | null;
+    googleEmail?: string | null;
+    githubLogin?: string | null;
     createdAt?: string;
     lastSeenAt?: string;
     userId?: number;
@@ -161,6 +163,26 @@ export function ProfilePageClient({
       bgClass: "from-emerald-950/40 via-slate-900/60 to-slate-900/40",
       iconBgClass: "from-emerald-400 to-emerald-600",
       glowClass: "from-emerald-500/5",
+    },
+    {
+      label: "Google",
+      value: profileUser.googleEmail ?? null,
+      icon: "/google.svg",
+      color: "blue",
+      borderClass: "border-blue-500/20 hover:border-blue-500/40",
+      bgClass: "from-blue-950/40 via-slate-900/60 to-slate-900/40",
+      iconBgClass: "from-blue-500 to-blue-600",
+      glowClass: "from-blue-500/5",
+    },
+    {
+      label: "GitHub",
+      value: profileUser.githubLogin ?? null,
+      icon: "/github.svg",
+      color: "gray",
+      borderClass: "border-gray-500/20 hover:border-gray-500/40",
+      bgClass: "from-gray-950/40 via-slate-900/60 to-slate-900/40",
+      iconBgClass: "from-gray-600 to-gray-700",
+      glowClass: "from-gray-500/5",
     },
   ];
 
@@ -382,7 +404,7 @@ export function ProfilePageClient({
                     </div>
                     <p className="mt-0.5 text-sm text-gray-300 truncate">
                       {account.value
-                        ? (account.label === "Discord" ? `ID: ${account.value}` : `@${account.value}`)
+                        ? (account.label === "Discord" ? `ID: ${account.value}` : account.label === "Google" ? account.value : `@${account.value}`)
                         : "Connect to get started"}
                     </p>
                   </div>

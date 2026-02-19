@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getUser } from "@/auth";
+import { logger } from "@/lib/logger";
 import { requireCsrf } from "@/lib/csrf";
 import { getUserByUsername, upsertUser } from "@/db";
 import {
@@ -159,11 +160,13 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized")
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    if (err instanceof z.ZodError)
-      return NextResponse.json({ error: "Invalid request", details: err.issues }, { status: 400 });
+    if (err instanceof z.ZodError) {
+      logger.warn("[social/friends] Invalid request payload", { issues: err.issues });
+      return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+    }
     if (err instanceof Error && KNOWN_CLIENT_ERRORS.has(err.message))
       return NextResponse.json({ error: err.message }, { status: 400 });
-    console.error("[social/friends] Unexpected error:", err);
+    logger.error("[social/friends] Unexpected error", err);
     return NextResponse.json({ error: "Unable to process friend action" }, { status: 500 });
   }
 }

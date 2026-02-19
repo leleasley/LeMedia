@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getUser } from "@/auth";
+import { logger } from "@/lib/logger";
 import {
   deleteUserQuizState,
   getUserByUsername,
@@ -359,7 +360,7 @@ export async function POST(req: NextRequest) {
     if (err instanceof z.ZodError) {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
-    console.error("Quiz submission error:", err);
+    logger.error("[quiz] Submission error", err);
     return NextResponse.json({ error: "Unable to submit quiz" }, { status: 500 });
   }
 }

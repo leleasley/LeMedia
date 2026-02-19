@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getUser } from "@/auth";
+import { logger } from "@/lib/logger";
 import {
   createCustomList,
   getUserByUsername,
@@ -66,7 +67,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     if (err instanceof z.ZodError) {
-      return NextResponse.json({ error: "Invalid request", details: err.issues }, { status: 400 });
+      logger.warn("[lists] Invalid create list payload", { issues: err.issues });
+      return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
     return NextResponse.json({ error: "Unable to create list" }, { status: 500 });
   }

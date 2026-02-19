@@ -1,6 +1,7 @@
 import "server-only";
 import webpush from "web-push";
 import { z } from "zod";
+import { logger } from "@/lib/logger";
 
 const VapidPublicKeySchema = z.string().min(1);
 const VapidPrivateKeySchema = z.string().min(1);
@@ -21,7 +22,7 @@ export function configureWebPush() {
     vapidConfigured = true;
   } catch (err) {
     if (!isBuildPhase()) {
-      console.warn("[WebPush] VAPID keys not configured. Push notifications will not work.");
+      logger.warn("[WebPush] VAPID keys not configured. Push notifications will not work.");
     }
   }
 }
@@ -69,11 +70,11 @@ export async function sendPushNotification(
     );
     return { success: true, shouldDelete: false };
   } catch (err: any) {
-    console.error("[WebPush] Failed to send notification:", err);
+    logger.error("[WebPush] Failed to send notification", err);
 
     // Check if subscription is expired/invalid (410 or 404)
     if (err.statusCode === 410 || err.statusCode === 404) {
-      console.warn("[WebPush] Subscription is gone (410/404), should be deleted");
+      logger.warn("[WebPush] Subscription is gone (410/404), should be deleted");
       return { success: false, shouldDelete: true };
     }
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/auth";
+import { logger } from "@/lib/logger";
 import { bulkUpdateRequestStatus, getUserByUsername } from "@/db";
 import { requireCsrf } from "@/lib/csrf";
 
@@ -54,12 +55,13 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     if (err instanceof z.ZodError) {
+      logger.warn("[admin/bulk/requests] Invalid request payload", { issues: err.issues });
       return NextResponse.json(
-        { error: "Invalid request", details: err.issues },
+        { error: "Invalid request" },
         { status: 400 }
       );
     }
-    console.error("Admin bulk request error:", err);
+    logger.error("[admin/bulk/requests] Unexpected error", err);
     return NextResponse.json(
       { error: "Unable to process bulk action" },
       { status: 500 }

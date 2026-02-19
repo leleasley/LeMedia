@@ -186,7 +186,7 @@ export async function notifyIssueEvent(event: IssueNotificationEvent, ctx: Issue
             await sendGenericWebhook({ url, body: payload });
             return;
           }
-          throw new NotificationDeliverySkipError(`Unsupported endpoint type for issue events: ${endpoint.type}`);
+          throw new NotificationDeliverySkipError(`Unsupported endpoint type for issue events: ${(endpoint as { type: string }).type}`);
         }
       );
     })

@@ -351,7 +351,7 @@ export async function notifyRequestEvent(event: RequestNotificationEvent, ctx: R
             await sendGenericWebhook({ url, body: webhookPayload });
             return;
           }
-          throw new NotificationDeliverySkipError(`Unsupported endpoint type for request events: ${endpoint.type}`);
+          throw new NotificationDeliverySkipError(`Unsupported endpoint type for request events: ${(endpoint as { type: string }).type}`);
         }
       );
     })

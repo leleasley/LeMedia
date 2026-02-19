@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getUser } from "@/auth";
+import { logger } from "@/lib/logger";
 import {
   addCustomListItem,
   getCustomListById,
@@ -82,7 +83,8 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     if (err instanceof z.ZodError) {
-      return NextResponse.json({ error: "Invalid request", details: err.issues }, { status: 400 });
+      logger.warn("[lists/items POST] Invalid request payload", { issues: err.issues });
+      return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
     return NextResponse.json({ error: "Unable to add item" }, { status: 500 });
   }
@@ -121,7 +123,8 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     if (err instanceof z.ZodError) {
-      return NextResponse.json({ error: "Invalid request", details: err.issues }, { status: 400 });
+      logger.warn("[lists/items DELETE] Invalid request payload", { issues: err.issues });
+      return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
     return NextResponse.json({ error: "Unable to remove item" }, { status: 500 });
   }
@@ -160,7 +163,8 @@ export async function PATCH(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     if (err instanceof z.ZodError) {
-      return NextResponse.json({ error: "Invalid request", details: err.issues }, { status: 400 });
+      logger.warn("[lists/items PATCH] Invalid request payload", { issues: err.issues });
+      return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
     return NextResponse.json({ error: "Unable to reorder items" }, { status: 500 });
   }

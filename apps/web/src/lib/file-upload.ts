@@ -1,6 +1,7 @@
 import path from "path";
 import fs from "fs/promises";
 import { randomUUID } from "crypto";
+import { logger } from "@/lib/logger";
 
 const UPLOAD_BASE_DIR = process.env.UPLOAD_BASE_DIR || "/app/uploads";
 const LIST_COVERS_DIR = path.join(UPLOAD_BASE_DIR, "list-covers");
@@ -157,7 +158,7 @@ export async function deleteUploadedImage(imagePath: string | null): Promise<boo
   try {
     // Ensure path is relative to upload directory for security
     if (imagePath.includes("..") || imagePath.startsWith("/")) {
-      console.warn(`Invalid image path attempted for deletion: ${imagePath}`);
+      logger.warn(`Invalid image path attempted for deletion: ${imagePath}`);
       return false;
     }
 
@@ -169,7 +170,7 @@ export async function deleteUploadedImage(imagePath: string | null): Promise<boo
       // File doesn't exist, consider it deleted
       return true;
     }
-    console.error(`Failed to delete image: ${imagePath}`, err);
+    logger.error(`Failed to delete image: ${imagePath}`, err);
     return false;
   }
 }

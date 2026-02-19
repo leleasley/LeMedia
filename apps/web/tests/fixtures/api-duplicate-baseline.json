@@ -1,6 +1,6 @@
 {
   "generatedAt": "2026-02-11T10:02:02.968Z",
-  "pairCount": 155,
+  "pairCount": 159,
   "pairs": [
     {
       "base": "/admin/jellyfin/import/route.ts",
@@ -279,6 +279,10 @@
       "v1": "/v1/admin/users/[id]/logout-sessions/route.ts"
     },
     {
+      "base": "/admin/users/[id]/oauth/[provider]/route.ts",
+      "v1": "/v1/admin/users/[id]/oauth/[provider]/route.ts"
+    },
+    {
       "base": "/admin/users/[id]/permissions/route.ts",
       "v1": "/v1/admin/users/[id]/permissions/route.ts"
     },
@@ -313,6 +317,14 @@
     {
       "base": "/auth/duo/login/route.ts",
       "v1": "/v1/auth/duo/login/route.ts"
+    },
+    {
+      "base": "/auth/oauth/[provider]/callback/route.ts",
+      "v1": "/v1/auth/oauth/[provider]/callback/route.ts"
+    },
+    {
+      "base": "/auth/oauth/[provider]/start/route.ts",
+      "v1": "/v1/auth/oauth/[provider]/start/route.ts"
     },
     {
       "base": "/auth/oidc/callback/route.ts",
@@ -445,6 +457,10 @@
     {
       "base": "/profile/mfa/reset/route.ts",
       "v1": "/v1/profile/mfa/reset/route.ts"
+    },
+    {
+      "base": "/profile/oauth/[provider]/route.ts",
+      "v1": "/v1/profile/oauth/[provider]/route.ts"
     },
     {
       "base": "/profile/requests/route.ts",
