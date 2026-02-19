@@ -17,5 +17,8 @@
     "ajv": "^6.12.4",
     "ajv8": "npm:ajv@^8.18.0",
     "fast-uri": "^3.0.1"
+  },
+  "overrides": {
+    "minimatch": "10.2.1"
   }
 }
