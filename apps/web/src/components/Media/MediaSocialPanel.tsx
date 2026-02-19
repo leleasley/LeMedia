@@ -33,7 +33,12 @@ function initials(name: string): string {
 export function MediaSocialPanel({ tmdbId, mediaType, requestedBy, initialWatchlist }: MediaSocialPanelProps) {
   const [watchlist, setWatchlist] = useState<boolean | null>(initialWatchlist ?? null);
   const [userLists, setUserLists] = useState<UserList[]>([]);
+  const [fetchedKey, setFetchedKey] = useState(`${tmdbId}-${mediaType}`);
   const [listsLoading, setListsLoading] = useState(true);
+
+  // Derive loading state: true if current key doesn't match fetched key
+  const currentKey = `${tmdbId}-${mediaType}`;
+  const isLoading = listsLoading || currentKey !== fetchedKey;
 
   useEffect(() => {
     if (initialWatchlist != null) return;
@@ -54,7 +59,7 @@ export function MediaSocialPanel({ tmdbId, mediaType, requestedBy, initialWatchl
 
   useEffect(() => {
     let active = true;
-    setListsLoading(true);
+    // Note: listsLoading starts as true and will be set to false in finally block
     fetch(`/api/v1/lists/containing?tmdbId=${tmdbId}&mediaType=${mediaType}`, { credentials: "include" })
       .then(res => (res.ok ? res.json() : null))
       .then(data => {
@@ -65,7 +70,10 @@ export function MediaSocialPanel({ tmdbId, mediaType, requestedBy, initialWatchl
         if (active) setUserLists([]);
       })
       .finally(() => {
-        if (active) setListsLoading(false);
+        if (active) {
+          setListsLoading(false);
+          setFetchedKey(`${tmdbId}-${mediaType}`);
+        }
       });
     return () => {
       active = false;
@@ -76,7 +84,7 @@ export function MediaSocialPanel({ tmdbId, mediaType, requestedBy, initialWatchl
     ? `Requested by ${requestedBy.displayName?.trim() || requestedBy.username}`
     : null;
 
-  if (watchlist === null && !requestedBy && userLists.length === 0 && !listsLoading) return null;
+  if (watchlist === null && !requestedBy && userLists.length === 0 && !isLoading) return null;
 
   const avatarSrc = requestedBy
     ? (requestedBy.jellyfinUserId ? `/avatarproxy/${requestedBy.jellyfinUserId}` : getAvatarSrc({
@@ -115,7 +123,7 @@ export function MediaSocialPanel({ tmdbId, mediaType, requestedBy, initialWatchl
           <span className="inline-flex items-center gap-1">{requestedLabel}</span>
         </div>
       )}
-      {!listsLoading && userLists.length > 0 && (
+      {!isLoading && userLists.length > 0 && (
         <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-gray-200">
           <ListBulletIcon className="h-3.5 w-3.5 text-blue-400" />
           <span>

@@ -231,11 +231,22 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
     { refreshInterval: 60000, revalidateOnFocus: true }
   );
 
-  const [greeting, setGreeting] = useState("Welcome");
-  const [nowLine, setNowLine] = useState("");
+  const [greeting, setGreeting] = useState(() => getGreeting());
+  const [nowLine, setNowLine] = useState(() => 
+    new Date().toLocaleDateString(undefined, {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+    })
+  );
   const [requestFilter, setRequestFilter] = useState<"all" | "pending" | "ready" | "active">("all");
-  const [requestPage, setRequestPage] = useState(0);
-  const [recentAddedPage, setRecentAddedPage] = useState(0);
+  const [requestPageByFilter, setRequestPageByFilter] = useState<Record<string, number>>({});
+  const [recentAddedPageRaw, setRecentAddedPage] = useState(0);
+
+  const requestPageRaw = requestPageByFilter[requestFilter] ?? 0;
+  const setRequestPage = (page: number) => {
+    setRequestPageByFilter(prev => ({ ...prev, [requestFilter]: page }));
+  };
 
   const recentRequests = useMemo(() => recentRequestsData?.items ?? [], [recentRequestsData]);
   const recentAdded = useMemo(() => recentAddedData?.items ?? [], [recentAddedData]);
@@ -284,39 +295,18 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
   });
   const requestsPerPage = 6;
   const requestsPageCount = Math.max(1, Math.ceil(filteredRequests.length / requestsPerPage));
+  const requestPage = Math.min(requestPageRaw, requestsPageCount - 1);
   const pagedRequests = useMemo(
     () => filteredRequests.slice(requestPage * requestsPerPage, (requestPage + 1) * requestsPerPage),
     [filteredRequests, requestPage]
   );
   const recentAddedPerPage = 12;
   const recentAddedPageCount = Math.max(1, Math.ceil(recentAdded.length / recentAddedPerPage));
+  const recentAddedPage = Math.min(recentAddedPageRaw, recentAddedPageCount - 1);
   const pagedRecentAdded = useMemo(
     () => recentAdded.slice(recentAddedPage * recentAddedPerPage, (recentAddedPage + 1) * recentAddedPerPage),
     [recentAdded, recentAddedPage]
   );
-
-  useEffect(() => {
-    setRequestPage((prev) => Math.min(prev, requestsPageCount - 1));
-  }, [requestsPageCount]);
-
-  useEffect(() => {
-    setRecentAddedPage((prev) => Math.min(prev, recentAddedPageCount - 1));
-  }, [recentAddedPageCount]);
-
-  useEffect(() => {
-    setGreeting(getGreeting());
-    setNowLine(
-      new Date().toLocaleDateString(undefined, {
-        weekday: "long",
-        month: "long",
-        day: "numeric",
-      })
-    );
-  }, []);
-
-  useEffect(() => {
-    setRequestPage(0);
-  }, [requestFilter]);
 
   const name = displayName || username;
 

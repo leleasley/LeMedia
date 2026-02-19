@@ -1,6 +1,8 @@
 import nextConfig from "eslint-config-next";
 
-export default [
+const config = [
   { ignores: ["public/sw.js"] },
   ...nextConfig,
 ];
+
+export default config;
