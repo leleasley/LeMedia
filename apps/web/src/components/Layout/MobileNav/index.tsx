@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState, cloneElement, useCallback, useRef } from "react";
+import { Fragment, useMemo, useState, useCallback, useRef } from "react";
 import { AlertTriangle, CalendarDays, Clock, Ellipsis, Film, Activity, Settings, Sparkles, Tv, Users, X, Star, LayoutGrid, Compass, Heart, Bell, Search } from "lucide-react";
 import { PrefetchLink } from "@/components/Layout/PrefetchLink";
 import { usePathname } from "next/navigation";
@@ -9,12 +9,20 @@ import { Transition } from "@headlessui/react";
 import { useLockBodyScroll } from "@/hooks/useLockBodyScroll";
 import { PWAInstallButton } from "@/components/PWA/InstallButton";
 import { haptic } from "@/hooks/useHaptic";
+import { getAvatarSrc } from "@/lib/avatar";
 
 interface MobileNavProps {
     isAdmin: boolean;
     pendingRequestsCount?: number;
     issuesCount?: number;
     children: React.ReactNode;
+    profile?: {
+        username: string;
+        displayName?: string | null;
+        avatarUrl?: string | null;
+        avatarVersion?: number | null;
+        jellyfinUserId?: string | null;
+    } | null;
 }
 
 type NavLink = {
@@ -25,10 +33,13 @@ type NavLink = {
     badge?: number;
 };
 
-export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, children }: MobileNavProps) {
+export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, children, profile }: MobileNavProps) {
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [activeTab, setActiveTab] = useState<string | null>(null);
     const pathname = usePathname();
+    const avatarSrc = useMemo(() => (profile ? getAvatarSrc(profile) : ""), [profile]);
+    const avatarSource = profile?.avatarUrl ? "direct" : profile?.jellyfinUserId ? "proxy" : "fallback";
+    const showAvatarDebug = process.env.NODE_ENV !== "production";
 
     // Drag-to-dismiss state
     const sheetRef = useRef<HTMLDivElement>(null);
@@ -111,29 +122,45 @@ export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, 
         ];
     }, [pathname]);
 
-    const moreLinks = useMemo<NavLink[]>(() => {
+    // Browse items that don't appear on the bottom tab bar
+    const browseMoreLinks = useMemo<NavLink[]>(() => {
         const current = pathname ?? "/";
-        const links: NavLink[] = [
-            { href: "/recommendations", label: "Recs", icon: Sparkles, isActive: current === "/recommendations" },
+        return [
+            { href: "/recommendations", label: "Recommendations", icon: Sparkles, isActive: current === "/recommendations" },
             { href: "/reviews", label: "Reviews", icon: Star, isActive: current.startsWith("/reviews") },
             { href: "/calendar", label: "Calendar", icon: CalendarDays, isActive: current === "/calendar" },
         ];
-        if (isAdmin) {
-            links.push(
-                { href: "/admin/requests", label: "All Requests", icon: Clock, isActive: current.startsWith("/admin/requests"), badge: pendingRequestsCount },
-                { href: "/admin/users", label: "Manage Users", icon: Users, isActive: current.startsWith("/admin/users") },
-                { href: "/admin/issues", label: "Issues", icon: AlertTriangle, isActive: current.startsWith("/admin/issues"), badge: issuesCount },
-                { href: "/admin/settings/general", label: "Admin Settings", icon: Settings, isActive: current.startsWith("/admin/settings") }
-            );
-        } else {
-            links.push(
-                { href: "/requests", label: "My Requests", icon: Clock, isActive: current.startsWith("/requests") }
-            );
-        }
-        return links;
-    }, [isAdmin, pathname, issuesCount, pendingRequestsCount]);
+    }, [pathname]);
 
-    const needsMoreButton = moreLinks.length > 0;
+    const socialLinks = useMemo<NavLink[]>(() => {
+        const current = pathname ?? "/";
+        return [
+            { href: "/social", label: "Feed", icon: Heart, isActive: current === "/social" },
+            { href: "/friends", label: "Friends", icon: Users, isActive: current === "/friends" },
+            { href: "/social/discover", label: "Discover People", icon: Search, isActive: current === "/social/discover" },
+        ];
+    }, [pathname]);
+
+    const collectionLinks = useMemo<NavLink[]>(() => {
+        const current = pathname ?? "/";
+        if (isAdmin) return [];
+        return [
+            { href: "/requests", label: "My Requests", icon: Clock, isActive: current.startsWith("/requests") },
+        ];
+    }, [isAdmin, pathname]);
+
+    const adminLinks = useMemo<NavLink[]>(() => {
+        const current = pathname ?? "/";
+        if (!isAdmin) return [];
+        return [
+            { href: "/admin/requests", label: "All Requests", icon: Clock, isActive: current.startsWith("/admin/requests"), badge: pendingRequestsCount },
+            { href: "/admin/users", label: "Users", icon: Users, isActive: current.startsWith("/admin/users") },
+            { href: "/admin/issues", label: "Issues", icon: AlertTriangle, isActive: current.startsWith("/admin/issues"), badge: issuesCount },
+            { href: "/admin/settings/general", label: "Settings", icon: Settings, isActive: current.startsWith("/admin/settings") },
+        ];
+    }, [isAdmin, pathname, pendingRequestsCount, issuesCount]);
+
+    const needsMoreButton = browseMoreLinks.length > 0 || socialLinks.length > 0 || collectionLinks.length > 0 || adminLinks.length > 0;
 
     const renderBadge = (value?: number) => {
         if (!value || value <= 0) return null;
@@ -205,7 +232,44 @@ export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, 
                             </div>
 
                             <div className="flex items-center justify-between pb-3">
-                                <div className="text-sm font-semibold text-slate-200">Quick Menu</div>
+                                {/* Profile pill */}
+                                {profile ? (
+                                    <PrefetchLink
+                                        href="/settings/profile"
+                                        onClick={closeMenu}
+                                        className="flex items-center gap-2.5 rounded-xl px-2 py-1.5 transition-colors hover:bg-white/5"
+                                    >
+                                        <div className="relative h-8 w-8 flex-shrink-0 overflow-hidden rounded-full border border-white/10 bg-slate-700">
+                                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                                            <img
+                                                src={avatarSrc}
+                                                alt={profile.displayName ?? profile.username}
+                                                className="h-full w-full object-cover"
+                                                loading="eager"
+                                                decoding="async"
+                                                fetchPriority="high"
+                                            />
+                                        </div>
+                                        <div className="min-w-0">
+                                            <p className="truncate text-sm font-semibold text-slate-200">
+                                                {profile.displayName ?? profile.username}
+                                            </p>
+                                            <div className="flex items-center gap-1.5">
+                                                <p className="text-[10px] text-slate-500">View profile</p>
+                                                {showAvatarDebug && (
+                                                    <span
+                                                        className="rounded border border-white/15 bg-white/5 px-1 py-[1px] text-[9px] uppercase tracking-wide text-slate-400"
+                                                        title={avatarSrc}
+                                                    >
+                                                        {avatarSource}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </PrefetchLink>
+                                ) : (
+                                    <div className="text-sm font-semibold text-slate-200">Quick Menu</div>
+                                )}
                                 <button
                                     type="button"
                                     onClick={closeMenu}
@@ -223,10 +287,11 @@ export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, 
                                     touchAction: 'pan-y'
                                 }}
                             >
+                                {/* ── Browse (items not on tab bar) ── */}
                                 <div>
                                     <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Browse</div>
                                     <div className="mt-2 grid gap-1.5">
-                                        {mainLinks.map((link) => {
+                                        {browseMoreLinks.map((link) => {
                                             const Icon = link.icon;
                                             return (
                                                 <PrefetchLink
@@ -236,28 +301,50 @@ export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, 
                                                     className={cn(
                                                         "ios-pressable flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold",
                                                         link.isActive
-                                                            ? "elevated-2 text-indigo-300"
+                                                            ? "elevated-2 text-sky-300"
                                                             : "text-slate-200 hover:bg-white/5"
                                                     )}
                                                 >
-                                                    {cloneElement(<Icon className="h-5 w-5" />)}
+                                                    <Icon className={cn("h-5 w-5", link.isActive ? "text-sky-400" : "")} />
                                                     <span className="flex-1">{link.label}</span>
-                                                    {link.badge && link.badge > 0 && (
-                                                        <span className="rounded-full border border-indigo-500/50 bg-indigo-500/20 px-2 py-0.5 text-xs text-indigo-200">
-                                                            {link.badge}
-                                                        </span>
-                                                    )}
                                                 </PrefetchLink>
                                             );
                                         })}
                                     </div>
                                 </div>
 
-                                {moreLinks.length > 0 && (
+                                {/* ── Social ── */}
+                                <div className="border-t border-white/10 pt-4">
+                                    <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Social</div>
+                                    <div className="mt-2 grid gap-1.5">
+                                        {socialLinks.map((link) => {
+                                            const Icon = link.icon;
+                                            return (
+                                                <PrefetchLink
+                                                    key={link.href}
+                                                    href={link.href}
+                                                    onClick={closeMenu}
+                                                    className={cn(
+                                                        "ios-pressable flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold",
+                                                        link.isActive
+                                                            ? "elevated-2 text-pink-300"
+                                                            : "text-slate-200 hover:bg-white/5"
+                                                    )}
+                                                >
+                                                    <Icon className={cn("h-5 w-5", link.isActive ? "text-pink-400" : "")} />
+                                                    <span className="flex-1">{link.label}</span>
+                                                </PrefetchLink>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                {/* ── Collection (non-admin) ── */}
+                                {collectionLinks.length > 0 && (
                                     <div className="border-t border-white/10 pt-4">
-                                        <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">More</div>
+                                        <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Collection</div>
                                         <div className="mt-2 grid gap-1.5">
-                                            {moreLinks.map((link) => {
+                                            {collectionLinks.map((link) => {
                                                 const Icon = link.icon;
                                                 return (
                                                     <PrefetchLink
@@ -267,11 +354,39 @@ export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, 
                                                         className={cn(
                                                             "ios-pressable flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold",
                                                             link.isActive
-                                                                ? "elevated-2 text-indigo-300"
+                                                                ? "elevated-2 text-violet-300"
                                                                 : "text-slate-200 hover:bg-white/5"
                                                         )}
                                                     >
-                                                        {cloneElement(<Icon className="h-5 w-5" />)}
+                                                        <Icon className={cn("h-5 w-5", link.isActive ? "text-violet-400" : "")} />
+                                                        <span className="flex-1">{link.label}</span>
+                                                    </PrefetchLink>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* ── Admin ── */}
+                                {adminLinks.length > 0 && (
+                                    <div className="border-t border-white/10 pt-4">
+                                        <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Admin</div>
+                                        <div className="mt-2 grid gap-1.5">
+                                            {adminLinks.map((link) => {
+                                                const Icon = link.icon;
+                                                return (
+                                                    <PrefetchLink
+                                                        key={link.href}
+                                                        href={link.href}
+                                                        onClick={closeMenu}
+                                                        className={cn(
+                                                            "ios-pressable flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold",
+                                                            link.isActive
+                                                                ? "elevated-2 text-amber-300"
+                                                                : "text-slate-200 hover:bg-white/5"
+                                                        )}
+                                                    >
+                                                        <Icon className={cn("h-5 w-5", link.isActive ? "text-amber-400" : "")} />
                                                         <span className="flex-1">{link.label}</span>
                                                         {link.badge && link.badge > 0 && (
                                                             <span className="rounded-full border border-rose-500/50 bg-rose-500/20 px-2 py-0.5 text-xs text-rose-100 animate-ios-badge-pulse">
@@ -284,38 +399,6 @@ export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, 
                                         </div>
                                     </div>
                                 )}
-
-                                <div className="border-t border-white/10 pt-4">
-                                    <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Social</div>
-                                    <div className="mt-2 grid gap-1.5">
-                                        {[
-                                            { href: "/social", label: "Feed", icon: Heart },
-                                            { href: "/friends", label: "Friends", icon: Users },
-                                            { href: "/social/discover", label: "Discover People", icon: Search },
-
-                                        ].map((link) => {
-                                            const Icon = link.icon;
-                                            const current = pathname ?? "/";
-                                            const active = current === link.href || current.startsWith(link.href + "/");
-                                            return (
-                                                <PrefetchLink
-                                                    key={link.href}
-                                                    href={link.href}
-                                                    onClick={closeMenu}
-                                                    className={cn(
-                                                        "ios-pressable flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold",
-                                                        active
-                                                            ? "elevated-2 text-indigo-300"
-                                                            : "text-slate-200 hover:bg-white/5"
-                                                    )}
-                                                >
-                                                    {cloneElement(<Icon className="h-5 w-5" />)}
-                                                    <span className="flex-1">{link.label}</span>
-                                                </PrefetchLink>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
 
                                 <div className="border-t border-white/10 pt-4">
                                     <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">App</div>
@@ -350,7 +433,7 @@ export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, 
                                 <Icon
                                     className={cn(
                                         "h-5 w-5 transition-all duration-200",
-                                        isActive && "text-indigo-400",
+                                        isActive && "text-sky-400",
                                         isAnimating && "animate-ios-icon-bounce"
                                     )}
                                 />
@@ -362,7 +445,7 @@ export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, 
                                 </span>
                                 {/* Active indicator dot */}
                                 {isActive && (
-                                    <span className="absolute -bottom-0.5 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-indigo-400" />
+                                    <span className="absolute -bottom-0.5 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-sky-400" />
                                 )}
                                 {renderBadge(link.badge)}
                             </PrefetchLink>
@@ -383,7 +466,7 @@ export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, 
                                 "transition-transform duration-200",
                                 isMenuOpen && "rotate-90"
                             )}>
-                                {isMenuOpen ? <X className="h-5 w-5 text-indigo-400" /> : <Ellipsis className="h-5 w-5" />}
+                                {isMenuOpen ? <X className="h-5 w-5 text-sky-400" /> : <Ellipsis className="h-5 w-5" />}
                             </span>
                             <span className={cn(
                                 "transition-all duration-200",

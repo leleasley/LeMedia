@@ -231,14 +231,8 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
     { refreshInterval: 60000, revalidateOnFocus: true }
   );
 
-  const [greeting, setGreeting] = useState(() => getGreeting());
-  const [nowLine, setNowLine] = useState(() => 
-    new Date().toLocaleDateString(undefined, {
-      weekday: "long",
-      month: "long",
-      day: "numeric",
-    })
-  );
+  const [greeting, setGreeting] = useState("Welcome back");
+  const [nowLine, setNowLine] = useState("");
   const [requestFilter, setRequestFilter] = useState<"all" | "pending" | "ready" | "active">("all");
   const [requestPageByFilter, setRequestPageByFilter] = useState<Record<string, number>>({});
   const [recentAddedPageRaw, setRecentAddedPage] = useState(0);
@@ -247,6 +241,17 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
   const setRequestPage = (page: number) => {
     setRequestPageByFilter(prev => ({ ...prev, [requestFilter]: page }));
   };
+
+  useEffect(() => {
+    setGreeting(getGreeting());
+    setNowLine(
+      new Date().toLocaleDateString(undefined, {
+        weekday: "long",
+        month: "long",
+        day: "numeric",
+      })
+    );
+  }, []);
 
   const recentRequests = useMemo(() => recentRequestsData?.items ?? [], [recentRequestsData]);
   const recentAdded = useMemo(() => recentAddedData?.items ?? [], [recentAddedData]);

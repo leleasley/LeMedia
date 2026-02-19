@@ -45,7 +45,7 @@ export function getPool(): Pool {
       max: Number(process.env.DB_POOL_MAX ?? "50"), // Maximum pool size (default: 10 is too low)
       min: Number(process.env.DB_POOL_MIN ?? "2"), // Minimum idle connections
       idleTimeoutMillis: Number(process.env.DB_POOL_IDLE_TIMEOUT ?? "30000"), // Close idle connections after 30s
-      connectionTimeoutMillis: Number(process.env.DB_POOL_CONNECTION_TIMEOUT ?? "2000"), // Wait max 2s for connection
+      connectionTimeoutMillis: Number(process.env.DB_POOL_CONNECTION_TIMEOUT ?? "10000"), // Wait max 10s for connection
       // Prevent connection leaks and improve reliability
       keepAlive: true,
       keepAliveInitialDelayMillis: 10000,

@@ -18,6 +18,12 @@ services:
     tmpfs:
       - /tmp
       - /var/run/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lemedia} -d ${POSTGRES_DB:-lemedia}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
 
   lemedia-redis:
     image: redis:7-alpine
@@ -54,7 +60,7 @@ services:
       - "3010:3010"
     depends_on:
       lemedia-db:
-        condition: service_started
+        condition: service_healthy
       lemedia-redis:
         condition: service_healthy
     restart: unless-stopped

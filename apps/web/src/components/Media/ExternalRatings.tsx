@@ -14,7 +14,6 @@ const fetcher = (url: string) => fetch(url).then(r => r.json());
 type Ratings = {
   imdbId: string | null;
   imdbRating: string | null;
-  metacriticScore: string | null;
   rtCriticsScore: number | null;
   rtCriticsRating: string | null;
   rtAudienceScore: number | null;

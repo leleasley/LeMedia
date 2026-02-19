@@ -22,15 +22,14 @@ async function resolveParams(params: ParamsInput) {
 }
 
 async function getOmdbRatings(imdbId: string | null) {
-  if (!imdbId) return { imdbRating: null, metacriticScore: null };
+  if (!imdbId) return { imdbRating: null };
   const omdbEnabled = process.env.OMDB_ENABLED !== "0";
-  if (!omdbEnabled) return { imdbRating: null, metacriticScore: null };
+  if (!omdbEnabled) return { imdbRating: null };
 
   return withCache(`agg:omdb:${imdbId}`, OMDB_TTL_MS, async () => {
     const omdbData = await getOmdbData(imdbId).catch(() => null);
     return {
-      imdbRating: omdbData?.imdbRating || null,
-      metacriticScore: omdbData?.Metascore && omdbData.Metascore !== "N/A" ? omdbData.Metascore : null
+      imdbRating: omdbData?.imdbRating || null
     };
   });
 }
@@ -70,7 +69,6 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
     const ratings = {
       imdbId,
       imdbRating: omdbRatings.imdbRating,
-      metacriticScore: omdbRatings.metacriticScore,
       rtCriticsScore: rtRatings?.criticsScore ?? null,
       rtCriticsRating: rtRatings?.criticsRating ?? null,
       rtAudienceScore: rtRatings?.audienceScore ?? null,

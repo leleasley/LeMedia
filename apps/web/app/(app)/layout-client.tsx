@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { PrefetchLink } from "@/components/Layout/PrefetchLink";
 import Image from "next/image";
@@ -336,18 +336,34 @@ export default function AppLayoutClient({
         };
     }, [router]);
 
-    const linkClass = (isActive: boolean) => cn(
+    const linkClass = (isActive: boolean, accent = "border-indigo-500") => cn(
         "flex items-center gap-4 px-4 py-3 mx-2 rounded-lg transition-all text-sm font-medium border-l-4",
-        isActive 
-            ? "bg-white/10 text-white border-indigo-500 shadow-sm" 
+        isActive
+            ? `bg-white/10 text-white ${accent} shadow-sm`
             : "text-gray-400 hover:text-white hover:bg-white/5 border-transparent"
     );
+    const iconClass = (isActive: boolean, activeColor: string) =>
+        cn("h-5 w-5 flex-shrink-0 transition-colors", isActive ? activeColor : "");
+    const sidebarAvatarSrc = profile ? getAvatarSrc(profile) : "";
+    const sidebarAvatarSource = profile?.avatarUrl ? "direct" : profile?.jellyfinUserId ? "proxy" : "fallback";
+    const showAvatarDebug = process.env.NODE_ENV !== "production";
+
+    // Section-aware progress bar colour
+    const progressBarClass = useMemo(() => {
+        const p = pathname ?? "/";
+        if (p.startsWith("/admin")) return "from-amber-400 via-amber-300 to-amber-500";
+        if (p.startsWith("/social") || p.startsWith("/friends")) return "from-pink-400 via-pink-300 to-pink-500";
+        if (p.startsWith("/requests")) return "from-violet-400 via-violet-300 to-violet-500";
+        // Browse: everything else
+        return "from-sky-400 via-sky-300 to-sky-500";
+    }, [pathname]);
 
     return (
         <>
             <div
                 className={cn(
-                    "fixed left-0 top-0 z-[2000] h-0.5 bg-gradient-to-r from-emerald-300 via-emerald-400 to-emerald-500 transition-[width,opacity] duration-500 ease-out",
+                    "fixed left-0 top-0 z-[2000] h-0.5 bg-gradient-to-r transition-[width,opacity,background] duration-500 ease-out",
+                    progressBarClass,
                     progressVisible ? "opacity-100" : "opacity-0"
                 )}
                 style={{ width: `${progressValue}%` }}
@@ -356,7 +372,7 @@ export default function AppLayoutClient({
             <SessionResetModal />
             <PullToRefresh>
             {/* Mobile Navigation */}
-            <MobileNav isAdmin={isAdmin} pendingRequestsCount={pendingCount} issuesCount={openIssuesCount}>
+            <MobileNav isAdmin={isAdmin} pendingRequestsCount={pendingCount} issuesCount={openIssuesCount} profile={profile}>
                 <AppHeader isDesktop={isDesktop} isAdmin={isAdmin} profile={profile} />
 
                 {/* Mobile content */}
@@ -389,36 +405,36 @@ export default function AppLayoutClient({
                         <div>
                             <h3 className="text-xs font-bold text-gray-500 mb-2 px-6 uppercase tracking-wider">Browse</h3>
                             <div className="space-y-1">
-                                <PrefetchLink href="/" className={linkClass(pathname === "/")}>
-                                    <LayoutGrid className="h-5 w-5" />
+                                <PrefetchLink href="/" className={linkClass(pathname === "/", "border-sky-400")}>
+                                    <LayoutGrid className={iconClass(pathname === "/", "text-sky-400")} />
                                     <span>Home</span>
                                 </PrefetchLink>
-                                <PrefetchLink href="/discover" className={linkClass(pathname?.startsWith("/discover") ?? false)}>
-                                    <Compass className="h-5 w-5" />
+                                <PrefetchLink href="/discover" className={linkClass(pathname?.startsWith("/discover") ?? false, "border-sky-400")}>
+                                    <Compass className={iconClass(pathname?.startsWith("/discover") ?? false, "text-sky-400")} />
                                     <span>Discover</span>
                                 </PrefetchLink>
-                                <PrefetchLink href="/my-activity" className={linkClass(pathname === "/my-activity")}>
-                                    <Activity className="h-5 w-5" />
+                                <PrefetchLink href="/my-activity" className={linkClass(pathname === "/my-activity", "border-sky-400")}>
+                                    <Activity className={iconClass(pathname === "/my-activity", "text-sky-400")} />
                                     <span>My Activity</span>
                                 </PrefetchLink>
-                                <PrefetchLink href="/recommendations" className={linkClass(pathname === "/recommendations")}>
-                                    <Sparkles className="h-5 w-5" />
+                                <PrefetchLink href="/recommendations" className={linkClass(pathname === "/recommendations", "border-sky-400")}>
+                                    <Sparkles className={iconClass(pathname === "/recommendations", "text-sky-400")} />
                                     <span>Recommendations</span>
                                 </PrefetchLink>
-                                <PrefetchLink href="/reviews" className={linkClass(pathname === "/reviews")}>
-                                    <Star className="h-5 w-5" />
+                                <PrefetchLink href="/reviews" className={linkClass(pathname === "/reviews", "border-sky-400")}>
+                                    <Star className={iconClass(pathname === "/reviews", "text-sky-400")} />
                                     <span>Reviews</span>
                                 </PrefetchLink>
-                                <PrefetchLink href="/movies" className={linkClass(pathname === "/movies")}>
-                                    <Film className="h-5 w-5" />
+                                <PrefetchLink href="/movies" className={linkClass(pathname === "/movies", "border-sky-400")}>
+                                    <Film className={iconClass(pathname === "/movies", "text-sky-400")} />
                                     <span>Movies</span>
                                 </PrefetchLink>
-                                <PrefetchLink href="/tv" className={linkClass(pathname === "/tv")}>
-                                    <Tv className="h-5 w-5" />
+                                <PrefetchLink href="/tv" className={linkClass(pathname === "/tv", "border-sky-400")}>
+                                    <Tv className={iconClass(pathname === "/tv", "text-sky-400")} />
                                     <span>TV Shows</span>
                                 </PrefetchLink>
-                                <PrefetchLink href="/calendar" className={linkClass(pathname === "/calendar")}>
-                                    <CalendarDays className="h-5 w-5" />
+                                <PrefetchLink href="/calendar" className={linkClass(pathname === "/calendar", "border-sky-400")}>
+                                    <CalendarDays className={iconClass(pathname === "/calendar", "text-sky-400")} />
                                     <span>Calendar</span>
                                 </PrefetchLink>
                             </div>
@@ -428,16 +444,16 @@ export default function AppLayoutClient({
                         <div>
                             <h3 className="text-xs font-bold text-gray-500 mb-2 px-6 uppercase tracking-wider">Social</h3>
                             <div className="space-y-1">
-                                <PrefetchLink href="/social" className={linkClass(pathname === "/social")}>
-                                    <Heart className="h-5 w-5" />
+                                <PrefetchLink href="/social" className={linkClass(pathname === "/social", "border-pink-400")}>
+                                    <Heart className={iconClass(pathname === "/social", "text-pink-400")} />
                                     <span>Feed</span>
                                 </PrefetchLink>
-                                <PrefetchLink href="/friends" className={linkClass(pathname === "/friends")}>
-                                    <Users className="h-5 w-5" />
+                                <PrefetchLink href="/friends" className={linkClass(pathname === "/friends", "border-pink-400")}>
+                                    <Users className={iconClass(pathname === "/friends", "text-pink-400")} />
                                     <span>Friends</span>
                                 </PrefetchLink>
-                                <PrefetchLink href="/social/discover" className={linkClass(pathname === "/social/discover")}>
-                                    <Search className="h-5 w-5" />
+                                <PrefetchLink href="/social/discover" className={linkClass(pathname === "/social/discover", "border-pink-400")}>
+                                    <Search className={iconClass(pathname === "/social/discover", "text-pink-400")} />
                                     <span>Discover People</span>
                                 </PrefetchLink>
                             </div>
@@ -448,8 +464,8 @@ export default function AppLayoutClient({
                             <div>
                                 <h3 className="text-xs font-bold text-gray-500 mb-2 px-6 uppercase tracking-wider">Collection</h3>
                                 <div className="space-y-1">
-                                    <PrefetchLink href="/requests" className={linkClass(pathname === "/requests")}>
-                                        <Inbox className="h-5 w-5" />
+                                    <PrefetchLink href="/requests" className={linkClass(pathname === "/requests", "border-violet-400")}>
+                                        <Inbox className={iconClass(pathname === "/requests", "text-violet-400")} />
                                         <span>My Requests</span>
                                     </PrefetchLink>
                                 </div>
@@ -461,8 +477,8 @@ export default function AppLayoutClient({
                             <div>
                                 <h3 className="text-xs font-bold text-gray-500 mb-2 px-6 uppercase tracking-wider">Admin</h3>
                                 <div className="space-y-1">
-                                    <PrefetchLink href="/admin/requests" className={linkClass(pathname === "/admin/requests")}>
-                                        <Inbox className="h-5 w-5" />
+                                    <PrefetchLink href="/admin/requests" className={linkClass(pathname === "/admin/requests", "border-amber-400")}>
+                                        <Inbox className={iconClass(pathname === "/admin/requests", "text-amber-400")} />
                                         <span>All Requests</span>
                                         {pendingCount > 0 && (
                                             <span className="ml-auto flex items-center justify-center h-5 min-w-[1.25rem] px-1.5 rounded-full bg-indigo-500 text-[10px] font-bold text-white shadow-sm">
@@ -470,12 +486,12 @@ export default function AppLayoutClient({
                                             </span>
                                         )}
                                     </PrefetchLink>
-                                    <PrefetchLink href="/admin/users" className={linkClass(pathname?.startsWith("/admin/users") ?? false)}>
-                                        <Users className="h-5 w-5" />
+                                    <PrefetchLink href="/admin/users" className={linkClass(pathname?.startsWith("/admin/users") ?? false, "border-amber-400")}>
+                                        <Users className={iconClass(pathname?.startsWith("/admin/users") ?? false, "text-amber-400")} />
                                         <span>Users</span>
                                     </PrefetchLink>
-                                    <PrefetchLink href="/admin/issues" className={linkClass(pathname?.startsWith("/admin/issues") ?? false)}>
-                                        <AlertTriangle className="h-5 w-5" />
+                                    <PrefetchLink href="/admin/issues" className={linkClass(pathname?.startsWith("/admin/issues") ?? false, "border-amber-400")}>
+                                        <AlertTriangle className={iconClass(pathname?.startsWith("/admin/issues") ?? false, "text-amber-400")} />
                                         <span>Issues</span>
                                         {openIssuesCount > 0 && (
                                             <span className="ml-auto flex items-center justify-center h-5 min-w-[1.25rem] px-1.5 rounded-full bg-rose-500 text-[10px] font-bold text-white shadow-sm">
@@ -483,21 +499,54 @@ export default function AppLayoutClient({
                                             </span>
                                         )}
                                     </PrefetchLink>
-                                    <PrefetchLink href="/admin/settings/general" className={linkClass(pathname?.startsWith("/admin/settings") ?? false)}>
-                                        <div className="flex items-center gap-4 flex-1">
-                                            <Settings className="h-5 w-5" />
-                                            <span>Settings</span>
-                                        </div>
+                                    <PrefetchLink href="/admin/settings/general" className={linkClass(pathname?.startsWith("/admin/settings") ?? false, "border-amber-400")}>
+                                        <Settings className={iconClass(pathname?.startsWith("/admin/settings") ?? false, "text-amber-400")} />
+                                        <span>Settings</span>
                                     </PrefetchLink>
                                 </div>
                             </div>
                         )}
                     </nav>
 
-                    <div className="p-4 border-t border-white/5 mt-auto bg-black/20">
-                         <div className="text-xs text-gray-500 text-center">
-                             {sidebarFooterText}
-                         </div>
+                    <div className="mt-auto border-t border-white/5 bg-black/20">
+                        {profile && (
+                            <PrefetchLink
+                                href="/settings/profile"
+                                className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-white/5"
+                            >
+                                <div className="relative h-8 w-8 flex-shrink-0 overflow-hidden rounded-full border border-white/10 bg-slate-700">
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                        src={sidebarAvatarSrc}
+                                        alt={profile.displayName ?? profile.username}
+                                        className="h-full w-full object-cover"
+                                        loading="eager"
+                                        decoding="async"
+                                        fetchPriority="high"
+                                    />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <p className="truncate text-xs font-semibold text-gray-200">
+                                        {profile.displayName ?? profile.username}
+                                    </p>
+                                    <div className="flex items-center gap-1.5">
+                                        <p className="text-[10px] text-gray-500">View profile</p>
+                                        {showAvatarDebug && (
+                                            <span
+                                                className="rounded border border-white/15 bg-white/5 px-1 py-[1px] text-[9px] uppercase tracking-wide text-gray-400"
+                                                title={sidebarAvatarSrc}
+                                            >
+                                                {sidebarAvatarSource}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                                <Settings className="h-3.5 w-3.5 flex-shrink-0 text-gray-600" />
+                            </PrefetchLink>
+                        )}
+                        <div className="px-4 py-2 text-[10px] text-gray-600 text-center border-t border-white/[0.04]">
+                            {sidebarFooterText}
+                        </div>
                     </div>
                 </aside>
 

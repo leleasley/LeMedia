@@ -56,7 +56,7 @@ export async function getOmdbData(imdbId: string): Promise<OmdbResponse | null> 
                 });
 
                 if (!res.ok) {
-                    logger.error("Radarr IMDb proxy error", undefined, { status: res.status });
+                    logger.debug("Radarr IMDb proxy error", { status: res.status });
                     return null;
                 }
 
