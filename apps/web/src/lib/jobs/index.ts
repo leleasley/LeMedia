@@ -14,6 +14,10 @@ const isBuildPhase =
 const runningJobs = new Set<string>();
 let tickCount = 0;
 
+export function getRunningJobNames(): string[] {
+  return Array.from(runningJobs);
+}
+
 export type JobRuntimeMetrics = {
   name: string;
   totalRuns: number;
@@ -159,48 +163,74 @@ function parseSimpleCron(schedule: string) {
   const parts = schedule.trim().split(/\s+/);
   if (parts.length !== 5) return null;
   const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
-  const isField = (value: string) => value === "*" || /^\d+$/.test(value);
+  const isField = (value: string) => value === "*" || /^\d+$/.test(value) || /^\*\/\d+$/.test(value);
   if (![minute, hour, dayOfMonth, month, dayOfWeek].every(isField)) return null;
   if (month !== "*") return null;
   return { minute, hour, dayOfMonth, dayOfWeek };
 }
 
-function computeSimpleCronNextRun(schedule: string, now: Date) {
+/**
+ * Expand a cron field into a sorted array of matching values.
+ * Supports: star, digits, and star-slash-N step patterns.
+ */
+function expandCronField(field: string, min: number, max: number): number[] | null {
+  if (field === "*") {
+    const arr: number[] = [];
+    for (let i = min; i <= max; i++) arr.push(i);
+    return arr;
+  }
+  if (/^\d+$/.test(field)) {
+    const val = Number(field);
+    return (val >= min && val <= max) ? [val] : null;
+  }
+  const stepMatch = field.match(/^\*\/(\d+)$/);
+  if (stepMatch) {
+    const step = Number(stepMatch[1]);
+    if (step <= 0) return null;
+    const arr: number[] = [];
+    for (let i = 0; i <= max; i += step) arr.push(i);
+    return arr;
+  }
+  return null;
+}
+
+function computeSimpleCronNextRun(schedule: string, now: Date): Date | null {
   const parsed = parseSimpleCron(schedule);
   if (!parsed) return null;
-  const minute = Number(parsed.minute);
-  const hour = Number(parsed.hour);
-  if (Number.isNaN(minute) || Number.isNaN(hour)) return null;
 
-  const candidate = new Date(now);
-  candidate.setSeconds(0, 0);
-  candidate.setMinutes(minute);
-  candidate.setHours(hour);
+  const minuteVals = expandCronField(parsed.minute, 0, 59);
+  const hourVals = expandCronField(parsed.hour, 0, 23);
+  if (!minuteVals || !hourVals || minuteVals.length === 0 || hourVals.length === 0) return null;
 
-  if (parsed.dayOfMonth === "*" && parsed.dayOfWeek === "*") {
-    if (candidate <= now) candidate.setDate(candidate.getDate() + 1);
-    return candidate;
-  }
+  // Only support * or fixed number for day fields (no step patterns for days)
+  if (parsed.dayOfWeek !== "*" && !/^\d+$/.test(parsed.dayOfWeek)) return null;
+  if (parsed.dayOfMonth !== "*" && !/^\d+$/.test(parsed.dayOfMonth)) return null;
 
-  if (parsed.dayOfMonth === "*" && parsed.dayOfWeek !== "*") {
-    const targetDow = Number(parsed.dayOfWeek);
-    if (Number.isNaN(targetDow) || targetDow < 0 || targetDow > 6) return null;
-    const currentDow = candidate.getDay();
-    let daysAhead = (targetDow - currentDow + 7) % 7;
-    if (daysAhead === 0 && candidate <= now) daysAhead = 7;
-    candidate.setDate(candidate.getDate() + daysAhead);
-    return candidate;
-  }
+  const targetDow = parsed.dayOfWeek !== "*" ? Number(parsed.dayOfWeek) : null;
+  const targetDom = parsed.dayOfMonth !== "*" ? Number(parsed.dayOfMonth) : null;
 
-  if (parsed.dayOfMonth !== "*" && parsed.dayOfWeek === "*") {
-    const targetDom = Number(parsed.dayOfMonth);
-    if (Number.isNaN(targetDom) || targetDom < 1 || targetDom > 28) return null;
-    candidate.setDate(targetDom);
-    if (candidate <= now) {
-      candidate.setMonth(candidate.getMonth() + 1);
-      candidate.setDate(targetDom);
+  // Search up to 35 days ahead (covers monthly schedules)
+  for (let dayOffset = 0; dayOffset < 35; dayOffset++) {
+    const dayBase = new Date(now);
+    dayBase.setDate(dayBase.getDate() + dayOffset);
+    dayBase.setHours(0, 0, 0, 0);
+
+    // Check day-of-week constraint
+    if (targetDow !== null && dayBase.getDay() !== targetDow) continue;
+    // Check day-of-month constraint
+    if (targetDom !== null && dayBase.getDate() !== targetDom) continue;
+
+    for (const hr of hourVals) {
+      // Skip past hours on current day for efficiency
+      if (dayOffset === 0 && hr < now.getHours()) continue;
+      for (const min of minuteVals) {
+        const candidate = new Date(dayBase);
+        candidate.setHours(hr, min, 0, 0);
+        if (candidate > now) {
+          return candidate;
+        }
+      }
     }
-    return candidate;
   }
 
   return null;

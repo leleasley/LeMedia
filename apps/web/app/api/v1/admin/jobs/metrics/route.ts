@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/auth";
-import { getJobRuntimeMetrics } from "@/lib/jobs";
+import { getJobRuntimeMetrics, getRunningJobNames } from "@/lib/jobs";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +9,7 @@ export async function GET() {
   if (admin instanceof NextResponse) return admin;
 
   const metrics = getJobRuntimeMetrics();
+  const runningJobs = getRunningJobNames();
   const totalRuns = metrics.reduce((acc, item) => acc + item.totalRuns, 0);
   const totalSuccess = metrics.reduce((acc, item) => acc + item.successRuns, 0);
   const totalFailed = metrics.reduce((acc, item) => acc + item.failedRuns, 0);
@@ -27,6 +28,7 @@ export async function GET() {
       avgDurationMs,
     },
     metrics,
+    runningJobs,
   });
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
   return res;

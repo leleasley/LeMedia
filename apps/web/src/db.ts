@@ -6164,6 +6164,16 @@ export async function getJobHistory(
   return { entries, total };
 }
 
+export async function clearJobHistory(jobName?: string): Promise<number> {
+  const p = getPool();
+  if (jobName) {
+    const res = await p.query(`DELETE FROM job_history WHERE job_name = $1`, [jobName]);
+    return res.rowCount ?? 0;
+  }
+  const res = await p.query(`DELETE FROM job_history`);
+  return res.rowCount ?? 0;
+}
+
 // ===== User Notifications =====
 export type UserNotification = {
   id: number;

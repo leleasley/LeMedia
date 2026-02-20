@@ -1,7 +1,7 @@
 "use client";
 
 import useSWR from "swr";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   PlayIcon,
   ClockIcon,
@@ -63,6 +63,7 @@ type JobMetricsResponse = {
     avgDurationMs: number;
   };
   metrics: JobRuntimeMetric[];
+  runningJobs: string[];
 };
 
 type JobHistoryEntry = {
@@ -119,6 +120,45 @@ function formatRelativeTime(dateStr: string): string {
   return `${Math.round(diffMs / 86400000)}d ago`;
 }
 
+// ─── Live countdown component ────────────────────────────────────────────────
+
+function formatCountdown(targetMs: number, nowMs: number): string {
+  const diffMs = targetMs - nowMs;
+  if (diffMs <= 0) return "now";
+  const totalSec = Math.floor(diffMs / 1000);
+  if (totalSec < 60) return `in ${totalSec}s`;
+  const days = Math.floor(totalSec / 86400);
+  const hours = Math.floor((totalSec % 86400) / 3600);
+  const minutes = Math.floor((totalSec % 3600) / 60);
+  const seconds = totalSec % 60;
+  if (days > 0) {
+    return hours > 0 ? `in ${days}d ${hours}h ${minutes}m` : `in ${days}d ${minutes}m`;
+  }
+  if (hours > 0) {
+    return `in ${hours}h ${minutes}m ${seconds}s`;
+  }
+  return `in ${minutes}m ${seconds}s`;
+}
+
+function Countdown({ target }: { target: string }) {
+  const targetMs = new Date(target).getTime();
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const text = formatCountdown(targetMs, now);
+  const isPast = targetMs <= now;
+
+  return (
+    <span className={isPast ? "text-amber-400 animate-pulse" : undefined}>
+      {isPast ? "due" : text}
+    </span>
+  );
+}
+
 const FREQUENCY_PRESETS = [
   { label: "2 Minutes", value: 120 },
   { label: "5 Minutes", value: 300 },
@@ -161,7 +201,7 @@ function parseCronSchedule(schedule: string) {
   const parts = schedule.trim().split(/\s+/);
   if (parts.length !== 5) return null;
   const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
-  const isField = (value: string) => value === "*" || /^\d+$/.test(value);
+  const isField = (value: string) => value === "*" || /^\d+$/.test(value) || /^\*\/\d+$/.test(value);
   if (![minute, hour, dayOfMonth, month, dayOfWeek].every(isField)) return null;
   return { minute, hour, dayOfMonth, month, dayOfWeek };
 }
@@ -173,6 +213,23 @@ function formatTime(hour: string, minute: string) {
 function formatSchedule(job: Job): string {
   const cron = parseCronSchedule(job.schedule);
   if (!cron) return formatInterval(job.intervalSeconds);
+
+  // Handle step patterns: */N minute or */N hour
+  const minuteStep = cron.minute.match(/^\*\/(\d+)$/);
+  const hourStep = cron.hour.match(/^\*\/(\d+)$/);
+
+  if (minuteStep && cron.hour === "*" && cron.dayOfMonth === "*" && cron.dayOfWeek === "*") {
+    return `${Number(minuteStep[1])} minutes`;
+  }
+  if (hourStep && /^\d+$/.test(cron.minute) && cron.dayOfMonth === "*" && cron.dayOfWeek === "*") {
+    const h = Number(hourStep[1]);
+    return h === 1 ? "Every hour" : `${h} hours`;
+  }
+
+  // Fixed time patterns require numeric hour and minute
+  if (!/^\d+$/.test(cron.hour) || !/^\d+$/.test(cron.minute)) {
+    return `Custom (${job.schedule})`;
+  }
   const time = formatTime(cron.hour, cron.minute);
   if (cron.dayOfMonth === "*" && cron.dayOfWeek === "*" && cron.month === "*") {
     return `Daily at ${time}`;
@@ -206,6 +263,7 @@ function JobCard({
   job,
   metric,
   running,
+  serverRunning,
   onRun,
   onEdit,
   onEnable,
@@ -214,13 +272,17 @@ function JobCard({
   job: Job;
   metric: JobRuntimeMetric | undefined;
   running: boolean;
+  serverRunning: boolean;
   onRun: () => void;
   onEdit: () => void;
   onEnable: () => void;
   onViewLogs: () => void;
 }) {
-  const getStatus = () => {
+  const isExecuting = running || serverRunning;
+
+  const getStatus = (): "success" | "failure" | "running" | "disabled" | "idle" => {
     if (!job.enabled) return "disabled";
+    if (isExecuting) return "running";
     if (metric?.lastResult === "failure") return "failure";
     if (metric?.lastResult === "success") return "success";
     return "idle";
@@ -271,11 +333,11 @@ function JobCard({
             ) : (
               <button
                 onClick={onRun}
-                disabled={running}
+                disabled={running || isExecuting}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50"
               >
                 <PlayIcon className="h-3 w-3" />
-                {running ? "Running..." : "Run Now"}
+                {isExecuting ? "Running..." : "Run Now"}
               </button>
             )}
           </div>
@@ -301,7 +363,12 @@ function JobCard({
           <div>
             <div className="text-[10px] uppercase text-gray-500 font-medium">Next Run</div>
             <div className="text-sm text-gray-200">
-              {job.nextRun ? formatRelativeTime(job.nextRun) : "\u2014"}
+              {isExecuting ? (
+                <span className="text-blue-400 animate-pulse flex items-center gap-1">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />
+                  Running...
+                </span>
+              ) : job.nextRun ? <Countdown target={job.nextRun} /> : "\u2014"}
             </div>
           </div>
           <div>
@@ -345,6 +412,7 @@ function ExecutionLog({
   const [filterJob, setFilterJob] = useState(jobFilter);
   const [filterStatus, setFilterStatus] = useState<string | null>(null);
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
+  const [clearing, setClearing] = useState(false);
   const pageSize = 25;
 
   const queryParams = new URLSearchParams();
@@ -352,15 +420,37 @@ function ExecutionLog({
   queryParams.set("limit", String(pageSize));
   queryParams.set("offset", String(page * pageSize));
 
-  const { data, error, isLoading } = useSWR<JobHistoryResponse>(
+  const { data, error, isLoading, mutate } = useSWR<JobHistoryResponse>(
     `/api/v1/admin/jobs/history?${queryParams.toString()}`,
     fetcher,
-    { refreshInterval: 10000, revalidateOnFocus: true }
+    { refreshInterval: 5000, revalidateOnFocus: true }
   );
 
   const { data: allJobs } = useSWR<Job[]>("/api/v1/admin/jobs", fetcher);
   const jobNames = allJobs?.map((j) => j.name).sort() ?? [];
 
+  // Track seen IDs so we can highlight new entries
+  const [seenIds, setSeenIds] = useState<Set<number>>(new Set());
+  const [newIds, setNewIds] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    if (!data?.entries?.length) return;
+    const currentIds = new Set(data.entries.map((e) => e.id));
+    if (seenIds.size > 0) {
+      const fresh = new Set<number>();
+      for (const id of currentIds) {
+        if (!seenIds.has(id)) fresh.add(id);
+      }
+      if (fresh.size > 0) {
+        setNewIds(fresh);
+        // Clear highlight after 3 seconds
+        setTimeout(() => setNewIds(new Set()), 3000);
+      }
+    }
+    setSeenIds(currentIds);
+  }, [data?.entries]);
+
+  const toast = useToast();
   const entries = data?.entries ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.ceil(total / pageSize);
@@ -368,14 +458,39 @@ function ExecutionLog({
   // Client-side status filter
   const filtered = filterStatus ? entries.filter((e) => e.status === filterStatus) : entries;
 
+  const clearLogs = async () => {
+    setClearing(true);
+    try {
+      const url = filterJob
+        ? `/api/v1/admin/jobs/history?job=${encodeURIComponent(filterJob)}`
+        : `/api/v1/admin/jobs/history`;
+      const res = await csrfFetch(url, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to clear logs");
+      const result = await res.json();
+      toast.success(`Cleared ${result.deleted} log${result.deleted !== 1 ? "s" : ""}`);
+      setPage(0);
+      mutate();
+    } catch {
+      toast.error("Failed to clear logs");
+    } finally {
+      setClearing(false);
+    }
+  };
+
   return (
     <div className="rounded-xl border border-white/10 bg-white/[0.03] overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-white/10">
-        <h3 className="text-lg font-semibold text-white">
-          Execution History
-          {filterJob && <span className="text-indigo-400 ml-1.5 font-normal text-sm">({filterJob})</span>}
-        </h3>
+        <div className="flex items-center gap-3">
+          <h3 className="text-lg font-semibold text-white">
+            Execution History
+            {filterJob && <span className="text-indigo-400 ml-1.5 font-normal text-sm">({filterJob})</span>}
+          </h3>
+          <span className="flex items-center gap-1.5 text-[10px] text-emerald-400 font-medium uppercase tracking-wider">
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            Live
+          </span>
+        </div>
         <button
           onClick={onClose}
           className="text-gray-400 hover:text-white text-sm transition-colors"
@@ -432,7 +547,18 @@ function ExecutionLog({
             ))}
           </div>
         </div>
-        <div className="ml-auto text-xs text-gray-500">{total} total entries</div>
+        <div className="ml-auto flex items-center gap-3">
+          <span className="text-xs text-gray-500">{total} total entries</span>
+          {total > 0 && (
+            <button
+              onClick={clearLogs}
+              disabled={clearing}
+              className="px-2.5 py-1 rounded-md text-xs font-medium bg-red-500/10 text-red-300 hover:bg-red-500/20 transition-colors disabled:opacity-50"
+            >
+              {clearing ? "Clearing..." : filterJob ? `Clear ${filterJob} logs` : "Clear all logs"}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Table */}
@@ -458,7 +584,14 @@ function ExecutionLog({
             </thead>
             <tbody>
               {filtered.map((entry) => (
-                <tr key={entry.id} className="border-b border-white/5 last:border-0 hover:bg-white/[0.02]">
+                <tr
+                  key={entry.id}
+                  className={`border-b border-white/5 last:border-0 transition-colors duration-700 ${
+                    newIds.has(entry.id)
+                      ? "bg-indigo-500/10"
+                      : "hover:bg-white/[0.02]"
+                  }`}
+                >
                   <td className="px-4 py-2.5">
                     {entry.status === "success" ? (
                       <span className="inline-flex items-center gap-1 text-emerald-400">
@@ -559,11 +692,11 @@ function ExecutionLog({
 
 export function JobsListClient() {
   const { data: jobs, error, mutate } = useSWR<Job[]>("/api/v1/admin/jobs", fetcher, {
-    refreshInterval: 15000,
+    refreshInterval: 5000,
     revalidateOnFocus: true,
   });
   const { data: runtimeData } = useSWR<JobMetricsResponse>("/api/v1/admin/jobs/metrics", fetcher, {
-    refreshInterval: 15000,
+    refreshInterval: 5000,
     revalidateOnFocus: true,
   });
   const toast = useToast();
@@ -590,19 +723,27 @@ export function JobsListClient() {
     setEditInterval(job.intervalSeconds);
     const cron = parseCronSchedule(job.schedule);
     if (cron) {
-      const time = formatTime(cron.hour, cron.minute);
-      setTimeValue(time);
-      if (cron.dayOfMonth === "*" && cron.dayOfWeek === "*" && cron.month === "*") {
-        setScheduleMode("daily");
-      } else if (cron.dayOfMonth === "*" && cron.dayOfWeek !== "*" && cron.month === "*") {
-        setScheduleMode("weekly");
-        setDayOfWeek(cron.dayOfWeek);
-      } else if (cron.dayOfMonth !== "*" && cron.dayOfWeek === "*" && cron.month === "*") {
-        setScheduleMode("monthly");
-        setDayOfMonth(cron.dayOfMonth);
-      } else {
+      // If any field uses a step pattern (*/N), show as custom cron
+      const hasStep = [cron.minute, cron.hour, cron.dayOfMonth, cron.dayOfWeek]
+        .some(f => /^\*\/\d+$/.test(f));
+      if (hasStep) {
         setScheduleMode("custom");
         setCustomCron(job.schedule);
+      } else {
+        const time = formatTime(cron.hour, cron.minute);
+        setTimeValue(time);
+        if (cron.dayOfMonth === "*" && cron.dayOfWeek === "*" && cron.month === "*") {
+          setScheduleMode("daily");
+        } else if (cron.dayOfMonth === "*" && cron.dayOfWeek !== "*" && cron.month === "*") {
+          setScheduleMode("weekly");
+          setDayOfWeek(cron.dayOfWeek);
+        } else if (cron.dayOfMonth !== "*" && cron.dayOfWeek === "*" && cron.month === "*") {
+          setScheduleMode("monthly");
+          setDayOfMonth(cron.dayOfMonth);
+        } else {
+          setScheduleMode("custom");
+          setCustomCron(job.schedule);
+        }
       }
     } else {
       setScheduleMode("interval");
@@ -686,6 +827,7 @@ export function JobsListClient() {
   if (error) return <div className="text-red-500 p-4">Failed to load jobs</div>;
 
   const metricsByName = new Map((runtimeData?.metrics ?? []).map((item) => [item.name, item]));
+  const serverRunningSet = new Set(runtimeData?.runningJobs ?? []);
 
   return (
     <div className="space-y-4">
@@ -751,6 +893,7 @@ export function JobsListClient() {
               job={job}
               metric={metricsByName.get(job.name)}
               running={running === job.id}
+              serverRunning={serverRunningSet.has(job.name)}
               onRun={() => runJob(job)}
               onEdit={() => startEdit(job)}
               onEnable={() => enableJob(job)}

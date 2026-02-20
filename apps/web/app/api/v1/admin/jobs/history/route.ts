@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/auth";
-import { getJobHistory } from "@/db";
+import { getJobHistory, clearJobHistory } from "@/db";
+import { requireCsrf } from "@/lib/csrf";
 
 export const dynamic = "force-dynamic";
 
@@ -18,4 +19,17 @@ export async function GET(req: NextRequest) {
   const res = NextResponse.json({ entries, total, limit, offset });
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
   return res;
+}
+
+export async function DELETE(req: NextRequest) {
+  const admin = await requireAdmin();
+  if (admin instanceof NextResponse) return admin;
+  const csrf = requireCsrf(req);
+  if (csrf) return csrf;
+
+  const { searchParams } = new URL(req.url);
+  const jobName = searchParams.get("job") || undefined;
+
+  const deleted = await clearJobHistory(jobName);
+  return NextResponse.json({ deleted });
 }
