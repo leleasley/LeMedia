@@ -641,6 +641,7 @@ export function ListsPageClient({ imageProxyEnabled }: { imageProxyEnabled: bool
             } as CustomList,
             ...prev,
           ]);
+          void fetchLists();
         }}
       />
 

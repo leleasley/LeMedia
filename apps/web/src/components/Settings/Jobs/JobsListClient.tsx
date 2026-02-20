@@ -2,7 +2,14 @@
 
 import useSWR from "swr";
 import { useState } from "react";
-import { PlayIcon, ClockIcon } from "@heroicons/react/24/solid";
+import {
+  PlayIcon,
+  ClockIcon,
+  CheckCircleIcon,
+  XCircleIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+} from "@heroicons/react/24/solid";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { Modal } from "@/components/Common/Modal";
 import { csrfFetch } from "@/lib/csrf-client";
@@ -13,6 +20,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 type Job = {
   id: number;
@@ -56,14 +65,58 @@ type JobMetricsResponse = {
   metrics: JobRuntimeMetric[];
 };
 
+type JobHistoryEntry = {
+  id: number;
+  jobName: string;
+  status: "success" | "failure";
+  startedAt: string;
+  finishedAt: string | null;
+  durationMs: number | null;
+  error: string | null;
+  details: string | null;
+};
+
+type JobHistoryResponse = {
+  entries: JobHistoryEntry[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+
 const fetcher = (url: string) =>
   fetch(url, { cache: "no-store" }).then((res) => res.json());
 
 function formatInterval(seconds: number): string {
-  if (seconds >= 86400 && seconds % 86400 === 0) return `${seconds / 86400} day${seconds / 86400 > 1 ? 's' : ''}`;
-  if (seconds >= 3600 && seconds % 3600 === 0) return `${seconds / 3600} hour${seconds / 3600 > 1 ? 's' : ''}`;
-  if (seconds >= 60 && seconds % 60 === 0) return `${seconds / 60} minute${seconds / 60 > 1 ? 's' : ''}`;
+  if (seconds >= 86400 && seconds % 86400 === 0) return `${seconds / 86400} day${seconds / 86400 > 1 ? "s" : ""}`;
+  if (seconds >= 3600 && seconds % 3600 === 0) return `${seconds / 3600} hour${seconds / 3600 > 1 ? "s" : ""}`;
+  if (seconds >= 60 && seconds % 60 === 0) return `${seconds / 60} minute${seconds / 60 > 1 ? "s" : ""}`;
   return `${seconds} seconds`;
+}
+
+function formatDuration(ms: number | null): string {
+  if (ms === null || ms === undefined) return "\u2014";
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
+}
+
+function formatRelativeTime(dateStr: string): string {
+  const now = Date.now();
+  const then = new Date(dateStr).getTime();
+  const diffMs = now - then;
+  if (diffMs < 0) {
+    const absDiff = Math.abs(diffMs);
+    if (absDiff < 60000) return `in ${Math.round(absDiff / 1000)}s`;
+    if (absDiff < 3600000) return `in ${Math.round(absDiff / 60000)}m`;
+    if (absDiff < 86400000) return `in ${Math.round(absDiff / 3600000)}h`;
+    return `in ${Math.round(absDiff / 86400000)}d`;
+  }
+  if (diffMs < 60000) return `${Math.round(diffMs / 1000)}s ago`;
+  if (diffMs < 3600000) return `${Math.round(diffMs / 60000)}m ago`;
+  if (diffMs < 86400000) return `${Math.round(diffMs / 3600000)}h ago`;
+  return `${Math.round(diffMs / 86400000)}d ago`;
 }
 
 const FREQUENCY_PRESETS = [
@@ -102,6 +155,8 @@ const DAYS_OF_MONTH = Array.from({ length: 28 }, (_, i) => ({
   value: `${i + 1}`,
 }));
 
+// ─── Schedule helpers ────────────────────────────────────────────────────────
+
 function parseCronSchedule(schedule: string) {
   const parts = schedule.trim().split(/\s+/);
   if (parts.length !== 5) return null;
@@ -112,9 +167,7 @@ function parseCronSchedule(schedule: string) {
 }
 
 function formatTime(hour: string, minute: string) {
-  const h = hour.padStart(2, "0");
-  const m = minute.padStart(2, "0");
-  return `${h}:${m}`;
+  return `${hour.padStart(2, "0")}:${minute.padStart(2, "0")}`;
 }
 
 function formatSchedule(job: Job): string {
@@ -125,7 +178,7 @@ function formatSchedule(job: Job): string {
     return `Daily at ${time}`;
   }
   if (cron.dayOfMonth === "*" && cron.month === "*" && cron.dayOfWeek !== "*") {
-    const label = WEEK_DAYS.find(day => day.value === cron.dayOfWeek)?.label ?? "Weekly";
+    const label = WEEK_DAYS.find((day) => day.value === cron.dayOfWeek)?.label ?? "Weekly";
     return `Weekly on ${label} at ${time}`;
   }
   if (cron.dayOfMonth !== "*" && cron.month === "*" && cron.dayOfWeek === "*") {
@@ -133,6 +186,376 @@ function formatSchedule(job: Job): string {
   }
   return `Custom (${job.schedule})`;
 }
+
+// ─── Status indicator ────────────────────────────────────────────────────────
+
+function StatusDot({ status }: { status: "success" | "failure" | "running" | "disabled" | "idle" }) {
+  const colors = {
+    success: "bg-emerald-400",
+    failure: "bg-red-400",
+    running: "bg-blue-400 animate-pulse",
+    disabled: "bg-gray-500",
+    idle: "bg-gray-400",
+  };
+  return <span className={`inline-block h-2.5 w-2.5 rounded-full ${colors[status]}`} />;
+}
+
+// ─── Job card component ──────────────────────────────────────────────────────
+
+function JobCard({
+  job,
+  metric,
+  running,
+  onRun,
+  onEdit,
+  onEnable,
+  onViewLogs,
+}: {
+  job: Job;
+  metric: JobRuntimeMetric | undefined;
+  running: boolean;
+  onRun: () => void;
+  onEdit: () => void;
+  onEnable: () => void;
+  onViewLogs: () => void;
+}) {
+  const getStatus = () => {
+    if (!job.enabled) return "disabled";
+    if (metric?.lastResult === "failure") return "failure";
+    if (metric?.lastResult === "success") return "success";
+    return "idle";
+  };
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/[0.03] overflow-hidden">
+      <div className="p-4">
+        {/* Header row */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <StatusDot status={getStatus()} />
+            <h3 className="font-semibold text-white truncate">{job.name}</h3>
+            <span
+              className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
+                job.type === "system" ? "bg-blue-500/20 text-blue-300" : "bg-green-500/20 text-green-300"
+              }`}
+            >
+              {job.type}
+            </span>
+            {!job.enabled && (
+              <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-red-500/20 text-red-300">
+                disabled
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={onViewLogs}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-white/10 text-gray-300 transition-colors"
+            >
+              Logs
+            </button>
+            <button
+              onClick={onEdit}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-white/10 text-gray-300 transition-colors"
+            >
+              Edit
+            </button>
+            {!job.enabled ? (
+              <button
+                onClick={onEnable}
+                disabled={running}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-colors disabled:opacity-50"
+              >
+                Re-enable
+              </button>
+            ) : (
+              <button
+                onClick={onRun}
+                disabled={running}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50"
+              >
+                <PlayIcon className="h-3 w-3" />
+                {running ? "Running..." : "Run Now"}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Info grid */}
+        <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div>
+            <div className="text-[10px] uppercase text-gray-500 font-medium">Schedule</div>
+            <div className="text-sm text-gray-200 flex items-center gap-1">
+              <ClockIcon className="h-3.5 w-3.5 text-gray-500 shrink-0" />
+              {formatSchedule(job)}
+            </div>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase text-gray-500 font-medium">Last Run</div>
+            <div className="text-sm text-gray-200">
+              {job.lastRun && new Date(job.lastRun).getFullYear() > 1970
+                ? formatRelativeTime(job.lastRun)
+                : "Never"}
+            </div>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase text-gray-500 font-medium">Next Run</div>
+            <div className="text-sm text-gray-200">
+              {job.nextRun ? formatRelativeTime(job.nextRun) : "\u2014"}
+            </div>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase text-gray-500 font-medium">Avg Duration</div>
+            <div className="text-sm text-gray-200">
+              {metric ? formatDuration(metric.avgDurationMs) : "\u2014"}
+            </div>
+          </div>
+        </div>
+
+        {/* Error/disabled info */}
+        {(job.disabledReason || job.lastError) && (
+          <div className="mt-3 space-y-1">
+            {job.disabledReason && (
+              <div className="text-xs text-red-300 bg-red-500/10 rounded-lg px-3 py-1.5">
+                {job.disabledReason}
+              </div>
+            )}
+            {job.lastError && (
+              <div className="text-xs text-amber-300 bg-amber-500/10 rounded-lg px-3 py-1.5 font-mono break-all">
+                {job.lastError}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Execution log panel ─────────────────────────────────────────────────────
+
+function ExecutionLog({
+  jobFilter,
+  onClose,
+}: {
+  jobFilter: string | null;
+  onClose: () => void;
+}) {
+  const [page, setPage] = useState(0);
+  const [filterJob, setFilterJob] = useState(jobFilter);
+  const [filterStatus, setFilterStatus] = useState<string | null>(null);
+  const [expandedRow, setExpandedRow] = useState<number | null>(null);
+  const pageSize = 25;
+
+  const queryParams = new URLSearchParams();
+  if (filterJob) queryParams.set("job", filterJob);
+  queryParams.set("limit", String(pageSize));
+  queryParams.set("offset", String(page * pageSize));
+
+  const { data, error, isLoading } = useSWR<JobHistoryResponse>(
+    `/api/v1/admin/jobs/history?${queryParams.toString()}`,
+    fetcher,
+    { refreshInterval: 10000, revalidateOnFocus: true }
+  );
+
+  const { data: allJobs } = useSWR<Job[]>("/api/v1/admin/jobs", fetcher);
+  const jobNames = allJobs?.map((j) => j.name).sort() ?? [];
+
+  const entries = data?.entries ?? [];
+  const total = data?.total ?? 0;
+  const totalPages = Math.ceil(total / pageSize);
+
+  // Client-side status filter
+  const filtered = filterStatus ? entries.filter((e) => e.status === filterStatus) : entries;
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/[0.03] overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between p-4 border-b border-white/10">
+        <h3 className="text-lg font-semibold text-white">
+          Execution History
+          {filterJob && <span className="text-indigo-400 ml-1.5 font-normal text-sm">({filterJob})</span>}
+        </h3>
+        <button
+          onClick={onClose}
+          className="text-gray-400 hover:text-white text-sm transition-colors"
+        >
+          Close
+        </button>
+      </div>
+
+      {/* Filters */}
+      <div className="p-4 border-b border-white/10 flex flex-wrap gap-3 items-center">
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-gray-400">Job:</label>
+          <div className="min-w-[180px]">
+            <Select
+              value={filterJob ?? "all"}
+              onValueChange={(value) => {
+                setFilterJob(value === "all" ? null : value);
+                setPage(0);
+              }}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="All Jobs" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Jobs</SelectItem>
+                {jobNames.map((name) => (
+                  <SelectItem key={name} value={name}>
+                    {name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-gray-400">Status:</label>
+          <div className="flex gap-1">
+            {[
+              { label: "All", value: null },
+              { label: "Success", value: "success" },
+              { label: "Failed", value: "failure" },
+            ].map((opt) => (
+              <button
+                key={opt.label}
+                onClick={() => setFilterStatus(opt.value)}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                  filterStatus === opt.value
+                    ? "bg-indigo-600 text-white"
+                    : "bg-white/5 text-gray-300 hover:bg-white/10"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="ml-auto text-xs text-gray-500">{total} total entries</div>
+      </div>
+
+      {/* Table */}
+      <div className="overflow-x-auto">
+        {isLoading ? (
+          <div className="p-8 text-center text-gray-400 text-sm">Loading history...</div>
+        ) : error ? (
+          <div className="p-8 text-center text-red-400 text-sm">Failed to load history</div>
+        ) : filtered.length === 0 ? (
+          <div className="p-8 text-center text-gray-500 text-sm">
+            No execution history recorded yet. Jobs will appear here after their next run.
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-[10px] uppercase text-gray-500 border-b border-white/5">
+                <th className="px-4 py-2 font-medium">Status</th>
+                <th className="px-4 py-2 font-medium">Job</th>
+                <th className="px-4 py-2 font-medium">Started</th>
+                <th className="px-4 py-2 font-medium">Duration</th>
+                <th className="px-4 py-2 font-medium">Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((entry) => (
+                <tr key={entry.id} className="border-b border-white/5 last:border-0 hover:bg-white/[0.02]">
+                  <td className="px-4 py-2.5">
+                    {entry.status === "success" ? (
+                      <span className="inline-flex items-center gap-1 text-emerald-400">
+                        <CheckCircleIcon className="h-4 w-4" />
+                        <span className="text-xs font-medium">OK</span>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-red-400">
+                        <XCircleIcon className="h-4 w-4" />
+                        <span className="text-xs font-medium">FAIL</span>
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2.5 text-gray-200 font-medium">{entry.jobName}</td>
+                  <td className="px-4 py-2.5 text-gray-300">
+                    <div className="text-xs">{new Date(entry.startedAt).toLocaleString()}</div>
+                    <div className="text-[10px] text-gray-500">{formatRelativeTime(entry.startedAt)}</div>
+                  </td>
+                  <td className="px-4 py-2.5 text-gray-300 font-mono text-xs">
+                    {formatDuration(entry.durationMs)}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    {entry.details || entry.error ? (
+                      <button
+                        onClick={() => setExpandedRow(expandedRow === entry.id ? null : entry.id)}
+                        className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition-colors"
+                      >
+                        {entry.error ? (
+                          <span className="text-red-300 truncate max-w-[200px]">{entry.error}</span>
+                        ) : (
+                          <span className="text-gray-300 truncate max-w-[200px]">{entry.details}</span>
+                        )}
+                        {expandedRow === entry.id ? (
+                          <ChevronUpIcon className="h-3 w-3 shrink-0" />
+                        ) : (
+                          <ChevronDownIcon className="h-3 w-3 shrink-0" />
+                        )}
+                      </button>
+                    ) : (
+                      <span className="text-xs text-gray-600">{"\u2014"}</span>
+                    )}
+                    {expandedRow === entry.id && (entry.details || entry.error) && (
+                      <div className="mt-2 rounded-lg bg-black/30 p-3 text-xs font-mono break-all space-y-1">
+                        {entry.details && (
+                          <div className="text-gray-300">
+                            <span className="text-gray-500">Result: </span>
+                            {entry.details}
+                          </div>
+                        )}
+                        {entry.error && (
+                          <div className="text-red-300">
+                            <span className="text-gray-500">Error: </span>
+                            {entry.error}
+                          </div>
+                        )}
+                        {entry.finishedAt && (
+                          <div className="text-gray-500">
+                            Finished: {new Date(entry.finishedAt).toLocaleString()}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between p-3 border-t border-white/10">
+          <button
+            disabled={page === 0}
+            onClick={() => setPage(page - 1)}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-white/10 text-gray-300 disabled:opacity-30 transition-colors"
+          >
+            Previous
+          </button>
+          <span className="text-xs text-gray-500">
+            Page {page + 1} of {totalPages}
+          </span>
+          <button
+            disabled={page >= totalPages - 1}
+            onClick={() => setPage(page + 1)}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-white/10 text-gray-300 disabled:opacity-30 transition-colors"
+          >
+            Next
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main component ──────────────────────────────────────────────────────────
 
 export function JobsListClient() {
   const { data: jobs, error, mutate } = useSWR<Job[]>("/api/v1/admin/jobs", fetcher, {
@@ -147,11 +570,20 @@ export function JobsListClient() {
   const [running, setRunning] = useState<number | null>(null);
   const [editJob, setEditJob] = useState<Job | null>(null);
   const [editInterval, setEditInterval] = useState<number>(300);
-  const [scheduleMode, setScheduleMode] = useState<typeof SCHEDULE_MODES[number]["value"]>("interval");
+  const [scheduleMode, setScheduleMode] = useState<(typeof SCHEDULE_MODES)[number]["value"]>("interval");
   const [timeValue, setTimeValue] = useState("09:00");
   const [dayOfWeek, setDayOfWeek] = useState("1");
   const [dayOfMonth, setDayOfMonth] = useState("1");
   const [customCron, setCustomCron] = useState("");
+
+  // Log view state
+  const [activeTab, setActiveTab] = useState<"jobs" | "logs">("jobs");
+  const [logJobFilter, setLogJobFilter] = useState<string | null>(null);
+
+  const openLogsFor = (jobName: string | null) => {
+    setLogJobFilter(jobName);
+    setActiveTab("logs");
+  };
 
   const startEdit = (job: Job) => {
     setEditJob(job);
@@ -184,7 +616,6 @@ export function JobsListClient() {
       const res = await csrfFetch(`/api/v1/admin/jobs/${job.id}/run`, { method: "POST" });
       if (!res.ok) throw new Error("Failed to start job");
       toast.success(`Job ${job.name} started`);
-      // Wait a bit before mutating to allow job to potentially update lastRun/nextRun in DB immediately if fast
       setTimeout(() => mutate(), 1000);
     } catch (e) {
       toast.error("Failed to run job");
@@ -210,8 +641,8 @@ export function JobsListClient() {
   const saveJob = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editJob) return;
-    
-    const preset = FREQUENCY_PRESETS.find(p => p.value === editInterval);
+
+    const preset = FREQUENCY_PRESETS.find((p) => p.value === editInterval);
     const [hour, minute] = timeValue.split(":");
     let scheduleLabel = preset ? `Every ${preset.label}` : `Every ${editInterval} seconds`;
     let intervalSeconds = editInterval;
@@ -234,16 +665,12 @@ export function JobsListClient() {
       }
       schedule = trimmed;
     }
-    
+
     try {
       const res = await csrfFetch("/api/v1/admin/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: editJob.id,
-          schedule,
-          intervalSeconds
-        })
+        body: JSON.stringify({ id: editJob.id, schedule, intervalSeconds }),
       });
       if (!res.ok) throw new Error("Failed to update job");
       toast.success("Job updated");
@@ -254,114 +681,90 @@ export function JobsListClient() {
     }
   };
 
-  if (!jobs && !error) return <div className="text-muted p-4">Loading jobs...</div>;
+  if (!jobs && !error)
+    return <div className="text-muted p-4">Loading jobs...</div>;
   if (error) return <div className="text-red-500 p-4">Failed to load jobs</div>;
 
   const metricsByName = new Map((runtimeData?.metrics ?? []).map((item) => [item.name, item]));
 
   return (
     <div className="space-y-4">
+      {/* Summary cards */}
       {runtimeData?.summary && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-            <div className="text-xs text-gray-400 uppercase">Total runs</div>
-            <div className="text-xl font-bold text-white">{runtimeData.summary.totalRuns}</div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+            <div className="text-[10px] text-gray-500 uppercase font-medium">Total Runs</div>
+            <div className="text-xl font-bold text-white mt-0.5">{runtimeData.summary.totalRuns}</div>
           </div>
-          <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-            <div className="text-xs text-gray-400 uppercase">Success rate</div>
-            <div className="text-xl font-bold text-emerald-300">
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+            <div className="text-[10px] text-gray-500 uppercase font-medium">Success Rate</div>
+            <div className="text-xl font-bold text-emerald-400 mt-0.5">
               {(runtimeData.summary.successRate * 100).toFixed(1)}%
             </div>
           </div>
-          <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-            <div className="text-xs text-gray-400 uppercase">Failed runs</div>
-            <div className="text-xl font-bold text-amber-300">{runtimeData.summary.totalFailed}</div>
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+            <div className="text-[10px] text-gray-500 uppercase font-medium">Failed</div>
+            <div className="text-xl font-bold text-red-400 mt-0.5">{runtimeData.summary.totalFailed}</div>
           </div>
-          <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-            <div className="text-xs text-gray-400 uppercase">Avg runtime</div>
-            <div className="text-xl font-bold text-blue-300">
-              {Math.round(runtimeData.summary.avgDurationMs)} ms
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+            <div className="text-[10px] text-gray-500 uppercase font-medium">Avg Duration</div>
+            <div className="text-xl font-bold text-blue-300 mt-0.5">
+              {formatDuration(runtimeData.summary.avgDurationMs)}
             </div>
           </div>
         </div>
       )}
-      {jobs?.map((job) => (
-        <div key={job.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-xl border border-white/10 bg-white/5 p-4">
-          <div>
-            {(() => {
-              const metric = metricsByName.get(job.name);
-              return (
-                <>
-            <div className="flex items-center gap-2">
-              <h3 className="font-bold text-lg text-white">{job.name}</h3>
-              <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${job.type === 'system' ? 'bg-blue-500/20 text-blue-200' : 'bg-green-500/20 text-green-200'}`}>
-                {job.type}
-              </span>
-              {!job.enabled && (
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-red-500/20 text-red-200">
-                  disabled
-                </span>
-              )}
-              {job.failureCount > 0 && job.enabled && (
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-500/20 text-amber-200">
-                  {job.failureCount} fail{job.failureCount === 1 ? "" : "s"}
-                </span>
-              )}
-            </div>
-            <div className="mt-1 text-sm text-gray-400 space-y-1">
-              <div className="flex items-center gap-2">
-                <ClockIcon className="h-4 w-4" />
-                <span>Schedule: <span className="text-white font-semibold">{formatSchedule(job)}</span></span>
-              </div>
-              <div>Last Run: {job.lastRun ? new Date(job.lastRun).toLocaleString() : "Never"}</div>
-              <div>Next Run: {job.nextRun ? new Date(job.nextRun).toLocaleString() : "Pending..."}</div>
-              {job.disabledReason ? (
-                <div className="text-xs text-red-200">Reason: {job.disabledReason}</div>
-              ) : null}
-              {job.lastError ? (
-                <div className="text-xs text-amber-200">Last error: {job.lastError}</div>
-              ) : null}
-              {metric ? (
-                <div className="pt-1 text-xs text-gray-300">
-                  Runtime: last {metric.lastDurationMs ?? "n/a"} ms, avg {Math.round(metric.avgDurationMs)} ms,
-                  success {(metric.successRate * 100).toFixed(1)}%
-                </div>
-              ) : (
-                <div className="pt-1 text-xs text-gray-400">Runtime: no executions recorded yet</div>
-              )}
-            </div>
-                </>
-              );
-            })()}
-          </div>
-          <div className="flex w-full sm:w-auto gap-3">
-            <button
-              onClick={() => startEdit(job)}
-              className="flex-1 sm:flex-none justify-center px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm font-bold transition-colors"
-            >
-              Edit
-            </button>
-            <button
-              onClick={() => runJob(job)}
-              disabled={running === job.id}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold transition-colors disabled:opacity-50 shadow-lg shadow-indigo-600/20"
-            >
-              <PlayIcon className="h-4 w-4" />
-              <span>{running === job.id ? "Running..." : "Run Now"}</span>
-            </button>
-            {!job.enabled && (
-              <button
-                onClick={() => enableJob(job)}
-                disabled={running === job.id}
-                className="flex-1 sm:flex-none justify-center px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold transition-colors disabled:opacity-50"
-              >
-                Re-enable
-              </button>
-            )}
-          </div>
-        </div>
-      ))}
 
+      {/* Tab bar */}
+      <div className="flex items-center gap-1 border-b border-white/10 pb-0">
+        <button
+          onClick={() => setActiveTab("jobs")}
+          className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
+            activeTab === "jobs"
+              ? "border-indigo-500 text-white"
+              : "border-transparent text-gray-400 hover:text-gray-200"
+          }`}
+        >
+          Jobs ({jobs?.length ?? 0})
+        </button>
+        <button
+          onClick={() => {
+            setLogJobFilter(null);
+            setActiveTab("logs");
+          }}
+          className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
+            activeTab === "logs"
+              ? "border-indigo-500 text-white"
+              : "border-transparent text-gray-400 hover:text-gray-200"
+          }`}
+        >
+          Execution Log
+        </button>
+      </div>
+
+      {/* Tab content */}
+      {activeTab === "jobs" && (
+        <div className="space-y-3">
+          {jobs?.map((job) => (
+            <JobCard
+              key={job.id}
+              job={job}
+              metric={metricsByName.get(job.name)}
+              running={running === job.id}
+              onRun={() => runJob(job)}
+              onEdit={() => startEdit(job)}
+              onEnable={() => enableJob(job)}
+              onViewLogs={() => openLogsFor(job.name)}
+            />
+          ))}
+        </div>
+      )}
+
+      {activeTab === "logs" && (
+        <ExecutionLog jobFilter={logJobFilter} onClose={() => setActiveTab("jobs")} />
+      )}
+
+      {/* Edit modal */}
       {editJob && (
         <Modal open={true} title={`Edit ${editJob.name}`} onClose={() => setEditJob(null)}>
           <form onSubmit={saveJob} className="space-y-4">
@@ -406,7 +809,7 @@ export function JobsListClient() {
                         {preset.label}
                       </SelectItem>
                     ))}
-                    {!FREQUENCY_PRESETS.some(p => p.value === editInterval) && (
+                    {!FREQUENCY_PRESETS.some((p) => p.value === editInterval) && (
                       <SelectItem value={editInterval.toString()}>
                         Custom ({formatInterval(editInterval)})
                       </SelectItem>
@@ -477,7 +880,7 @@ export function JobsListClient() {
                 <p className="mt-2 text-xs text-gray-400">Use 5 fields: minute hour day month weekday.</p>
               </div>
             )}
-            
+
             <div className="flex justify-end gap-2 pt-4">
               <button
                 type="button"

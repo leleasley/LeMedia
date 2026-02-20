@@ -94,6 +94,10 @@ export default async function RequestsPage() {
   );
 
   return (
-    <RequestsPageClient initialRequests={detailedRequests} />
+    <RequestsPageClient
+      initialRequests={detailedRequests}
+      currentUsername={user.username}
+      isAdmin={user.isAdmin ?? false}
+    />
   );
 }

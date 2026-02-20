@@ -1,8 +1,12 @@
 "use client";
 
+import { useState } from "react";
+import React from "react";
 import Image from "next/image";
 import useSWR from "swr";
+import { MessageSquare, ChevronDown, ChevronUp } from "lucide-react";
 import { formatDate } from "@/lib/dateFormat";
+import { CommentsListForm } from "@/components/Requests/CommentsListForm";
 
 type RequestItem = {
   id: string;
@@ -181,7 +185,19 @@ function EmptyState() {
   );
 }
 
-export function RequestsPageClient({ initialRequests }: { initialRequests: RequestItem[] }) {
+export function RequestsPageClient({
+  initialRequests,
+  currentUsername,
+  isAdmin = false,
+}: {
+  initialRequests: RequestItem[];
+  currentUsername?: string;
+  isAdmin?: boolean;
+}) {
+  const [expandedCommentId, setExpandedCommentId] = useState<string | null>(null);
+
+  const toggleComments = (id: string) =>
+    setExpandedCommentId((prev) => (prev === id ? null : id));
   const { data } = useSWR<{ requests: RequestItem[] }>("/api/v1/requests/me", {
     refreshInterval: 15000,
     fallbackData: { requests: initialRequests },
@@ -309,12 +325,30 @@ export function RequestsPageClient({ initialRequests }: { initialRequests: Reque
                               📅 {formatDate(r.created_at)}
                             </p>
                           )}
+                          <button
+                            type="button"
+                            onClick={() => toggleComments(r.id)}
+                            className="flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 transition-colors mt-1"
+                          >
+                            <MessageSquare className="h-3.5 w-3.5" />
+                            {expandedCommentId === r.id ? "Hide comments" : "Comments"}
+                            {expandedCommentId === r.id ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                          </button>
                         </div>
                       </div>
                     </div>
+                    {expandedCommentId === r.id && (
+                      <div className="border-t border-white/10 px-4 py-4 bg-white/[0.02]">
+                        <CommentsListForm
+                          requestId={r.id}
+                          currentUsername={currentUsername}
+                          isAdmin={isAdmin}
+                        />
+                      </div>
+                    )}
                   </div>
                 );
-              })}
+            })}
             </div>
 
             {/* Desktop View - Enhanced Table */}
@@ -326,64 +360,93 @@ export function RequestsPageClient({ initialRequests }: { initialRequests: Reque
                     <th className="p-5 text-left text-xs font-bold text-white/50 uppercase tracking-wider">Title</th>
                     <th className="p-5 text-left text-xs font-bold text-white/50 uppercase tracking-wider">Type</th>
                     <th className="p-5 text-left text-xs font-bold text-white/50 uppercase tracking-wider">Status</th>
-                    <th className="p-5 pr-6 text-right text-xs font-bold text-white/50 uppercase tracking-wider">Requested</th>
+                    <th className="p-5 text-right text-xs font-bold text-white/50 uppercase tracking-wider">Requested</th>
+                    <th className="p-5 pr-6 text-right text-xs font-bold text-white/50 uppercase tracking-wider">Comments</th>
                   </tr>
                 </thead>
                 <tbody>
                   {requests.map((r, index) => {
                     const download = getDownload(r);
+                    const isExpanded = expandedCommentId === r.id;
                     return (
-                      <tr 
-                        key={r.id} 
-                        className="group border-b border-white/5 last:border-b-0 hover:bg-gradient-to-r hover:from-indigo-500/5 hover:to-purple-500/5 transition-all duration-300"
-                        style={{ animationDelay: `${index * 30}ms` }}
-                      >
-                        <td className="p-4 pl-6">
-                          <div className="relative w-14 h-20 rounded-xl overflow-hidden bg-gradient-to-br from-gray-800 to-gray-900 shadow-lg group-hover:shadow-xl group-hover:shadow-indigo-500/20 transition-all duration-300 ring-1 ring-white/10 group-hover:ring-indigo-500/30">
-                            {r.posterUrl ? (
-                              <Image 
-                                src={r.posterUrl} 
-                                alt={r.title} 
-                                fill 
-                                className="object-cover transition-transform duration-500 group-hover:scale-110" 
-                              />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center text-xl">🎬</div>
-                            )}
-                            <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                          </div>
-                        </td>
-                        <td className="p-4">
-                          <div className="font-bold text-white text-lg group-hover:text-indigo-100 transition-colors line-clamp-1">
-                            {r.title}
-                          </div>
-                        </td>
-                        <td className="p-4">
-                          <TypeBadge type={r.request_type} />
-                        </td>
-                        <td className="p-4">
-                          <div className="space-y-2">
-                            <StatusBadge status={r.status} download={download} />
-                            {r.status === "denied" ? (
-                              <div className="rounded-md border border-red-500/20 bg-red-500/5 px-2 py-1">
-                                <p className="text-[11px] font-semibold text-red-200/90">
-                                  Denied by {r.denied_by_name ?? "Admin"}
-                                </p>
-                                {r.status_reason ? (
-                                  <p className="text-[11px] text-red-200/80 line-clamp-2">
-                                    Reason: {r.status_reason}
+                      <React.Fragment key={r.id}>
+                        <tr 
+                          key={r.id} 
+                          className={`group border-b ${isExpanded ? "border-white/0" : "border-white/5 last:border-b-0"} hover:bg-gradient-to-r hover:from-indigo-500/5 hover:to-purple-500/5 transition-all duration-300`}
+                          style={{ animationDelay: `${index * 30}ms` }}
+                        >
+                          <td className="p-4 pl-6">
+                            <div className="relative w-14 h-20 rounded-xl overflow-hidden bg-gradient-to-br from-gray-800 to-gray-900 shadow-lg group-hover:shadow-xl group-hover:shadow-indigo-500/20 transition-all duration-300 ring-1 ring-white/10 group-hover:ring-indigo-500/30">
+                              {r.posterUrl ? (
+                                <Image 
+                                  src={r.posterUrl} 
+                                  alt={r.title} 
+                                  fill 
+                                  className="object-cover transition-transform duration-500 group-hover:scale-110" 
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-xl">🎬</div>
+                              )}
+                              <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                            </div>
+                          </td>
+                          <td className="p-4">
+                            <div className="font-bold text-white text-lg group-hover:text-indigo-100 transition-colors line-clamp-1">
+                              {r.title}
+                            </div>
+                          </td>
+                          <td className="p-4">
+                            <TypeBadge type={r.request_type} />
+                          </td>
+                          <td className="p-4">
+                            <div className="space-y-2">
+                              <StatusBadge status={r.status} download={download} />
+                              {r.status === "denied" ? (
+                                <div className="rounded-md border border-red-500/20 bg-red-500/5 px-2 py-1">
+                                  <p className="text-[11px] font-semibold text-red-200/90">
+                                    Denied by {r.denied_by_name ?? "Admin"}
                                   </p>
-                                ) : null}
-                              </div>
-                            ) : null}
-                          </div>
-                        </td>
-                        <td className="p-4 pr-6 text-right">
-                          <span className="text-sm text-white/40 font-medium">
-                            {formatDate(r.created_at)}
-                          </span>
-                        </td>
-                      </tr>
+                                  {r.status_reason ? (
+                                    <p className="text-[11px] text-red-200/80 line-clamp-2">
+                                      Reason: {r.status_reason}
+                                    </p>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                            </div>
+                          </td>
+                          <td className="p-4 text-right">
+                            <span className="text-sm text-white/40 font-medium">
+                              {formatDate(r.created_at)}
+                            </span>
+                          </td>
+                          <td className="p-4 pr-6 text-right">
+                            <button
+                              type="button"
+                              onClick={() => toggleComments(r.id)}
+                              className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border transition-colors ${
+                                isExpanded
+                                  ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-300"
+                                  : "bg-white/5 border-white/10 text-white/50 hover:text-indigo-300 hover:border-indigo-500/30"
+                              }`}
+                            >
+                              <MessageSquare className="h-3.5 w-3.5" />
+                              {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                            </button>
+                          </td>
+                        </tr>
+                        {isExpanded && (
+                          <tr key={`${r.id}-comments`} className="border-b border-white/5">
+                            <td colSpan={6} className="px-6 py-4 bg-white/[0.015]">
+                              <CommentsListForm
+                                requestId={r.id}
+                                currentUsername={currentUsername}
+                                isAdmin={isAdmin}
+                              />
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     );
                   })}
                 </tbody>

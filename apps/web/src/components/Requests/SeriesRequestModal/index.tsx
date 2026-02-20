@@ -12,6 +12,7 @@ import { Check, X, Loader2, ChevronDown, Tv, CheckCircle, Info, Star, Search as 
 import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 import { ReleaseSearchModal } from "@/components/Media/ReleaseSearchModal";
 import { emitRequestsChanged } from "@/lib/request-refresh";
+import { RequestCommentsSection } from "@/components/Requests/RequestCommentsSection";
 
 type QualityProfile = { id: number; name: string };
 
@@ -109,6 +110,7 @@ export function SeriesRequestModal({
   const [errorModal, setErrorModal] = useState<{ title: string; message: string } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitState, setSubmitState] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [showComments, setShowComments] = useState(false);
   const [episodeSearchOpen, setEpisodeSearchOpen] = useState(false);
   const [selectedEpisodeForSearch, setSelectedEpisodeForSearch] = useState<{ seasonNumber: number; episodeNumber: number; name: string; air_date: string | null } | null>(null);
   const [seasonPackSearchOpen, setSeasonPackSearchOpen] = useState(false);
@@ -381,10 +383,7 @@ export function SeriesRequestModal({
         router.refresh();
         emitRequestsChanged();
         if (onRequestPlaced) onRequestPlaced();
-        setTimeout(() => {
-          setCheckedEpisodes({});
-          onClose();
-        }, 1500);
+        setShowComments(true);
       } else {
         toast.info("All selected episodes have already been requested", { timeoutMs: 3000 });
         setSubmitState("idle");
@@ -402,6 +401,7 @@ export function SeriesRequestModal({
     if (!isSubmitting) {
       setCheckedEpisodes({});
       setSubmitState("idle");
+      setShowComments(false);
       onClose();
     }
   };
@@ -810,41 +810,64 @@ export function SeriesRequestModal({
               </div>
             )}
 
+            {/* Comments after success */}
+            {showComments && (
+              <div className="border-t border-white/10 pt-4">
+                <RequestCommentsSection
+                  tmdbId={tmdbId}
+                  mediaType="tv"
+                  isAdmin={isAdmin}
+                />
+              </div>
+            )}
+
             {/* Actions */}
             <div className="flex gap-2 pt-2">
-              <button
-                onClick={handleClose}
-                disabled={isSubmitting}
-                className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/10 hover:border-white/20 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed backdrop-blur-sm"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={requestSelectedEpisodes}
-                disabled={isSubmitting || requestsBlocked || totalSelected === 0}
-                className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg backdrop-blur-sm ${
-                  submitState === "success"
-                    ? "bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700"
-                    : submitState === "error"
-                    ? "bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700"
-                    : "bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700"
-                }`}
-              >
-                {submitState === "loading" && <Loader2 className="h-4 w-4 animate-spin" />}
-                {submitState === "success" && <Check className="h-5 w-5" />}
-                {submitState === "error" && <X className="h-5 w-5" />}
-                <span>
-                  {submitState === "loading"
-                    ? "Requesting..."
-                    : submitState === "success"
-                    ? "Success!"
-                    : submitState === "error"
-                    ? "Failed"
-                    : totalSelected > 0
-                    ? `Request ${totalSelected} Episode${totalSelected !== 1 ? 's' : ''}`
-                    : "Select Episodes"}
-                </span>
-              </button>
+              {showComments ? (
+                <button
+                  onClick={handleClose}
+                  className="flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all duration-200 flex items-center justify-center gap-2 shadow-lg backdrop-blur-sm bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700"
+                >
+                  <Check className="h-5 w-5" />
+                  Done
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={handleClose}
+                    disabled={isSubmitting}
+                    className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/10 hover:border-white/20 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed backdrop-blur-sm"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={requestSelectedEpisodes}
+                    disabled={isSubmitting || requestsBlocked || totalSelected === 0}
+                    className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg backdrop-blur-sm ${
+                      submitState === "success"
+                        ? "bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700"
+                        : submitState === "error"
+                        ? "bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700"
+                        : "bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700"
+                    }`}
+                  >
+                    {submitState === "loading" && <Loader2 className="h-4 w-4 animate-spin" />}
+                    {submitState === "success" && <Check className="h-5 w-5" />}
+                    {submitState === "error" && <X className="h-5 w-5" />}
+                    <span>
+                      {submitState === "loading"
+                        ? "Requesting..."
+                        : submitState === "success"
+                        ? "Success!"
+                        : submitState === "error"
+                        ? "Failed"
+                        : totalSelected > 0
+                        ? `Request ${totalSelected} Episode${totalSelected !== 1 ? 's' : ''}`
+                        : "Select Episodes"}
+                    </span>
+                  </button>
+                </>
+              )}
             </div>
           </div>
         )}

@@ -1,5 +1,5 @@
 import "server-only";
-import { getPool, getSetting, listJobs, recordJobFailure, updateJobRun, updateJobSchedule, type Job } from "@/db";
+import { getPool, getSetting, insertJobHistory, listJobs, recordJobFailure, updateJobRun, updateJobSchedule, type Job } from "@/db";
 import { jobHandlers } from "./definitions";
 import { logger } from "@/lib/logger";
 import cronParser from "cron-parser";
@@ -9,6 +9,10 @@ const SCHEDULER_LOCK_ID = 94810234;
 const isBuildPhase =
   process.env.NEXT_PHASE === "phase-production-build" ||
   process.env.NEXT_PHASE === "phase-production-export";
+
+// Track which jobs are currently running to prevent duplicate execution
+const runningJobs = new Set<string>();
+let tickCount = 0;
 
 export type JobRuntimeMetrics = {
   name: string;
@@ -228,76 +232,153 @@ async function runJob(job: Job) {
     return;
   }
 
+  // Prevent duplicate execution if the job is still running from a previous tick
+  if (runningJobs.has(job.name)) {
+    logger.info(`[Job] Skipping ${job.name} — still running from previous execution`);
+    return;
+  }
+
+  runningJobs.add(job.name);
   markJobStart(job.name);
+  const startedAt = new Date();
 
   try {
     logger.info(`[Job] Executing ${job.name}...`);
-    await handler();
+    const result = await handler();
     
     // Calculate next run
-    const now = new Date();
-    const nextRun = computeNextRun(job.schedule, job.intervalSeconds, now);
+    const finishedAt = new Date();
+    const durationMs = finishedAt.getTime() - startedAt.getTime();
+    const nextRun = computeNextRun(job.schedule, job.intervalSeconds, finishedAt);
 
-    await updateJobRun(job.id, now, nextRun);
+    await updateJobRun(job.id, finishedAt, nextRun);
     markJobResult(job.name, "success");
+    logger.info(`[Job] ${job.name} completed in ${durationMs}ms — next run: ${nextRun.toISOString()}`);
+
+    // Record in persistent history
+    const details = typeof result === "string" ? result : undefined;
+    await insertJobHistory(job.name, "success", startedAt, finishedAt, durationMs, null, details).catch(() => {});
   } catch (err) {
+    const finishedAt = new Date();
+    const durationMs = finishedAt.getTime() - startedAt.getTime();
     const message = err instanceof Error ? err.message : "Unknown error";
-    logger.error(`[Job] Job ${job.name} failed`, err);
+    logger.error(`[Job] Job ${job.name} failed after ${durationMs}ms`, err);
     await recordJobFailure(job.id, message, 3);
     markJobResult(job.name, "failure", message);
+
+    // Record failure in persistent history
+    await insertJobHistory(job.name, "failure", startedAt, finishedAt, durationMs, message).catch(() => {});
+  } finally {
+    runningJobs.delete(job.name);
   }
 }
 
 async function schedulerTick() {
+  tickCount++;
+  const pool = getPool();
+  let client: import("pg").PoolClient | null = null;
+
   try {
-    const pool = getPool();
-    const lock = await pool.query("SELECT pg_try_advisory_lock($1) AS locked", [SCHEDULER_LOCK_ID]);
+    // Use a DEDICATED client so advisory lock + unlock happen on the SAME connection.
+    // pool.query() can dispatch to different connections, causing the unlock to silently
+    // fail (advisory locks are session-level in PostgreSQL).
+    client = await pool.connect();
+
+    const lock = await client.query("SELECT pg_try_advisory_lock($1) AS locked", [SCHEDULER_LOCK_ID]);
     if (!lock.rows?.[0]?.locked) {
+      logger.info(`[Job] Scheduler tick #${tickCount} — skipped (another instance holds the lock)`);
+      client.release();
       return;
     }
 
-    const jobs = await listJobs();
-    const now = new Date();
+    try {
+      const jobs = await listJobs();
+      const now = new Date();
+      let firedCount = 0;
+      let skippedCount = 0;
+      let disabledCount = 0;
 
-    for (const job of jobs) {
-      if (!job.enabled) continue;
+      for (const job of jobs) {
+        if (!job.enabled) {
+          disabledCount++;
+          continue;
+        }
 
-      let nextRun = job.nextRun ? new Date(job.nextRun) : null;
-      if (nextRun && isCronSchedule(job.schedule) && now < nextRun) {
-        const expectedNext = computeNextRun(job.schedule, job.intervalSeconds, now);
-        if (Math.abs(expectedNext.getTime() - nextRun.getTime()) > 60 * 1000) {
-          await updateJobSchedule(job.id, job.schedule, job.intervalSeconds, expectedNext);
-          nextRun = expectedNext;
+        let nextRun = job.nextRun ? new Date(job.nextRun) : null;
+
+        // Schedule correction: if the stored next_run doesn't match
+        // what the schedule says, update it so the job fires on time.
+        if (nextRun && now < nextRun) {
+          let expectedNext: Date | null = null;
+
+          if (isCronSchedule(job.schedule)) {
+            expectedNext = computeNextRun(job.schedule, job.intervalSeconds, now);
+          }
+          // For interval-based (non-cron) schedules, the next_run computed
+          // from the last run + interval should be authoritative. Only
+          // correct if the stored interval_seconds has changed.
+
+          if (expectedNext && Math.abs(expectedNext.getTime() - nextRun.getTime()) > 60 * 1000) {
+            await updateJobSchedule(job.id, job.schedule, job.intervalSeconds, expectedNext);
+            nextRun = expectedNext;
+          }
+        }
+
+        let shouldRun = false;
+
+        if (!nextRun) {
+            // First time seeing this job
+            if (job.runOnStart) {
+                shouldRun = true;
+            } else {
+                // Initialize nextRun
+                const computedNextRun = computeNextRun(job.schedule, job.intervalSeconds, now);
+                await updateJobRun(job.id, new Date(0), computedNextRun);
+                continue;
+            }
+        } else if (now >= nextRun) {
+            shouldRun = true;
+        }
+
+        if (shouldRun) {
+            if (runningJobs.has(job.name)) {
+              skippedCount++;
+            } else {
+              firedCount++;
+              void runJob(job);
+            }
         }
       }
 
-      let shouldRun = false;
-
-      if (!nextRun) {
-          // First time seeing this job
-          if (job.runOnStart) {
-              shouldRun = true;
-          } else {
-              // Initialize nextRun
-              const computedNextRun = computeNextRun(job.schedule, job.intervalSeconds, now);
-              await updateJobRun(job.id, new Date(0), computedNextRun);
-              continue;
-          }
-      } else if (now >= nextRun) {
-          shouldRun = true;
-      }
-
-      if (shouldRun) {
-          void runJob(job);
+      // Periodic heartbeat: log summary every tick so operators can verify
+      // the scheduler is alive even when no jobs fire.
+      const enabledCount = jobs.length - disabledCount;
+      const runningList = runningJobs.size > 0 ? ` | running: ${Array.from(runningJobs).join(", ")}` : "";
+      logger.info(
+        `[Job] Scheduler tick #${tickCount} — ${enabledCount} enabled, ${firedCount} fired, ${skippedCount} skipped (in-progress)${runningList}`
+      );
+    } finally {
+      // Always release the advisory lock on the SAME client that acquired it
+      await client.query("SELECT pg_advisory_unlock($1)", [SCHEDULER_LOCK_ID]);
+    }
+  } catch (err) {
+    logger.error("[Job] Scheduler tick error", err);
+    // Try to release lock if we have the client
+    if (client) {
+      try {
+        await client.query("SELECT pg_advisory_unlock($1)", [SCHEDULER_LOCK_ID]);
+      } catch {
+        // Ignore unlock errors if connection failed
       }
     }
-    await pool.query("SELECT pg_advisory_unlock($1)", [SCHEDULER_LOCK_ID]);
-  } catch (err) {
-    logger.error("[Job] Scheduler error", err);
-    try {
-      await getPool().query("SELECT pg_advisory_unlock($1)", [SCHEDULER_LOCK_ID]);
-    } catch {
-      // Ignore unlock errors if connection failed
+  } finally {
+    // Always release the client back to the pool
+    if (client) {
+      try {
+        client.release();
+      } catch {
+        // Ignore release errors
+      }
     }
   }
 }
@@ -306,6 +387,8 @@ export function startJobScheduler() {
   if (schedulerInterval || isBuildPhase || process.env.NODE_ENV === "test") return;
 
   void primeJobTimezoneFromSettings();
+
+  logger.info("[Job] Scheduler starting — ticking every 60s, advisory lock ID: " + SCHEDULER_LOCK_ID);
 
   // Run the first tick immediately so jobs start without delay
   void schedulerTick();

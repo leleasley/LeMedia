@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { csrfFetch } from "@/lib/csrf-client";
 import { useToast } from "@/components/Providers/ToastProvider";
+import { ConfirmModal, useConfirm } from "@/components/Common/ConfirmModal";
 
 const VALIDATION_STORAGE_KEY = "lemedia:backup-validations";
 
@@ -43,6 +44,7 @@ function timeAgo(dateStr: string) {
 
 export function BackupsPanel() {
   const toast = useToast();
+  const { confirm, modalProps } = useConfirm();
   const [creating, setCreating] = useState(false);
   const [validating, setValidating] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -126,6 +128,7 @@ export function BackupsPanel() {
 
   return (
     <div className="space-y-5">
+      <ConfirmModal {...modalProps} />
       {/* Create backup + storage info row */}
       <div className="glass-strong rounded-2xl md:rounded-3xl overflow-hidden border border-white/10 shadow-2xl">
         <div className="p-5 md:p-6">
@@ -334,8 +337,12 @@ export function BackupsPanel() {
                     </a>
                     <button
                       onClick={async () => {
-                        const confirmed = window.confirm(`Delete backup "${backup.name}"?`);
-                        if (!confirmed) return;
+                        const ok = await confirm(`Delete backup "${backup.name}"?`, {
+                          title: "Delete Backup",
+                          destructive: true,
+                          confirmLabel: "Delete",
+                        });
+                        if (!ok) return;
                         setDeleting(backup.name);
                         try {
                           const res = await csrfFetch(`/api/v1/admin/settings/backups/${encodeURIComponent(backup.name)}`, {

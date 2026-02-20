@@ -5,6 +5,8 @@ import { toast } from "sonner";
 import { Modal } from "@/components/Common/Modal";
 import { Plus, Lock, Globe } from "lucide-react";
 import { csrfFetch } from "@/lib/csrf-client";
+import { mutate as globalMutate } from "swr";
+import { triggerSocialFeedRefresh } from "@/lib/social-feed-refresh";
 
 interface CreateListModalProps {
   open: boolean;
@@ -56,9 +58,16 @@ export function CreateListModal({ open, onClose, onCreated }: CreateListModalPro
       }
 
       const { list } = await res.json();
+      if (!list?.id || !list?.name) {
+        throw new Error("Failed to create list");
+      }
+      handleClose();
       onCreated?.(list);
       toast.success(`List "${list.name}" created successfully`);
-      handleClose();
+      triggerSocialFeedRefresh();
+      void globalMutate((key) =>
+        typeof key === "string" && (key === "/api/v1/lists" || key.startsWith("/api/v1/social/feed"))
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to create list";
       setError(message);

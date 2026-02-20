@@ -28,6 +28,7 @@ import { useToast } from "@/components/Providers/ToastProvider";
 import { Modal } from "@/components/Common/Modal";
 import { emitRequestsChanged } from "@/lib/request-refresh";
 import { ReleaseSearchModal } from "@/components/Media/ReleaseSearchModal";
+import { CommentsListForm } from "@/components/Requests/CommentsListForm";
 
 const statusConfig: Record<string, {
   bg: string;
@@ -633,6 +634,14 @@ export function AllRequestsClient({
                 No files available right now for the selected episodes.
               </div>
             ) : null}
+            {detailsBaseRequest && (
+              <div className="border-t border-white/10 pt-4">
+                <CommentsListForm
+                  requestId={String(detailsBaseRequest.id)}
+                  isAdmin
+                />
+              </div>
+            )}
           </div>
         )}
       </Modal>

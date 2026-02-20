@@ -4,6 +4,7 @@ import { getUser } from "@/auth";
 import { logger } from "@/lib/logger";
 import {
   addCustomListItem,
+  customListContainsMedia,
   getCustomListById,
   getUserByUsername,
   removeCustomListItem,
@@ -64,6 +65,11 @@ export async function POST(
 
     const body = await req.json();
     const parsed = AddItemSchema.parse(body);
+
+    const alreadyExists = await customListContainsMedia(listIdNum, parsed.tmdbId, parsed.mediaType);
+    if (alreadyExists) {
+      return NextResponse.json({ error: "Item already exists in this list" }, { status: 409 });
+    }
 
     const item = await addCustomListItem({
       listId: listIdNum,

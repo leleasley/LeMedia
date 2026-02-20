@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import {
   Plus,
@@ -13,6 +13,13 @@ import {
 } from "lucide-react";
 import { ConfirmModal, useConfirm } from "@/components/Common/ConfirmModal";
 import { useToast } from "@/components/Providers/ToastProvider";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface Rule {
   id: number;
@@ -28,6 +35,8 @@ interface Rule {
 
 type RuleType = "user_trust" | "popularity" | "time_based" | "genre" | "content_rating";
 
+type Genre = { id: number; name: string };
+
 const RULE_TYPE_DESCRIPTIONS: Record<RuleType, string> = {
   user_trust: "Auto-approve for users after X approved requests",
   popularity: "Auto-approve popular content (vote average/popularity threshold)",
@@ -35,6 +44,27 @@ const RULE_TYPE_DESCRIPTIONS: Record<RuleType, string> = {
   genre: "Auto-approve specific genres",
   content_rating: "Auto-approve based on content rating (G, PG, etc)",
 };
+
+const HOUR_OPTIONS = Array.from({ length: 24 }, (_, hour) => ({
+  value: hour,
+  label: `${hour.toString().padStart(2, "0")}:00`,
+}));
+
+const RATING_OPTIONS = [
+  "G",
+  "PG",
+  "PG-13",
+  "R",
+  "NC-17",
+  "TV-Y",
+  "TV-Y7",
+  "TV-G",
+  "TV-PG",
+  "TV-14",
+  "TV-MA",
+  "NR",
+  "UNRATED",
+];
 
 const RULE_TYPE_CONDITION_FIELDS: Record<RuleType, Array<{
   key: string;
@@ -50,13 +80,13 @@ const RULE_TYPE_CONDITION_FIELDS: Record<RuleType, Array<{
     { key: "minPopularity", label: "Min Popularity", type: "number", placeholder: "100" },
   ],
   time_based: [
-    { key: "allowedHours", label: "Allowed Hours (0-23, comma-separated)", type: "array", placeholder: "0,1,2,3,4,5" },
+    { key: "allowedHours", label: "Allowed Hours", type: "array", placeholder: "Select hours" },
   ],
   genre: [
-    { key: "allowedGenres", label: "Genre IDs (comma-separated)", type: "array", placeholder: "28,35,878" },
+    { key: "allowedGenres", label: "Allowed Genres", type: "array", placeholder: "Select genres" },
   ],
   content_rating: [
-    { key: "allowedRatings", label: "Ratings (comma-separated)", type: "array", placeholder: "G,PG,PG-13" },
+    { key: "allowedRatings", label: "Allowed Ratings", type: "array", placeholder: "Select ratings" },
   ],
 };
 
@@ -81,6 +111,107 @@ function RuleForm({
       conditions: {},
     }
   );
+  const [genres, setGenres] = useState<Genre[]>([]);
+  const [genresLoading, setGenresLoading] = useState(false);
+
+  useEffect(() => {
+    if (form.ruleType !== "genre") return;
+    if (genres.length > 0) return;
+
+    const loadGenres = async () => {
+      setGenresLoading(true);
+      try {
+        const [movieRes, tvRes] = await Promise.all([
+          fetch("/api/v1/tmdb/genres?type=movie", { cache: "no-store" }),
+          fetch("/api/v1/tmdb/genres?type=tv", { cache: "no-store" }),
+        ]);
+        const [movieData, tvData] = await Promise.all([
+          movieRes.ok ? movieRes.json() : Promise.resolve({ genres: [] }),
+          tvRes.ok ? tvRes.json() : Promise.resolve({ genres: [] }),
+        ]);
+
+        const byId = new Map<number, Genre>();
+        for (const genre of [...(movieData.genres ?? []), ...(tvData.genres ?? [])]) {
+          if (!genre?.id || !genre?.name) continue;
+          byId.set(Number(genre.id), { id: Number(genre.id), name: String(genre.name) });
+        }
+
+        const merged = [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
+        setGenres(merged);
+      } finally {
+        setGenresLoading(false);
+      }
+    };
+
+    void loadGenres();
+  }, [form.ruleType, genres.length]);
+
+  const selectedGenreIds = useMemo(() => {
+    const raw = form.conditions?.allowedGenres;
+    if (!Array.isArray(raw)) return [] as number[];
+    return raw
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value));
+  }, [form.conditions]);
+
+  const selectedHours = useMemo(() => {
+    const raw = form.conditions?.allowedHours;
+    if (!Array.isArray(raw)) return [] as number[];
+    return raw
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value) && value >= 0 && value <= 23)
+      .sort((a, b) => a - b);
+  }, [form.conditions]);
+
+  const selectedRatings = useMemo(() => {
+    const raw = form.conditions?.allowedRatings;
+    if (!Array.isArray(raw)) return [] as string[];
+    return raw
+      .map((value) => String(value).trim())
+      .filter(Boolean);
+  }, [form.conditions]);
+
+  const toggleGenre = (genreId: number) => {
+    const has = selectedGenreIds.includes(genreId);
+    const next = has
+      ? selectedGenreIds.filter((id) => id !== genreId)
+      : [...selectedGenreIds, genreId];
+    setForm({
+      ...form,
+      conditions: {
+        ...form.conditions,
+        allowedGenres: next,
+      },
+    });
+  };
+
+  const toggleHour = (hour: number) => {
+    const has = selectedHours.includes(hour);
+    const next = has
+      ? selectedHours.filter((value) => value !== hour)
+      : [...selectedHours, hour].sort((a, b) => a - b);
+    setForm({
+      ...form,
+      conditions: {
+        ...form.conditions,
+        allowedHours: next,
+      },
+    });
+  };
+
+  const toggleRating = (rating: string) => {
+    const has = selectedRatings.includes(rating);
+    const next = has
+      ? selectedRatings.filter((value) => value !== rating)
+      : [...selectedRatings, rating];
+    setForm({
+      ...form,
+      conditions: {
+        ...form.conditions,
+        allowedRatings: next,
+      },
+    });
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -140,18 +271,21 @@ function RuleForm({
           <label className="block text-sm font-medium text-gray-300 mb-2">
             Rule Type *
           </label>
-          <select
+          <Select
             value={form.ruleType || "user_trust"}
-            onChange={(e) => setForm({ ...form, ruleType: e.target.value, conditions: {} })}
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
-            required
+            onValueChange={(value) => setForm({ ...form, ruleType: value, conditions: {} })}
           >
-            {Object.entries(RULE_TYPE_DESCRIPTIONS).map(([key, desc]) => (
-              <option key={key} value={key}>
-                {key.replace(/_/g, " ").toUpperCase()} - {desc}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger>
+              <SelectValue placeholder="Select rule type" />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(RULE_TYPE_DESCRIPTIONS).map(([key, desc]) => (
+                <SelectItem key={key} value={key}>
+                  {key.replace(/_/g, " ").toUpperCase()} - {desc}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="flex items-end">
@@ -176,30 +310,126 @@ function RuleForm({
               <label className="block text-sm font-medium text-gray-300 mb-1">
                 {field.label}
               </label>
-              <input
-                type={field.type === "number" ? "number" : "text"}
-                value={
-                  field.type === "array"
-                    ? (form.conditions?.[field.key] || []).join(",")
-                    : form.conditions?.[field.key] ?? ""
-                }
-                onChange={(e) => {
-                  const value = field.type === "array"
-                    ? e.target.value.split(",").map((s) => {
-                        const num = parseInt(s.trim());
-                        return isNaN(num) ? s.trim() : num;
-                      })
-                    : field.type === "number"
-                    ? parseFloat(e.target.value)
-                    : e.target.value;
-                  setForm({
-                    ...form,
-                    conditions: { ...form.conditions, [field.key]: value },
-                  });
-                }}
-                placeholder={field.placeholder}
-                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
-              />
+              {form.ruleType === "genre" && field.key === "allowedGenres" ? (
+                <div className="space-y-2">
+                  {genresLoading ? (
+                    <div className="flex items-center gap-2 text-sm text-gray-400">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading genres...
+                    </div>
+                  ) : genres.length === 0 ? (
+                    <p className="text-sm text-gray-500">Unable to load genres.</p>
+                  ) : (
+                    <div className="max-h-52 overflow-y-auto rounded-lg border border-white/10 bg-gray-900/70 p-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                        {genres.map((genre) => {
+                          const checked = selectedGenreIds.includes(genre.id);
+                          return (
+                            <label
+                              key={genre.id}
+                              className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-white/5 cursor-pointer"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleGenre(genre.id)}
+                                className="w-4 h-4 accent-blue-600"
+                              />
+                              <span className="text-sm text-gray-200">{genre.name}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  <p className="text-xs text-gray-500">
+                    {selectedGenreIds.length} genre{selectedGenreIds.length === 1 ? "" : "s"} selected
+                  </p>
+                </div>
+              ) : form.ruleType === "time_based" && field.key === "allowedHours" ? (
+                <div className="space-y-2">
+                  <div className="max-h-52 overflow-y-auto rounded-lg border border-white/10 bg-gray-900/70 p-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1.5">
+                      {HOUR_OPTIONS.map((hour) => {
+                        const checked = selectedHours.includes(hour.value);
+                        return (
+                          <label
+                            key={hour.value}
+                            className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-white/5 cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleHour(hour.value)}
+                              className="w-4 h-4 accent-blue-600"
+                            />
+                            <span className="text-sm text-gray-200">{hour.label}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    {selectedHours.length} hour{selectedHours.length === 1 ? "" : "s"} selected
+                  </p>
+                </div>
+              ) : form.ruleType === "content_rating" && field.key === "allowedRatings" ? (
+                <div className="space-y-2">
+                  <div className="max-h-52 overflow-y-auto rounded-lg border border-white/10 bg-gray-900/70 p-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                      {RATING_OPTIONS.map((rating) => {
+                        const checked = selectedRatings.includes(rating);
+                        return (
+                          <label
+                            key={rating}
+                            className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-white/5 cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleRating(rating)}
+                              className="w-4 h-4 accent-blue-600"
+                            />
+                            <span className="text-sm text-gray-200">{rating}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    {selectedRatings.length} rating{selectedRatings.length === 1 ? "" : "s"} selected
+                  </p>
+                </div>
+              ) : (
+                <input
+                  type={field.type === "number" ? "number" : "text"}
+                  value={
+                    field.type === "array"
+                      ? (form.conditions?.[field.key] || []).join(",")
+                      : form.conditions?.[field.key] ?? ""
+                  }
+                  onChange={(e) => {
+                    const value = field.type === "array"
+                      ? e.target.value
+                          .split(",")
+                          .map((s) => s.trim())
+                          .filter(Boolean)
+                          .map((s) => {
+                            const num = parseInt(s, 10);
+                            return isNaN(num) ? s : num;
+                          })
+                      : field.type === "number"
+                      ? parseFloat(e.target.value)
+                      : e.target.value;
+                    setForm({
+                      ...form,
+                      conditions: { ...form.conditions, [field.key]: value },
+                    });
+                  }}
+                  placeholder={field.placeholder}
+                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+                />
+              )}
             </div>
           ))}
         </div>

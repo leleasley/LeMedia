@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import useSWR from "swr";
+import useSWR, { mutate as globalMutate } from "swr";
 import Image from "next/image";
 import {
   ArrowUpRight,
@@ -32,6 +32,7 @@ import { PrefetchLink } from "@/components/Layout/PrefetchLink";
 import { cn } from "@/lib/utils";
 import { MediaStatus, statusToMediaStatus } from "@/lib/media-status";
 import { HoverMediaCard } from "@/components/Media/HoverMediaCard";
+import { SOCIAL_FEED_REFRESH_EVENT } from "@/lib/social-feed-refresh";
 
 // ─── Types ───
 
@@ -251,6 +252,14 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
         day: "numeric",
       })
     );
+  }, []);
+
+  useEffect(() => {
+    const handleRefresh = () => {
+      void globalMutate("/api/v1/social/feed?type=friends&limit=5");
+    };
+    window.addEventListener(SOCIAL_FEED_REFRESH_EVENT, handleRefresh);
+    return () => window.removeEventListener(SOCIAL_FEED_REFRESH_EVENT, handleRefresh);
   }, []);
 
   const recentRequests = useMemo(() => recentRequestsData?.items ?? [], [recentRequestsData]);

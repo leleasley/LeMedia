@@ -2,7 +2,6 @@ import { syncNewSeasonsAutoRequests, syncPendingRequests, syncWatchlists } from 
 import { logger } from "@/lib/logger";
 import { sendWeeklyDigest } from "@/notifications/weekly-digest";
 import { purgeExpiredSessions } from "@/db";
-import { checkCalendarSubscriptions } from "@/lib/calendar-notifications";
 import { syncJellyfinAvailability } from "@/lib/jellyfin-availability-sync";
 import { syncPlexAvailability } from "@/lib/plex-availability-sync";
 import { refreshUpgradeHintsForAll } from "@/lib/upgrade-finder";
@@ -11,73 +10,80 @@ import { importLetterboxdReviews } from "@/lib/letterboxd";
 import { createBackupArchive } from "@/lib/backups";
 import { runSystemAlertChecks } from "@/lib/system-alerts";
 
-export type JobHandler = () => Promise<void>;
+export type JobHandler = () => Promise<string | void>;
 
 export const jobHandlers: Record<string, JobHandler> = {
   "request-sync": async () => {
-    logger.info("[Job] Starting request-sync");
     const summary = await syncPendingRequests();
-    logger.info(`[Job] request-sync completed: ${summary.processed} processed, ${summary.downloading} downloading, ${summary.available} available`);
+    const msg = `${summary.processed} processed, ${summary.downloading} downloading, ${summary.available} available`;
+    logger.info(`[Job] request-sync completed: ${msg}`);
+    return msg;
   },
   "watchlist-sync": async () => {
-    logger.info("[Job] Starting watchlist-sync");
     const result = await syncWatchlists();
-    logger.info(`[Job] watchlist-sync completed: ${result.createdCount} created, ${result.errors} errors`);
+    const msg = `${result.createdCount} created, ${result.errors} errors`;
+    logger.info(`[Job] watchlist-sync completed: ${msg}`);
+    return msg;
   },
   "new-season-autorequest": async () => {
-    logger.info("[Job] Starting new-season-autorequest");
     const result = await syncNewSeasonsAutoRequests();
-    logger.info(`[Job] new-season-autorequest completed: ${result.processed} checked, ${result.added} added, ${result.errors} errors`);
+    const msg = `${result.processed} checked, ${result.added} added, ${result.errors} errors`;
+    logger.info(`[Job] new-season-autorequest completed: ${msg}`);
+    return msg;
   },
   "weekly-digest": async () => {
-    logger.info("[Job] Starting weekly-digest");
     await sendWeeklyDigest();
     logger.info("[Job] weekly-digest completed");
+    return "Digest sent";
   },
   "session-cleanup": async () => {
     const removed = await purgeExpiredSessions();
+    const msg = `${removed} expired sessions removed`;
     if (removed > 0) {
-      logger.info(`[Job] session-cleanup removed ${removed} expired sessions`);
+      logger.info(`[Job] session-cleanup: ${msg}`);
     }
+    return msg;
   },
-  "calendar-notifications": async () => {
-    logger.info("[Job] Starting calendar-notifications");
-    const result = await checkCalendarSubscriptions();
-    logger.info(`[Job] calendar-notifications completed: ${result.checked} checked, ${result.notified} notified, ${result.errors} errors`);
-  },
+
   "jellyfin-availability-sync": async () => {
-    logger.info("[Job] Starting jellyfin-availability-sync");
     const result = await syncJellyfinAvailability();
-    logger.info(`[Job] jellyfin-availability-sync completed: ${result.scanned} scanned, ${result.added} added, ${result.updated} updated`);
+    const msg = `${result.scanned} scanned, ${result.added} added, ${result.updated} updated`;
+    logger.info(`[Job] jellyfin-availability-sync completed: ${msg}`);
+    return msg;
   },
   "plex-availability-sync": async () => {
-    logger.info("[Job] Starting plex-availability-sync");
     const result = await syncPlexAvailability();
-    logger.info(`[Job] plex-availability-sync completed: ${result.scanned} scanned, ${result.added} added, ${result.updated} updated`);
+    const msg = `${result.scanned} scanned, ${result.added} added, ${result.updated} updated`;
+    logger.info(`[Job] plex-availability-sync completed: ${msg}`);
+    return msg;
   },
   "upgrade-finder-4k": async () => {
-    logger.info("[Job] Starting upgrade-finder-4k");
     const result = await refreshUpgradeHintsForAll();
-    logger.info(`[Job] upgrade-finder-4k completed: ${result.processed} processed, ${result.available} available, ${result.errored} errors`);
+    const msg = `${result.processed} processed, ${result.available} available, ${result.errored} errors`;
+    logger.info(`[Job] upgrade-finder-4k completed: ${msg}`);
+    return msg;
   },
   "prowlarr-indexer-sync": async () => {
-    logger.info("[Job] Starting prowlarr-indexer-sync");
     const result = await syncProwlarrIndexers();
-    logger.info(`[Job] prowlarr-indexer-sync completed: created=${result.created} updated=${result.updated} synced=${result.synced}`);
+    const msg = `created=${result.created} updated=${result.updated} synced=${result.synced}`;
+    logger.info(`[Job] prowlarr-indexer-sync completed: ${msg}`);
+    return msg;
   },
   "letterboxd-import": async () => {
-    logger.info("[Job] Starting letterboxd-import");
     const result = await importLetterboxdReviews();
-    logger.info(`[Job] letterboxd-import completed: imported=${result.imported} skipped=${result.skipped} errors=${result.errors}`);
+    const msg = `imported=${result.imported} skipped=${result.skipped} errors=${result.errors}`;
+    logger.info(`[Job] letterboxd-import completed: ${msg}`);
+    return msg;
   },
   "backup-snapshot": async () => {
-    logger.info("[Job] Starting backup-snapshot");
     const result = await createBackupArchive({ trigger: "job" });
-    logger.info(`[Job] backup-snapshot completed: ${result.name} (${result.sizeBytes} bytes), retention-removed=${result.retention.deleted.length}`);
+    const msg = `${result.name} (${result.sizeBytes} bytes), retention-removed=${result.retention.deleted.length}`;
+    logger.info(`[Job] backup-snapshot completed: ${msg}`);
+    return msg;
   },
   "system-alerts": async () => {
-    logger.info("[Job] Starting system-alerts");
     await runSystemAlertChecks();
     logger.info("[Job] system-alerts completed");
+    return "Checks completed";
   },
 };

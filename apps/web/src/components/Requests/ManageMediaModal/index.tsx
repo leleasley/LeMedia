@@ -7,6 +7,7 @@ import { ReleaseSearchModal } from "@/components/Media/ReleaseSearchModal";
 import { ConfirmModal, useConfirm } from "@/components/Common/ConfirmModal";
 import { Modal } from "@/components/Common/Modal";
 import { AdaptiveSelect } from "@/components/ui/adaptive-select";
+import { RequestCommentsSection } from "@/components/Requests/RequestCommentsSection";
 
 export function ManageMediaModal(props: {
   open: boolean;
@@ -313,6 +314,9 @@ export function ManageMediaModal(props: {
               {error}
             </div>
           ) : null}
+          <div className="border-t border-white/10 pt-4">
+            <RequestCommentsSection tmdbId={tmdbId} mediaType={mediaType} isAdmin />
+          </div>
         </div>
       </Modal>
       {prowlarrEnabled ? (

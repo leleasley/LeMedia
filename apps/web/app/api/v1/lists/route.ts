@@ -4,6 +4,7 @@ import { getUser } from "@/auth";
 import { logger } from "@/lib/logger";
 import {
   createCustomList,
+  getListsContainingMedia,
   getUserByUsername,
   listUserCustomLists,
   upsertUser,
@@ -34,6 +35,20 @@ export async function GET(req: NextRequest) {
   try {
     const { id: userId } = await resolveUserId();
     const lists = await listUserCustomLists(userId);
+    const tmdbIdRaw = req.nextUrl.searchParams.get("tmdbId");
+    const mediaTypeRaw = req.nextUrl.searchParams.get("mediaType");
+
+    if (tmdbIdRaw && (mediaTypeRaw === "movie" || mediaTypeRaw === "tv")) {
+      const tmdbId = Number(tmdbIdRaw);
+      if (Number.isFinite(tmdbId) && tmdbId > 0) {
+        const containing = await getListsContainingMedia(userId, tmdbId, mediaTypeRaw);
+        return jsonResponseWithETag(req, {
+          lists,
+          containingListIds: containing.map((entry) => entry.id),
+        });
+      }
+    }
+
     return jsonResponseWithETag(req, { lists });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {

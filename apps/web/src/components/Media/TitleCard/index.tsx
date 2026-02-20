@@ -208,8 +208,7 @@ export function TitleCard({
                 {mediaType === "movie" ? "Movie" : "Series"}
               </div>
               {finalScore !== undefined && finalScore > 0 && (
-                <div className="flex items-center gap-0.5 rounded-full bg-black/55 backdrop-blur-sm px-1.5 py-0.5 text-[9px] sm:text-[10px] font-bold text-yellow-400">
-                  <StarIconSolid className="h-2 w-2 sm:h-2.5 sm:w-2.5" />
+                <div className="flex items-center rounded-full bg-black/55 backdrop-blur-sm px-1.5 py-0.5 text-[9px] sm:text-[10px] font-bold text-yellow-400">
                   <span>{Math.round(finalScore * 10)}%</span>
                 </div>
               )}
@@ -260,8 +259,7 @@ export function TitleCard({
                        
                        {/* Rating */}
                        {finalScore !== undefined && finalScore > 0 && (
-                        <div className="flex items-center gap-0.5 sm:gap-1 text-[10px] sm:text-xs font-bold text-yellow-400">
-                          <StarIconSolid className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
+                        <div className="flex items-center text-[10px] sm:text-xs font-bold text-yellow-400">
                           <span>{Math.round(finalScore * 10)}%</span>
                         </div>
                        )}

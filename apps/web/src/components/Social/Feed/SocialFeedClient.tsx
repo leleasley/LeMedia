@@ -10,6 +10,7 @@ import {
 import { useToast } from "@/components/Providers/ToastProvider";
 import { formatDistanceToNow } from "date-fns";
 import { getAvatarSrc, shouldBypassNextImage } from "@/lib/avatar";
+import { SOCIAL_FEED_REFRESH_EVENT } from "@/lib/social-feed-refresh";
 
 interface SocialEvent {
   id: number;
@@ -76,6 +77,14 @@ export function SocialFeedClient() {
 
   useEffect(() => {
     fetchFeed(true);
+  }, [fetchFeed]);
+
+  useEffect(() => {
+    const handleRefresh = () => {
+      fetchFeed(true);
+    };
+    window.addEventListener(SOCIAL_FEED_REFRESH_EVENT, handleRefresh);
+    return () => window.removeEventListener(SOCIAL_FEED_REFRESH_EVENT, handleRefresh);
   }, [fetchFeed]);
 
   return (

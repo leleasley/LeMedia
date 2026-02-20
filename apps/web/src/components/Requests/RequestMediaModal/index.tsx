@@ -12,6 +12,7 @@ import { Check, X, Loader2, Eye, Film } from "lucide-react";
 import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 import { ReleaseSearchModal } from "@/components/Media/ReleaseSearchModal";
 import { emitRequestsChanged } from "@/lib/request-refresh";
+import { RequestCommentsSection } from "@/components/Requests/RequestCommentsSection";
 
 type QualityProfile = { id: number; name: string };
 
@@ -59,6 +60,7 @@ export function RequestMediaModal({
   const [errorModal, setErrorModal] = useState<{ title: string; message: string } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitState, setSubmitState] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [submittedRequestId, setSubmittedRequestId] = useState<string | null>(null);
   const [rawOpen, setRawOpen] = useState(false);
   const router = useRouter();
   const toast = useToast();
@@ -127,19 +129,19 @@ export function RequestMediaModal({
       if (j?.pending) {
         toast.success("Request sent for approval! An admin needs to approve before it is added.", { timeoutMs: 4000 });
         setSubmitState("success");
+        if (j?.requestId) setSubmittedRequestId(j.requestId);
         router.refresh();
         emitRequestsChanged();
         if (onRequestPlaced) onRequestPlaced();
-        setTimeout(() => onClose(), 2000);
         return;
       }
 
       toast.success(`Request submitted successfully!`, { timeoutMs: 3000 });
       setSubmitState("success");
+      if (j?.requestId) setSubmittedRequestId(j.requestId);
       router.refresh();
       emitRequestsChanged();
       if (onRequestPlaced) onRequestPlaced();
-      setTimeout(() => onClose(), 1500);
     } catch (e: any) {
       toast.error(`Failed to submit request: ${e?.message ?? String(e)}`, { timeoutMs: 4000 });
       setSubmitState("error");
@@ -153,6 +155,7 @@ export function RequestMediaModal({
     if (!isSubmitting) {
       setOverrides({});
       setSubmitState("idle");
+      setSubmittedRequestId(null);
       setRawOpen(false);
       onClose();
     }
@@ -272,9 +275,20 @@ export function RequestMediaModal({
               </div>
             )}
 
+            {/* Post-request comment panel */}
+            {submittedRequestId && (
+              <RequestCommentsSection
+                tmdbId={tmdbId}
+                mediaType={mediaType}
+                currentUsername={isAdmin ? undefined : undefined}
+                isAdmin={isAdmin}
+                requestId={submittedRequestId}
+              />
+            )}
+
             {/* Actions */}
             <div className="flex gap-2 pt-2">
-              {isAdmin && allowRaw ? (
+              {!submittedRequestId && isAdmin && allowRaw ? (
                 <button
                   onClick={() => {
                     if (canOpenRaw) setRawOpen(true);
@@ -287,37 +301,49 @@ export function RequestMediaModal({
                   <span className="hidden sm:inline">{canOpenRaw ? "View Raw" : "Set up Prowlarr"}</span>
                 </button>
               ) : null}
-              <button
-                onClick={handleClose}
-                disabled={isSubmitting}
-                className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/10 hover:border-white/20 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed backdrop-blur-sm"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={submit}
-                disabled={isSubmitting || requestsBlocked}
-                className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg backdrop-blur-sm ${
-                  submitState === "success"
-                    ? "bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700"
-                    : submitState === "error"
-                    ? "bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700"
-                    : "bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700"
-                }`}
-              >
-                {submitState === "loading" && <Loader2 className="h-4 w-4 animate-spin" />}
-                {submitState === "success" && <Check className="h-5 w-5" />}
-                {submitState === "error" && <X className="h-5 w-5" />}
-                <span>
-                  {submitState === "loading"
-                    ? "Requesting..."
-                    : submitState === "success"
-                    ? "Success!"
-                    : submitState === "error"
-                    ? "Failed"
-                    : "Request"}
-                </span>
-              </button>
+              {submittedRequestId ? (
+                <button
+                  onClick={handleClose}
+                  className="flex-1 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 px-4 py-2.5 text-sm font-semibold text-white hover:from-emerald-600 hover:to-green-700 transition-all duration-200 flex items-center justify-center gap-2"
+                >
+                  <Check className="h-4 w-4" />
+                  Done
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={handleClose}
+                    disabled={isSubmitting}
+                    className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/10 hover:border-white/20 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed backdrop-blur-sm"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={submit}
+                    disabled={isSubmitting || requestsBlocked}
+                    className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg backdrop-blur-sm ${
+                      submitState === "success"
+                        ? "bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700"
+                        : submitState === "error"
+                        ? "bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700"
+                        : "bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700"
+                    }`}
+                  >
+                    {submitState === "loading" && <Loader2 className="h-4 w-4 animate-spin" />}
+                    {submitState === "success" && <Check className="h-5 w-5" />}
+                    {submitState === "error" && <X className="h-5 w-5" />}
+                    <span>
+                      {submitState === "loading"
+                        ? "Requesting..."
+                        : submitState === "success"
+                        ? "Success!"
+                        : submitState === "error"
+                        ? "Failed"
+                        : "Request"}
+                    </span>
+                  </button>
+                </>
+              )}
             </div>
           </div>
         )}
