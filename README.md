@@ -121,6 +121,36 @@ See `docs/JELLYFIN_AVAILABILITY.md` for setup, how the cache works, and troubles
 
 5. **First-time setup**: On first launch, you'll be guided through a setup wizard to create your administrator account
 
+### Release channel selection
+
+By default, `docker-compose.yml` builds from local source (recommended for maintainers/self-hosted source installs).
+
+For image-based deployments, use the release override file:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.release.yml pull
+docker compose -f docker-compose.yml -f docker-compose.release.yml up -d
+```
+
+The release file uses:
+
+- `LEMEDIA_RELEASE_TAG=latest` (recommended for most users)
+- `LEMEDIA_WEB_IMAGE=ghcr.io/leleasley/lemedia-web`
+- `LEMEDIA_BOT_IMAGE=ghcr.io/leleasley/lemedia-bot`
+
+To pin a specific release, set for example:
+
+```bash
+LEMEDIA_RELEASE_TAG=v1.1
+```
+
+Then run:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.release.yml pull
+docker compose -f docker-compose.yml -f docker-compose.release.yml up -d
+```
+
 ### First-Time Setup
 
 When you first start LeMedia with a fresh database, you'll be automatically redirected to the setup wizard at `/setup`. This wizard will:
@@ -135,8 +165,13 @@ The setup wizard only appears once - after your admin account is created, it's d
 
 - If you only changed runtime config in `.env` (URLs, API keys, DB string), you **do not need to rebuild**:
   - `docker compose up -d`
-- Only use `--build` when you changed code or dependencies:
-  - `docker compose up -d --build`
+
+- To update to the newest published release image:
+   - `docker compose -f docker-compose.yml -f docker-compose.release.yml pull`
+   - `docker compose -f docker-compose.yml -f docker-compose.release.yml up -d`
+
+- For source-based maintainer deployments:
+   - `docker compose up -d --build`
 
 If disk usage grows over time, it's usually Docker build cache:
 - `docker builder prune -af` (build cache)
@@ -207,7 +242,8 @@ LeMedia uses a CSRF cookie (`lemedia_csrf`) to protect state-changing routes.
 ### Rebuilding
 
 - **Config changes only** (`.env` modifications): `docker compose up -d`
-- **Code or dependency changes**: `docker compose up -d --build`
+- **Pull latest release images**: `docker compose -f docker-compose.yml -f docker-compose.release.yml pull && docker compose -f docker-compose.yml -f docker-compose.release.yml up -d`
+- **Build from local source**: `docker compose up -d --build`
 
 ### Cleanup
 

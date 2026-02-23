@@ -1,0 +1,8 @@
+services:
+  lemedia-web:
+    image: ${LEMEDIA_WEB_IMAGE:-ghcr.io/leleasley/lemedia-web}:${LEMEDIA_RELEASE_TAG:-latest}
+    pull_policy: always
+
+  lemedia-bot:
+    image: ${LEMEDIA_BOT_IMAGE:-ghcr.io/leleasley/lemedia-bot}:${LEMEDIA_RELEASE_TAG:-latest}
+    pull_policy: always

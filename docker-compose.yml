@@ -9,8 +9,8 @@ services:
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
-      - /opt/LeMedia/db/data:/var/lib/postgresql/data
-      - /opt/LeMedia/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./db/data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -32,7 +32,7 @@ services:
     ports:
       - "127.0.0.1:6379:6379"
     volumes:
-      - /opt/LeMedia/redis/data:/data
+      - ./redis/data:/data
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -44,11 +44,11 @@ services:
 
   lemedia-bot:
     build:
-      context: /opt/LeMedia/apps/bot
+      context: ./apps/bot
       dockerfile: Dockerfile
     container_name: lemedia-bot
     env_file:
-      - /opt/LeMedia/.env
+      - ./.env
     depends_on:
       lemedia-db:
         condition: service_healthy
@@ -62,19 +62,17 @@ services:
 
   lemedia-web:
     build:
-      context: /opt/LeMedia/apps/web
+      context: ./apps/web
       dockerfile: Dockerfile
       args:
-        # Only NEXT_PUBLIC_ vars need to be build args (inlined into client JS).
-        # All server-only secrets are injected at runtime via env_file below.
         - NEXT_PUBLIC_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_TURNSTILE_SITE_KEY}
         - NEXT_PUBLIC_VAPID_PUBLIC_KEY=${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
         - NEXT_PUBLIC_TELEGRAM_BOT_USERNAME=${NEXT_PUBLIC_TELEGRAM_BOT_USERNAME}
     container_name: lemedia-web
     env_file:
-      - /opt/LeMedia/.env
+      - ./.env
     volumes:
-      - /opt/LeMedia/backups:/data/backups
+      - ./backups:/data/backups
     ports:
       - "3010:3010"
     depends_on:
