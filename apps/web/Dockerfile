@@ -36,6 +36,11 @@ ENV NODE_ENV=production
 ENV PORT=3010
 ENV HOSTNAME=0.0.0.0
 ENV NEXT_TELEMETRY_DISABLED=1
+# Version metadata baked at build time; override via --build-arg in CI
+ARG APP_VERSION=local
+ARG BUILD_SOURCE=local
+ENV APP_VERSION=${APP_VERSION}
+ENV BUILD_SOURCE=${BUILD_SOURCE}
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nextjs -u 1001

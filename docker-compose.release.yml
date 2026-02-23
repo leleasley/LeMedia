@@ -1,8 +1,104 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# LeMedia – Release compose file
+# Use this file if you want pre-built images from GitHub Container Registry.
+#
+#   docker compose -f docker-compose.release.yml up -d
+#
+# Set LEMEDIA_RELEASE_TAG to pin a specific version, e.g.:
+#   LEMEDIA_RELEASE_TAG=v1.2.3 docker compose -f docker-compose.release.yml up -d
+#
+# This file is self-contained – you do not need docker-compose.yml alongside it.
+# ──────────────────────────────────────────────────────────────────────────────
 services:
-  lemedia-web:
-    image: ${LEMEDIA_WEB_IMAGE:-ghcr.io/leleasley/lemedia-web}:${LEMEDIA_RELEASE_TAG:-latest}
-    pull_policy: always
+  lemedia-db:
+    image: postgres:16-alpine
+    container_name: lemedia-db
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-lemedia}
+      - POSTGRES_USER=${POSTGRES_USER:-lemedia}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - ./db/data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: false
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lemedia} -d ${POSTGRES_DB:-lemedia}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  lemedia-redis:
+    image: redis:7-alpine
+    container_name: lemedia-redis
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1000"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - ./redis/data:/data
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   lemedia-bot:
     image: ${LEMEDIA_BOT_IMAGE:-ghcr.io/leleasley/lemedia-bot}:${LEMEDIA_RELEASE_TAG:-latest}
     pull_policy: always
+    container_name: lemedia-bot
+    env_file:
+      - ./.env
+    depends_on:
+      lemedia-db:
+        condition: service_healthy
+      lemedia-redis:
+        condition: service_healthy
+      lemedia-web:
+        condition: service_healthy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  lemedia-web:
+    image: ${LEMEDIA_WEB_IMAGE:-ghcr.io/leleasley/lemedia-web}:${LEMEDIA_RELEASE_TAG:-latest}
+    pull_policy: always
+    container_name: lemedia-web
+    env_file:
+      - ./.env
+    volumes:
+      - ./backups:/data/backups
+    ports:
+      - "3010:3010"
+    depends_on:
+      lemedia-db:
+        condition: service_healthy
+      lemedia-redis:
+        condition: service_healthy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3010/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 512M

@@ -46,6 +46,9 @@ Thumbs.db
 .claude
 
 # Docker
+# docker-compose.yml is the local source build file - not committed to the repo.
+# Release users should use docker-compose.release.yml instead.
+docker-compose.yml
 docker-compose.override.yml
 docker-compose.local.yml
 

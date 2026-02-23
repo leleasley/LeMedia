@@ -27,7 +27,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   } | null = null;
   const maintenanceState = await withCache("maintenance_state", 30_000, () => getMaintenanceState());
   const imageProxyEnabled = await withCache("image_proxy_enabled", 60_000, () => getImageProxyEnabled());
-  const sidebarFooterText = `LeMedia v${webPackageJson.version ?? "0.1.0"}`;
+  // Prefer the version baked into the image at build time; fall back to package.json
+  const appVersion = (process.env.APP_VERSION && process.env.APP_VERSION !== "local")
+    ? process.env.APP_VERSION.replace(/^v/, "")
+    : (webPackageJson.version ?? "0.1.0");
+  const sidebarFooterText = `LeMedia v${appVersion}`;
   try {
     const user = await getUser();
     isAdmin = user.isAdmin;

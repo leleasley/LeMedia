@@ -193,11 +193,11 @@ export default function AppLayoutClient({
             revalidateOnFocus: true,
         }
     );
-    useSWR(
+    const { data: appStatus } = useSWR<{ updateAvailable?: boolean }>(
         isAdmin ? "/api/v1/status" : null,
         {
-            refreshInterval: 60 * 1000,
-            revalidateOnFocus: true,
+            refreshInterval: 60 * 60 * 1000, // re-check once an hour is plenty
+            revalidateOnFocus: false,
         }
     );
     const { data: maintenanceData } = useSWR<{ state?: { enabled: boolean; message?: string | null } }>(
@@ -548,6 +548,17 @@ export default function AppLayoutClient({
                             <div className="text-[10px] text-gray-600 text-center mb-2">
                                 {sidebarFooterText}
                             </div>
+                            {appStatus?.updateAvailable && (
+                                <a
+                                    href="https://github.com/leleasley/LeMedia/releases/latest"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center justify-center gap-1.5 mb-2 px-2 py-1 rounded-md bg-indigo-500/15 border border-indigo-400/30 text-indigo-300 hover:bg-indigo-500/25 hover:text-indigo-200 transition text-[9px] font-medium"
+                                >
+                                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-indigo-400 animate-pulse" />
+                                    New release available
+                                </a>
+                            )}
                             <div className="flex justify-center gap-2 text-[9px]">
                                 <PrefetchLink href="/privacy" className="text-gray-600 hover:text-gray-400 transition">
                                     Privacy

@@ -1,3 +1,11 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# LeMedia – Source build compose file (developer / self-hosted from source)
+# Use this file if you are running the app straight from the repository.
+#
+#   docker compose up --build -d
+#
+# To use pre-built release images instead, see docker-compose.release.yml.
+# ──────────────────────────────────────────────────────────────────────────────
 services:
   lemedia-db:
     image: postgres:16-alpine

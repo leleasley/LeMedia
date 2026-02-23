@@ -75,8 +75,8 @@ See `docs/JELLYFIN_AVAILABILITY.md` for setup, how the cache works, and troubles
 ## Requirements
 
 - Docker and Docker Compose (Portainer deployment supported)
-- PostgreSQL database (included in docker-compose.yml)
-- Redis (included in docker-compose.yml, used for distributed rate limiting)
+- PostgreSQL database (included in the compose file)
+- Redis (included in the compose file, used for distributed rate limiting)
 - TMDB API key (v3)
 - OMDB API key (optional, for additional metadata)
 - Sonarr instance with API key
@@ -114,41 +114,26 @@ See `docs/JELLYFIN_AVAILABILITY.md` for setup, how the cache works, and troubles
 
 3. Start the application:
    ```bash
-   docker compose up -d --build
+   docker compose -f docker-compose.release.yml up -d
    ```
 
 4. Access LeMedia at your configured URL (default: `http://localhost:3010`)
 
 5. **First-time setup**: On first launch, you'll be guided through a setup wizard to create your administrator account
 
-### Release channel selection
+### Updating to a newer release
 
-By default, `docker-compose.yml` builds from local source (recommended for maintainers/self-hosted source installs).
-
-For image-based deployments, use the release override file:
+To pull the latest images and restart:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.release.yml pull
-docker compose -f docker-compose.yml -f docker-compose.release.yml up -d
+docker compose -f docker-compose.release.yml pull
+docker compose -f docker-compose.release.yml up -d
 ```
 
-The release file uses:
+To pin a specific version instead of `latest`, set `LEMEDIA_RELEASE_TAG` in your `.env`:
 
-- `LEMEDIA_RELEASE_TAG=latest` (recommended for most users)
-- `LEMEDIA_WEB_IMAGE=ghcr.io/leleasley/lemedia-web`
-- `LEMEDIA_BOT_IMAGE=ghcr.io/leleasley/lemedia-bot`
-
-To pin a specific release, set for example:
-
-```bash
-LEMEDIA_RELEASE_TAG=v1.1
-```
-
-Then run:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.release.yml pull
-docker compose -f docker-compose.yml -f docker-compose.release.yml up -d
+```env
+LEMEDIA_RELEASE_TAG=v1.2.3
 ```
 
 ### First-Time Setup
@@ -161,21 +146,23 @@ When you first start LeMedia with a fresh database, you'll be automatically redi
 
 The setup wizard only appears once - after your admin account is created, it's disabled permanently.
 
-### Faster rebuilds / less disk usage
+### Faster restarts / less disk usage
 
-- If you only changed runtime config in `.env` (URLs, API keys, DB string), you **do not need to rebuild**:
-  - `docker compose up -d`
+- If you only changed runtime config in `.env` (URLs, API keys, DB string), you **do not need to pull again**:
+  ```bash
+  docker compose -f docker-compose.release.yml up -d
+  ```
 
-- To update to the newest published release image:
-   - `docker compose -f docker-compose.yml -f docker-compose.release.yml pull`
-   - `docker compose -f docker-compose.yml -f docker-compose.release.yml up -d`
+- To update to the newest release:
+  ```bash
+  docker compose -f docker-compose.release.yml pull
+  docker compose -f docker-compose.release.yml up -d
+  ```
 
-- For source-based maintainer deployments:
-   - `docker compose up -d --build`
-
-If disk usage grows over time, it's usually Docker build cache:
-- `docker builder prune -af` (build cache)
-- `docker image prune -af` (unused images)
+If disk usage grows over time, it's usually unused old images:
+```bash
+docker image prune -af
+```
 
 ### Reverse Proxy Configuration (Optional)
 
@@ -241,9 +228,9 @@ LeMedia uses a CSRF cookie (`lemedia_csrf`) to protect state-changing routes.
 
 ### Rebuilding
 
-- **Config changes only** (`.env` modifications): `docker compose up -d`
-- **Pull latest release images**: `docker compose -f docker-compose.yml -f docker-compose.release.yml pull && docker compose -f docker-compose.yml -f docker-compose.release.yml up -d`
-- **Build from local source**: `docker compose up -d --build`
+- **Config changes only** (`.env` modifications): `docker compose -f docker-compose.release.yml up -d`
+- **Pull latest release images**: `docker compose -f docker-compose.release.yml pull && docker compose -f docker-compose.release.yml up -d`
+- **Build from local source** (maintainers): `docker compose up -d --build`
 
 ### Cleanup
 
@@ -372,9 +359,9 @@ LeMedia includes an interactive Telegram bot that lets users request media, chec
    NEXT_PUBLIC_TELEGRAM_BOT_USERNAME=YourBot_bot
    ```
 
-3. Rebuild and start:
+3. Restart the application:
    ```bash
-   docker compose up -d --build
+   docker compose -f docker-compose.release.yml up -d
    ```
 
 4. Users connect from **Settings → Profile → Telegram Bot** in the web app — they'll get a one-time code to send to the bot via `/link`.
