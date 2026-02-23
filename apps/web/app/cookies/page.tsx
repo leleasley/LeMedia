@@ -35,7 +35,7 @@ export default function CookiesPage() {
 
           <h2 className="text-2xl font-semibold mt-8 mb-4 text-white">Cookie Consent</h2>
           <p className="mb-4 text-gray-300">
-            <strong>By default, we do not set non-essential cookies until you accept them.</strong> When you first visit LeMedia, you'll see a cookie consent banner. Only essential cookies (required for authentication and security) are set by default.
+            <strong>By default, we do not set non-essential cookies until you accept them.</strong> When you first visit LeMedia, you&apos;ll see a cookie consent banner. Only essential cookies (required for authentication and security) are set by default.
           </p>
 
           <h2 className="text-2xl font-semibold mt-8 mb-4 text-white">Types of Cookies We Use</h2>
@@ -156,12 +156,12 @@ export default function CookiesPage() {
 
           <h2 className="text-2xl font-semibold mt-8 mb-4 text-white">Do Not Track (DNT)</h2>
           <p className="mb-4 text-gray-300">
-            If your browser is configured with "Do Not Track" enabled, we respect that preference and will limit non-essential cookies accordingly.
+            If your browser is configured with &quot;Do Not Track&quot; enabled, we respect that preference and will limit non-essential cookies accordingly.
           </p>
 
           <h2 className="text-2xl font-semibold mt-8 mb-4 text-white">Policy Updates</h2>
           <p className="mb-4 text-gray-300">
-            We may update this Cookies Policy periodically. Any material changes will be reflected in the "Last Updated" date above.
+            We may update this Cookies Policy periodically. Any material changes will be reflected in the &quot;Last Updated&quot; date above.
           </p>
 
           <h2 className="text-2xl font-semibold mt-8 mb-4 text-white">Contact</h2>

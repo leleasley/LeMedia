@@ -150,7 +150,7 @@ function formatCountdown(targetMs: number, nowMs: number): string {
 
 function Countdown({ target }: { target: string }) {
   const targetMs = new Date(target).getTime();
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -444,18 +444,25 @@ function ExecutionLog({
   useEffect(() => {
     if (!data?.entries?.length) return;
     const currentIds = new Set(data.entries.map((e) => e.id));
-    if (seenIds.size > 0) {
-      const fresh = new Set<number>();
-      for (const id of currentIds) {
-        if (!seenIds.has(id)) fresh.add(id);
+    let clearHighlightTimer: ReturnType<typeof setTimeout> | undefined;
+
+    setSeenIds((previousSeenIds) => {
+      if (previousSeenIds.size > 0) {
+        const fresh = new Set<number>();
+        for (const id of currentIds) {
+          if (!previousSeenIds.has(id)) fresh.add(id);
+        }
+        if (fresh.size > 0) {
+          setNewIds(fresh);
+          clearHighlightTimer = setTimeout(() => setNewIds(new Set()), 3000);
+        }
       }
-      if (fresh.size > 0) {
-        setNewIds(fresh);
-        // Clear highlight after 3 seconds
-        setTimeout(() => setNewIds(new Set()), 3000);
-      }
-    }
-    setSeenIds(currentIds);
+      return currentIds;
+    });
+
+    return () => {
+      if (clearHighlightTimer) clearTimeout(clearHighlightTimer);
+    };
   }, [data?.entries]);
 
   const toast = useToast();

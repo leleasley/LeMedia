@@ -25,7 +25,7 @@ export default function PrivacyPolicyPage() {
 
           <h2 className="text-2xl font-semibold mt-8 mb-4 text-white">Introduction</h2>
           <p className="mb-4 text-gray-300">
-            LeMedia ("we", "our", or "us") operates the LeMedia application. This Privacy Policy explains how we collect, use, disclose, and otherwise handle your information when you use our application.
+            LeMedia (&quot;we&quot;, &quot;our&quot;, or &quot;us&quot;) operates the LeMedia application. This Privacy Policy explains how we collect, use, disclose, and otherwise handle your information when you use our application.
           </p>
 
           <h2 className="text-2xl font-semibold mt-8 mb-4 text-white">1. Information We Collect</h2>
@@ -161,7 +161,7 @@ export default function PrivacyPolicyPage() {
 
           <h2 className="text-2xl font-semibold mt-8 mb-4 text-white">8. Changes to This Policy</h2>
           <p className="mb-4 text-gray-300">
-            We may update this Privacy Policy from time to time. We will notify you of any material changes by updating the "Last Updated" date.
+            We may update this Privacy Policy from time to time. We will notify you of any material changes by updating the &quot;Last Updated&quot; date.
           </p>
 
           <h2 className="text-2xl font-semibold mt-8 mb-4 text-white">9. Contact Us</h2>
@@ -171,7 +171,7 @@ export default function PrivacyPolicyPage() {
 
           <div className="mt-12 pt-8 border-t border-gray-700">
             <p className="text-sm text-gray-400">
-              © 2026 LeMedia. All rights reserved. This Privacy Policy is provided for our users' information and protection.
+              © 2026 LeMedia. All rights reserved. This Privacy Policy is provided for our users&apos; information and protection.
             </p>
           </div>
         </article>

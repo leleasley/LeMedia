@@ -1,32 +1,30 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { getCookieConsent, setCookieConsent } from "@/lib/cookie-consent";
 import { X } from "lucide-react";
 
 export function CookieConsentBanner() {
-  const [consent, setConsent] = useState<"accepted" | "declined" | null>(null);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-    const currentConsent = getCookieConsent();
-    setConsent(currentConsent);
-  }, []);
+  const [overrideConsent, setOverrideConsent] = useState<"accepted" | "declined" | null | undefined>(undefined);
+  const storedConsent = useSyncExternalStore(
+    () => () => {},
+    () => getCookieConsent(),
+    () => "accepted"
+  );
+  const consent = overrideConsent ?? storedConsent;
 
   const handleAccept = () => {
     setCookieConsent("accepted");
-    setConsent("accepted");
+    setOverrideConsent("accepted");
   };
 
   const handleDecline = () => {
     setCookieConsent("declined");
-    setConsent("declined");
+    setOverrideConsent("declined");
   };
 
-  // Don't render until mounted to avoid hydration mismatch
-  if (!mounted || consent !== null) {
+  if (consent !== null) {
     return null;
   }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Modal } from "@/components/Common/Modal";
 import { Plus, List, Loader2 } from "lucide-react";
 import { CreateListModal } from "./CreateListModal";
@@ -45,13 +45,33 @@ export function AddToListModal({
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [displayTitle, setDisplayTitle] = useState(title);
 
+  const fetchLists = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await fetch(`/api/v1/lists?tmdbId=${tmdbId}&mediaType=${mediaType}`, { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        const containing = new Set<number>((data.containingListIds ?? []).map((id: number) => Number(id)));
+        const nextLists = (data.lists || []).map((list: CustomList) => ({
+          ...list,
+          alreadyContains: containing.has(Number(list.id)),
+        }));
+        setLists(nextLists);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
+  }, [tmdbId, mediaType]);
+
   useEffect(() => {
     if (open) {
       setSelectedListId(null);
       setAddedTo(new Set());
-      fetchLists();
+      void fetchLists();
     }
-  }, [open]);
+  }, [open, fetchLists]);
 
   useEffect(() => {
     if (!open) return;
@@ -72,26 +92,6 @@ export function AddToListModal({
 
     fetchTitle();
   }, [open, title, mediaType, tmdbId]);
-
-  const fetchLists = async () => {
-    try {
-      setLoading(true);
-      const res = await fetch(`/api/v1/lists?tmdbId=${tmdbId}&mediaType=${mediaType}`, { credentials: "include" });
-      if (res.ok) {
-        const data = await res.json();
-        const containing = new Set<number>((data.containingListIds ?? []).map((id: number) => Number(id)));
-        const nextLists = (data.lists || []).map((list: CustomList) => ({
-          ...list,
-          alreadyContains: containing.has(Number(list.id)),
-        }));
-        setLists(nextLists);
-      }
-    } catch {
-      // ignore
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleAddToList = async () => {
     if (!selectedListId || addingTo || addedTo.has(selectedListId)) return;
