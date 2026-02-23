@@ -17,7 +17,6 @@ import { WebPushPrompt } from "@/components/Push/WebPushPrompt";
 import { PullToRefresh } from "@/components/PWA/PullToRefresh";
 import { SessionResetModal } from "@/components/auth/SessionResetModal";
 import { subscribeRequestsChanged } from "@/lib/request-refresh";
-import type { ReleaseUpdateInfo } from "@/lib/github-releases";
 
 interface AppLayoutClientProps {
     children: React.ReactNode;
@@ -35,7 +34,6 @@ interface AppLayoutClientProps {
     imageProxyEnabled: boolean;
     maintenance?: { enabled: boolean; message?: string | null };
     sidebarFooterText?: string;
-    releaseUpdate?: ReleaseUpdateInfo | null;
 }
 
 function MaintenanceBanner({ maintenance }: { maintenance?: { enabled: boolean; message?: string | null } }) {
@@ -160,7 +158,6 @@ export default function AppLayoutClient({
     imageProxyEnabled,
     maintenance,
     sidebarFooterText = "LeMedia v0.1.0",
-    releaseUpdate = null,
 }: AppLayoutClientProps) {
     const router = useRouter();
     const pathname = usePathname();
@@ -375,7 +372,7 @@ export default function AppLayoutClient({
             <SessionResetModal />
             <PullToRefresh>
             {/* Mobile Navigation */}
-            <MobileNav isAdmin={isAdmin} pendingRequestsCount={pendingCount} issuesCount={openIssuesCount} profile={profile} releaseUpdate={releaseUpdate}>
+            <MobileNav isAdmin={isAdmin} pendingRequestsCount={pendingCount} issuesCount={openIssuesCount} profile={profile}>
                 <AppHeader isDesktop={isDesktop} isAdmin={isAdmin} profile={profile} />
 
                 {/* Mobile content */}
@@ -551,16 +548,6 @@ export default function AppLayoutClient({
                             <div className="text-[10px] text-gray-600 text-center mb-2">
                                 {sidebarFooterText}
                             </div>
-                            {releaseUpdate?.hasUpdate && (
-                                <a
-                                    href={releaseUpdate.latestUrl}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="mb-2 block text-center text-[10px] text-amber-400 transition hover:text-amber-300"
-                                >
-                                    Update available: {releaseUpdate.latestTag}
-                                </a>
-                            )}
                             <div className="flex justify-center gap-2 text-[9px]">
                                 <PrefetchLink href="/privacy" className="text-gray-600 hover:text-gray-400 transition">
                                     Privacy

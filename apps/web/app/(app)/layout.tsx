@@ -5,7 +5,7 @@ import { getMediaIssueCounts, getPendingRequestCount, getRequestCounts, getUserW
 import { getImageProxyEnabled } from "@/lib/app-settings";
 import { getMaintenanceState } from "@/lib/maintenance";
 import { withCache } from "@/lib/local-cache";
-import { getCurrentAppVersion, getGithubReleaseUpdateInfo, type ReleaseUpdateInfo } from "@/lib/github-releases";
+import webPackageJson from "../../package.json";
 import { redirect } from "next/navigation";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -27,11 +27,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   } | null = null;
   const maintenanceState = await withCache("maintenance_state", 30_000, () => getMaintenanceState());
   const imageProxyEnabled = await withCache("image_proxy_enabled", 60_000, () => getImageProxyEnabled());
-  const currentAppVersion = getCurrentAppVersion();
-  const sidebarFooterText = `LeMedia v${currentAppVersion}`;
-  const releaseUpdate = await withCache<ReleaseUpdateInfo | null>("github_release_update_info", 10 * 60_000, async () => {
-    return getGithubReleaseUpdateInfo(currentAppVersion);
-  });
+  const sidebarFooterText = `LeMedia v${webPackageJson.version ?? "0.1.0"}`;
   try {
     const user = await getUser();
     isAdmin = user.isAdmin;
@@ -73,7 +69,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       imageProxyEnabled={imageProxyEnabled}
       maintenance={maintenanceState}
       sidebarFooterText={sidebarFooterText}
-      releaseUpdate={releaseUpdate}
     >
       {children}
     </AppLayoutClient>
