@@ -46,6 +46,7 @@ Comprehensive notification support for keeping users informed:
 - Telegram
 - Webhooks
 - Web Push (PWA notifications)
+- **Telegram Bot** — interactive bot for requests, status checks, and admin actions (see [Telegram Bot](#telegram-bot))
 
 ### Integrations
 - **Sonarr**: Automatic TV show downloads and monitoring
@@ -108,6 +109,8 @@ See `docs/JELLYFIN_AVAILABILITY.md` for setup, how the cache works, and troubles
    - `RADARR_URL` and `RADARR_API_KEY`: Your Radarr instance details
    - `DATABASE_URL`: PostgreSQL connection string (or use the provided defaults)
    - `REDIS_URL`: Redis connection string (default: `redis://lemedia-redis:6379`)
+   - `TELEGRAM_BOT_TOKEN`: (optional) Telegram bot token for the interactive bot
+   - `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME`: (optional) Your bot's username, e.g. `LeMedia2_bot`
 
 3. Start the application:
    ```bash
@@ -298,7 +301,61 @@ MFA can be enabled globally in Admin Settings > General. When enabled:
 - Existing users can manage MFA in their profile settings
 - Admins can enforce MFA for all users or just administrators
 
-## Technical Details
+## Telegram Bot
+
+LeMedia includes an interactive Telegram bot that lets users request media, check their request status, and (for admins) manage services — all from Telegram.
+
+### Features
+
+| Command | Who | Description |
+|---|---|---|
+| `/link` | Everyone | Connect your LeMedia account to Telegram |
+| `/unlink` | Everyone | Disconnect your account |
+| `/request [title]` | Everyone | Search and request a movie or TV show |
+| `/mystuff` | Everyone | View your recent requests and status |
+| `/trending` | Everyone | Browse what's popular (movies or TV) |
+| `/newstuff` | Everyone | See what was recently added to the library |
+| `/services` | Admins | Check health of all configured services |
+| `/pending` | Admins | View pending requests with inline approve/deny buttons |
+| `/help` | Everyone | Show all commands |
+
+**Natural language also works** — just type freely:
+- *"I want to watch Dune"* → searches and presents results
+- *"Can I get Breaking Bad?"* → same
+- *"Are my services running?"* → returns a plain-English health summary
+
+**Push notifications** — when your request status changes (available, denied, downloading), the bot DMs you automatically. No extra setup needed once linked.
+
+### Setup
+
+1. Create a bot via [@BotFather](https://t.me/BotFather) and copy the token.
+
+2. Add to your `.env`:
+   ```env
+   TELEGRAM_BOT_TOKEN=your-bot-token-here
+   NEXT_PUBLIC_TELEGRAM_BOT_USERNAME=YourBot_bot
+   ```
+
+3. Rebuild and start:
+   ```bash
+   docker compose up -d --build
+   ```
+
+4. Users connect from **Settings → Profile → Telegram Bot** in the web app — they'll get a one-time code to send to the bot via `/link`.
+
+### How linking works
+
+1. User visits **Settings → Profile → Telegram Bot** and clicks **Link Telegram Account**
+2. A one-time 8-character code is generated (valid for 10 minutes)
+3. User sends `/link` to the bot and enters the code when prompted
+4. The bot creates a personal API token scoped to that user and stores it securely
+5. All subsequent bot commands act on behalf of that user with their permissions
+
+Each user links independently — one bot serves all users.
+
+---
+
+
 
 ### Episode Requests
 

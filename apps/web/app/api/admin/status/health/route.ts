@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/auth";
-import { checkDatabaseHealth, getJellyfinConfig } from "@/db";
+import { checkDatabaseHealth, getJellyfinConfig, getUserById } from "@/db";
+import { extractExternalApiKey, getExternalApiAuth } from "@/lib/external-api";
+import { isAdminGroup } from "@/lib/groups";
 import { getTmdbConfig } from "@/lib/tmdb";
 import { listMediaServices, getMediaServiceSecretById } from "@/lib/service-config";
 import { createRadarrFetcher } from "@/lib/radarr";
@@ -109,8 +111,21 @@ function isFailedQueueItem(item: any) {
 }
 
 export async function GET(req: NextRequest) {
-    const user = await requireAdmin();
-    if (user instanceof NextResponse) return user;
+    // Support both session auth and Bearer API token auth for bot/API clients
+    const apiKey = extractExternalApiKey(req);
+    if (apiKey) {
+        const auth = await getExternalApiAuth(apiKey);
+        if (!auth.ok) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        if (!auth.isGlobal && auth.userId) {
+            const u = await getUserById(auth.userId);
+            if (!u || !isAdminGroup(u.groups)) {
+                return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+            }
+        }
+    } else {
+        const user = await requireAdmin();
+        if (user instanceof NextResponse) return user;
+    }
 
     // 1. Database
     const dbHealthy = await checkDatabaseHealth();

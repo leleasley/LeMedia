@@ -3,6 +3,7 @@ import {
   listNotificationEndpointsForUser,
   NotificationEndpointFull,
   getUserById,
+  getTelegramUserByUserId,
   type DiscordConfig,
   type TelegramConfig,
   type EmailConfig,
@@ -300,6 +301,31 @@ export async function notifyRequestEvent(event: RequestNotificationEvent, ctx: R
     }).catch((err) => {
       logger.error(`[notify] Web push notification failed for user ${ctx.userId}`, err);
     });
+  }
+
+  // Send bot DM to user if they have Telegram linked
+  const BOT_DM_EVENTS: RequestNotificationEvent[] = [
+    "request_available", "request_denied", "request_downloading",
+    "request_partially_available", "request_failed"
+  ];
+  if (ctx.userId && BOT_DM_EVENTS.includes(event)) {
+    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    if (botToken) {
+      getTelegramUserByUserId(ctx.userId).then(tgUser => {
+        if (!tgUser?.telegram_id) return;
+        const icon = event === "request_available" ? "✅"
+          : event === "request_denied" ? "❌"
+          : event === "request_downloading" ? "⬇️"
+          : event === "request_partially_available" ? "📺"
+          : "⚠️";
+        const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        const linkLine = href ? `\n<a href="${href}">View in LeMedia →</a>` : "";
+        const msg = `${icon} <b>${esc(title)}</b>\n<i>${esc(status)}</i>${linkLine}`;
+        return sendTelegramMessage({ botToken, chatId: tgUser.telegram_id, text: msg, parseMode: "HTML" });
+      }).catch(err => {
+        logger.warn("[notify] Bot DM failed", { userId: ctx.userId, error: err?.message });
+      });
+    }
   }
 
   await Promise.all(

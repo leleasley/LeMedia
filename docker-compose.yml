@@ -42,6 +42,22 @@ services:
       timeout: 5s
       retries: 3
 
+  lemedia-bot:
+    build:
+      context: /opt/LeMedia/apps/bot
+      dockerfile: Dockerfile
+    container_name: lemedia-bot
+    env_file:
+      - /opt/LeMedia/.env
+    depends_on:
+      lemedia-db:
+        condition: service_healthy
+      lemedia-web:
+        condition: service_healthy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
   lemedia-web:
     build:
       context: /opt/LeMedia/apps/web
@@ -51,6 +67,7 @@ services:
         # All server-only secrets are injected at runtime via env_file below.
         - NEXT_PUBLIC_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_TURNSTILE_SITE_KEY}
         - NEXT_PUBLIC_VAPID_PUBLIC_KEY=${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
+        - NEXT_PUBLIC_TELEGRAM_BOT_USERNAME=${NEXT_PUBLIC_TELEGRAM_BOT_USERNAME}
     container_name: lemedia-web
     env_file:
       - /opt/LeMedia/.env

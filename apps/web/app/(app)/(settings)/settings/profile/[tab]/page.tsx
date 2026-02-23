@@ -4,7 +4,7 @@ import { getUser } from "@/auth";
 import { getUserWithHash, listNotificationEndpoints, listUserNotificationEndpointIds } from "@/db";
 import { isAdminGroup, normalizeGroupList } from "@/lib/groups";
 
-const tabs = ["general", "security", "linked", "notifications", "permissions", "password"] as const;
+const tabs = ["general", "security", "linked", "notifications", "permissions", "password", "bot"] as const;
 type ActiveTab = Exclude<(typeof tabs)[number], "password">;
 
 export const metadata = {

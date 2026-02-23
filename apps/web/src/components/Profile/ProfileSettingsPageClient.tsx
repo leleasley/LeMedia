@@ -12,6 +12,7 @@ import { useToast } from "@/components/Providers/ToastProvider";
 import { LinkedAccountsPanel } from "@/components/LinkedAccounts/LinkedAccountsPanel";
 import { csrfFetch } from "@/lib/csrf-client";
 import { Modal } from "@/components/Common/Modal";
+import { TelegramBotPanel } from "@/components/Profile/TelegramBotPanel";
 
 interface AssignedEndpoint {
   id: number;
@@ -38,7 +39,7 @@ interface ProfileSettingsPageClientProps {
   activeTab?: SettingsTabKey;
 }
 
-type SettingsTabKey = "general" | "security" | "linked" | "notifications" | "permissions";
+type SettingsTabKey = "general" | "security" | "linked" | "notifications" | "permissions" | "bot";
 
 type Credential = {
   id: string;
@@ -71,7 +72,8 @@ const tabOrder: Array<{ key: SettingsTabKey; label: string }> = [
   { key: "security", label: "Security" },
   { key: "linked", label: "Linked Accounts" },
   { key: "notifications", label: "Notifications" },
-  { key: "permissions", label: "Permissions" }
+  { key: "permissions", label: "Permissions" },
+  { key: "bot", label: "Telegram Bot" }
 ];
 
 export function ProfileSettingsPageClient({
@@ -579,6 +581,10 @@ export function ProfileSettingsPageClient({
 
         {activeTab === "permissions" && (
           <UserPermissionsClient userId={user.userId} editable={false} variant="plain" />
+        )}
+
+        {activeTab === "bot" && (
+          <TelegramBotPanel />
         )}
       </div>
     </div>

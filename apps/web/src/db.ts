@@ -3314,23 +3314,6 @@ async function ensureSchema() {
     await p.query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS failure_count INTEGER DEFAULT 0;`);
     await p.query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS last_error TEXT;`);
     await p.query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS disabled_reason TEXT;`);
-
-    // Job execution history
-    await p.query(`
-      CREATE TABLE IF NOT EXISTS job_history (
-        id SERIAL PRIMARY KEY,
-        job_name VARCHAR(255) NOT NULL,
-        status VARCHAR(20) NOT NULL DEFAULT 'success',
-        started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        finished_at TIMESTAMPTZ,
-        duration_ms INTEGER,
-        error TEXT,
-        details TEXT
-      );
-    `);
-    await p.query(`CREATE INDEX IF NOT EXISTS idx_job_history_job_name ON job_history(job_name);`);
-    await p.query(`CREATE INDEX IF NOT EXISTS idx_job_history_started_at ON job_history(started_at DESC);`);
-    await p.query(`CREATE INDEX IF NOT EXISTS idx_job_history_job_name_started_at ON job_history(job_name, started_at DESC);`);
     await p.query(`
       INSERT INTO jobs (name, schedule, interval_seconds, type, run_on_start)
       VALUES
@@ -3340,6 +3323,7 @@ async function ensureSchema() {
           ('letterboxd-import', '0 4 * * *', 86400, 'system', FALSE),
           ('weekly-digest', '0 9 * * 1', 604800, 'system', FALSE),
           ('session-cleanup', '0 * * * *', 3600, 'system', TRUE),
+          ('calendar-notifications', '0 */6 * * *', 21600, 'system', FALSE),
           ('jellyfin-availability-sync', '0 */4 * * *', 14400, 'system', FALSE),
           ('upgrade-finder-4k', '0 3 * * *', 86400, 'system', FALSE),
           ('prowlarr-indexer-sync', '*/5 * * * *', 300, 'system', TRUE),
@@ -6087,93 +6071,6 @@ export async function recordJobFailure(id: number, error: string, maxFailures: n
   return failures;
 }
 
-// ===== Job History =====
-export type JobHistoryEntry = {
-  id: number;
-  jobName: string;
-  status: "success" | "failure";
-  startedAt: string;
-  finishedAt: string | null;
-  durationMs: number | null;
-  error: string | null;
-  details: string | null;
-};
-
-export async function insertJobHistory(
-  jobName: string,
-  status: "success" | "failure",
-  startedAt: Date,
-  finishedAt: Date,
-  durationMs: number,
-  error?: string | null,
-  details?: string | null
-): Promise<void> {
-  const p = getPool();
-  await p.query(
-    `INSERT INTO job_history (job_name, status, started_at, finished_at, duration_ms, error, details)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-    [jobName, status, startedAt, finishedAt, durationMs, error ?? null, details ?? null]
-  );
-  // Auto-prune: keep only last 200 entries per job
-  await p.query(
-    `DELETE FROM job_history
-     WHERE job_name = $1
-       AND id NOT IN (
-         SELECT id FROM job_history WHERE job_name = $1 ORDER BY started_at DESC LIMIT 200
-       )`,
-    [jobName]
-  );
-}
-
-export async function getJobHistory(
-  jobName?: string,
-  limit = 50,
-  offset = 0
-): Promise<{ entries: JobHistoryEntry[]; total: number }> {
-  const p = getPool();
-  const conditions: string[] = [];
-  const params: unknown[] = [];
-  let paramIndex = 1;
-
-  if (jobName) {
-    conditions.push(`job_name = $${paramIndex++}`);
-    params.push(jobName);
-  }
-
-  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-
-  const countRes = await p.query(`SELECT COUNT(*)::int AS total FROM job_history ${where}`, params);
-  const total = Number(countRes.rows[0]?.total ?? 0);
-
-  const dataRes = await p.query(
-    `SELECT * FROM job_history ${where} ORDER BY started_at DESC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`,
-    [...params, limit, offset]
-  );
-
-  const entries: JobHistoryEntry[] = dataRes.rows.map((r: any) => ({
-    id: r.id,
-    jobName: r.job_name,
-    status: r.status,
-    startedAt: r.started_at,
-    finishedAt: r.finished_at,
-    durationMs: r.duration_ms,
-    error: r.error,
-    details: r.details,
-  }));
-
-  return { entries, total };
-}
-
-export async function clearJobHistory(jobName?: string): Promise<number> {
-  const p = getPool();
-  if (jobName) {
-    const res = await p.query(`DELETE FROM job_history WHERE job_name = $1`, [jobName]);
-    return res.rowCount ?? 0;
-  }
-  const res = await p.query(`DELETE FROM job_history`);
-  return res.rowCount ?? 0;
-}
-
 // ===== User Notifications =====
 export type UserNotification = {
   id: number;
@@ -7383,19 +7280,6 @@ export async function getListsContainingMedia(
   }));
 }
 
-export async function customListContainsMedia(
-  listId: number,
-  tmdbId: number,
-  mediaType: "movie" | "tv"
-): Promise<boolean> {
-  const p = getPool();
-  const res = await p.query(
-    `SELECT 1 FROM custom_list_item WHERE list_id = $1 AND tmdb_id = $2 AND media_type = $3 LIMIT 1`,
-    [listId, tmdbId, mediaType]
-  );
-  return res.rows.length > 0;
-}
-
 // ==================== TASTE PROFILE & QUIZ ====================
 
 export interface UserTasteProfile {
@@ -7701,4 +7585,81 @@ export async function bulkUpdateRequestStatus(
 
   const res = await p.query(query, values);
   return res.rowCount ?? 0;
+}
+
+export async function getTelegramUserByUserId(userId: number): Promise<{ telegram_id: string } | null> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT telegram_id FROM telegram_users WHERE user_id = $1 LIMIT 1`,
+    [userId]
+  );
+  return res.rows[0] ?? null;
+}
+
+export async function insertJobHistory(
+  jobName: string,
+  status: "success" | "failure",
+  startedAt: Date,
+  finishedAt: Date,
+  durationMs: number,
+  error: string | null,
+  details?: string
+): Promise<void> {
+  const p = getPool();
+  await p.query(
+    `INSERT INTO job_history (job_name, status, started_at, finished_at, duration_ms, error, details)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [jobName, status, startedAt, finishedAt, durationMs, error ?? null, details ?? null]
+  );
+  // Prune: keep only last 500 per job
+  await p.query(
+    `DELETE FROM job_history WHERE job_name = $1 AND id NOT IN (
+       SELECT id FROM job_history WHERE job_name = $1 ORDER BY started_at DESC LIMIT 500
+     )`,
+    [jobName]
+  );
+}
+
+export async function getJobHistory(
+  jobName?: string,
+  limit = 50,
+  offset = 0
+): Promise<{ entries: any[]; total: number }> {
+  const p = getPool();
+  const where = jobName ? `WHERE job_name = $1` : "";
+  const params: any[] = jobName ? [jobName] : [];
+  const countRes = await p.query(
+    `SELECT COUNT(*) as count FROM job_history ${where}`,
+    params
+  );
+  const total = Number(countRes.rows[0]?.count ?? 0);
+  const dataRes = await p.query(
+    `SELECT id, job_name, status, started_at, finished_at, duration_ms, error, details
+     FROM job_history ${where}
+     ORDER BY started_at DESC
+     LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    [...params, limit, offset]
+  );
+  return { entries: dataRes.rows, total };
+}
+
+export async function clearJobHistory(jobName?: string): Promise<number> {
+  const p = getPool();
+  const res = jobName
+    ? await p.query(`DELETE FROM job_history WHERE job_name = $1`, [jobName])
+    : await p.query(`DELETE FROM job_history`);
+  return res.rowCount ?? 0;
+}
+
+export async function customListContainsMedia(
+  listId: number,
+  tmdbId: number,
+  mediaType: string
+): Promise<boolean> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT 1 FROM custom_list_item WHERE list_id = $1 AND tmdb_id = $2 AND media_type = $3 LIMIT 1`,
+    [listId, tmdbId, mediaType]
+  );
+  return (res.rowCount ?? 0) > 0;
 }

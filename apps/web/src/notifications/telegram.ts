@@ -3,7 +3,7 @@ import { z } from "zod";
 const BotTokenSchema = z.string().trim().min(1);
 const ChatIdSchema = z.string().trim().min(1);
 
-export async function sendTelegramMessage(input: { botToken: string; chatId: string; text: string }) {
+export async function sendTelegramMessage(input: { botToken: string; chatId: string; text: string; parseMode?: "HTML" | "MarkdownV2" }) {
   const botToken = BotTokenSchema.parse(input.botToken);
   const chatId = ChatIdSchema.parse(input.chatId);
   const text = z.string().min(1).parse(input.text);
@@ -15,6 +15,7 @@ export async function sendTelegramMessage(input: { botToken: string; chatId: str
     body: JSON.stringify({
       chat_id: chatId,
       text,
+      parse_mode: input.parseMode ?? undefined,
       disable_web_page_preview: true
     })
   });

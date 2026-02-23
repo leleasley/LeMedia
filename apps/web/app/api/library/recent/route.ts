@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/auth";
+import { extractExternalApiKey, getExternalApiAuth } from "@/lib/external-api";
 import { getImageProxyEnabled } from "@/lib/app-settings";
 import { listRadarrMovies } from "@/lib/radarr";
 import { listSeries } from "@/lib/sonarr";
@@ -54,8 +55,15 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Pro
 }
 
 export async function GET(request: NextRequest) {
-  const user = await requireUser();
-  if (user instanceof NextResponse) return user;
+  // Accept session auth or Bearer token
+  const apiKey = extractExternalApiKey(request);
+  if (apiKey) {
+    const auth = await getExternalApiAuth(apiKey);
+    if (!auth.ok) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  } else {
+    const user = await requireUser();
+    if (user instanceof NextResponse) return user;
+  }
   const takeRaw = request.nextUrl.searchParams.get("take");
   const take = Math.min(Math.max(Number(takeRaw ?? DEFAULT_TAKE), 1), MAX_TAKE);
   const imageProxyEnabled = await getImageProxyEnabled();

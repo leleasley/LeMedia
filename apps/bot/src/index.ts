@@ -1,0 +1,136 @@
+import "dotenv/config";
+import { Bot, GrammyError, HttpError } from "grammy";
+import { handleLink, handleUnlink } from "./commands/link";
+import { handleRequest, handleSearchCallback, handleAwaitingQuery } from "./commands/request";
+import { handleMyStuff } from "./commands/mystuff";
+import { handleServices, handlePending, handleApproveCallback, handleDenyCallback } from "./commands/services";
+import { handleTrending, handleTrendingCallback } from "./commands/trending";
+import { handleNewStuff } from "./commands/newstuff";
+import { handleNaturalLanguage } from "./commands/natural";
+import { closePool } from "./db";
+
+function escHtml(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const APP_URL = process.env.APP_BASE_URL ?? "https://media.leleasley.uk";
+
+if (!BOT_TOKEN) {
+  console.error("TELEGRAM_BOT_TOKEN is not set. Exiting.");
+  process.exit(1);
+}
+
+if (!process.env.SERVICES_SECRET_KEY) {
+  console.error("SERVICES_SECRET_KEY is not set. Exiting.");
+  process.exit(1);
+}
+
+if (!process.env.DATABASE_URL) {
+  console.error("DATABASE_URL is not set. Exiting.");
+  process.exit(1);
+}
+
+const bot = new Bot(BOT_TOKEN);
+
+// ── /start ────────────────────────────────────────────────────────────────────
+bot.command("start", async ctx => {
+  const name = ctx.from?.first_name ?? "there";
+  await ctx.reply(
+    `👋 Hey ${escHtml(name)}! I'm the <b>LeMedia Bot</b>.\n\n` +
+    `I can help you request movies and TV shows, check your request status, and more.\n\n` +
+    `<b>Getting started:</b>\n` +
+    `1. Send /link to connect your LeMedia account\n` +
+    `2. Then use /request to find something to watch!\n\n` +
+    `Send /help to see all commands.`,
+    { parse_mode: "HTML" }
+  );
+});
+
+// ── /help ─────────────────────────────────────────────────────────────────────
+bot.command("help", async ctx => {
+  await ctx.reply(
+    `<b>LeMedia Bot Commands</b>\n\n` +
+    `🔗 /link — Connect your LeMedia account\n` +
+    `🔓 /unlink — Disconnect your account\n\n` +
+    `🎬 /request — Search and request media\n` +
+    `📋 /mystuff — Your recent requests &amp; status\n` +
+    `📈 /trending — Browse what's popular\n` +
+    `🆕 /newstuff — Recently added to library\n\n` +
+    `🖥 /services — Service health (admin)\n` +
+    `⏳ /pending — Pending requests with approve/deny (admin)\n\n` +
+    `💡 <i>Tip: You can also just type naturally!</i>\n` +
+    `  • "I want to watch Dune"\n` +
+    `  • "Can I get Breaking Bad?"\n` +
+    `  • "Are my services running?"`,
+    { parse_mode: "HTML" }
+  );
+});
+
+// ── Account commands ──────────────────────────────────────────────────────────
+bot.command("link", handleLink);
+bot.command("unlink", handleUnlink);
+
+// ── Media commands ────────────────────────────────────────────────────────────
+bot.command(["request", "movie", "tv", "search"], handleRequest);
+bot.command("mystuff", handleMyStuff);
+bot.command(["trending", "popular"], handleTrending);
+bot.command(["newstuff", "new", "recent"], handleNewStuff);
+
+// ── Admin commands ────────────────────────────────────────────────────────────
+bot.command("services", handleServices);
+bot.command("pending", handlePending);
+
+// ── Inline keyboard callbacks ─────────────────────────────────────────────────
+bot.callbackQuery(/^req:/, handleSearchCallback);
+bot.callbackQuery(/^trend:/, handleTrendingCallback);
+bot.callbackQuery(/^appr:/, handleApproveCallback);
+bot.callbackQuery(/^deny:/, handleDenyCallback);
+
+// ── Free-text message handler ─────────────────────────────────────────────────
+bot.on("message:text", async ctx => {
+  // Skip slash commands (handled above)
+  if (ctx.message.text.startsWith("/")) return;
+
+  // 1. User was prompted "What would you like to request?" — treat as search query
+  const handled = await handleAwaitingQuery(ctx);
+  if (handled) return;
+
+  // 2. Natural language: "I want to watch Dune" / "are services running?" etc.
+  await handleNaturalLanguage(ctx);
+});
+
+// ── Error handling ────────────────────────────────────────────────────────────
+bot.catch(err => {
+  const ctx = err.ctx;
+  console.error(`Error handling update ${ctx.update.update_id}:`);
+  const e = err.error;
+  if (e instanceof GrammyError) {
+    console.error("Error in request:", e.description);
+  } else if (e instanceof HttpError) {
+    console.error("Could not contact Telegram:", e);
+  } else {
+    console.error("Unknown error:", e);
+  }
+});
+
+// ── Start ─────────────────────────────────────────────────────────────────────
+console.log(`LeMedia Bot starting... (App: ${APP_URL})`);
+
+bot.start({
+  onStart: info => {
+    console.log(`Bot @${info.username} is running (long polling)`);
+  }
+});
+
+// Graceful shutdown
+process.once("SIGINT", async () => {
+  console.log("Shutting down...");
+  await bot.stop();
+  await closePool();
+});
+process.once("SIGTERM", async () => {
+  console.log("Shutting down...");
+  await bot.stop();
+  await closePool();
+});

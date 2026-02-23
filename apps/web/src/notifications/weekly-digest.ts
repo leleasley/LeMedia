@@ -189,7 +189,7 @@ function buildEmailHtml(params: {
                     <td align="center">
                       <img src="${logoUrl}" alt="${appName}" width="64" height="64" style="display:block;margin:0 auto 16px;border-radius:12px;" />
                       <div style="font-size:28px;font-weight:700;color:#f8fafc;margin-bottom:8px;line-height:1.2;">${appName}</div>
-                      <div style="font-size:16px;font-weight:600;color:#60a5fa;margin-bottom:8px;letter-spacing:0.05em;">Weekly Coming Soon</div>
+                      <div style="font-size:16px;font-weight:600;color:#60a5fa;margin-bottom:8px;letter-spacing:0.05em;">Weekly Digest</div>
                       <div style="font-size:14px;color:#94a3b8;line-height:1.5;max-width:480px;margin:0 auto;">Discover the latest movies and TV shows releasing this week and beyond.</div>
                     </td>
                   </tr>
@@ -300,7 +300,7 @@ function buildTextDigest(params: {
     return `${title}:\n${lines}\n`;
   };
   return [
-    "LeMedia Weekly Coming Soon",
+    "LeMedia Weekly Digest",
     "",
     renderList("Trending this week", params.trending),
     renderList("Out this week — Movies", params.weekMovies),
@@ -401,7 +401,7 @@ export async function sendWeeklyDigest() {
       });
       await sendEmail({
         to: user.email,
-        subject: "LeMedia Weekly Digest — Coming Soon",
+        subject: "LeMedia Weekly Digest",
         text,
         html
       });

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { extractExternalApiKey, getExternalApiAuth } from "@/lib/external-api";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
-import { deleteRequestById, findRequestIdByNumericId, getRequestWithItems } from "@/db";
+import { deleteRequestById, findRequestIdByNumericId, getRequestWithItems, getUserById, bulkUpdateRequestStatus } from "@/db";
+import { isAdminGroup } from "@/lib/groups";
 import { getJellyfinItemIdByTmdb } from "@/lib/jellyfin";
 import { deleteMovie, getMovieByTmdbId } from "@/lib/radarr";
 import { deleteSeries, getSeriesByTmdbId } from "@/lib/sonarr";
@@ -144,4 +145,28 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ r
 
   await deleteRequestById(requestId);
   return NextResponse.json({ ok: true });
+}
+
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ requestId: string }> }) {
+  const apiKey = extractApiKey(req);
+  const auth = apiKey ? await getExternalApiAuth(apiKey) : { ok: false, isGlobal: false, userId: null };
+  if (!auth.ok) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  if (!auth.isGlobal && auth.userId) {
+    const u = await getUserById(auth.userId);
+    if (!u || !isAdminGroup(u.groups)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const { requestId: raw } = await params;
+  const requestId = await resolveRequestId(raw);
+  if (!requestId) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const body = await req.json().catch(() => ({})) as Record<string, unknown>;
+  const action = String(body.status ?? "");
+  const newStatus = action === "approved" ? "queued" : action === "denied" ? "denied" : null;
+  if (!newStatus) return NextResponse.json({ error: "status must be 'approved' or 'denied'" }, { status: 400 });
+
+  const statusReason = typeof body.statusReason === "string" ? body.statusReason : undefined;
+  await bulkUpdateRequestStatus([requestId], newStatus, statusReason, auth.userId ?? undefined);
+  return NextResponse.json({ ok: true, status: newStatus });
 }

@@ -26,7 +26,7 @@ interface ProfileSettingsShellClientProps {
   children: ReactNode;
 }
 
-type SettingsTabKey = "general" | "security" | "linked" | "notifications" | "permissions";
+type SettingsTabKey = "general" | "security" | "linked" | "notifications" | "permissions" | "bot";
 type LegacyTabKey = SettingsTabKey | "password";
 
 const tabOrder: Array<{ key: SettingsTabKey; label: string }> = [
@@ -34,7 +34,8 @@ const tabOrder: Array<{ key: SettingsTabKey; label: string }> = [
   { key: "security", label: "Security" },
   { key: "linked", label: "Linked Accounts" },
   { key: "notifications", label: "Notifications" },
-  { key: "permissions", label: "Permissions" }
+  { key: "permissions", label: "Permissions" },
+  { key: "bot", label: "Telegram Bot" }
 ];
 
 export function ProfileSettingsShellClient({ user, isAdmin, children }: ProfileSettingsShellClientProps) {
