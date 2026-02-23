@@ -51,5 +51,7 @@ The following tests enforce policy:
 
 - `apps/web/tests/api-route-duplication.test.ts`
   - Fails on newly introduced duplicate `/api` + `/api/v1` pairs.
+- `apps/web/tests/api-v1-client-usage.test.ts`
+  - Fails if app-facing source increases usage of `/api/v1` client calls.
 - `apps/web/tests/api-route-policy.test.ts`
   - Fails when mutating routes are added without visible auth/CSRF/rate-limit policy signals.

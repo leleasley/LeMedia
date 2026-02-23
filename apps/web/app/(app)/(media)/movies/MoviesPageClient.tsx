@@ -81,7 +81,7 @@ export default function MoviesPageClient({ initialData }: { initialData?: MediaG
     <div className="pb-4 md:pb-8">
       <DiscoverFilterBar type="movie" title="Movies" filters={filters} onChange={handleFilterChange} />
       <MediaGrid
-        fetcher={createTmdbListFetcher("/api/v1/tmdb/discover/movie")}
+        fetcher={createTmdbListFetcher("/api/tmdb/discover/movie")}
         type="movie"
         title="Movies"
         showTitle={false}

@@ -82,7 +82,7 @@ export default function TvPageClient({ initialData }: { initialData?: MediaGridP
     <div className="pb-4 md:pb-8">
       <DiscoverFilterBar type="tv" title="TV Shows" filters={filters} onChange={handleFilterChange} />
       <MediaGrid
-        fetcher={createTmdbListFetcher("/api/v1/tmdb/discover/tv")}
+        fetcher={createTmdbListFetcher("/api/tmdb/discover/tv")}
         type="tv"
         title="TV Shows"
         showTitle={false}

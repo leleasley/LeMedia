@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useSWR, { mutate as globalMutate } from "swr";
 import Image from "next/image";
 import {
@@ -29,6 +29,8 @@ import {
   Zap,
 } from "lucide-react";
 import { PrefetchLink } from "@/components/Layout/PrefetchLink";
+import { Modal } from "@/components/Common/Modal";
+import { useToast } from "@/components/Providers/ToastProvider";
 import { cn } from "@/lib/utils";
 import { MediaStatus, statusToMediaStatus } from "@/lib/media-status";
 import { HoverMediaCard } from "@/components/Media/HoverMediaCard";
@@ -124,6 +126,38 @@ type FriendActivity = {
   createdAt: string;
 };
 
+type SurpriseMediaType = "movie" | "tv";
+type SurpriseRatingTier = "high" | "mid" | "low";
+type SurpriseStep = "media" | "genre" | "rating";
+
+type TmdbGenre = {
+  id: number;
+  name: string;
+};
+
+function getGenreEmoji(name: string) {
+  const key = name.toLowerCase();
+  if (key.includes("action")) return "💥";
+  if (key.includes("adventure")) return "🧭";
+  if (key.includes("animation")) return "🎨";
+  if (key.includes("comedy")) return "😂";
+  if (key.includes("crime")) return "🕵️";
+  if (key.includes("documentary")) return "🎬";
+  if (key.includes("drama")) return "🎭";
+  if (key.includes("family")) return "👨‍👩‍👧";
+  if (key.includes("fantasy")) return "🪄";
+  if (key.includes("history")) return "🏛️";
+  if (key.includes("horror")) return "👻";
+  if (key.includes("music")) return "🎵";
+  if (key.includes("mystery")) return "🧩";
+  if (key.includes("romance")) return "❤️";
+  if (key.includes("science") || key.includes("sci-fi") || key.includes("scifi")) return "🚀";
+  if (key.includes("thriller")) return "⚡";
+  if (key.includes("war")) return "🪖";
+  if (key.includes("western")) return "🤠";
+  return "🎞️";
+}
+
 function getGreeting() {
   const hour = new Date().getHours();
   if (hour < 5) return "Late night";
@@ -185,6 +219,8 @@ type Props = {
 };
 
 export default function HomeDashboardClient({ isAdmin, username, displayName }: Props) {
+  const toast = useToast();
+
   // Data fetching
   const { data: recentRequestsData, error: recentRequestsError, isLoading: recentRequestsLoading } = useSWR<{ items: RecentRequestItem[] }>(
     "/api/v1/requests/recent?take=10",
@@ -243,6 +279,15 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
   const [requestFilter, setRequestFilter] = useState<"all" | "pending" | "ready" | "active">("all");
   const [requestPageByFilter, setRequestPageByFilter] = useState<Record<string, number>>({});
   const [recentAddedPageRaw, setRecentAddedPage] = useState(0);
+  const [surpriseWizardOpen, setSurpriseWizardOpen] = useState(false);
+  const [surpriseStep, setSurpriseStep] = useState<SurpriseStep>("media");
+  const [surpriseStepFading, setSurpriseStepFading] = useState(false);
+  const [surpriseMediaType, setSurpriseMediaType] = useState<SurpriseMediaType | null>(null);
+  const [surpriseGenreId, setSurpriseGenreId] = useState<number | null>(null);
+  const [surpriseGenres, setSurpriseGenres] = useState<TmdbGenre[]>([]);
+  const [surpriseGenresLoading, setSurpriseGenresLoading] = useState(false);
+  const [surprisePicking, setSurprisePicking] = useState(false);
+  const surpriseStepTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const requestPageRaw = requestPageByFilter[requestFilter] ?? 0;
   const setRequestPage = (page: number) => {
@@ -256,6 +301,136 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
     window.addEventListener(SOCIAL_FEED_REFRESH_EVENT, handleRefresh);
     return () => window.removeEventListener(SOCIAL_FEED_REFRESH_EVENT, handleRefresh);
   }, []);
+
+  useEffect(() => {
+    return () => {
+      if (surpriseStepTimerRef.current) {
+        clearTimeout(surpriseStepTimerRef.current);
+        surpriseStepTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const transitionSurpriseStep = useCallback((nextStep: SurpriseStep) => {
+    if (surpriseStepTimerRef.current) {
+      clearTimeout(surpriseStepTimerRef.current);
+    }
+    setSurpriseStepFading(true);
+    surpriseStepTimerRef.current = setTimeout(() => {
+      setSurpriseStep(nextStep);
+      setSurpriseStepFading(false);
+      surpriseStepTimerRef.current = null;
+    }, 180);
+  }, []);
+
+  const openSurpriseWizard = useCallback(() => {
+    setSurpriseWizardOpen(true);
+    setSurpriseStep("media");
+    setSurpriseStepFading(false);
+    setSurpriseMediaType(null);
+    setSurpriseGenreId(null);
+    setSurpriseGenres([]);
+    setSurpriseGenresLoading(false);
+    setSurprisePicking(false);
+  }, []);
+
+  const closeSurpriseWizard = useCallback(() => {
+    setSurpriseWizardOpen(false);
+  }, []);
+
+  useEffect(() => {
+    if (!surpriseWizardOpen || surpriseStep !== "genre" || !surpriseMediaType) return;
+
+    let cancelled = false;
+    setSurpriseGenresLoading(true);
+
+    fetch(`/api/tmdb/genres?type=${surpriseMediaType}`, { credentials: "include" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Failed to load genres");
+        const payload = await response.json().catch(() => null) as { genres?: TmdbGenre[] } | null;
+        if (cancelled) return;
+        setSurpriseGenres(Array.isArray(payload?.genres) ? payload!.genres : []);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setSurpriseGenres([]);
+        toast.error("Couldn't load genres right now.");
+      })
+      .finally(() => {
+        if (!cancelled) setSurpriseGenresLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [surpriseWizardOpen, surpriseStep, surpriseMediaType, toast]);
+
+  const pickSurpriseFromTmdb = useCallback(async (ratingTier: SurpriseRatingTier) => {
+    if (!surpriseMediaType || !surpriseGenreId || surprisePicking) return;
+
+    setSurprisePicking(true);
+    try {
+      const endpoint = `/api/tmdb/discover/${surpriseMediaType}`;
+      const params = new URLSearchParams({
+        page: "1",
+        with_genres: String(surpriseGenreId),
+      });
+
+      if (ratingTier === "high") {
+        params.set("sort_by", "vote_average.desc");
+        params.set("vote_count.gte", "500");
+      } else if (ratingTier === "mid") {
+        params.set("sort_by", "vote_average.desc");
+        params.set("vote_average.gte", "5.5");
+        params.set("vote_average.lte", "7.5");
+        params.set("vote_count.gte", "120");
+      } else {
+        params.set("sort_by", "vote_average.asc");
+        params.set("vote_count.gte", "80");
+      }
+
+      const response = await fetch(`${endpoint}?${params.toString()}`, { credentials: "include" });
+      if (!response.ok) throw new Error(`Unexpected status ${response.status}`);
+
+      const payload = await response.json().catch(() => null) as {
+        results?: Array<{ id?: number; title?: string; name?: string }>;
+      } | null;
+
+      let results = Array.isArray(payload?.results) ? payload!.results : [];
+      if (!results.length) {
+        const fallbackParams = new URLSearchParams({
+          page: "1",
+          with_genres: String(surpriseGenreId),
+          sort_by: "popularity.desc",
+        });
+        const fallbackRes = await fetch(`${endpoint}?${fallbackParams.toString()}`, { credentials: "include" });
+        if (fallbackRes.ok) {
+          const fallbackPayload = await fallbackRes.json().catch(() => null) as {
+            results?: Array<{ id?: number; title?: string; name?: string }>;
+          } | null;
+          results = Array.isArray(fallbackPayload?.results) ? fallbackPayload!.results : [];
+        }
+      }
+
+      const validItems = results.filter(item => typeof item?.id === "number" && item.id > 0);
+      if (!validItems.length) {
+        toast.error("No titles matched that combo. Try a different genre or rating.");
+        return;
+      }
+
+      const picked = validItems[Math.floor(Math.random() * validItems.length)];
+      const pickedTitle = picked.title ?? picked.name ?? "Surprise title";
+      const destination = surpriseMediaType === "movie" ? `/movie/${picked.id}` : `/tv/${picked.id}`;
+
+      closeSurpriseWizard();
+      toast.success(`Tonight's pick: ${pickedTitle}`);
+      window.location.assign(destination);
+    } catch {
+      toast.error("Couldn't pick a surprise title right now.");
+    } finally {
+      setSurprisePicking(false);
+    }
+  }, [closeSurpriseWizard, surpriseGenreId, surpriseMediaType, surprisePicking, toast]);
 
   const recentRequests = useMemo(() => recentRequestsData?.items ?? [], [recentRequestsData]);
   const recentAdded = useMemo(() => recentAddedData?.items ?? [], [recentAddedData]);
@@ -389,9 +564,176 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
               <HeroShortcut href="/tv" label="TV Shows" icon={Tv} />
               <HeroShortcut href={isAdmin ? "/admin/requests" : "/requests"} label="Requests" icon={Layers} />
             </div>
+
+            <div>
+              <button
+                type="button"
+                onClick={openSurpriseWizard}
+                disabled={surprisePicking}
+                className="inline-flex items-center gap-2 rounded-xl border border-amber-300/30 bg-amber-400/10 px-3 py-2 text-sm font-medium text-amber-100 transition-all hover:bg-amber-400/15 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {surprisePicking ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
+                Surprise Me
+              </button>
+            </div>
           </div>
         </div>
       </section>
+
+      <Modal open={surpriseWizardOpen} onClose={closeSurpriseWizard} title="Surprise Wizard" forceCenter>
+        <div className="space-y-4">
+          <p className="text-sm text-slate-400">Answer 3 quick questions and we will pick you one.</p>
+
+          {surprisePicking ? (
+            <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 p-4">
+              <Loader2 className="h-4 w-4 animate-spin text-slate-300" />
+              <span className="text-sm text-slate-200">Picking your surprise watch...</span>
+            </div>
+          ) : (
+            <div className={`transition-opacity duration-200 ${surpriseStepFading ? "opacity-0" : "opacity-100"}`}>
+              {surpriseStep === "media" && (
+                <div className="space-y-3">
+                  <p className="text-sm font-semibold text-white">1) Movie or TV series?</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSurpriseMediaType("movie");
+                        setSurpriseGenreId(null);
+                        transitionSurpriseStep("genre");
+                      }}
+                      className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white transition-colors hover:bg-white/10"
+                    >
+                      Movie
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSurpriseMediaType("tv");
+                        setSurpriseGenreId(null);
+                        transitionSurpriseStep("genre");
+                      }}
+                      className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white transition-colors hover:bg-white/10"
+                    >
+                      TV Series
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {surpriseStep === "genre" && (
+                <div className="space-y-3">
+                  <p className="text-sm font-semibold text-white">2) Pick a genre</p>
+                  {surpriseGenresLoading ? (
+                    <div className="flex items-center gap-2 text-sm text-slate-300">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading genres...
+                    </div>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 max-h-64 overflow-y-auto pr-1">
+                        {surpriseGenres.map((genre) => {
+                          const selected = surpriseGenreId === genre.id;
+                          return (
+                            <button
+                              key={genre.id}
+                              type="button"
+                              onClick={() => setSurpriseGenreId(selected ? null : genre.id)}
+                              className={cn(
+                                "flex items-center justify-between rounded-xl border px-3 py-2 text-left transition-all",
+                                selected
+                                  ? "border-indigo-400/60 bg-indigo-500/15 text-white shadow-[0_0_20px_rgba(99,102,241,0.2)]"
+                                  : "border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 hover:border-white/20"
+                              )}
+                            >
+                              <span className="flex items-center gap-2">
+                                <span className="text-base leading-none">{getGenreEmoji(genre.name)}</span>
+                                <span className="text-sm font-medium">{genre.name}</span>
+                              </span>
+                              <span
+                                className={cn(
+                                  "flex h-5 w-5 items-center justify-center rounded border text-[11px]",
+                                  selected
+                                    ? "border-indigo-300 bg-indigo-400/25 text-indigo-100"
+                                    : "border-white/25 bg-white/0 text-transparent"
+                                )}
+                                aria-hidden="true"
+                              >
+                                ✓
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() => transitionSurpriseStep("media")}
+                          className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-200 transition-colors hover:bg-white/10"
+                        >
+                          Back
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => transitionSurpriseStep("rating")}
+                          disabled={!surpriseGenreId}
+                          className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white transition-colors hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Continue
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {surpriseStep === "rating" && (
+                <div className="space-y-3">
+                  <p className="text-sm font-semibold text-white">3) How should it be rated?</p>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    <button
+                      type="button"
+                      onClick={() => void pickSurpriseFromTmdb("high")}
+                      className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white transition-colors hover:bg-white/10"
+                    >
+                      Highly Rated
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void pickSurpriseFromTmdb("mid")}
+                      className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white transition-colors hover:bg-white/10"
+                    >
+                      Mid
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void pickSurpriseFromTmdb("low")}
+                      className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white transition-colors hover:bg-white/10"
+                    >
+                      Low
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-start">
+                    <button
+                      type="button"
+                      onClick={() => transitionSurpriseStep("genre")}
+                      className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-200 transition-colors hover:bg-white/10"
+                    >
+                      Back
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </Modal>
 
       {/* ─── Personal Stats Grid ─── */}
       <div className="grid gap-4 md:grid-cols-2">
