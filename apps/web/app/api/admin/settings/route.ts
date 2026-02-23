@@ -33,7 +33,6 @@ export async function GET(req: NextRequest) {
     const rawMfaAll = await getSetting("auth.enforce_mfa_all");
     const enforceMfaAll = rawMfaAll === "1" || rawMfaAll === "true";
 
-    const rawSidebarFooter = await getSetting("sidebar_footer_text");
     const rawJobTimezone = await getSetting("jobs.timezone");
     const envJobTimezone = process.env.JOBS_TIMEZONE || process.env.TZ || "";
     const jobTimezone = (rawJobTimezone ?? "").trim() || envJobTimezone.trim();
@@ -45,7 +44,6 @@ export async function GET(req: NextRequest) {
         sso_enabled: ssoEnabled,
         enforce_mfa_admin: enforceMfaAdmin,
         enforce_mfa_all: enforceMfaAll,
-        sidebar_footer_text: rawSidebarFooter,
         job_timezone: jobTimezone
     });
 }
@@ -69,14 +67,12 @@ export async function PUT(req: NextRequest) {
     const hasMfaAdmin = enforceMfaAdmin !== undefined;
     const enforceMfaAll = body?.enforce_mfa_all;
     const hasMfaAll = enforceMfaAll !== undefined;
-    const sidebarFooter = body?.sidebar_footer_text;
-    const hasSidebarFooter = sidebarFooter !== undefined;
     const jobTimezone = body?.job_timezone;
     const hasJobTimezone = jobTimezone !== undefined;
 
     const changedFields: string[] = [];
 
-    if (!hasSession && !hasImageProxy && !hasOtp && !hasSso && !hasMfaAdmin && !hasMfaAll && !hasSidebarFooter && !hasJobTimezone) {
+    if (!hasSession && !hasImageProxy && !hasOtp && !hasSso && !hasMfaAdmin && !hasMfaAll && !hasJobTimezone) {
         return NextResponse.json({ error: "No settings provided" }, { status: 400 });
     }
 
@@ -147,11 +143,6 @@ export async function PUT(req: NextRequest) {
         }
         await setSetting("auth.enforce_mfa_all", enforceMfaAll ? "1" : "0");
         changedFields.push("auth.enforce_mfa_all");
-    }
-
-    if (hasSidebarFooter) {
-        await setSetting("sidebar_footer_text", String(sidebarFooter));
-        changedFields.push("sidebar_footer_text");
     }
 
     if (changedFields.length) {

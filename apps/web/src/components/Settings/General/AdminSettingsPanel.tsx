@@ -20,7 +20,6 @@ export function AdminSettingsPanel() {
     const [sessionDays, setSessionDays] = useState<number | "">("");
     const [jobTimezone, setJobTimezone] = useState("");
     const [timezoneOptions, setTimezoneOptions] = useState<string[]>([]);
-    const [sidebarFooterText, setSidebarFooterText] = useState("");
     const [imageProxyEnabled, setImageProxyEnabled] = useState(true);
     const [otpEnabled, setOtpEnabled] = useState(true);
     const [ssoEnabled, setSsoEnabled] = useState(true);
@@ -82,7 +81,6 @@ export function AdminSettingsPanel() {
             if (typeof settings.enforce_mfa_all === "boolean") {
                 setEnforceMfaAll(settings.enforce_mfa_all);
             }
-            setSidebarFooterText(settings.sidebar_footer_text || "");
             if (typeof settings.job_timezone === "string") {
                 setJobTimezone(settings.job_timezone);
             }
@@ -188,7 +186,6 @@ export function AdminSettingsPanel() {
                     image_proxy_enabled: imageProxyEnabled,
                     otp_enabled: otpEnabled,
                     sso_enabled: ssoEnabled,
-                    sidebar_footer_text: sidebarFooterText,
                     job_timezone: jobTimezone
                 }),
                 credentials: "include"
@@ -277,21 +274,6 @@ export function AdminSettingsPanel() {
             </div>
 
             <form onSubmit={handleSave} className="space-y-4">
-                <div>
-                    <label className="text-sm font-semibold text-white">Sidebar Footer Text</label>
-                    <div className="mt-2">
-                        <input
-                            type="text"
-                            value={sidebarFooterText}
-                            onChange={e => setSidebarFooterText(e.target.value)}
-                            className="w-full max-w-md input"
-                            placeholder="LeMedia v0.1.0"
-                            disabled={settingsLoading}
-                        />
-                    </div>
-                    <p className="text-xs text-muted mt-1">Text displayed at the bottom of the sidebar.</p>
-                </div>
-
                 <div className="rounded-md border border-white/10 bg-slate-900/60 p-4 space-y-3">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                         <div>

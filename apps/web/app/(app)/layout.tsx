@@ -1,7 +1,7 @@
 import { getUser } from "@/auth";
 import AppLayoutClient from "./layout-client";
 import "@/lib/webauthn-scheduler"; // Start WebAuthn cleanup scheduler
-import { getMediaIssueCounts, getPendingRequestCount, getRequestCounts, getUserWithHash, getSetting, isSetupComplete } from "@/db";
+import { getMediaIssueCounts, getPendingRequestCount, getRequestCounts, getUserWithHash, isSetupComplete } from "@/db";
 import { getImageProxyEnabled } from "@/lib/app-settings";
 import { getMaintenanceState } from "@/lib/maintenance";
 import { withCache } from "@/lib/local-cache";
@@ -27,10 +27,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   } | null = null;
   const maintenanceState = await withCache("maintenance_state", 30_000, () => getMaintenanceState());
   const imageProxyEnabled = await withCache("image_proxy_enabled", 60_000, () => getImageProxyEnabled());
-  const sidebarFooterText = await withCache("sidebar_footer_text", 60_000, async () => {
-    return (await getSetting("sidebar_footer_text")) || "LeMedia v0.1.0";
-  });
   const currentAppVersion = getCurrentAppVersion();
+  const sidebarFooterText = `LeMedia v${currentAppVersion}`;
   const releaseUpdate = await withCache<ReleaseUpdateInfo | null>("github_release_update_info", 10 * 60_000, async () => {
     return getGithubReleaseUpdateInfo(currentAppVersion);
   });
