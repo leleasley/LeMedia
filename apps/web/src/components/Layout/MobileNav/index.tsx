@@ -10,6 +10,7 @@ import { useLockBodyScroll } from "@/hooks/useLockBodyScroll";
 import { PWAInstallButton } from "@/components/PWA/InstallButton";
 import { haptic } from "@/hooks/useHaptic";
 import { getAvatarSrc } from "@/lib/avatar";
+import type { ReleaseUpdateInfo } from "@/lib/github-releases";
 
 interface MobileNavProps {
     isAdmin: boolean;
@@ -23,6 +24,7 @@ interface MobileNavProps {
         avatarVersion?: number | null;
         jellyfinUserId?: string | null;
     } | null;
+    releaseUpdate?: ReleaseUpdateInfo | null;
 }
 
 type NavLink = {
@@ -33,7 +35,7 @@ type NavLink = {
     badge?: number;
 };
 
-export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, children, profile }: MobileNavProps) {
+export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, children, profile, releaseUpdate = null }: MobileNavProps) {
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [activeTab, setActiveTab] = useState<string | null>(null);
     const pathname = usePathname();
@@ -403,6 +405,16 @@ export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, 
                                 <div className="border-t border-white/10 pt-4">
                                     <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">App</div>
                                     <div className="mt-2">
+                                        {releaseUpdate?.hasUpdate && (
+                                            <a
+                                                href={releaseUpdate.latestUrl}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="mb-2 block rounded-xl px-3 py-2 text-sm font-semibold text-amber-300 transition hover:bg-white/5 hover:text-amber-200"
+                                            >
+                                                Update available: {releaseUpdate.latestTag}
+                                            </a>
+                                        )}
                                         <PWAInstallButton mobileMenu={true} />
                                     </div>
                                 </div>

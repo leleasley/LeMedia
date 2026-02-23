@@ -5,6 +5,7 @@ import { getMediaIssueCounts, getPendingRequestCount, getRequestCounts, getUserW
 import { getImageProxyEnabled } from "@/lib/app-settings";
 import { getMaintenanceState } from "@/lib/maintenance";
 import { withCache } from "@/lib/local-cache";
+import { getCurrentAppVersion, getGithubReleaseUpdateInfo, type ReleaseUpdateInfo } from "@/lib/github-releases";
 import { redirect } from "next/navigation";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -28,6 +29,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const imageProxyEnabled = await withCache("image_proxy_enabled", 60_000, () => getImageProxyEnabled());
   const sidebarFooterText = await withCache("sidebar_footer_text", 60_000, async () => {
     return (await getSetting("sidebar_footer_text")) || "LeMedia v0.1.0";
+  });
+  const currentAppVersion = getCurrentAppVersion();
+  const releaseUpdate = await withCache<ReleaseUpdateInfo | null>("github_release_update_info", 10 * 60_000, async () => {
+    return getGithubReleaseUpdateInfo(currentAppVersion);
   });
   try {
     const user = await getUser();
@@ -70,6 +75,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       imageProxyEnabled={imageProxyEnabled}
       maintenance={maintenanceState}
       sidebarFooterText={sidebarFooterText}
+      releaseUpdate={releaseUpdate}
     >
       {children}
     </AppLayoutClient>
