@@ -52,6 +52,8 @@ services:
     depends_on:
       lemedia-db:
         condition: service_healthy
+      lemedia-redis:
+        condition: service_healthy
       lemedia-web:
         condition: service_healthy
     restart: unless-stopped

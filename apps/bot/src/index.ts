@@ -7,7 +7,18 @@ import { handleServices, handlePending, handleApproveCallback, handleDenyCallbac
 import { handleTrending, handleTrendingCallback } from "./commands/trending";
 import { handleNewStuff } from "./commands/newstuff";
 import { handleNaturalLanguage } from "./commands/natural";
+import {
+  handleAlerts,
+  handleAwaitingWatchQuery,
+  handleStopAlerts,
+  handleWatch,
+  handleWatchPickCallback,
+  handleWatchStopCallback,
+} from "./commands/watch";
 import { closePool } from "./db";
+import { closeState, ensureStateReady } from "./state";
+import { mainShortcutKeyboard } from "./ui";
+import { startSchedulers } from "./schedulers";
 
 function escHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -43,7 +54,7 @@ bot.command("start", async ctx => {
     `1. Send /link to connect your LeMedia account\n` +
     `2. Then use /request to find something to watch!\n\n` +
     `Send /help to see all commands.`,
-    { parse_mode: "HTML" }
+    { parse_mode: "HTML", reply_markup: mainShortcutKeyboard() }
   );
 });
 
@@ -54,6 +65,9 @@ bot.command("help", async ctx => {
     `🔗 /link — Connect your LeMedia account\n` +
     `🔓 /unlink — Disconnect your account\n\n` +
     `🎬 /request — Search and request media\n` +
+    `🔔 /watch [title|this] — Alert me when available\n` +
+    `🛎 /alerts — View active alerts\n` +
+    `🛑 /stopalerts [all|id] — Stop alerts\n` +
     `📋 /mystuff — Your recent requests &amp; status\n` +
     `📈 /trending — Browse what's popular\n` +
     `🆕 /newstuff — Recently added to library\n\n` +
@@ -63,7 +77,7 @@ bot.command("help", async ctx => {
     `  • "I want to watch Dune"\n` +
     `  • "Can I get Breaking Bad?"\n` +
     `  • "Are my services running?"`,
-    { parse_mode: "HTML" }
+    { parse_mode: "HTML", reply_markup: mainShortcutKeyboard() }
   );
 });
 
@@ -73,6 +87,9 @@ bot.command("unlink", handleUnlink);
 
 // ── Media commands ────────────────────────────────────────────────────────────
 bot.command(["request", "movie", "tv", "search"], handleRequest);
+bot.command(["watch", "alert"], handleWatch);
+bot.command(["alerts", "myalerts"], handleAlerts);
+bot.command(["stopalerts", "stopalert"], handleStopAlerts);
 bot.command("mystuff", handleMyStuff);
 bot.command(["trending", "popular"], handleTrending);
 bot.command(["newstuff", "new", "recent"], handleNewStuff);
@@ -84,6 +101,8 @@ bot.command("pending", handlePending);
 // ── Inline keyboard callbacks ─────────────────────────────────────────────────
 bot.callbackQuery(/^req:/, handleSearchCallback);
 bot.callbackQuery(/^trend:/, handleTrendingCallback);
+bot.callbackQuery(/^watchpick:/, handleWatchPickCallback);
+bot.callbackQuery(/^watchstop:/, handleWatchStopCallback);
 bot.callbackQuery(/^appr:/, handleApproveCallback);
 bot.callbackQuery(/^deny:/, handleDenyCallback);
 
@@ -92,11 +111,15 @@ bot.on("message:text", async ctx => {
   // Skip slash commands (handled above)
   if (ctx.message.text.startsWith("/")) return;
 
-  // 1. User was prompted "What would you like to request?" — treat as search query
+  // 1. User was prompted for /watch title
+  const handledWatch = await handleAwaitingWatchQuery(ctx);
+  if (handledWatch) return;
+
+  // 2. User was prompted "What would you like to request?" — treat as search query
   const handled = await handleAwaitingQuery(ctx);
   if (handled) return;
 
-  // 2. Natural language: "I want to watch Dune" / "are services running?" etc.
+  // 3. Natural language: "I want to watch Dune" / "are services running?" etc.
   await handleNaturalLanguage(ctx);
 });
 
@@ -117,20 +140,33 @@ bot.catch(err => {
 // ── Start ─────────────────────────────────────────────────────────────────────
 console.log(`LeMedia Bot starting... (App: ${APP_URL})`);
 
-bot.start({
-  onStart: info => {
-    console.log(`Bot @${info.username} is running (long polling)`);
-  }
+async function boot() {
+  await ensureStateReady();
+
+  bot.start({
+    onStart: info => {
+      console.log(`Bot @${info.username} is running (long polling)`);
+    }
+  });
+
+  startSchedulers(bot);
+}
+
+boot().catch(err => {
+  console.error("Failed to start bot:", err);
+  process.exit(1);
 });
 
 // Graceful shutdown
 process.once("SIGINT", async () => {
   console.log("Shutting down...");
   await bot.stop();
+  await closeState();
   await closePool();
 });
 process.once("SIGTERM", async () => {
   console.log("Shutting down...");
   await bot.stop();
+  await closeState();
   await closePool();
 });

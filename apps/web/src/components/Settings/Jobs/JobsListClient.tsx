@@ -68,11 +68,15 @@ type JobMetricsResponse = {
 
 type JobHistoryEntry = {
   id: number;
-  jobName: string;
+  jobName?: string;
+  job_name?: string;
   status: "success" | "failure";
-  startedAt: string;
-  finishedAt: string | null;
-  durationMs: number | null;
+  startedAt?: string;
+  started_at?: string;
+  finishedAt?: string | null;
+  finished_at?: string | null;
+  durationMs?: number | null;
+  duration_ms?: number | null;
   error: string | null;
   details: string | null;
 };
@@ -98,9 +102,13 @@ function formatInterval(seconds: number): string {
 
 function formatDuration(ms: number | null): string {
   if (ms === null || ms === undefined) return "\u2014";
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
+  const roundedMs = Math.round(ms);
+  if (roundedMs < 1000) return `${roundedMs}ms`;
+  if (roundedMs < 60000) {
+    const seconds = Number((roundedMs / 1000).toFixed(1));
+    return `${seconds}s`;
+  }
+  return `${Math.floor(roundedMs / 60000)}m ${Math.round((roundedMs % 60000) / 1000)}s`;
 }
 
 function formatRelativeTime(dateStr: string): string {
@@ -292,10 +300,10 @@ function JobCard({
     <div className="rounded-xl border border-white/10 bg-white/[0.03] overflow-hidden">
       <div className="p-4">
         {/* Header row */}
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5 min-w-0">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-2.5 min-w-0 flex-wrap">
             <StatusDot status={getStatus()} />
-            <h3 className="font-semibold text-white truncate">{job.name}</h3>
+            <h3 className="font-semibold text-white truncate basis-full sm:basis-auto">{job.name}</h3>
             <span
               className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
                 job.type === "system" ? "bg-blue-500/20 text-blue-300" : "bg-green-500/20 text-green-300"
@@ -309,16 +317,16 @@ function JobCard({
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 shrink-0 w-full md:w-auto">
             <button
               onClick={onViewLogs}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-white/10 text-gray-300 transition-colors"
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-white/10 text-gray-300 transition-colors flex-1 sm:flex-none"
             >
               Logs
             </button>
             <button
               onClick={onEdit}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-white/10 text-gray-300 transition-colors"
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-white/10 text-gray-300 transition-colors flex-1 sm:flex-none"
             >
               Edit
             </button>
@@ -326,7 +334,7 @@ function JobCard({
               <button
                 onClick={onEnable}
                 disabled={running}
-                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-colors disabled:opacity-50"
+                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-colors disabled:opacity-50 flex-1 sm:flex-none"
               >
                 Re-enable
               </button>
@@ -334,7 +342,7 @@ function JobCard({
               <button
                 onClick={onRun}
                 disabled={running || isExecuting}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50"
+                className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50 flex-1 sm:flex-none"
               >
                 <PlayIcon className="h-3 w-3" />
                 {isExecuting ? "Running..." : "Run Now"}
@@ -344,7 +352,7 @@ function JobCard({
         </div>
 
         {/* Info grid */}
-        <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div>
             <div className="text-[10px] uppercase text-gray-500 font-medium">Schedule</div>
             <div className="text-sm text-gray-200 flex items-center gap-1">
@@ -480,8 +488,8 @@ function ExecutionLog({
   return (
     <div className="rounded-xl border border-white/10 bg-white/[0.03] overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-white/10">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 border-b border-white/10">
+        <div className="flex items-center gap-3 min-w-0">
           <h3 className="text-lg font-semibold text-white">
             Execution History
             {filterJob && <span className="text-indigo-400 ml-1.5 font-normal text-sm">({filterJob})</span>}
@@ -500,10 +508,10 @@ function ExecutionLog({
       </div>
 
       {/* Filters */}
-      <div className="p-4 border-b border-white/10 flex flex-wrap gap-3 items-center">
-        <div className="flex items-center gap-2">
+      <div className="p-4 border-b border-white/10 flex flex-col sm:flex-row sm:flex-wrap gap-3 sm:items-center">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
           <label className="text-xs text-gray-400">Job:</label>
-          <div className="min-w-[180px]">
+          <div className="min-w-[180px] flex-1 sm:flex-none">
             <Select
               value={filterJob ?? "all"}
               onValueChange={(value) => {
@@ -525,9 +533,9 @@ function ExecutionLog({
             </Select>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
           <label className="text-xs text-gray-400">Status:</label>
-          <div className="flex gap-1">
+          <div className="flex gap-1 flex-wrap">
             {[
               { label: "All", value: null },
               { label: "Success", value: "success" },
@@ -547,7 +555,7 @@ function ExecutionLog({
             ))}
           </div>
         </div>
-        <div className="ml-auto flex items-center gap-3">
+        <div className="sm:ml-auto flex items-center gap-3 flex-wrap">
           <span className="text-xs text-gray-500">{total} total entries</span>
           {total > 0 && (
             <button
@@ -572,7 +580,74 @@ function ExecutionLog({
             No execution history recorded yet. Jobs will appear here after their next run.
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <>
+            <div className="md:hidden divide-y divide-white/10">
+              {filtered.map((entry) => {
+                const jobLabel = entry.jobName ?? entry.job_name ?? "Unknown job";
+                const started = entry.startedAt ?? entry.started_at ?? null;
+                const finished = entry.finishedAt ?? entry.finished_at ?? null;
+                const duration = entry.durationMs ?? entry.duration_ms ?? null;
+                const startedDate = started ? new Date(started) : null;
+                const startedIsValid = !!(startedDate && !Number.isNaN(startedDate.getTime()));
+                const startedDisplay = startedIsValid && startedDate ? startedDate.toLocaleString() : "\u2014";
+                const startedRelative = startedIsValid && started ? formatRelativeTime(started) : "\u2014";
+
+                return (
+                  <div
+                    key={entry.id}
+                    className={`p-3 space-y-2 transition-colors duration-700 ${
+                      newIds.has(entry.id) ? "bg-indigo-500/10" : ""
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-sm font-semibold text-white truncate">{jobLabel}</div>
+                      {entry.status === "success" ? (
+                        <span className="inline-flex items-center gap-1 text-emerald-400 text-xs font-medium">
+                          <CheckCircleIcon className="h-4 w-4" />OK
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-red-400 text-xs font-medium">
+                          <XCircleIcon className="h-4 w-4" />FAIL
+                        </span>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <div className="text-gray-500 uppercase text-[10px]">Started</div>
+                        <div className="text-gray-300">{startedDisplay}</div>
+                        <div className="text-gray-500 text-[10px]">{startedRelative}</div>
+                      </div>
+                      <div>
+                        <div className="text-gray-500 uppercase text-[10px]">Duration</div>
+                        <div className="text-gray-300 font-mono">{formatDuration(duration)}</div>
+                      </div>
+                    </div>
+                    {(entry.details || entry.error) && (
+                      <div className="rounded-lg bg-black/30 p-2 text-xs font-mono break-all space-y-1">
+                        {entry.details && (
+                          <div className="text-gray-300">
+                            <span className="text-gray-500">Result: </span>
+                            {entry.details}
+                          </div>
+                        )}
+                        {entry.error && (
+                          <div className="text-red-300">
+                            <span className="text-gray-500">Error: </span>
+                            {entry.error}
+                          </div>
+                        )}
+                        {finished && (
+                          <div className="text-gray-500">
+                            Finished: {new Date(finished).toLocaleString()}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <table className="w-full text-sm hidden md:table">
             <thead>
               <tr className="text-left text-[10px] uppercase text-gray-500 border-b border-white/5">
                 <th className="px-4 py-2 font-medium">Status</th>
@@ -584,6 +659,17 @@ function ExecutionLog({
             </thead>
             <tbody>
               {filtered.map((entry) => (
+                (() => {
+                  const jobLabel = entry.jobName ?? entry.job_name ?? "Unknown job";
+                  const started = entry.startedAt ?? entry.started_at ?? null;
+                  const finished = entry.finishedAt ?? entry.finished_at ?? null;
+                  const duration = entry.durationMs ?? entry.duration_ms ?? null;
+                  const startedDate = started ? new Date(started) : null;
+                  const startedIsValid = !!(startedDate && !Number.isNaN(startedDate.getTime()));
+                  const startedDisplay = startedIsValid && startedDate ? startedDate.toLocaleString() : "\u2014";
+                  const startedRelative = startedIsValid && started ? formatRelativeTime(started) : "\u2014";
+
+                  return (
                 <tr
                   key={entry.id}
                   className={`border-b border-white/5 last:border-0 transition-colors duration-700 ${
@@ -605,13 +691,13 @@ function ExecutionLog({
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-2.5 text-gray-200 font-medium">{entry.jobName}</td>
+                  <td className="px-4 py-2.5 text-gray-200 font-medium">{jobLabel}</td>
                   <td className="px-4 py-2.5 text-gray-300">
-                    <div className="text-xs">{new Date(entry.startedAt).toLocaleString()}</div>
-                    <div className="text-[10px] text-gray-500">{formatRelativeTime(entry.startedAt)}</div>
+                    <div className="text-xs">{startedDisplay}</div>
+                    <div className="text-[10px] text-gray-500">{startedRelative}</div>
                   </td>
                   <td className="px-4 py-2.5 text-gray-300 font-mono text-xs">
-                    {formatDuration(entry.durationMs)}
+                    {formatDuration(duration)}
                   </td>
                   <td className="px-4 py-2.5">
                     {entry.details || entry.error ? (
@@ -647,18 +733,21 @@ function ExecutionLog({
                             {entry.error}
                           </div>
                         )}
-                        {entry.finishedAt && (
+                        {finished && (
                           <div className="text-gray-500">
-                            Finished: {new Date(entry.finishedAt).toLocaleString()}
+                            Finished: {new Date(finished).toLocaleString()}
                           </div>
                         )}
                       </div>
                     )}
                   </td>
                 </tr>
+                  );
+                })()
               ))}
             </tbody>
-          </table>
+            </table>
+          </>
         )}
       </div>
 
@@ -833,7 +922,7 @@ export function JobsListClient() {
     <div className="space-y-4">
       {/* Summary cards */}
       {runtimeData?.summary && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
           <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
             <div className="text-[10px] text-gray-500 uppercase font-medium">Total Runs</div>
             <div className="text-xl font-bold text-white mt-0.5">{runtimeData.summary.totalRuns}</div>

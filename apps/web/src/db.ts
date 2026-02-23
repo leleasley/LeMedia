@@ -7624,7 +7624,19 @@ export async function getJobHistory(
   jobName?: string,
   limit = 50,
   offset = 0
-): Promise<{ entries: any[]; total: number }> {
+): Promise<{
+  entries: {
+    id: number;
+    jobName: string;
+    status: "success" | "failure";
+    startedAt: Date | string;
+    finishedAt: Date | string | null;
+    durationMs: number | null;
+    error: string | null;
+    details: string | null;
+  }[];
+  total: number;
+}> {
   const p = getPool();
   const where = jobName ? `WHERE job_name = $1` : "";
   const params: any[] = jobName ? [jobName] : [];
@@ -7640,7 +7652,17 @@ export async function getJobHistory(
      LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
     [...params, limit, offset]
   );
-  return { entries: dataRes.rows, total };
+  const entries = dataRes.rows.map((row) => ({
+    id: row.id,
+    jobName: row.job_name,
+    status: row.status,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+    durationMs: row.duration_ms,
+    error: row.error,
+    details: row.details,
+  }));
+  return { entries, total };
 }
 
 export async function clearJobHistory(jobName?: string): Promise<number> {

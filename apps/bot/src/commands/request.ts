@@ -2,20 +2,22 @@ import { Context, InlineKeyboard } from "grammy";
 import { getLinkedUser } from "../db";
 import { decryptSecret } from "../encryption";
 import { searchMedia, requestMovie, requestTv, type SearchResult } from "../api";
+import {
+  clearPendingSearch,
+  consumeAwaitingQuery,
+  getPendingSearch,
+  setAwaitingQuery,
+  setLastSelected,
+  setPendingSearch,
+} from "../state";
 
 const SERVICES_SECRET_KEY = process.env.SERVICES_SECRET_KEY ?? "";
 const APP_BASE_URL = (process.env.APP_BASE_URL ?? "").replace(/\/$/, "");
-
-// Users who typed /request with no query — waiting for them to send the title
-const awaitingQuery = new Set<string>();
 
 function appLink(mediaType: "movie" | "tv", tmdbId: number): string {
   if (!APP_BASE_URL) return "";
   return `${APP_BASE_URL}/${mediaType}/${tmdbId}`;
 }
-
-// In-memory search session state: maps chatId → last search results
-const pendingSearches = new Map<number, SearchResult[]>();
 
 function escHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -50,7 +52,7 @@ export async function handleRequest(ctx: Context) {
   const query = text.replace(/^\/(?:request|movie|tv|search)\s*/i, "").trim();
 
   if (!query) {
-    awaitingQuery.add(telegramId);
+    await setAwaitingQuery(telegramId);
     await ctx.reply(
       "🎬 What would you like to request?\n\nJust type the movie or TV show name:",
       { parse_mode: "HTML" }
@@ -64,8 +66,8 @@ export async function handleRequest(ctx: Context) {
 /** Check if this user is in the "awaiting query" state. Returns true if handled. */
 export async function handleAwaitingQuery(ctx: Context): Promise<boolean> {
   const telegramId = String(ctx.from?.id ?? "");
-  if (!awaitingQuery.has(telegramId)) return false;
-  awaitingQuery.delete(telegramId);
+  const isAwaiting = await consumeAwaitingQuery(telegramId);
+  if (!isAwaiting) return false;
   const query = (ctx.message?.text ?? "").trim();
   if (!query) {
     await ctx.reply("Please type a movie or TV show name to search for.");
@@ -104,7 +106,7 @@ export async function runSearch(ctx: Context, query: string) {
     return;
   }
 
-  pendingSearches.set(chatId, results);
+  await setPendingSearch(chatId, results);
 
   const lines = results.map((r, i) => formatResult(r, i));
   const keyboard = new InlineKeyboard();
@@ -134,13 +136,13 @@ export async function handleSearchCallback(ctx: Context) {
   const indexStr = data.replace("req:", "");
 
   if (indexStr === "cancel") {
-    pendingSearches.delete(chatId);
+    await clearPendingSearch(chatId);
     await ctx.editMessageText("Request cancelled.");
     return;
   }
 
   const index = parseInt(indexStr);
-  const results = pendingSearches.get(chatId);
+  const results = await getPendingSearch(chatId);
 
   if (!results || isNaN(index) || index < 0 || index >= results.length) {
     await ctx.editMessageText("❌ Session expired. Please search again.");
@@ -148,7 +150,15 @@ export async function handleSearchCallback(ctx: Context) {
   }
 
   const result = results[index];
-  pendingSearches.delete(chatId);
+  await clearPendingSearch(chatId);
+  await setLastSelected(chatId, {
+    id: result.id,
+    mediaType: result.mediaType,
+    title: result.title,
+    year: result.year,
+    available: result.available,
+    requestStatus: result.requestStatus,
+  });
 
   if (result.available) {
     const link = appLink(result.mediaType, result.id);

@@ -156,13 +156,22 @@ export function TelegramBotPanel() {
       {/* What you can do (shown when linked) */}
       {!isLoading && data?.linked && (
         <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-5">
-          <h3 className="text-sm font-semibold text-white mb-3">What you can do</h3>
+          <h3 className="text-sm font-semibold text-white mb-3">What the bot can do</h3>
           <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-gray-400">
             {[
               { icon: "🎬", text: "/request — Search & request media" },
-              { icon: "📋", text: "/mystuff — Your request status" },
-              { icon: "🔔", text: "Get notified when media is ready" },
+              { icon: "🔔", text: "/watch — Alert me when this/title becomes available" },
+              { icon: "🛎", text: "/alerts — View all your active alerts" },
+              { icon: "🛑", text: "/stopalerts — Stop one or all alerts" },
+              { icon: "📋", text: "/mystuff — View your recent request status" },
+              { icon: "📈", text: "/trending — Browse popular movies and TV" },
+              { icon: "🆕", text: "/newstuff — See recently added media" },
+              { icon: "🤖", text: "Natural language: “I want to watch Dune”" },
+              { icon: "⚡", text: "Proactive updates: download started / available / failed" },
               { icon: "🖥", text: "/services — Service health (admin)" },
+              { icon: "⏳", text: "/pending — Approve or deny pending requests (admin)" },
+              { icon: "🗓", text: "Daily admin digest: pending + failing services + top errors" },
+              { icon: "⌨️", text: "Smart shortcuts keyboard for quick actions" },
             ].map(item => (
               <li key={item.text} className="flex items-start gap-2">
                 <span>{item.icon}</span>

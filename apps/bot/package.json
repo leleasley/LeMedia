@@ -10,6 +10,7 @@
     "dev": "tsx watch src/index.ts"
   },
   "dependencies": {
+    "ioredis": "^5.6.1",
     "grammy": "^1.31.0",
     "pg": "^8.13.1",
     "dotenv": "^16.4.5"

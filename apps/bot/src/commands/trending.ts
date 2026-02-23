@@ -1,17 +1,18 @@
 import { Context, InlineKeyboard } from "grammy";
 import { getLinkedUser } from "../db";
 import { decryptSecret } from "../encryption";
-import { getTrending, searchMedia, type TrendingItem } from "../api";
-import { runSearch } from "./request";
+import { getTrending, type TrendingItem } from "../api";
 
 const SERVICES_SECRET_KEY = process.env.SERVICES_SECRET_KEY ?? "";
 const APP_BASE_URL = (process.env.APP_BASE_URL ?? "").replace(/\/$/, "");
 
-// chatId → trending items for callback
-const pendingTrending = new Map<number, TrendingItem[]>();
-
 function escHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function appLink(mediaType: "movie" | "tv", tmdbId: number): string {
+  if (!APP_BASE_URL) return "";
+  return `${APP_BASE_URL}/${mediaType}/${tmdbId}`;
 }
 
 export async function handleTrending(ctx: Context) {
@@ -66,50 +67,23 @@ export async function handleTrendingCallback(ctx: Context) {
       return;
     }
 
-    pendingTrending.set(chatId, items);
-
     const lines = items.map((r, i) => {
       const icon = mediaType === "movie" ? "🎬" : "📺";
       const year = r.year ? ` (${r.year})` : "";
       const rating = r.voteAverage ? ` ⭐ ${r.voteAverage}` : "";
-      return `${i + 1}. ${icon} <b>${escHtml(r.title)}</b>${escHtml(year)}${escHtml(rating)}`;
+      const link = appLink(mediaType, r.id);
+      const linkLine = link ? `\n    <a href="${link}">View in LeMedia →</a>` : "";
+      return `${i + 1}. ${icon} <b>${escHtml(r.title)}</b>${escHtml(year)}${escHtml(rating)}${linkLine}`;
     });
 
-    const keyboard = new InlineKeyboard();
-    for (let i = 0; i < items.length; i++) {
-      keyboard.text(`${i + 1}`, `trend:pick:${i}`);
-      if ((i + 1) % 4 === 0 || i === items.length - 1) keyboard.row();
-    }
-    keyboard.text("❌ Cancel", "trend:cancel");
-
     await ctx.editMessageText(
-      `📈 <b>Trending ${mediaType === "movie" ? "Movies" : "TV Shows"}</b>\n\n${lines.join("\n")}\n\n<i>Tap a number to request it:</i>`,
-      { parse_mode: "HTML", reply_markup: keyboard }
+      `📈 <b>Trending ${mediaType === "movie" ? "Movies" : "TV Shows"}</b>\n\n${lines.join("\n\n")}`,
+      { parse_mode: "HTML", link_preview_options: { is_disabled: true } }
     );
     return;
   }
 
-  // Handle item pick: trend:pick:{index}
-  if (data.startsWith("trend:pick:")) {
-    const index = parseInt(data.replace("trend:pick:", ""));
-    const items = pendingTrending.get(chatId);
-
-    if (!items || isNaN(index) || index < 0 || index >= items.length) {
-      await ctx.editMessageText("❌ Session expired. Use /trending to start again.");
-      return;
-    }
-
-    const item = items[index];
-    pendingTrending.delete(chatId);
-
-    // Close the trending message then run a real search for this title
-    await ctx.editMessageText(`🔍 Searching for <b>${escHtml(item.title)}</b>…`, { parse_mode: "HTML" });
-    await runSearch(ctx, item.title);
-    return;
-  }
-
   if (data === "trend:cancel") {
-    pendingTrending.delete(chatId);
     await ctx.editMessageText("Cancelled.");
   }
 }
