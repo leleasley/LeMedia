@@ -22,9 +22,9 @@ function normalizeVersion(value: string): string {
 
 function parseVersion(value: string): [number, number, number] | null {
   const normalized = normalizeVersion(value);
-  const match = normalized.match(/^(\d+)\.(\d+)\.(\d+)$/);
+  const match = normalized.match(/^(\d+)\.(\d+)(?:\.(\d+))?$/);
   if (!match) return null;
-  return [Number(match[1]), Number(match[2]), Number(match[3])];
+  return [Number(match[1]), Number(match[2]), Number(match[3] ?? 0)];
 }
 
 function isVersionGreater(latest: string, current: string): boolean {
