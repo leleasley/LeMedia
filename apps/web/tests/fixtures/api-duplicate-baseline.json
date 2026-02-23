@@ -1,6 +1,6 @@
 {
   "generatedAt": "2026-02-11T10:02:02.968Z",
-  "pairCount": 159,
+  "pairCount": 161,
   "pairs": [
     {
       "base": "/admin/jellyfin/import/route.ts",
@@ -505,6 +505,14 @@
     {
       "base": "/request/tv/route.ts",
       "v1": "/v1/request/tv/route.ts"
+    },
+    {
+      "base": "/requests/[id]/comments/[commentId]/route.ts",
+      "v1": "/v1/requests/[id]/comments/[commentId]/route.ts"
+    },
+    {
+      "base": "/requests/[id]/comments/route.ts",
+      "v1": "/v1/requests/[id]/comments/route.ts"
     },
     {
       "base": "/requests/count/route.ts",
