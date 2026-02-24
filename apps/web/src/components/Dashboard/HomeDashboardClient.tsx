@@ -43,6 +43,7 @@ type RecentRequestItem = {
   tmdbId: number;
   title: string;
   year?: string;
+  description?: string;
   poster: string | null;
   backdrop: string | null;
   type: "movie" | "tv";
@@ -55,6 +56,7 @@ type RecentAddedItem = {
   title: string;
   posterUrl: string | null;
   year?: string;
+  description?: string;
   type?: "movie" | "tv";
   mediaStatus?: number;
 };
@@ -110,6 +112,7 @@ type PersonalizedRecommendation = {
   mediaType: "movie" | "tv" | null;
   posterPath: string | null;
   backdropPath: string | null;
+  description?: string;
   year?: number;
   source: "jellyfin" | "tmdb";
   reasoning?: string; // Why this was recommended
@@ -978,7 +981,7 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
         </div>
 
         {recentRequestsLoading && !recentRequests.length ? (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4 xl:grid-cols-6">
             {Array.from({ length: 6 }).map((_, idx) => (
               <div key={idx} className="aspect-video animate-pulse rounded-xl border border-white/[0.06] bg-white/[0.03]" />
             ))}
@@ -990,7 +993,7 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
           </div>
         ) : filteredRequests.length ? (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4 xl:grid-cols-6">
               {pagedRequests.map((item, idx) => {
                 const href = item.type === "movie" ? `/movie/${item.tmdbId}` : `/tv/${item.tmdbId}`;
                 return (
@@ -1001,6 +1004,7 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
                     posterUrl={item.poster ?? item.backdrop}
                     href={href}
                     year={item.year}
+                    description={item.description}
                     mediaType={item.type}
                     mediaStatus={statusToMediaStatus(item.status)}
                     imagePriority={idx < 8}
@@ -1109,6 +1113,7 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
                     posterUrl={item.posterUrl}
                     href={href}
                     year={item.year}
+                    description={item.description}
                     mediaType={type}
                     mediaStatus={item.mediaStatus as MediaStatus | undefined}
                     imagePriority={idx < 12}
@@ -1165,7 +1170,7 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
               <ArrowUpRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
             </PrefetchLink>
           </div>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-6">
             {personalizedRecs.slice(0, 6).map((rec, idx) => {
               const type = rec.type.toLowerCase().includes("series") || rec.type.toLowerCase().includes("tv") ? "tv" : "movie";
               const tmdbId = rec.tmdbId || parseInt(rec.id, 10);
@@ -1181,6 +1186,7 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
                     posterUrl={posterUrl}
                     href={href}
                     year={year}
+                    description={rec.description}
                     mediaType={type}
                     imagePriority={idx < 6}
                     stableHover

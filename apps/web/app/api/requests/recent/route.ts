@@ -12,6 +12,7 @@ type RecentRequestCard = {
   tmdbId: number;
   title: string;
   year?: string;
+  description?: string;
   poster: string | null;
   backdrop: string | null;
   type: "movie" | "tv";
@@ -99,6 +100,7 @@ export async function GET(request: NextRequest) {
           tmdbId: req.tmdb_id,
           title: req.title,
           year,
+          description: (req as any).overview ?? details?.overview ?? "",
           poster: posterUrl,
           backdrop: backdropUrl,
           type,

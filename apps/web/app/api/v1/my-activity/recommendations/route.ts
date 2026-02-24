@@ -151,6 +151,7 @@ export async function GET(req: NextRequest) {
       mediaType: "movie" | "tv" | null;
       posterPath: string | null;
       backdropPath: string | null;
+      description?: string;
       year?: number;
       source: "jellyfin" | "tmdb";
       reasoning?: string; // Why this was recommended
@@ -184,6 +185,7 @@ export async function GET(req: NextRequest) {
             mediaType: isMovie ? "movie" : "tv",
             posterPath: tmdbImageUrl(item.poster_path, "w500", imageProxyEnabled),
             backdropPath: tmdbImageUrl(item.backdrop_path, "w780", imageProxyEnabled),
+            description: item.overview ?? "",
             year: item.release_date ? new Date(item.release_date).getFullYear() : item.first_air_date ? new Date(item.first_air_date).getFullYear() : undefined,
             source: "tmdb",
             reasoning: reasoningBase,
@@ -211,6 +213,7 @@ export async function GET(req: NextRequest) {
               mediaType: "movie",
               posterPath: tmdbImageUrl(movie.poster_path, "w500", imageProxyEnabled),
               backdropPath: tmdbImageUrl(movie.backdrop_path, "w780", imageProxyEnabled),
+              description: movie.overview ?? "",
               year: movie.release_date ? new Date(movie.release_date).getFullYear() : undefined,
               source: "tmdb",
               reasoning: fallbackReasoning,
@@ -227,6 +230,7 @@ export async function GET(req: NextRequest) {
               mediaType: "tv",
               posterPath: tmdbImageUrl(tv.poster_path, "w500", imageProxyEnabled),
               backdropPath: tmdbImageUrl(tv.backdrop_path, "w780", imageProxyEnabled),
+              description: tv.overview ?? "",
               year: tv.first_air_date ? new Date(tv.first_air_date).getFullYear() : undefined,
               source: "tmdb",
               reasoning: fallbackReasoning,
