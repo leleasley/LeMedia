@@ -1,6 +1,6 @@
 "use client";
 
-import { TitleCard } from "@/components/Media/TitleCard";
+import { HoverMediaCard } from "@/components/Media/HoverMediaCard";
 import { Slider } from "@/components/Media/Slider";
 import Link from "next/link";
 import { ArrowRightCircle } from "lucide-react";
@@ -95,18 +95,20 @@ export function MediaSlider({ title, url, linkUrl, sliderKey, mediaType }: Media
 
     return (
       <div key={`${itemMediaType}:${item.id}`} className="w-36 sm:w-36 md:w-44">
-        <TitleCard
+        <HoverMediaCard
           id={item.id}
-          image={tmdbImageUrl(item.poster_path, "w500") || undefined}
+          posterUrl={tmdbImageUrl(item.poster_path, "w500") || null}
+          href={itemMediaType === "movie" ? `/movie/${item.id}` : `/tv/${item.id}`}
           title={itemTitle}
           year={itemYear}
           description={itemDescription}
           mediaType={itemMediaType}
-          userScore={item.vote_average}
+          rating={item.vote_average}
           mediaStatus={mediaStatus}
           imagePriority={idx < 6}
           imageLoading={idx < 6 ? "eager" : "lazy"}
           imageFetchPriority={idx < 6 ? "high" : "auto"}
+          cardMode="requestable"
         />
       </div>
     );

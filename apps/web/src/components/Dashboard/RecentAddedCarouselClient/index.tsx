@@ -22,5 +22,5 @@ export function RecentAddedCarouselClient({ take = 20 }: { take?: number }) {
   const items = data?.items ?? [];
   if (!items.length) return null;
 
-  return <MediaCarousel title="Recently Added" items={items} />;
+  return <MediaCarousel title="Recently Added" items={items} cardMode="libraryPartialRequest" />;
 }

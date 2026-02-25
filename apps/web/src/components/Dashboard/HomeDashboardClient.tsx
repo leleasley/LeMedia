@@ -1008,6 +1008,7 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
                     mediaType={item.type}
                     mediaStatus={statusToMediaStatus(item.status)}
                     imagePriority={idx < 8}
+                    cardMode="requestable"
                     stableHover
                   />
                 );
@@ -1117,6 +1118,7 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
                     mediaType={type}
                     mediaStatus={item.mediaStatus as MediaStatus | undefined}
                     imagePriority={idx < 12}
+                    cardMode="libraryPartialRequest"
                     stableHover
                   />
                 );
@@ -1189,6 +1191,7 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
                     description={rec.description}
                     mediaType={type}
                     imagePriority={idx < 6}
+                    cardMode="requestable"
                     stableHover
                   />
                   {rec.reasoning && (

@@ -134,6 +134,7 @@ export default async function DashboardTmdbCustomCarousel({ slider, imageProxyEn
     <MediaCarousel
       title={title}
       lazy
+      cardMode="requestable"
       items={items.map(m => ({
         id: m.id,
         title: m.title,

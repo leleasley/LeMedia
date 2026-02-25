@@ -29,9 +29,10 @@ interface MediaCarouselProps {
     viewAllHref?: string;
     className?: string;
     lazy?: boolean;
+    cardMode?: "requestable" | "library" | "libraryPartialRequest";
 }
 
-export function MediaCarousel({ title, items, itemType, viewAllHref, className, lazy = false }: MediaCarouselProps) {
+export function MediaCarousel({ title, items, itemType, viewAllHref, className, lazy = false, cardMode = "requestable" }: MediaCarouselProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const rafRef = useRef<number | null>(null);
@@ -206,6 +207,7 @@ export function MediaCarousel({ title, items, itemType, viewAllHref, className, 
                                     imagePriority={idx < 6}
                                     imageLoading={idx < 6 ? "eager" : "lazy"}
                                     imageFetchPriority={idx < 6 ? "high" : "auto"}
+                                    cardMode={cardMode}
                                 />
                             </div>
                         ))

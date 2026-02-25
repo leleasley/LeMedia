@@ -142,6 +142,7 @@ function SortableItem({
           description={item.description}
           mediaType={item.mediaType}
           mediaStatus={item.mediaStatus}
+          cardMode="requestable"
         />
       </div>
     </div>

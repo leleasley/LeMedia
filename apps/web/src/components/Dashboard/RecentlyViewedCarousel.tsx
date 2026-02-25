@@ -45,6 +45,7 @@ export function RecentlyViewedCarousel({ imageProxyEnabled }: { imageProxyEnable
     <MediaCarousel 
       title="Recently Viewed"
       items={items}
+      cardMode="requestable"
     />
   );
 }

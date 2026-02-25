@@ -192,6 +192,7 @@ export default async function SearchPage({ searchParams }: { searchParams?: Sear
                 description={r.overview}
                 mediaType={mediaType}
                 mediaStatus={mediaStatus}
+                cardMode="requestable"
               />
             );
           })}

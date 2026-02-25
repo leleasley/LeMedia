@@ -173,6 +173,7 @@ export default function DiscoverNetwork() {
                             imagePriority={index < 12}
                             imageLoading={index < 12 ? "eager" : "lazy"}
                             imageFetchPriority={index < 12 ? "high" : "auto"}
+                            cardMode="requestable"
                         />
                     </li>
                 ))}

@@ -40,7 +40,8 @@ export async function GET(request: NextRequest) {
   ]);
   const tmdbResults = await Promise.allSettled(
     recentRequestsRaw.map((req) => {
-      const hasAllLocal = req.poster_path && req.backdrop_path && req.release_year;
+      const cachedOverview = typeof (req as any).overview === "string" ? String((req as any).overview).trim() : "";
+      const hasAllLocal = req.poster_path && req.backdrop_path && req.release_year && cachedOverview;
       if (hasAllLocal) return Promise.resolve(null);
       const type = req.request_type === "movie" ? "movie" : "tv";
       return type === "movie" ? getMovie(req.tmdb_id) : getTv(req.tmdb_id);
@@ -52,6 +53,7 @@ export async function GET(request: NextRequest) {
         const type = req.request_type === "movie" ? "movie" : "tv";
         const detailsResult = tmdbResults[idx];
         const details = detailsResult?.status === "fulfilled" ? detailsResult.value : null;
+        const overview = typeof (req as any).overview === "string" ? String((req as any).overview) : "";
         if (details && (!req.poster_path || !req.backdrop_path || !req.release_year)) {
           void updateRequestMetadata({
             requestId: req.id,
@@ -100,7 +102,7 @@ export async function GET(request: NextRequest) {
           tmdbId: req.tmdb_id,
           title: req.title,
           year,
-          description: (req as any).overview ?? details?.overview ?? "",
+          description: overview || details?.overview || "",
           poster: posterUrl,
           backdrop: backdropUrl,
           type,

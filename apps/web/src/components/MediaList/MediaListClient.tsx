@@ -165,6 +165,7 @@ export function MediaListClient({ listType }: { listType: "favorite" | "watchlis
                       rating={item.rating}
                       description={item.description}
                       mediaType={item.type}
+                      cardMode="requestable"
                     />
                   ))}
                 </div>
@@ -185,6 +186,7 @@ export function MediaListClient({ listType }: { listType: "favorite" | "watchlis
               rating={item.rating}
               description={item.description}
               mediaType={item.type}
+              cardMode="requestable"
             />
           ))}
         </div>

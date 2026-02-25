@@ -416,6 +416,7 @@ export function RecommendationsPageClientV2() {
                           description={item.description}
                           mediaType={item.type}
                           touchInteraction="navigate"
+                          cardMode="requestable"
                         />
                         {/* Quick Add Buttons */}
                         <div className={`absolute bottom-2 right-2 flex gap-1 transition-opacity ${isTouch ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
@@ -481,6 +482,7 @@ export function RecommendationsPageClientV2() {
                   description={item.description}
                   mediaType={item.type}
                   touchInteraction="navigate"
+                  cardMode="requestable"
                 />
                 {/* Quick Add Buttons */}
                 <div className={`absolute bottom-2 right-2 flex gap-1 transition-opacity ${isTouch ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>

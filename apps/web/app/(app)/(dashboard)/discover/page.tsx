@@ -198,6 +198,7 @@ export default async function Page() {
           <MediaCarousel
             key={s.id}
             title="Trending"
+            cardMode="requestable"
             items={trending.map(m => ({
               id: m.id,
               title: m.title,
@@ -216,6 +217,7 @@ export default async function Page() {
             key={s.id}
             title="Popular Movies"
             viewAllHref="/popular/movie"
+            cardMode="requestable"
             items={popularMovies.map(m => ({
               id: m.id,
               title: m.title,
@@ -234,6 +236,7 @@ export default async function Page() {
             key={s.id}
             title="Popular TV Shows"
             viewAllHref="/popular/tv"
+            cardMode="requestable"
             items={popularTv.map(m => ({
               id: m.id,
               title: m.title,
@@ -256,6 +259,7 @@ export default async function Page() {
             title="Upcoming Movies"
             viewAllHref="/upcoming/movie"
             lazy
+            cardMode="requestable"
             items={upcomingMovies.map(m => ({
               id: m.id,
               title: m.title,
@@ -278,6 +282,7 @@ export default async function Page() {
             title="Upcoming TV Shows"
             viewAllHref="/upcoming/tv"
             lazy
+            cardMode="requestable"
             items={upcomingTv.map(m => ({
               id: m.id,
               title: m.title,
@@ -297,6 +302,7 @@ export default async function Page() {
             title="Top Rated Movies"
             viewAllHref="/top-rated/movie"
             lazy
+            cardMode="requestable"
             items={topRatedMovies.map(m => ({
               id: m.id,
               title: m.title,
@@ -316,6 +322,7 @@ export default async function Page() {
             title="Top Rated TV Shows"
             viewAllHref="/top-rated/tv"
             lazy
+            cardMode="requestable"
             items={topRatedTv.map(m => ({
               id: m.id,
               title: m.title,

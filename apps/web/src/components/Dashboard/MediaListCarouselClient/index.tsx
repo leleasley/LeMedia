@@ -30,5 +30,5 @@ export function MediaListCarouselClient({
   const items = data?.items ?? [];
   if (!items.length) return null;
 
-  return <MediaCarousel title={title} items={items} />;
+  return <MediaCarousel title={title} items={items} cardMode="requestable" />;
 }

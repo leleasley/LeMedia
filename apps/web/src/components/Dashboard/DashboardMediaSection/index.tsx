@@ -142,6 +142,7 @@ export function DashboardMediaSection({
                             mediaType={item.type}
                             mediaStatus={finalMediaStatus}
                             imagePriority={!lazy || idx < 12}
+                            cardMode="requestable"
                         />
                     );
                 })}

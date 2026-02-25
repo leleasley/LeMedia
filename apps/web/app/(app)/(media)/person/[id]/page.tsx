@@ -190,6 +190,7 @@ export default async function PersonPage({ params }: { params: ParamsInput }) {
                 <MediaCarousel 
                   title="Known For" 
                   items={knownForItems} 
+                  cardMode="requestable"
                 />
               </div>
             )}
@@ -201,6 +202,7 @@ export default async function PersonPage({ params }: { params: ParamsInput }) {
                   title="Acting (Movies)" 
                   items={movieItems.slice(0, 20)} 
                   itemType="movie"
+                  cardMode="requestable"
                 />
               </div>
             )}
@@ -212,6 +214,7 @@ export default async function PersonPage({ params }: { params: ParamsInput }) {
                   title="Acting (TV Shows)" 
                   items={tvItems.slice(0, 20)} 
                   itemType="tv"
+                  cardMode="requestable"
                 />
               </div>
             )}
