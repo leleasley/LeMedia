@@ -9,6 +9,7 @@ import { syncProwlarrIndexers } from "@/lib/prowlarr-sync";
 import { importLetterboxdReviews } from "@/lib/letterboxd";
 import { createBackupArchive } from "@/lib/backups";
 import { runSystemAlertChecks } from "@/lib/system-alerts";
+import { sendTelegramAdminDigestJob } from "@/lib/jobs/telegram-admin-digest";
 
 export type JobHandler = () => Promise<string | void>;
 
@@ -85,5 +86,10 @@ export const jobHandlers: Record<string, JobHandler> = {
     await runSystemAlertChecks();
     logger.info("[Job] system-alerts completed");
     return "Checks completed";
+  },
+  "telegram-admin-digest": async () => {
+    const result = await sendTelegramAdminDigestJob();
+    logger.info(`[Job] telegram-admin-digest completed: ${result}`);
+    return result;
   },
 };

@@ -15,5 +15,6 @@ INSERT INTO jobs (name, schedule, interval_seconds, type, run_on_start)
 VALUES 
     ('request-sync', '*/5 * * * *', 300, 'system', TRUE), -- Sync requests every 5 mins
     ('watchlist-sync', '0 * * * *', 3600, 'system', FALSE), -- Sync watchlist every hour
+    ('telegram-admin-digest', '0 9 * * *', 86400, 'system', FALSE), -- Telegram admin digest daily at 09:00
     ('prowlarr-indexer-sync', '*/5 * * * *', 300, 'system', TRUE) -- Sync Prowlarr indexers every 5 mins
 ON CONFLICT (name) DO NOTHING;

@@ -203,6 +203,8 @@ const DAYS_OF_MONTH = Array.from({ length: 28 }, (_, i) => ({
   value: `${i + 1}`,
 }));
 
+const TELEGRAM_DIGEST_TIME_PRESETS = ["07:00", "08:00", "09:00", "18:00", "21:00"];
+
 // ─── Schedule helpers ────────────────────────────────────────────────────────
 
 function parseCronSchedule(schedule: string) {
@@ -1031,6 +1033,33 @@ export function JobsListClient() {
               </Select>
               <p className="mt-2 text-xs text-gray-400">Changes apply globally for all users.</p>
             </div>
+
+            {editJob.name === "telegram-admin-digest" && (
+              <div>
+                <label className="block text-sm font-medium mb-2 text-gray-300">Daily digest quick time</label>
+                <div className="flex flex-wrap gap-2">
+                  {TELEGRAM_DIGEST_TIME_PRESETS.map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => {
+                        setScheduleMode("daily");
+                        setEditInterval(86400);
+                        setTimeValue(preset);
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                        scheduleMode === "daily" && timeValue === preset
+                          ? "bg-indigo-600 text-white"
+                          : "bg-white/5 hover:bg-white/10 text-gray-300"
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs text-gray-400">Uses scheduler timezone settings and updates the job cron automatically.</p>
+              </div>
+            )}
 
             {scheduleMode === "interval" && (
               <div>

@@ -198,7 +198,7 @@ export function TitleCard({
 
           {/* Top Badges */}
           <div className="absolute top-0 left-0 right-0 p-1.5 sm:p-2 flex justify-between items-start z-20 pointer-events-none">
-            {/* Left column: type */}
+            {/* Left column: type + persistent score */}
             <div className="flex flex-col items-start gap-1">
               <div className={`px-1.5 sm:px-2 py-0.5 rounded-full text-[8px] sm:text-[9px] font-semibold uppercase tracking-wide backdrop-blur-sm ${
                   mediaType === "movie"
@@ -207,6 +207,11 @@ export function TitleCard({
                 }`}>
                 {mediaType === "movie" ? "Movie" : "Series"}
               </div>
+              {finalScore !== undefined && finalScore > 0 && (
+                <div className="flex items-center rounded-full bg-black/55 backdrop-blur-sm px-1.5 py-0.5 text-[9px] sm:text-[10px] font-bold text-yellow-400">
+                  <span>{Math.round(finalScore * 10)}%</span>
+                </div>
+              )}
             </div>
 
             {/* Status & List Buttons Group */}

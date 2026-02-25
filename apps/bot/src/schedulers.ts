@@ -1,22 +1,14 @@
 import { Bot } from "grammy";
-import { getServiceHealth } from "./api";
 import {
   completeWatchAlert,
-  countPendingRequests,
   getRequestStatusState,
-  getTopJobErrors,
-  listLinkedAdmins,
   listLinkedRequestStatuses,
   listTriggeredWatchAlerts,
   upsertRequestStatusState,
   withAdvisoryLock,
 } from "./db";
-import { decryptSecret } from "./encryption";
-import { isDigestSentForDate, markDigestSentForDate } from "./state";
 
 const APP_BASE_URL = (process.env.APP_BASE_URL ?? "").replace(/\/$/, "");
-const SERVICES_SECRET_KEY = process.env.SERVICES_SECRET_KEY ?? "";
-const DIGEST_HOUR_UTC = Number(process.env.TELEGRAM_ADMIN_DIGEST_HOUR_UTC ?? "9");
 
 function escHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -122,71 +114,10 @@ async function sendRequestStatusAndWatchAlerts(bot: Bot) {
   });
 }
 
-async function sendAdminDailyDigest(bot: Bot) {
-  await withAdvisoryLock(450002, async () => {
-    const now = new Date();
-    const hour = now.getUTCHours();
-    const minute = now.getUTCMinutes();
-
-    if (hour !== DIGEST_HOUR_UTC || minute > 10) return;
-
-    const dateKey = now.toISOString().slice(0, 10);
-    const alreadySent = await isDigestSentForDate(dateKey);
-    if (alreadySent) return;
-
-    const admins = await listLinkedAdmins();
-    if (admins.length === 0) {
-      await markDigestSentForDate(dateKey);
-      return;
-    }
-
-    const pending = await countPendingRequests();
-    const topErrors = await getTopJobErrors(24, 3);
-
-    for (const admin of admins) {
-      const apiToken = decryptSecret(admin.apiTokenEncrypted, SERVICES_SECRET_KEY);
-      let failingServices: string[] = [];
-      try {
-        const services = await getServiceHealth(apiToken);
-        failingServices = services.filter((item) => !item.healthy).map((item) => item.name);
-      } catch {
-        failingServices = ["Unable to fetch services"];
-      }
-
-      const serviceLine =
-        failingServices.length === 0
-          ? "✅ No failing services"
-          : `⚠️ Failing services: ${failingServices.map(escHtml).join(", ")}`;
-
-      const errorsLine =
-        topErrors.length === 0
-          ? "✅ No job failures in last 24h"
-          : topErrors
-              .map((item, idx) => `${idx + 1}. ${escHtml(item.message)} (${item.count})`)
-              .join("\n");
-
-      const text =
-        `🗓 <b>Admin Daily Digest</b>\n` +
-        `Pending requests: <b>${pending}</b>\n` +
-        `${serviceLine}\n\n` +
-        `<b>Top errors (24h)</b>\n${errorsLine}`;
-
-      await bot.api.sendMessage(admin.telegramId, text, { parse_mode: "HTML" }).catch(() => {});
-    }
-
-    await markDigestSentForDate(dateKey);
-  });
-}
-
 export function startSchedulers(bot: Bot) {
   void sendRequestStatusAndWatchAlerts(bot).catch(() => {});
-  void sendAdminDailyDigest(bot).catch(() => {});
 
   setInterval(() => {
     void sendRequestStatusAndWatchAlerts(bot).catch(() => {});
   }, 60_000);
-
-  setInterval(() => {
-    void sendAdminDailyDigest(bot).catch(() => {});
-  }, 5 * 60_000);
 }

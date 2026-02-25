@@ -3322,6 +3322,7 @@ async function ensureSchema() {
           ('watchlist-sync', '0 * * * *', 3600, 'system', FALSE),
           ('letterboxd-import', '0 4 * * *', 86400, 'system', FALSE),
           ('weekly-digest', '0 9 * * 1', 604800, 'system', FALSE),
+          ('telegram-admin-digest', '0 9 * * *', 86400, 'system', FALSE),
           ('session-cleanup', '0 * * * *', 3600, 'system', TRUE),
           ('calendar-notifications', '0 */6 * * *', 21600, 'system', FALSE),
           ('jellyfin-availability-sync', '0 */4 * * *', 14400, 'system', FALSE),
