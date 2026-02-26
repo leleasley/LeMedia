@@ -5,12 +5,13 @@ import Image from "next/image";
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
-import { ChevronDown, ChevronUp, Star, Tv, Eye, Users, CheckCircle, Info, Check, X, Loader2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Star, Tv, Eye, CheckCircle, Info, Check, X, Loader2 } from "lucide-react";
 import { Modal } from "@/components/Common/Modal";
 import { readJson } from "@/lib/fetch-utils";
 import { csrfFetch } from "@/lib/csrf-client";
 import { emitRequestsChanged } from "@/lib/request-refresh";
 import { MediaInfoBox } from "@/components/Media/MediaInfoBox";
+import { MediaCastScroller } from "@/components/Media/MediaCastScroller";
 import { MediaActionMenu } from "@/components/Media/MediaActionMenu";
 import { MediaListButtons } from "@/components/Media/MediaListButtons";
 import { SeriesRequestModal } from "@/components/Requests/SeriesRequestModal";
@@ -160,12 +161,6 @@ const monitoringOptions = [
     { value: "none", label: "None" }
 ];
 
-function initials(name: string): string {
-    const parts = name.trim().split(/\s+/g).filter(Boolean);
-    if (!parts.length) return "?";
-    return parts.slice(0, 2).map(p => p[0]?.toUpperCase() ?? "").join("");
-}
-
 const fetcher = async (url: string): Promise<TvAggregateResponse | null> => {
     const res = await fetch(url, { credentials: "include" });
     if (!res.ok) return null;
@@ -249,9 +244,40 @@ export function TvDetailClientNew({
     requestedBy?: RequestedBy | null;
     children?: React.ReactNode;
 }) {
-    const cast = useMemo<CastMember[]>(() => (tv.aggregate_credits?.cast ?? tv.credits?.cast ?? []).slice(0, 12), [tv]);
+    const cast = useMemo<CastMember[]>(() => (tv.aggregate_credits?.cast ?? tv.credits?.cast ?? []), [tv]);
     const creators = useMemo<Creator[]>(() => (Array.isArray(tv.created_by) ? tv.created_by.slice(0, 6) : []), [tv]);
     const crew = useMemo<CrewMember[]>(() => (Array.isArray(tv.credits?.crew) ? tv.credits.crew : []), [tv]);
+    const fullCrewForCast = useMemo<CrewMember[]>(() => (tv.aggregate_credits?.crew ?? tv.credits?.crew ?? []), [tv]);
+
+    const getTmdbImage = useCallback(
+        (path: string | null | undefined, size: string) => tmdbImageUrl(path, size, imageProxyEnabled),
+        [imageProxyEnabled]
+    );
+
+    const castItems = useMemo(() => cast.map((person) => {
+        const name = person.name ?? "Unknown";
+        const character = person.roles ? person.roles[0]?.character : (person.character ?? null);
+        const episodeCount = person.roles ? person.total_episode_count : null;
+        const role = character
+            ? `${character}${episodeCount ? ` • ${episodeCount} eps` : ""}`
+            : episodeCount
+                ? `${episodeCount} eps`
+                : null;
+
+        return {
+            id: person.id,
+            name,
+            role,
+            profileUrl: getTmdbImage(person.profile_path, "w300") || null
+        };
+    }), [cast, getTmdbImage]);
+
+    const crewItems = useMemo(() => fullCrewForCast.map((person) => ({
+        id: person.id,
+        name: person.name ?? "Unknown",
+        role: person.job ?? null,
+        profileUrl: null
+    })), [fullCrewForCast]);
 
     const crewRoles = useMemo(() => new Set([
         "Executive Producer",
@@ -271,11 +297,6 @@ export function TvDetailClientNew({
     const totalSeasons = useMemo(
         () => seasons.filter((season) => season.season_number !== 0).length,
         [seasons]
-    );
-
-    const getTmdbImage = useCallback(
-        (path: string | null | undefined, size: string) => tmdbImageUrl(path, size, imageProxyEnabled),
-        [imageProxyEnabled]
     );
     const [expandedSeasons, setExpandedSeasons] = useState<Set<number>>(new Set());
     const [seasonEpisodes, setSeasonEpisodes] = useState<Record<number, Episode[]>>({});
@@ -1480,45 +1501,14 @@ export function TvDetailClientNew({
             </div>
 
             {/* Cast Section - At the Bottom */}
-            {cast.length > 0 && (
+            {castItems.length > 0 && (
                 <div className="mt-10 sm:mt-16 md:mt-24">
-                    <h2 className="text-xl sm:text-2xl font-bold text-white tracking-wide mb-4 sm:mb-6">Cast</h2>
-                    <div className="grid grid-cols-4 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-1.5 sm:gap-3">
-                        {cast.map((person) => {
-                            const img = getTmdbImage(person.profile_path, "w300");
-                            const name = person.name ?? "Unknown";
-                            const character = person.roles ? person.roles[0]?.character : (person.character ?? "");
-                            const episodeCount = person.roles ? person.total_episode_count : null;
-                            const label = character ? `${name} as ${character}` : name;
-                            return (
-                                <Link
-                                    key={person.id}
-                                    href={`/person/${person.id}`}
-                                    aria-label={`View ${label}`}
-                                    className="group block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900"
-                                >
-                                    <div className="relative aspect-[2/3] overflow-hidden rounded-md sm:rounded-lg border border-white/10 bg-white/5 transition-transform duration-300 group-hover:scale-105 group-hover:border-white/20">
-                                        {img ? (
-                                            <CachedImage
-                                                type="tmdb"
-                                                src={img}
-                                                alt={name}
-                                                fill
-                                                className="object-cover transition-transform duration-300 group-hover:scale-110"
-                                            />
-                                        ) : (
-                                            <div className="absolute inset-0 flex items-center justify-center text-gray-500 font-semibold text-xs sm:text-sm">{initials(name)}</div>
-                                        )}
-                                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-70" />
-                                    </div>
-                                    <div className="mt-1 text-center">
-                                        <div className="text-[10px] sm:text-xs font-semibold text-white truncate">{name}</div>
-                                        <div className="text-[9px] sm:text-[11px] text-gray-400 truncate">{character}{episodeCount && <span className="opacity-70"> • {episodeCount} eps</span>}</div>
-                                    </div>
-                                </Link>
-                            );
-                        })}
-                    </div>
+                    <MediaCastScroller
+                        title="Cast"
+                        items={castItems}
+                        crewItems={crewItems}
+                        previewCount={12}
+                    />
                 </div>
             )}
             {children}

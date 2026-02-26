@@ -1206,7 +1206,7 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
 
       {/* ─── Friends Activity ─── */}
       {friendsActivity && Array.isArray(friendsActivity) && friendsActivity.length > 0 && (
-        <section>
+        <section className="pt-2 sm:pt-0">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="flex items-center gap-2.5 text-lg font-bold text-white">
               <Users className="h-5 w-5 text-blue-400" />
