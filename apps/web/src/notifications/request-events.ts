@@ -24,7 +24,8 @@ import {
   NOTIFICATION_TYPE_BIT_REQUEST_FAILED,
   NOTIFICATION_TYPE_BIT_REQUEST_PARTIALLY_AVAILABLE,
   NOTIFICATION_TYPE_BIT_REQUEST_PENDING,
-  NOTIFICATION_TYPE_BIT_REQUEST_SUBMITTED
+  NOTIFICATION_TYPE_BIT_REQUEST_SUBMITTED,
+  NOTIFICATION_TYPE_BIT_REQUEST_NEW_SEASON
 } from "@/lib/notification-type-bits";
 
 export type RequestNotificationEvent =
@@ -36,7 +37,8 @@ export type RequestNotificationEvent =
   | "request_partially_available"
   | "request_downloading"
   | "request_available"
-  | "request_removed";
+  | "request_removed"
+  | "request_new_season";
 
 export type RequestNotificationContext = {
   requestId: string;
@@ -70,7 +72,8 @@ const EVENT_TYPE_MAP: Record<RequestNotificationEvent, number> = {
   request_already_exists: NOTIFICATION_TYPE_BIT_REQUEST_PENDING,
   request_partially_available: NOTIFICATION_TYPE_BIT_REQUEST_PARTIALLY_AVAILABLE,
   request_downloading: NOTIFICATION_TYPE_BIT_REQUEST_DOWNLOADING,
-  request_removed: NOTIFICATION_TYPE_BIT_REQUEST_FAILED
+  request_removed: NOTIFICATION_TYPE_BIT_REQUEST_FAILED,
+  request_new_season: NOTIFICATION_TYPE_BIT_REQUEST_NEW_SEASON
 };
 
 function getAppBaseUrl(): string | null {
@@ -114,6 +117,8 @@ function humanEvent(event: RequestNotificationEvent): string {
       return "Available";
     case "request_removed":
       return "Removed";
+    case "request_new_season":
+      return "New season available";
   }
 }
 
@@ -138,6 +143,7 @@ function requestStatusColor(event: RequestNotificationEvent) {
     case "request_downloading":
       return DISCORD_COLORS.ORANGE;
     case "request_available":
+    case "request_new_season":
       return DISCORD_COLORS.GREEN;
     case "request_denied":
     case "request_failed":
@@ -306,18 +312,18 @@ export async function notifyRequestEvent(event: RequestNotificationEvent, ctx: R
   // Send bot DM to user if they have Telegram linked
   const BOT_DM_EVENTS: RequestNotificationEvent[] = [
     "request_available", "request_denied", "request_downloading",
-    "request_partially_available", "request_failed"
+    "request_partially_available", "request_failed", "request_new_season"
   ];
   if (ctx.userId && BOT_DM_EVENTS.includes(event)) {
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
     if (botToken) {
       getTelegramUserByUserId(ctx.userId).then(tgUser => {
         if (!tgUser?.telegram_id) return;
-        const icon = event === "request_available" ? "✅"
+        const icon = (event === "request_available" || event === "request_new_season") ? "✅"
           : event === "request_denied" ? "❌"
-          : event === "request_downloading" ? "⬇️"
-          : event === "request_partially_available" ? "📺"
-          : "⚠️";
+            : event === "request_downloading" ? "⬇️"
+              : event === "request_partially_available" ? "📺"
+                : "⚠️";
         const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
         const linkLine = href ? `\n<a href="${href}">View in LeMedia →</a>` : "";
         const msg = `${icon} <b>${esc(title)}</b>\n<i>${esc(status)}</i>${linkLine}`;

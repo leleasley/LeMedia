@@ -7,7 +7,9 @@ import {
   setEpisodeRequestItemsStatuses,
   addUserMediaListItem,
   addRequestItem,
-  getRequestForSync
+  getRequestForSync,
+  hasNotifiedSeason,
+  markSeasonNotified
 } from "@/db";
 import { RequestNotificationEvent, notifyRequestEvent } from "@/notifications/request-events";
 import { notifyRequestAvailable } from "./notification-helper";
@@ -68,7 +70,7 @@ async function maybeSendStatusNotification(request: RequestForSync, status: stri
     username: request.username || "Unknown",
     userId: request.requested_by
   });
-  
+
   // Also send in-app notification
   if (status === "available") {
     await notifyRequestAvailable(
@@ -209,53 +211,58 @@ async function autoRequestMissingEpisodesForSeries(request: RequestForSync) {
       .map(item => `${item.season}:${item.episode}`)
   );
 
+  const requestTime = request.created_at ? new Date(request.created_at).getTime() : 0;
+
   const missingEpisodes = episodes.filter((ep: any) => {
     const seasonNumber = Number(ep?.seasonNumber);
     const episodeNumber = Number(ep?.episodeNumber);
     if (!Number.isFinite(seasonNumber) || !Number.isFinite(episodeNumber)) return false;
     if (seasonNumber <= 0) return false;
-    return !requestedKeys.has(`${seasonNumber}:${episodeNumber}`);
+
+    // Check if the user already explicitly requested this episode
+    if (requestedKeys.has(`${seasonNumber}:${episodeNumber}`)) return false;
+
+    // Check if the episode is genuinely "new" compared to the request
+    // If the episode aired BEFORE the request was made, the user skipped it on purpose.
+    // If we can't determine air date or request date, safely assume it's new.
+    if (requestTime > 0 && ep?.airDateUtc) {
+      const airTime = new Date(ep.airDateUtc).getTime();
+      if (!Number.isNaN(airTime) && airTime < requestTime) {
+        return false;
+      }
+    }
+
+    return true;
   });
 
   if (!missingEpisodes.length) return { added: 0 };
 
-  await Promise.all(
-    missingEpisodes.map((ep: any) =>
-      addRequestItem({
+  const newSeasons = new Set<number>();
+  for (const ep of missingEpisodes) {
+    const s = Number(ep?.seasonNumber);
+    if (s > 0) newSeasons.add(s);
+  }
+
+  let notifiedCount = 0;
+  for (const season of Array.from(newSeasons)) {
+    const alreadyNotified = await hasNotifiedSeason(request.id, season);
+    if (!alreadyNotified) {
+      await notifyRequestEvent("request_new_season", {
         requestId: request.id,
-        provider: "sonarr",
-        providerId: series.id ?? null,
-        season: Number(ep.seasonNumber),
-        episode: Number(ep.episodeNumber),
-        status: "submitted"
-      })
-    )
-  );
-
-  const missingEpisodeIds = missingEpisodes
-    .map((ep: any) => Number(ep?.id))
-    .filter((id: number) => Number.isFinite(id) && id > 0);
-  if (missingEpisodeIds.length > 0) {
-    await setEpisodeMonitored(missingEpisodeIds, true).catch(() => null);
-    await episodeSearch(missingEpisodeIds).catch(() => null);
+        requestType: request.request_type,
+        tmdbId: request.tmdb_id,
+        title: `${request.title} (Season ${season})`,
+        username: request.username || "Unknown",
+        userId: request.requested_by,
+        sonarrSeriesId: series.id ?? null,
+        tvdbId: series?.tvdbId ?? null
+      });
+      await markSeasonNotified(request.id, season);
+      notifiedCount++;
+    }
   }
 
-  if (request.status !== "pending" && request.status !== "queued") {
-    await updateRequestStatuses(request, "submitted", { syncItemStatuses: false });
-  }
-
-  await notifyRequestEvent("request_submitted", {
-    requestId: request.id,
-    requestType: request.request_type,
-    tmdbId: request.tmdb_id,
-    title: request.title,
-    username: request.username || "Unknown",
-    userId: request.requested_by,
-    sonarrSeriesId: series.id ?? null,
-    tvdbId: series?.tvdbId ?? null
-  });
-
-  return { added: missingEpisodes.length };
+  return { added: notifiedCount };
 }
 
 export async function syncNewSeasonsAutoRequests(): Promise<{ processed: number; added: number; errors: number }> {
@@ -514,19 +521,19 @@ export async function autoRequestItemsForUser(
 
         const items = Array.isArray(episodes)
           ? episodes.map((ep: any) => ({
+            provider: "sonarr" as const,
+            providerId: series.id ?? null,
+            season: ep.seasonNumber,
+            episode: ep.episodeNumber,
+            status: finalStatus ?? requestStatus
+          }))
+          : [
+            {
               provider: "sonarr" as const,
               providerId: series.id ?? null,
-              season: ep.seasonNumber,
-              episode: ep.episodeNumber,
               status: finalStatus ?? requestStatus
-            }))
-          : [
-              {
-                provider: "sonarr" as const,
-                providerId: series.id ?? null,
-                status: finalStatus ?? requestStatus
-              }
-            ];
+            }
+          ];
 
         await createRequestWithItemsTransaction({
           requestType: "episode",
@@ -632,7 +639,7 @@ export async function syncWatchlists(options?: { userId?: number }) {
       errors++;
     }
   }
-  
+
   return { createdCount, errors };
 }
 

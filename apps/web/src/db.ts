@@ -1087,13 +1087,13 @@ export async function getRequestForSync(requestId: string): Promise<RequestForSy
     username: row.requested_by_username ?? "",
     items: Array.isArray(row.items)
       ? row.items.map((item: any) => ({
-          id: Number(item.id),
-          provider: item.provider,
-          provider_id: item.provider_id !== null ? Number(item.provider_id) : null,
-          season: item.season !== null ? Number(item.season) : null,
-          episode: item.episode !== null ? Number(item.episode) : null,
-          status: item.status
-        }))
+        id: Number(item.id),
+        provider: item.provider,
+        provider_id: item.provider_id !== null ? Number(item.provider_id) : null,
+        season: item.season !== null ? Number(item.season) : null,
+        episode: item.episode !== null ? Number(item.episode) : null,
+        status: item.status
+      }))
       : []
   };
 }
@@ -3296,6 +3296,16 @@ async function ensureSchema() {
     await p.query(`CREATE INDEX IF NOT EXISTS idx_upgrade_finder_override_updated_at ON upgrade_finder_override(updated_at DESC);`);
 
     await p.query(`
+      CREATE TABLE IF NOT EXISTS notified_season (
+        request_id UUID NOT NULL REFERENCES media_request(id) ON DELETE CASCADE,
+        season INTEGER NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (request_id, season)
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_notified_season_request_id ON notified_season(request_id);`);
+
+    await p.query(`
       CREATE TABLE IF NOT EXISTS jobs (
         id SERIAL PRIMARY KEY,
         name VARCHAR(255) NOT NULL UNIQUE,
@@ -3318,7 +3328,7 @@ async function ensureSchema() {
       INSERT INTO jobs (name, schedule, interval_seconds, type, run_on_start)
       VALUES
           ('request-sync', '*/5 * * * *', 300, 'system', TRUE),
-          ('new-season-autorequest', '*/15 * * * *', 900, 'system', TRUE),
+          ('new-season-notifications', '*/15 * * * *', 900, 'system', TRUE),
           ('watchlist-sync', '0 * * * *', 3600, 'system', FALSE),
           ('letterboxd-import', '0 4 * * *', 86400, 'system', FALSE),
           ('weekly-digest', '0 9 * * 1', 604800, 'system', FALSE),
@@ -5422,7 +5432,7 @@ export async function getReviewsForMedia(mediaType: "movie" | "tv", tmdbId: numb
     releaseYear: r.release_year as number | null,
     createdAt: r.created_at as string,
     updatedAt: r.updated_at as string,
-      user: {
+    user: {
       id: r.user_id as number,
       username: r.username as string,
       displayName: r.display_name as string | null,
@@ -7360,7 +7370,7 @@ export async function upsertUserTasteProfile(
   updates: Partial<Omit<UserTasteProfile, "id" | "userId" | "createdAt" | "updatedAt">>
 ): Promise<UserTasteProfile> {
   const p = getPool();
-  
+
   // Build dynamic upsert
   const fields: string[] = ["user_id"];
   const values: any[] = [userId];
@@ -7567,7 +7577,7 @@ export async function bulkUpdateRequestStatus(
 ): Promise<number> {
   if (requestIds.length === 0) return 0;
   const p = getPool();
-  
+
   let query = `UPDATE media_request SET status = $1, updated_at = NOW()`;
   const values: any[] = [status];
   let idx = 2;
@@ -7685,4 +7695,23 @@ export async function customListContainsMedia(
     [listId, tmdbId, mediaType]
   );
   return (res.rowCount ?? 0) > 0;
+}
+
+export async function hasNotifiedSeason(requestId: string, season: number): Promise<boolean> {
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(
+    `SELECT 1 FROM notified_season WHERE request_id = $1 AND season = $2 LIMIT 1`,
+    [requestId, season]
+  );
+  return res.rows.length > 0;
+}
+
+export async function markSeasonNotified(requestId: string, season: number): Promise<void> {
+  await ensureSchema();
+  const p = getPool();
+  await p.query(
+    `INSERT INTO notified_season (request_id, season) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+    [requestId, season]
+  );
 }

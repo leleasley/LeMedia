@@ -19,10 +19,12 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = BodySchema.parse(await req.json());
+
+    const series =
+      (body.tvdbId ? await getSeriesByTvdbId(body.tvdbId) : null) ??
+      (await getSeriesByTmdbId(body.tmdbId));
+
     if (body.action === "remove") {
-      const series =
-        (body.tvdbId ? await getSeriesByTvdbId(body.tvdbId) : null) ??
-        (await getSeriesByTmdbId(body.tmdbId));
       if (!series?.id) {
         return NextResponse.json({ error: "Series not found in Sonarr" }, { status: 404 });
       }
@@ -30,8 +32,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    await clearRequestsForTmdb("tv", body.tmdbId);
-    return NextResponse.json({ ok: true });
+    if (body.action === "clear") {
+      if (series?.id) {
+        try {
+          await deleteSeries(series.id, { deleteFiles: true });
+        } catch (e) {
+          // Ignore errors during clear if series is already removed or sonarr is unreachable
+        }
+      }
+      await clearRequestsForTmdb("tv", body.tmdbId);
+      return NextResponse.json({ ok: true });
+    }
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });

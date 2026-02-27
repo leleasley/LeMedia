@@ -26,10 +26,10 @@ export const jobHandlers: Record<string, JobHandler> = {
     logger.info(`[Job] watchlist-sync completed: ${msg}`);
     return msg;
   },
-  "new-season-autorequest": async () => {
+  "new-season-notifications": async () => {
     const result = await syncNewSeasonsAutoRequests();
-    const msg = `${result.processed} checked, ${result.added} added, ${result.errors} errors`;
-    logger.info(`[Job] new-season-autorequest completed: ${msg}`);
+    const msg = `${result.processed} checked, ${result.added} notified, ${result.errors} errors`;
+    logger.info(`[Job] new-season-notifications completed: ${msg}`);
     return msg;
   },
   "weekly-digest": async () => {

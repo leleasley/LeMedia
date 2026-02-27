@@ -213,6 +213,9 @@ export function AllRequestsClient({
   const [denyReason, setDenyReason] = useState("");
   const [denyTarget, setDenyTarget] = useState<{ requestId: string | number; requestIds?: Array<string | number> } | null>(null);
   const [denySubmitting, setDenySubmitting] = useState(false);
+  const [manageModalOpen, setManageModalOpen] = useState(false);
+  const [manageTarget, setManageTarget] = useState<Request | null>(null);
+  const [manageItemAction, setManageItemAction] = useState<Record<number, "denying" | "removing">>({});
   const router = useRouter();
   const toast = useToast();
 
@@ -274,6 +277,55 @@ export function AllRequestsClient({
     setDenyTarget({ requestId, requestIds });
     setDenyReason(reasonPreset.slice(0, 500));
     setDenyModalOpen(true);
+  };
+
+  const openManageModal = async (request: Request) => {
+    setManageTarget(request);
+    setManageModalOpen(true);
+    // Also load details so we have items
+    setDetailsOpen(false);
+    setDetailsLoading(true);
+    setDetailsData(null);
+    setDetailsBaseRequest(request);
+    try {
+      const idsQuery = (request.mergedRequestIds && request.mergedRequestIds.length > 1)
+        ? `?ids=${encodeURIComponent(request.mergedRequestIds.map(String).join(","))}`
+        : "";
+      const res = await csrfFetch(`/api/v1/admin/requests/${request.id}${idsQuery}`, { method: "GET" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Failed to load request details");
+      setDetailsData(data as RequestDetails);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to load request details", { timeoutMs: 4000 });
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
+
+  const handleItemAction = async (item: RequestDetails["items"][number], action: "deny" | "remove") => {
+    setManageItemAction(prev => ({ ...prev, [item.id]: action === "deny" ? "denying" : "removing" }));
+    try {
+      const formData = new FormData();
+      formData.append("requestId", String(manageTarget!.id));
+      formData.append("itemId", String(item.id));
+      if (action === "deny") {
+        await denyRequest(formData).catch((e) => { if (!isNextRedirectError(e)) throw e; });
+      } else {
+        await deleteRequest(formData).catch((e) => { if (!isNextRedirectError(e)) throw e; });
+      }
+      // Refresh details
+      if (manageTarget) {
+        const res = await csrfFetch(`/api/v1/admin/requests/${manageTarget.id}`, { method: "GET" });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) setDetailsData(data as RequestDetails);
+      }
+      router.refresh();
+      emitRequestsChanged();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Action failed", { timeoutMs: 4000 });
+    } finally {
+      setManageItemAction(prev => { const next = { ...prev }; delete next[item.id]; return next; });
+    }
   };
 
   const confirmDeny = async () => {
@@ -405,6 +457,183 @@ export function AllRequestsClient({
 
   return (
     <div className="space-y-6">
+      {/* ── Manage Episodes Modal ─────────────────────────────────────── */}
+      <Modal
+        open={manageModalOpen}
+        title={manageTarget ? `Manage: ${manageTarget.title}` : "Manage Episodes"}
+        onClose={() => {
+          setManageModalOpen(false);
+          setManageTarget(null);
+          setDetailsData(null);
+          setDetailsBaseRequest(null);
+          setManageItemAction({});
+        }}
+      >
+        {detailsLoading ? (
+          <div className="flex items-center justify-center gap-2 py-8 text-gray-300">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading episodes...
+          </div>
+        ) : !detailsData ? (
+          <div className="py-4 text-sm text-gray-400">No episode data found.</div>
+        ) : (() => {
+          // Group items by season
+          const bySeason = detailsData.items.reduce<Record<number, typeof detailsData.items>>((acc, item) => {
+            const s = item.season ?? 0;
+            if (!acc[s]) acc[s] = [];
+            acc[s].push(item);
+            return acc;
+          }, {});
+          const seasons = Object.keys(bySeason).map(Number).sort((a, b) => a - b);
+
+          return (
+            <div className="space-y-4">
+              {/* Summary row */}
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                <div className="rounded border border-white/10 bg-white/5 px-2 py-1 text-center">
+                  <div className="text-white/40 uppercase text-[10px]">Total</div>
+                  <div className="font-semibold text-white">{detailsData.summary.total}</div>
+                </div>
+                <div className="rounded border border-emerald-500/20 bg-emerald-500/5 px-2 py-1 text-center">
+                  <div className="text-emerald-400/70 uppercase text-[10px]">Available</div>
+                  <div className="font-semibold text-emerald-300">{detailsData.summary.available}</div>
+                </div>
+                <div className="rounded border border-blue-500/20 bg-blue-500/5 px-2 py-1 text-center">
+                  <div className="text-blue-400/70 uppercase text-[10px]">Requested</div>
+                  <div className="font-semibold text-blue-300">{detailsData.summary.pending + detailsData.summary.submitted + detailsData.summary.downloading}</div>
+                </div>
+              </div>
+
+              {/* Season groups */}
+              <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+                {seasons.map(season => (
+                  <div key={season} className="rounded-lg border border-white/10 overflow-hidden">
+                    {/* Season header */}
+                    <div className="bg-white/[0.04] px-3 py-2 flex items-center justify-between">
+                      <span className="text-xs font-bold uppercase tracking-wider text-white/70">
+                        {season === 0 ? "Specials" : `Season ${season}`}
+                      </span>
+                      <span className="text-[10px] text-white/40">{bySeason[season].length} episodes</span>
+                    </div>
+                    {/* Episode rows */}
+                    <div className="divide-y divide-white/5">
+                      {bySeason[season]
+                        .sort((a, b) => (a.episode ?? 0) - (b.episode ?? 0))
+                        .map(item => {
+                          const epLabel = item.season != null && item.episode != null
+                            ? `S${String(item.season).padStart(2, "0")}E${String(item.episode).padStart(2, "0")}`
+                            : "N/A";
+                          const isAvailable = item.status === "available";
+                          const isRequested = ["pending", "submitted", "downloading", "queued"].includes(item.status);
+                          const isBusy = !!manageItemAction[item.id];
+                          const statusColors: Record<string, string> = {
+                            available: "text-emerald-400",
+                            submitted: "text-blue-400",
+                            downloading: "text-amber-400",
+                            pending: "text-sky-400",
+                            denied: "text-red-400",
+                            failed: "text-red-400",
+                          };
+                          return (
+                            <div key={item.id} className="px-3 py-2 flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="text-xs font-mono text-white/80 shrink-0">{epLabel}</span>
+                                <span className={cn("text-[10px] font-medium", statusColors[item.status] ?? "text-gray-400")}>
+                                  {formatStatusLabel(item.status)}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {isRequested && (
+                                  <button
+                                    type="button"
+                                    disabled={isBusy}
+                                    onClick={() => handleItemAction(item, "deny")}
+                                    className="btn btn-outline btn-xs gap-1 text-rose-300 border-rose-500/30 hover:bg-rose-500/10 disabled:opacity-50"
+                                  >
+                                    {manageItemAction[item.id] === "denying"
+                                      ? <Loader2 className="h-3 w-3 animate-spin" />
+                                      : <X className="h-3 w-3" />}
+                                    Deny
+                                  </button>
+                                )}
+                                {isAvailable && (
+                                  <button
+                                    type="button"
+                                    disabled={isBusy}
+                                    onClick={() => handleItemAction(item, "remove")}
+                                    className="btn btn-outline btn-xs gap-1 text-slate-300 border-slate-500/30 hover:bg-slate-500/10 disabled:opacity-50"
+                                  >
+                                    {manageItemAction[item.id] === "removing"
+                                      ? <Loader2 className="h-3 w-3 animate-spin" />
+                                      : <Trash2 className="h-3 w-3" />}
+                                    Remove
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Scan / No Files section */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleTryFindFiles}
+                    disabled={isSyncing}
+                    className="btn btn-outline btn-sm gap-2"
+                  >
+                    <RefreshCw className={cn("h-4 w-4", isSyncing && "animate-spin")} />
+                    {isSyncing ? "Scanning..." : "Scan for Files"}
+                  </button>
+                  {detailsNotice && (
+                    <span className={cn("text-xs", detailsSuggestNoFiles ? "text-amber-300" : "text-emerald-300")}>
+                      {detailsNotice}
+                    </span>
+                  )}
+                </div>
+                {detailsSuggestNoFiles && manageTarget && (
+                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200 flex items-center justify-between gap-3">
+                    <span>No files found. You can mark this request as no files available.</span>
+                    <button
+                      type="button"
+                      onClick={() => openDenyModal(manageTarget.id, manageTarget.mergedRequestIds, "No files available")}
+                      className="btn btn-outline btn-xs shrink-0"
+                    >
+                      Mark No Files
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer actions */}
+              <div className="flex items-center justify-between pt-2 border-t border-white/10">
+                <span className="text-xs text-white/40">Actions apply immediately</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (manageTarget) {
+                      handleAction("delete", manageTarget.id, manageTarget.mergedRequestIds);
+                      setManageModalOpen(false);
+                      setManageTarget(null);
+                      setDetailsData(null);
+                    }
+                  }}
+                  className="btn btn-error btn-sm gap-2"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Remove All
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
+
       <Modal
         open={denyModalOpen}
         title="Deny Request"
@@ -816,7 +1045,7 @@ export function AllRequestsClient({
                 </div>
 
                 <div className="flex flex-wrap gap-2 pt-2 border-t border-white/10">
-                  {r.request_type === "episode" && (
+                  {r.request_type === "episode" && ["submitted", "downloading"].includes(r.status) && (
                     <button
                       onClick={() => openDetails(r)}
                       className="w-full btn btn-ghost btn-sm gap-1.5"
@@ -843,19 +1072,37 @@ export function AllRequestsClient({
                       </button>
                     </>
                   )}
-                  {["submitted", "downloading", "partially_available"].includes(r.status) && (
+                  {["submitted", "downloading"].includes(r.status) && (
                     <button
-                      onClick={() => openDenyModal(r.id, r.mergedRequestIds)}
+                      onClick={() => handleAction("delete", r.id, r.mergedRequestIds)}
                       className="btn btn-outline btn-xs gap-1.5 text-rose-300 border-rose-500/40 hover:bg-rose-500/10"
                     >
-                      <X className="h-3.5 w-3.5" />
-                      Deny
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Remove
+                    </button>
+                  )}
+                  {r.status === "partially_available" && r.request_type === "episode" && (
+                    <button
+                      onClick={() => openManageModal(r)}
+                      className="btn btn-outline btn-xs gap-1.5 text-purple-300 border-purple-500/40 hover:bg-purple-500/10"
+                    >
+                      <Eye className="h-3.5 w-3.5" />
+                      Manage
+                    </button>
+                  )}
+                  {r.status === "partially_available" && r.request_type !== "episode" && (
+                    <button
+                      onClick={() => handleAction("delete", r.id, r.mergedRequestIds)}
+                      className="btn btn-outline btn-xs gap-1.5 text-rose-300 border-rose-500/40 hover:bg-rose-500/10"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Remove
                     </button>
                   )}
                   {["available", "denied", "removed"].includes(r.status) && (
                     <button
                       onClick={() => handleAction("delete", r.id, r.mergedRequestIds)}
-                      className="btn btn-error btn-xs gap-1.5"
+                      className="btn btn-outline btn-xs gap-1.5 text-rose-300 border-rose-500/40 hover:bg-rose-500/10"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                       Remove
@@ -936,7 +1183,7 @@ export function AllRequestsClient({
                     <td className="p-4 text-white/60 whitespace-nowrap">{formatDate(r.created_at)}</td>
                     <td className="p-4">
                       <div className="flex gap-2">
-                        {r.request_type === "episode" && (
+                        {r.request_type === "episode" && ["submitted", "downloading"].includes(r.status) && (
                           <button
                             onClick={() => openDetails(r)}
                             className="btn btn-ghost btn-xs gap-1"
@@ -963,19 +1210,37 @@ export function AllRequestsClient({
                             </button>
                           </>
                         )}
-                        {["submitted", "downloading", "partially_available"].includes(r.status) && (
+                        {["submitted", "downloading"].includes(r.status) && (
                           <button
-                            onClick={() => openDenyModal(r.id, r.mergedRequestIds)}
+                            onClick={() => handleAction("delete", r.id, r.mergedRequestIds)}
                             className="btn btn-outline btn-xs gap-1 text-rose-300 border-rose-500/40 hover:bg-rose-500/10"
                           >
-                            <X className="h-3 w-3" />
-                            Deny
+                            <Trash2 className="h-3 w-3" />
+                            Remove
+                          </button>
+                        )}
+                        {r.status === "partially_available" && r.request_type === "episode" && (
+                          <button
+                            onClick={() => openManageModal(r)}
+                            className="btn btn-outline btn-xs gap-1 text-purple-300 border-purple-500/40 hover:bg-purple-500/10"
+                          >
+                            <Eye className="h-3 w-3" />
+                            Manage
+                          </button>
+                        )}
+                        {r.status === "partially_available" && r.request_type !== "episode" && (
+                          <button
+                            onClick={() => handleAction("delete", r.id, r.mergedRequestIds)}
+                            className="btn btn-outline btn-xs gap-1 text-rose-300 border-rose-500/40 hover:bg-rose-500/10"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                            Remove
                           </button>
                         )}
                         {["available", "denied", "removed"].includes(r.status) && (
                           <button
                             onClick={() => handleAction("delete", r.id, r.mergedRequestIds)}
-                            className="btn btn-error btn-xs gap-1"
+                            className="btn btn-outline btn-xs gap-1 text-rose-300 border-rose-500/40 hover:bg-rose-500/10"
                           >
                             <Trash2 className="h-3 w-3" />
                             Remove

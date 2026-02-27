@@ -21,12 +21,14 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = BodySchema.parse(await req.json());
+
+    let movieId = body.movieId ?? null;
+    if (!movieId && body.tmdbId) {
+      const movie = await getMovieByTmdbId(body.tmdbId);
+      movieId = movie?.id ?? null;
+    }
+
     if (body.action === "remove") {
-      let movieId = body.movieId ?? null;
-      if (!movieId && body.tmdbId) {
-        const movie = await getMovieByTmdbId(body.tmdbId);
-        movieId = movie?.id ?? null;
-      }
       if (!movieId) {
         return NextResponse.json({ error: "Movie not found in Radarr" }, { status: 404 });
       }
@@ -34,10 +36,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    if (body.tmdbId) {
-      await clearRequestsForTmdb("movie", body.tmdbId);
+    if (body.action === "clear") {
+      if (movieId) {
+        try {
+          await deleteMovie(movieId, { deleteFiles: true });
+        } catch (e) {
+          // Ignore errors during clear if movie is already removed or radarr is unreachable
+        }
+      }
+      if (body.tmdbId) {
+        await clearRequestsForTmdb("movie", body.tmdbId);
+      }
+      return NextResponse.json({ ok: true });
     }
-    return NextResponse.json({ ok: true });
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });

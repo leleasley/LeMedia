@@ -200,7 +200,8 @@ export async function getMovieByTmdbId(tmdbId: number) {
   try {
     const movies = await radarrFetch(`/api/v3/movie?tmdbId=${tmdbId}`);
     if (Array.isArray(movies) && movies.length > 0) {
-      return movies[0];
+      const match = movies.find((item: any) => Number(item?.tmdbId ?? 0) === Number(tmdbId));
+      return match ?? null;
     }
     return null;
   } catch (e) {
