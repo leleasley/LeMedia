@@ -12,7 +12,7 @@ const UpdateSchema = z.object({
   highLatencyEnabled: z.boolean(),
   serviceUnreachableEnabled: z.boolean(),
   indexersUnavailableEnabled: z.boolean(),
-  includeGlobalEndpoints: z.boolean(),
+  routingMode: z.enum(["global_only", "target_users", "target_users_and_global", "all_user_endpoints_non_email"]),
   targetUserIds: z.array(z.coerce.number().int().positive()).default([]),
   latencyThresholdMs: z.coerce.number().int().min(1000).max(600000),
   requestTimeoutMs: z.coerce.number().int().min(1000).max(600000),
@@ -56,15 +56,18 @@ export async function PUT(request: NextRequest) {
       { status: 400 }
     );
   }
-  if (!parsed.data.includeGlobalEndpoints && parsed.data.targetUserIds.length === 0) {
+  if ((parsed.data.routingMode === "target_users" || parsed.data.routingMode === "target_users_and_global") && parsed.data.targetUserIds.length === 0) {
     return NextResponse.json(
-      { error: "Select at least one target user or enable global endpoints" },
+      { error: "Select at least one target user for this routing mode" },
       { status: 400 }
     );
   }
 
   const saved = await setSystemAlertsConfig({
     ...parsed.data,
+    includeGlobalEndpoints:
+      parsed.data.routingMode === "global_only" ||
+      parsed.data.routingMode === "target_users_and_global",
     targetUserIds: Array.from(new Set(parsed.data.targetUserIds)).filter((id) => Number.isFinite(id) && id > 0)
   });
   return NextResponse.json(saved);

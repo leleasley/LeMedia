@@ -1,5 +1,8 @@
 import {
   listGlobalNotificationEndpointsFull,
+  listLinkedTelegramUsers,
+  listNotificationEndpointsFull,
+  listNotificationEndpointsForAllUsers,
   listNotificationEndpointsForUser,
   NotificationEndpointFull,
   type DiscordConfig,
@@ -12,6 +15,7 @@ import { sendEmail } from "@/notifications/email";
 import { sendTelegramMessage } from "@/notifications/telegram";
 import { sendGenericWebhook } from "@/notifications/webhook";
 import { logger } from "@/lib/logger";
+import { enqueueTelegramBotMessages } from "@/lib/telegram-bot-dispatch";
 import { getNotificationTypeMaskForSystemEvent } from "@/lib/notification-type-bits";
 import { deliverWithReliability, NotificationDeliverySkipError } from "@/notifications/reliability";
 
@@ -31,9 +35,17 @@ export type SystemAlertContext = {
 };
 
 export type SystemAlertDelivery = {
+  routingMode?: "global_only" | "target_users" | "target_users_and_global" | "all_user_endpoints_non_email";
   includeGlobalEndpoints?: boolean;
   userIds?: number[];
   ignoreEventFilters?: boolean;
+};
+
+export type SystemAlertEndpointRecipient = {
+  id: number;
+  name: string;
+  type: string;
+  isGlobal: boolean;
 };
 
 const DISCORD_COLORS = {
@@ -69,6 +81,57 @@ function dedupe(endpoints: NotificationEndpointFull[]) {
     out.push(endpoint);
   }
   return out;
+}
+
+async function resolveSystemAlertEndpointCandidates(delivery?: SystemAlertDelivery): Promise<NotificationEndpointFull[]> {
+  const userIds = Array.isArray(delivery?.userIds) ? delivery!.userIds!.filter((id) => Number.isFinite(id) && id > 0) : [];
+  const routingMode = delivery?.routingMode;
+  const includeGlobal = delivery?.includeGlobalEndpoints !== false;
+
+  let endpointCandidates: NotificationEndpointFull[] = [];
+  if (routingMode === "all_user_endpoints_non_email") {
+    endpointCandidates = (await listNotificationEndpointsForAllUsers()).filter((endpoint) => endpoint.type !== "email");
+  } else if (routingMode === "target_users") {
+    endpointCandidates = userIds.length
+      ? await Promise.all(userIds.map((userId) => listNotificationEndpointsForUser(userId))).then((groups) => groups.flat())
+      : [];
+  } else if (routingMode === "target_users_and_global") {
+    const [globalEndpoints, userEndpoints] = await Promise.all([
+      listGlobalNotificationEndpointsFull(),
+      userIds.length
+        ? Promise.all(userIds.map((userId) => listNotificationEndpointsForUser(userId))).then((groups) => groups.flat())
+        : Promise.resolve([])
+    ]);
+    endpointCandidates = [...globalEndpoints, ...userEndpoints];
+  } else if (routingMode === "global_only") {
+    endpointCandidates = await listGlobalNotificationEndpointsFull();
+  } else {
+    const [globalEndpoints, userEndpoints] = await Promise.all([
+      includeGlobal ? listGlobalNotificationEndpointsFull() : Promise.resolve([]),
+      userIds.length
+        ? Promise.all(userIds.map((userId) => listNotificationEndpointsForUser(userId))).then((groups) => groups.flat())
+        : Promise.resolve([])
+    ]);
+    endpointCandidates = [...globalEndpoints, ...userEndpoints];
+  }
+
+  return dedupe(endpointCandidates);
+}
+
+export async function listSystemAlertEndpointsForDelivery(
+  event: SystemAlertEvent,
+  delivery?: SystemAlertDelivery
+): Promise<SystemAlertEndpointRecipient[]> {
+  const endpoints = (await resolveSystemAlertEndpointCandidates(delivery)).filter((endpoint) =>
+    shouldSendWithOptions(endpoint, event, delivery)
+  );
+
+  return endpoints.map((endpoint) => ({
+    id: endpoint.id,
+    name: endpoint.name,
+    type: endpoint.type,
+    isGlobal: !!endpoint.is_global
+  }));
 }
 
 function eventLabel(event: SystemAlertEvent): string {
@@ -117,18 +180,10 @@ export async function notifySystemAlertEventWithDelivery(
   const enabled = (process.env.NOTIFICATIONS_ENABLED ?? "true").toLowerCase() !== "false";
   if (!enabled) return { eligible: 0, delivered: 0 };
 
-  const includeGlobal = delivery?.includeGlobalEndpoints !== false;
-  const userIds = Array.isArray(delivery?.userIds) ? delivery!.userIds!.filter((id) => Number.isFinite(id) && id > 0) : [];
-  const [globalEndpoints, userEndpoints] = await Promise.all([
-    includeGlobal ? listGlobalNotificationEndpointsFull() : Promise.resolve([]),
-    userIds.length
-      ? Promise.all(userIds.map((userId) => listNotificationEndpointsForUser(userId))).then((groups) => groups.flat())
-      : Promise.resolve([])
-  ]);
+  const endpointRecipients = await listSystemAlertEndpointsForDelivery(event, delivery);
+  const recipientIds = new Set(endpointRecipients.map((recipient) => recipient.id));
+  const endpoints = (await resolveSystemAlertEndpointCandidates(delivery)).filter((endpoint) => recipientIds.has(endpoint.id));
 
-  const endpoints = dedupe([...globalEndpoints, ...userEndpoints]).filter((endpoint) =>
-    shouldSendWithOptions(endpoint, event, delivery)
-  );
   if (endpoints.length === 0) return { eligible: 0, delivered: 0 };
 
   const summary = [
@@ -288,5 +343,177 @@ export async function notifySystemAlertEventWithDelivery(
       }
     })
   );
+
   return { eligible: endpoints.length, delivered };
+}
+
+export async function notifyMaintenanceModeEnabled(reason?: string | null) {
+  const enabled = (process.env.NOTIFICATIONS_ENABLED ?? "true").toLowerCase() !== "false";
+  if (!enabled) return { eligible: 0, delivered: 0 };
+
+  const endpoints = (await listNotificationEndpointsFull()).filter(
+    (endpoint) => endpoint.enabled && endpoint.type !== "email"
+  );
+
+  const title = "LeMedia is in Maintenance mode";
+  const details = reason?.trim() ? `Reason: ${reason.trim()}` : "Reason: Scheduled maintenance";
+  const summary = [title, details].join("\n");
+  const linkedTelegramUsers = (await listLinkedTelegramUsers()).filter((row) => !!String(row.telegramId).trim());
+
+  if (endpoints.length === 0 && linkedTelegramUsers.length === 0) return { eligible: 0, delivered: 0 };
+
+  const payload = {
+    type: "lemedia.maintenance_mode_enabled",
+    title,
+    reason: reason?.trim() || null,
+    sent_at: new Date().toISOString()
+  };
+  const embed: DiscordEmbed = {
+    title,
+    description: details,
+    color: DISCORD_COLORS.WARNING,
+    timestamp: new Date().toISOString(),
+    author: { name: "LeMedia System Alerts" },
+    fields: [{ name: "Alert", value: "Maintenance Mode", inline: true }]
+  };
+
+  let delivered = 0;
+  await Promise.all(
+    endpoints.map(async (endpoint) => {
+      const endpointType = String((endpoint as any)?.type ?? "");
+      const configAny = (endpoint as any)?.config ?? {};
+      const result = await deliverWithReliability(
+        {
+          endpointId: endpoint.id,
+          endpointType,
+          eventType: "maintenance_mode_enabled",
+          metadata: { title, reason: reason?.trim() || null }
+        },
+        async () => {
+          if (endpointType === "discord") {
+            const config = configAny as DiscordConfig;
+            const webhookUrl = String(config?.webhookUrl ?? "");
+            if (!webhookUrl) throw new NotificationDeliverySkipError("Discord webhook URL is not configured");
+            await sendDiscordWebhook({ webhookUrl, embeds: [embed] });
+            return;
+          }
+          if (endpointType === "telegram") {
+            const config = configAny as TelegramConfig;
+            const botToken = String(config?.botToken ?? "");
+            const chatId = String(config?.chatId ?? "");
+            if (!botToken || !chatId) throw new NotificationDeliverySkipError("Telegram bot token or chat ID missing");
+            await sendTelegramMessage({ botToken, chatId, text: summary });
+            return;
+          }
+          if (endpointType === "webhook") {
+            const config = configAny as WebhookConfig;
+            const url = String(config?.url ?? "");
+            if (!url) throw new NotificationDeliverySkipError("Webhook URL is not configured");
+            await sendGenericWebhook({ url, body: payload });
+            return;
+          }
+          if (endpointType === "slack") {
+            const webhookUrl = String(configAny?.webhookUrl ?? "");
+            if (!webhookUrl) throw new NotificationDeliverySkipError("Slack webhook URL is not configured");
+            const res = await fetch(webhookUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                text: `[LeMedia] ${title}`,
+                blocks: [{ type: "section", text: { type: "mrkdwn", text: summary } }]
+              })
+            });
+            if (!res.ok) throw new Error(`Slack webhook failed: HTTP ${res.status}`);
+            return;
+          }
+          if (endpointType === "gotify") {
+            const baseUrl = String(configAny?.baseUrl ?? "").replace(/\/+$/, "");
+            const token = String(configAny?.token ?? "");
+            if (!baseUrl || !token) throw new NotificationDeliverySkipError("Gotify base URL or token missing");
+            const res = await fetch(`${baseUrl}/message?token=${encodeURIComponent(token)}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                title,
+                message: summary,
+                priority: 8
+              })
+            });
+            if (!res.ok) throw new Error(`Gotify request failed: HTTP ${res.status}`);
+            return;
+          }
+          if (endpointType === "ntfy") {
+            const topic = String(configAny?.topic ?? "");
+            const baseUrl = String(configAny?.baseUrl ?? "https://ntfy.sh").replace(/\/+$/, "");
+            if (!topic) throw new NotificationDeliverySkipError("ntfy topic is not configured");
+            const res = await fetch(`${baseUrl}/${encodeURIComponent(topic)}`, {
+              method: "POST",
+              headers: { "Content-Type": "text/plain" },
+              body: summary
+            });
+            if (!res.ok) throw new Error(`ntfy request failed: HTTP ${res.status}`);
+            return;
+          }
+          if (endpointType === "pushbullet") {
+            const accessToken = String(configAny?.accessToken ?? "");
+            if (!accessToken) throw new NotificationDeliverySkipError("Pushbullet access token is not configured");
+            const res = await fetch("https://api.pushbullet.com/v2/pushes", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Access-Token": accessToken
+              },
+              body: JSON.stringify({
+                type: "note",
+                title,
+                body: summary
+              })
+            });
+            if (!res.ok) throw new Error(`Pushbullet request failed: HTTP ${res.status}`);
+            return;
+          }
+          if (endpointType === "pushover") {
+            const apiToken = String(configAny?.apiToken ?? "");
+            const userKey = String(configAny?.userKey ?? "");
+            if (!apiToken || !userKey) throw new NotificationDeliverySkipError("Pushover token or user key missing");
+            const params = new URLSearchParams({
+              token: apiToken,
+              user: userKey,
+              title,
+              message: summary
+            });
+            const res = await fetch("https://api.pushover.net/1/messages.json", {
+              method: "POST",
+              headers: { "Content-Type": "application/x-www-form-urlencoded" },
+              body: params.toString()
+            });
+            if (!res.ok) throw new Error(`Pushover request failed: HTTP ${res.status}`);
+            return;
+          }
+          throw new NotificationDeliverySkipError(`Unsupported endpoint type for maintenance notification: ${endpointType}`);
+        }
+      );
+
+      if (result.status === "success") {
+        delivered += 1;
+      }
+    })
+  );
+
+  if (linkedTelegramUsers.length > 0) {
+    const outboxChats = Array.from(new Set(linkedTelegramUsers.map((row) => String(row.telegramId ?? "").trim()).filter(Boolean)));
+    const enqueued = await enqueueTelegramBotMessages(
+      outboxChats.map((chatId) => ({
+        chatId,
+        text: summary,
+      }))
+    );
+    if (enqueued > 0) {
+      delivered += enqueued;
+    } else {
+      logger.warn("[notify] maintenance bot-dispatch enqueue failed", { chats: outboxChats.length });
+    }
+  }
+
+  return { eligible: endpoints.length + linkedTelegramUsers.length, delivered };
 }

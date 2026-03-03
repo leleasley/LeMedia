@@ -11,7 +11,7 @@ type SystemAlertsConfig = {
   highLatencyEnabled: boolean;
   serviceUnreachableEnabled: boolean;
   indexersUnavailableEnabled: boolean;
-  includeGlobalEndpoints: boolean;
+  routingMode: "global_only" | "target_users" | "target_users_and_global" | "all_user_endpoints_non_email";
   targetUserIds: number[];
   latencyThresholdMs: number;
   requestTimeoutMs: number;
@@ -27,18 +27,34 @@ type AlertUser = {
   notificationEndpointIds: number[];
 };
 
+type PreviewEndpoint = {
+  id: number;
+  name: string;
+  type: string;
+  isGlobal: boolean;
+  events: ("system_alert_high_latency" | "system_alert_service_unreachable" | "system_alert_indexers_unavailable")[];
+};
+
+type PreviewData = {
+  unionCount: number;
+  byType: Record<string, number>;
+  union: PreviewEndpoint[];
+};
+
 export default function NotificationsSystemAlerts() {
   const toast = useToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const [preview, setPreview] = useState<PreviewData | null>(null);
   const [users, setUsers] = useState<AlertUser[]>([]);
   const [form, setForm] = useState<SystemAlertsConfig>({
     enabled: true,
     highLatencyEnabled: true,
     serviceUnreachableEnabled: true,
     indexersUnavailableEnabled: true,
-    includeGlobalEndpoints: true,
+    routingMode: "target_users_and_global",
     targetUserIds: [],
     latencyThresholdMs: 40000,
     requestTimeoutMs: 45000,
@@ -59,7 +75,9 @@ export default function NotificationsSystemAlerts() {
           highLatencyEnabled: Boolean(cfg?.highLatencyEnabled),
           serviceUnreachableEnabled: Boolean(cfg?.serviceUnreachableEnabled),
           indexersUnavailableEnabled: Boolean(cfg?.indexersUnavailableEnabled),
-          includeGlobalEndpoints: cfg?.includeGlobalEndpoints !== false,
+          routingMode: cfg?.routingMode === "global_only" || cfg?.routingMode === "target_users" || cfg?.routingMode === "target_users_and_global" || cfg?.routingMode === "all_user_endpoints_non_email"
+            ? cfg.routingMode
+            : "target_users_and_global",
           targetUserIds: Array.isArray(cfg?.targetUserIds)
             ? cfg.targetUserIds.map((id: any) => Number(id)).filter((id: number) => Number.isFinite(id) && id > 0)
             : [],
@@ -95,8 +113,8 @@ export default function NotificationsSystemAlerts() {
       toast.error("Request timeout must be greater than or equal to latency threshold");
       return;
     }
-    if (!form.includeGlobalEndpoints && form.targetUserIds.length === 0) {
-      toast.error("Select at least one target user or enable global endpoints");
+    if ((form.routingMode === "target_users" || form.routingMode === "target_users_and_global") && form.targetUserIds.length === 0) {
+      toast.error("Select at least one target user for this routing mode");
       return;
     }
 
@@ -132,6 +150,29 @@ export default function NotificationsSystemAlerts() {
       toast.error(err?.message || "Failed to send test alert");
     } finally {
       setTesting(false);
+    }
+  }
+
+  async function previewRecipients() {
+    setPreviewing(true);
+    try {
+      const res = await csrfFetch("/api/admin/notifications/system-alerts/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          routingMode: form.routingMode,
+          targetUserIds: form.targetUserIds
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Failed to preview recipients");
+      setPreview(data as PreviewData);
+      toast.success("Recipient preview updated");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to preview recipients");
+    } finally {
+      setPreviewing(false);
     }
   }
 
@@ -184,15 +225,41 @@ export default function NotificationsSystemAlerts() {
           onChange={(e) => setForm((prev) => ({ ...prev, indexersUnavailableEnabled: e.target.checked }))}
         />
 
-        <AnimatedCheckbox
-          id="alerts-include-global"
-          label="Send To Global Endpoints"
-          description="Also deliver alerts to endpoints marked Global"
-          checked={form.includeGlobalEndpoints}
-          onChange={(e) => setForm((prev) => ({ ...prev, includeGlobalEndpoints: e.target.checked }))}
-        />
       </div>
 
+      <div className="space-y-3">
+        <div>
+          <h3 className="text-base font-semibold text-white">Routing</h3>
+          <p className="text-sm text-gray-400">Choose where system alerts should be delivered.</p>
+        </div>
+        <div className="max-w-xl">
+          <Select
+            value={form.routingMode}
+            onValueChange={(value) => {
+              setForm((prev) => ({
+                ...prev,
+                routingMode: value as SystemAlertsConfig["routingMode"],
+                targetUserIds:
+                  value === "target_users" || value === "target_users_and_global"
+                    ? prev.targetUserIds
+                    : []
+              }));
+            }}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select routing mode" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="target_users_and_global">Target user + global endpoints</SelectItem>
+              <SelectItem value="target_users">Target user only</SelectItem>
+              <SelectItem value="global_only">Global endpoints only</SelectItem>
+              <SelectItem value="all_user_endpoints_non_email">System Alerts Bot (all user endpoints, no email)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {(form.routingMode === "target_users" || form.routingMode === "target_users_and_global") ? (
       <div className="space-y-3">
         <div>
           <h3 className="text-base font-semibold text-white">Target User</h3>
@@ -231,6 +298,7 @@ export default function NotificationsSystemAlerts() {
           ) : null}
         </div>
       </div>
+      ) : null}
 
       <div className="grid gap-4 md:grid-cols-3">
         <div className="form-row">
@@ -286,7 +354,47 @@ export default function NotificationsSystemAlerts() {
         <span className="font-semibold text-white"> System Alert: Indexers Unavailable</span>.
       </div>
 
+      {preview ? (
+        <div className="rounded-lg border border-white/10 bg-slate-900/50 p-4 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-base font-semibold text-white">Recipient Preview</h3>
+            <span className="text-xs text-gray-400">{preview.unionCount} endpoint{preview.unionCount === 1 ? "" : "s"}</span>
+          </div>
+          <div className="text-sm text-gray-300">
+            {Object.entries(preview.byType).length ? (
+              Object.entries(preview.byType)
+                .sort((a, b) => a[0].localeCompare(b[0]))
+                .map(([type, count]) => `${type}: ${count}`)
+                .join(" • ")
+            ) : "No eligible endpoints"}
+          </div>
+          <div className="max-h-56 overflow-auto rounded border border-white/10">
+            {preview.union.length ? (
+              <ul className="divide-y divide-white/10 text-sm">
+                {preview.union.map((endpoint) => (
+                  <li key={endpoint.id} className="px-3 py-2">
+                    <div className="text-white">{endpoint.name}</div>
+                    <div className="text-xs text-gray-400">
+                      {endpoint.type} • {endpoint.isGlobal ? "global" : "user-assigned"} • {endpoint.events.join(", ")}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="px-3 py-3 text-sm text-gray-400">No endpoints match current routing and event filters.</div>
+            )}
+          </div>
+        </div>
+      ) : null}
+
       <div className="flex gap-3">
+        <button
+          onClick={previewRecipients}
+          disabled={previewing}
+          className="btn"
+        >
+          {previewing ? "Previewing..." : "Preview Recipients"}
+        </button>
         <button
           onClick={save}
           disabled={saving}

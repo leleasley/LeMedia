@@ -281,6 +281,9 @@ export function AdminSettingsPanel() {
                             <p className="text-xs text-muted">
                                 Temporarily block new requests while Radarr/Sonarr are offline or being upgraded.
                             </p>
+                            <p className="text-xs text-muted mt-1">
+                                When enabled, LeMedia sends one maintenance notification to all configured non-email endpoints (plus linked Telegram bot accounts when configured) and pauses system health/error alerts until maintenance is disabled.
+                            </p>
                         </div>
                         <AnimatedCheckbox
                             id="maintenance-enabled"

@@ -10,6 +10,12 @@ export type LastSelectedMedia = {
   requestStatus: string | null;
 };
 
+export type BotOutboxMessage = {
+  chatId: string;
+  text: string;
+  parseMode?: "HTML" | "MarkdownV2";
+};
+
 let redis: Redis | null = null;
 
 const REDIS_URL = process.env.REDIS_URL ?? "redis://lemedia-redis:6379";
@@ -50,6 +56,10 @@ function keyLastSelected(chatId: number) {
 
 function keyDigestSent(dateKey: string) {
   return `lemedia:bot:digest_sent:${dateKey}`;
+}
+
+function keyBotOutbox() {
+  return "lemedia:bot:outbox";
 }
 
 const SESSION_TTL_SECONDS = 60 * 20;
@@ -188,4 +198,26 @@ export async function isDigestSentForDate(dateKey: string): Promise<boolean> {
   const client = getRedis();
   const value = await client.get(keyDigestSent(dateKey));
   return value === "1";
+}
+
+export async function dequeueBotOutboxBatch(limit = 25): Promise<BotOutboxMessage[]> {
+  const client = getRedis();
+  const count = Math.max(1, Math.min(100, Math.floor(limit)));
+  const raw = await client.lpop(keyBotOutbox(), count);
+  const values = Array.isArray(raw) ? raw : raw ? [raw] : [];
+
+  const out: BotOutboxMessage[] = [];
+  for (const item of values) {
+    try {
+      const parsed = JSON.parse(item);
+      const chatId = String(parsed?.chatId ?? "").trim();
+      const text = String(parsed?.text ?? "").trim();
+      const parseMode = parsed?.parseMode === "HTML" || parsed?.parseMode === "MarkdownV2" ? parsed.parseMode : undefined;
+      if (!chatId || !text) continue;
+      out.push({ chatId, text, parseMode });
+    } catch {
+      continue;
+    }
+  }
+  return out;
 }

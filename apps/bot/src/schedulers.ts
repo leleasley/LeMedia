@@ -7,6 +7,7 @@ import {
   upsertRequestStatusState,
   withAdvisoryLock,
 } from "./db";
+import { dequeueBotOutboxBatch } from "./state";
 
 const APP_BASE_URL = (process.env.APP_BASE_URL ?? "").replace(/\/$/, "");
 
@@ -114,10 +115,29 @@ async function sendRequestStatusAndWatchAlerts(bot: Bot) {
   });
 }
 
+async function sendQueuedBotOutboxMessages(bot: Bot) {
+  const messages = await dequeueBotOutboxBatch(50);
+  if (!messages.length) return;
+
+  for (const message of messages) {
+    await bot.api
+      .sendMessage(message.chatId, message.text, {
+        parse_mode: message.parseMode,
+        link_preview_options: { is_disabled: true },
+      })
+      .catch(() => {});
+  }
+}
+
 export function startSchedulers(bot: Bot) {
   void sendRequestStatusAndWatchAlerts(bot).catch(() => {});
+  void sendQueuedBotOutboxMessages(bot).catch(() => {});
 
   setInterval(() => {
     void sendRequestStatusAndWatchAlerts(bot).catch(() => {});
   }, 60_000);
+
+  setInterval(() => {
+    void sendQueuedBotOutboxMessages(bot).catch(() => {});
+  }, 5_000);
 }

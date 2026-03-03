@@ -5063,6 +5063,34 @@ export async function listNotificationEndpointsForUser(userId: number): Promise<
   });
 }
 
+export async function listNotificationEndpointsForAllUsers(): Promise<NotificationEndpointFull[]> {
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT DISTINCT e.id, e.name, e.type, e.enabled, e.is_global, e.events, e.types, e.config, e.created_at
+    FROM notification_endpoint e
+    JOIN user_notification_endpoint u ON u.endpoint_id = e.id
+    WHERE e.enabled = TRUE
+    ORDER BY e.created_at DESC
+    `
+  );
+  return res.rows.map(r => {
+    const id = Number(r.id);
+    return {
+      id,
+      name: r.name,
+      type: r.type,
+      enabled: !!r.enabled,
+      is_global: !!r.is_global,
+      events: Array.isArray(r.events) ? r.events.map((e: unknown) => String(e)) : [],
+      types: Number.isFinite(Number(r.types)) ? Number(r.types) : 0,
+      config: r.config,
+      created_at: r.created_at
+    };
+  });
+}
+
 export type NotificationDeliveryAttemptStatus = "success" | "failure" | "skipped";
 
 export type NotificationDeliveryAttemptInput = {
@@ -7744,6 +7772,23 @@ export async function getTelegramUserByUserId(userId: number): Promise<{ telegra
     [userId]
   );
   return res.rows[0] ?? null;
+}
+
+export async function listLinkedTelegramUsers(): Promise<{ userId: number; telegramId: string; username: string }[]> {
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(
+    `SELECT tu.user_id, tu.telegram_id, u.username
+     FROM telegram_users tu
+     JOIN users u ON u.id = tu.user_id
+     WHERE COALESCE(u.banned, FALSE) = FALSE
+     ORDER BY u.username ASC`
+  );
+  return res.rows.map((row) => ({
+    userId: Number(row.user_id),
+    telegramId: String(row.telegram_id),
+    username: String(row.username)
+  }));
 }
 
 export async function insertJobHistory(

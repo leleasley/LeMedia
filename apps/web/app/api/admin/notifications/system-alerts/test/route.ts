@@ -17,6 +17,7 @@ export async function POST(request: NextRequest) {
     serviceType: "system",
     details: `Triggered manually by ${user.username}.`
   }, {
+    routingMode: config.routingMode,
     includeGlobalEndpoints: config.includeGlobalEndpoints,
     userIds: config.targetUserIds,
     ignoreEventFilters: true

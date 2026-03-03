@@ -3,6 +3,7 @@ import { decryptSecret } from "@/lib/encryption";
 import { logger } from "@/lib/logger";
 import { getMediaServiceSecretById, listMediaServices } from "@/lib/service-config";
 import { getSystemAlertsConfig } from "@/lib/system-alerts-config";
+import { getMaintenanceState } from "@/lib/maintenance";
 import { notifySystemAlertEventWithDelivery } from "@/notifications/system-events";
 
 type AlertStateEntry = {
@@ -60,6 +61,12 @@ async function timedFetch(url: string, init: RequestInit, timeoutMs: number) {
 }
 
 export async function runSystemAlertChecks() {
+  const maintenance = await getMaintenanceState();
+  if (maintenance.enabled) {
+    logger.info("[System Alerts] Skipped: maintenance mode enabled");
+    return;
+  }
+
   const config = await getSystemAlertsConfig();
   if (!config.enabled) {
     logger.info("[System Alerts] Skipped: disabled in settings");
@@ -70,6 +77,7 @@ export async function runSystemAlertChecks() {
   const timeoutMs = config.requestTimeoutMs;
   const cooldownMs = config.cooldownMs;
   const delivery = {
+    routingMode: config.routingMode,
     includeGlobalEndpoints: config.includeGlobalEndpoints,
     userIds: config.targetUserIds
   };

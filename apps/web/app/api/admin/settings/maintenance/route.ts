@@ -6,6 +6,7 @@ import { getMaintenanceState, setMaintenanceState } from "@/lib/maintenance";
 import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/rate-limit";
 import { logger } from "@/lib/logger";
+import { notifyMaintenanceModeEnabled } from "@/notifications/system-events";
 
 const payloadSchema = z.object({
   enabled: z.boolean(),
@@ -38,7 +39,18 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
 
+  const previousState = await getMaintenanceState();
   const state = await setMaintenanceState({ enabled: parsed.enabled, message: parsed.message ?? undefined });
+
+  if (state.enabled && !previousState.enabled) {
+    try {
+      await notifyMaintenanceModeEnabled(state.message ?? undefined);
+    } catch (error) {
+      logger.warn("[API] Failed to send maintenance mode notification", {
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
 
   await logAuditEvent({
     action: "admin.maintenance_toggled",

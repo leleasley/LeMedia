@@ -1,11 +1,18 @@
 import { getSetting, setSetting } from "@/db";
 import { z } from "zod";
 
+export type SystemAlertsRoutingMode =
+  | "global_only"
+  | "target_users"
+  | "target_users_and_global"
+  | "all_user_endpoints_non_email";
+
 export type SystemAlertsConfig = {
   enabled: boolean;
   highLatencyEnabled: boolean;
   serviceUnreachableEnabled: boolean;
   indexersUnavailableEnabled: boolean;
+  routingMode: SystemAlertsRoutingMode;
   includeGlobalEndpoints: boolean;
   targetUserIds: number[];
   latencyThresholdMs: number;
@@ -18,6 +25,7 @@ export const SYSTEM_ALERTS_CONFIG_DEFAULTS: SystemAlertsConfig = {
   highLatencyEnabled: true,
   serviceUnreachableEnabled: true,
   indexersUnavailableEnabled: true,
+  routingMode: "target_users_and_global",
   includeGlobalEndpoints: true,
   targetUserIds: [],
   latencyThresholdMs: 40_000,
@@ -30,6 +38,7 @@ const SystemAlertsConfigSchema = z.object({
   highLatencyEnabled: z.boolean().optional(),
   serviceUnreachableEnabled: z.boolean().optional(),
   indexersUnavailableEnabled: z.boolean().optional(),
+  routingMode: z.enum(["global_only", "target_users", "target_users_and_global", "all_user_endpoints_non_email"]).optional(),
   includeGlobalEndpoints: z.boolean().optional(),
   targetUserIds: z.array(z.number().int().positive()).optional(),
   latencyThresholdMs: z.number().int().min(1000).max(600_000).optional(),
@@ -44,9 +53,22 @@ export async function getSystemAlertsConfig(): Promise<SystemAlertsConfig> {
   if (!raw) return SYSTEM_ALERTS_CONFIG_DEFAULTS;
   try {
     const parsed = SystemAlertsConfigSchema.parse(JSON.parse(raw));
+    const targetUserIds = Array.isArray(parsed.targetUserIds)
+      ? parsed.targetUserIds.filter((id) => Number.isFinite(id) && id > 0)
+      : [];
+    const includeGlobalEndpoints = parsed.includeGlobalEndpoints !== false;
+    const derivedRoutingMode: SystemAlertsRoutingMode = parsed.routingMode
+      ? parsed.routingMode
+      : includeGlobalEndpoints
+        ? (targetUserIds.length ? "target_users_and_global" : "global_only")
+        : "target_users";
+
     return {
       ...SYSTEM_ALERTS_CONFIG_DEFAULTS,
-      ...parsed
+      ...parsed,
+      routingMode: derivedRoutingMode,
+      includeGlobalEndpoints: derivedRoutingMode === "global_only" || derivedRoutingMode === "target_users_and_global",
+      targetUserIds,
     };
   } catch {
     return SYSTEM_ALERTS_CONFIG_DEFAULTS;
@@ -55,9 +77,15 @@ export async function getSystemAlertsConfig(): Promise<SystemAlertsConfig> {
 
 export async function setSystemAlertsConfig(input: SystemAlertsConfig): Promise<SystemAlertsConfig> {
   const parsed = SystemAlertsConfigSchema.parse(input);
+  const routingMode: SystemAlertsRoutingMode = parsed.routingMode ?? SYSTEM_ALERTS_CONFIG_DEFAULTS.routingMode;
+  const targetUserIds = Array.from(new Set((parsed.targetUserIds ?? []).filter((id) => Number.isFinite(id) && id > 0)));
+  const includeGlobalEndpoints = routingMode === "global_only" || routingMode === "target_users_and_global";
   const normalized: SystemAlertsConfig = {
     ...SYSTEM_ALERTS_CONFIG_DEFAULTS,
-    ...parsed
+    ...parsed,
+    routingMode,
+    includeGlobalEndpoints,
+    targetUserIds,
   };
   await setSetting(SETTING_KEY, JSON.stringify(normalized));
   return normalized;
