@@ -14,6 +14,7 @@ type AlertStateEntry = {
 type AlertState = Record<string, AlertStateEntry>;
 
 const ALERT_STATE_KEY = "system_alert_state";
+const PROWLARR_API_PREFIX = "/api/v1";
 
 async function loadAlertState(): Promise<AlertState> {
   const raw = await getSetting(ALERT_STATE_KEY);
@@ -50,7 +51,7 @@ function clearActive(state: AlertState, key: string) {
 
 function getServiceStatusPath(type: string): string | null {
   if (type === "radarr" || type === "sonarr") return "/api/v3/system/status";
-  if (type === "prowlarr") return "/api/v1/system/status";
+  if (type === "prowlarr") return `${PROWLARR_API_PREFIX}/system/status`;
   return null;
 }
 
@@ -224,7 +225,7 @@ export async function runSystemAlertChecks() {
         clearActive(state, indexerKey);
       } else {
         const apiKey = decryptSecret(secret.api_key_encrypted);
-        const url = `${secret.base_url.replace(/\/+$/, "")}/api/v1/indexer`;
+        const url = `${secret.base_url.replace(/\/+$/, "")}${PROWLARR_API_PREFIX}/indexer`;
         const { response } = await timedFetch(url, { headers: { "X-Api-Key": apiKey } }, timeoutMs);
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`);
