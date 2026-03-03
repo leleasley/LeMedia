@@ -60,9 +60,12 @@ export default function PrivacyPolicyPage() {
           <ul className="list-disc list-inside mb-4 text-gray-300 space-y-2">
             <li>Jellyfin/Plex availability data for your media library</li>
             <li>TMDB (The Movie Database) information for media details</li>
-            <li>SSO/Social login information (Google, GitHub, OIDC providers)</li>
+            <li>SSO/Social login information (Google, GitHub, Telegram, and other OIDC providers)</li>
             <li>Sonarr/Radarr integration data (if configured)</li>
           </ul>
+          <p className="mb-4 text-gray-300">
+            For third-party sign-ins, we only store minimal account-linking metadata in LeMedia (for example, provider username/login handle and provider account ID). We do not store provider passwords, chat data, or other sensitive third-party account content.
+          </p>
 
           <h3 className="text-xl font-semibold mt-6 mb-3 text-gray-200">1.4 Technical & Security Information</h3>
           <p className="mb-4 text-gray-300">
@@ -119,9 +122,12 @@ export default function PrivacyPolicyPage() {
           <ul className="list-disc list-inside mb-4 text-gray-300 space-y-2">
             <li><strong>TMDB:</strong> Media queries and your activity</li>
             <li><strong>Jellyfin/Plex:</strong> Availability checks for media in your library</li>
-            <li><strong>SSO Providers:</strong> Google, GitHub, or OIDC providers receive authentication requests</li>
+            <li><strong>SSO Providers:</strong> Google, GitHub, Telegram, or other OIDC providers receive authentication requests</li>
             <li><strong>Sonarr/Radarr:</strong> If configured, we sync media requests</li>
           </ul>
+          <p className="mb-4 text-gray-300">
+            Third-party sign-in providers process authentication on their side. LeMedia stores only the minimum needed to remember the account link and sign-in preference.
+          </p>
 
           <h2 className="text-2xl font-semibold mt-8 mb-4 text-white">4. Data Storage & Retention</h2>
           <p className="mb-4 text-gray-300">

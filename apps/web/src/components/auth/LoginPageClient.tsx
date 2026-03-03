@@ -24,6 +24,7 @@ type LoginPageClientProps = {
   jellyfinEnabled: boolean;
   googleOauthEnabled?: boolean;
   githubOauthEnabled?: boolean;
+  telegramOauthEnabled?: boolean;
   ssoProviderType?: "oidc" | "duo_websdk";
 };
 
@@ -62,6 +63,7 @@ export function LoginPageClient({
   jellyfinEnabled,
   googleOauthEnabled = false,
   githubOauthEnabled = false,
+  telegramOauthEnabled = false,
   ssoProviderType
 }: LoginPageClientProps) {
   const router = useRouter();
@@ -74,6 +76,11 @@ export function LoginPageClient({
   const [duoUsername, setDuoUsername] = useState("");
   const [redirectingToSso, setRedirectingToSso] = useState(false);
   const [ssoPopupActive, setSsoPopupActive] = useState(false);
+  const [oauthVisibility, setOauthVisibility] = useState({
+    google: googleOauthEnabled,
+    github: githubOauthEnabled,
+    telegram: telegramOauthEnabled
+  });
   const isTurnstileEnabled = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
   const { data: backdrops } = useSWR<string[]>("/api/v1/backdrops", fetcher, {
     revalidateOnFocus: false,
@@ -122,6 +129,44 @@ export function LoginPageClient({
     setRedirectingToSso(true);
     window.location.href = url;
   };
+
+  useEffect(() => {
+    setOauthVisibility({
+      google: googleOauthEnabled,
+      github: githubOauthEnabled,
+      telegram: telegramOauthEnabled
+    });
+  }, [googleOauthEnabled, githubOauthEnabled, telegramOauthEnabled]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const refreshProviders = async () => {
+      try {
+        const res = await fetch("/api/auth/oauth/providers", { credentials: "include", cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json().catch(() => ({}));
+        const providers = data?.providers;
+        if (!mounted || !providers) return;
+        setOauthVisibility({
+          google: Boolean(providers.google),
+          github: Boolean(providers.github),
+          telegram: Boolean(providers.telegram)
+        });
+      } catch {
+      }
+    };
+
+    refreshProviders();
+    const interval = window.setInterval(refreshProviders, 15000);
+    window.addEventListener("focus", refreshProviders);
+
+    return () => {
+      mounted = false;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshProviders);
+    };
+  }, []);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -314,7 +359,7 @@ export function LoginPageClient({
                         Sign in with Jellyfin
                       </DropdownMenuItem>
                     ) : null}
-                    {googleOauthEnabled ? (
+                    {oauthVisibility.google ? (
                       <DropdownMenuItem
                         onSelect={() => {
                           if (isTurnstileEnabled && !turnstileToken) return;
@@ -327,7 +372,7 @@ export function LoginPageClient({
                         Continue with Google
                       </DropdownMenuItem>
                     ) : null}
-                    {githubOauthEnabled ? (
+                    {oauthVisibility.github ? (
                       <DropdownMenuItem
                         onSelect={() => {
                           if (isTurnstileEnabled && !turnstileToken) return;
@@ -338,6 +383,19 @@ export function LoginPageClient({
                       >
                         <Image src="/github-login.svg" alt="GitHub" width={16} height={16} />
                         Continue with GitHub
+                      </DropdownMenuItem>
+                    ) : null}
+                    {oauthVisibility.telegram ? (
+                      <DropdownMenuItem
+                        onSelect={() => {
+                          if (isTurnstileEnabled && !turnstileToken) return;
+                          startSsoFlow(`/api/v1/auth/oauth/telegram/start?from=${encodeURIComponent(from)}&turnstile_token=${encodeURIComponent(turnstileToken)}`);
+                        }}
+                        disabled={isTurnstileEnabled && !turnstileToken}
+                        className={`cursor-pointer gap-2 px-3 py-2 text-sm ${isTurnstileEnabled && !turnstileToken ? "opacity-50" : ""}`}
+                      >
+                        <Image src="/telegram.svg" alt="Telegram" width={16} height={16} />
+                        Continue with Telegram
                       </DropdownMenuItem>
                     ) : null}
                   </DropdownMenuContent>

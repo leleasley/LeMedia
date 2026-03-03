@@ -86,6 +86,7 @@ export function AdminSettingsNav() {
                 { id: "users", label: "Users", href: "/admin/settings/users", match: /^\/admin\/settings\/users/, icon: UserGroupIcon },
                 { id: "devices", label: "Devices", href: "/admin/settings/devices", match: /^\/admin\/settings\/devices/, icon: ComputerDesktopIcon },
                 { id: "oidc", label: "OIDC", href: "/admin/settings/oidc", match: /^\/admin\/settings\/oidc/, icon: KeyIcon },
+                { id: "third-party", label: "3rd Party Sign-ins", href: "/admin/settings/3rd-party", match: /^\/admin\/settings\/3rd-party/, icon: KeyIcon },
             ]
         },
         {

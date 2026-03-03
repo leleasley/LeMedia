@@ -51,6 +51,7 @@ export async function GET(
         const oauthAccounts = await listUserOAuthAccounts(Number(user.id));
         const googleAccount = oauthAccounts.find((account) => account.provider === "google") ?? null;
         const githubAccount = oauthAccounts.find((account) => account.provider === "github") ?? null;
+        const telegramAccount = oauthAccounts.find((account) => account.provider === "telegram") ?? null;
 
         return jsonResponseWithETag(request, {
             id: user.id,
@@ -69,6 +70,8 @@ export async function GET(
             googleEmail: googleAccount?.providerEmail ?? null,
             githubLinked: Boolean(githubAccount),
             githubLogin: githubAccount?.providerLogin ?? null,
+            telegramLinked: Boolean(telegramAccount),
+            telegramUsername: telegramAccount?.providerLogin ?? null,
             avatarUrl: user.avatar_url || (user.jellyfin_user_id ? `/avatarproxy/${user.jellyfin_user_id}` : null),
         });
     } catch (error) {

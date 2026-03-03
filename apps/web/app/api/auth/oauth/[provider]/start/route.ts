@@ -6,6 +6,7 @@ import {
   createPkceVerifier,
   getOAuthCallbackPath,
   getOAuthConfig,
+  getOAuthProviderLabel,
   isOAuthProvider
 } from "@/lib/oauth-providers";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
@@ -21,7 +22,7 @@ export async function GET(
   }
 
   const provider = rawProvider;
-  const config = getOAuthConfig(provider);
+  const config = await getOAuthConfig(provider);
   const ctx = getRequestContext(req);
   const base = ctx.base;
   const from = sanitizeRelativePath(req.nextUrl.searchParams.get("from"));
@@ -45,7 +46,7 @@ export async function GET(
 
   if (!config) {
     const url = new URL("/login", base);
-    url.searchParams.set("error", `${provider === "google" ? "Google" : "GitHub"} sign-in is not configured`);
+    url.searchParams.set("error", `${getOAuthProviderLabel(provider)} sign-in is not configured`);
     return NextResponse.redirect(url, { status: 303 });
   }
 
@@ -60,9 +61,11 @@ export async function GET(
   authUrl.searchParams.set("response_type", "code");
   authUrl.searchParams.set("scope", config.scopes.join(" "));
   authUrl.searchParams.set("state", state);
-  if (provider === "google") {
+  if (provider !== "github") {
     authUrl.searchParams.set("code_challenge", challenge);
     authUrl.searchParams.set("code_challenge_method", "S256");
+  }
+  if (provider === "google") {
     authUrl.searchParams.set("prompt", "select_account");
   }
 

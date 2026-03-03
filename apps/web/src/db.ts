@@ -2257,7 +2257,7 @@ export async function createJellyfinUser(input: {
 }
 
 export type MfaSessionType = "verify" | "setup";
-export type OAuthProvider = "google" | "github";
+export type OAuthProvider = "google" | "github" | "telegram";
 
 export type UserOAuthAccount = {
   provider: OAuthProvider;
@@ -2319,7 +2319,7 @@ async function ensureUserSchema() {
       CREATE TABLE IF NOT EXISTS user_oauth_account (
         id BIGSERIAL PRIMARY KEY,
         user_id BIGINT NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
-        provider TEXT NOT NULL CHECK (provider IN ('google','github')),
+        provider TEXT NOT NULL CHECK (provider IN ('google','github','telegram')),
         provider_user_id TEXT NOT NULL,
         provider_email TEXT,
         provider_login TEXT,
@@ -2331,6 +2331,9 @@ async function ensureUserSchema() {
     `);
     await p.query(`CREATE INDEX IF NOT EXISTS idx_user_oauth_account_user_id ON user_oauth_account(user_id);`);
     await p.query(`CREATE INDEX IF NOT EXISTS idx_user_oauth_account_provider ON user_oauth_account(provider);`);
+    await p.query(`ALTER TABLE user_oauth_account DROP CONSTRAINT IF EXISTS user_oauth_account_provider_check;`);
+    await p.query(`ALTER TABLE user_oauth_account ADD CONSTRAINT user_oauth_account_provider_check CHECK (provider IN ('google','github','telegram')) NOT VALID;`);
+    await p.query(`ALTER TABLE user_oauth_account VALIDATE CONSTRAINT user_oauth_account_provider_check;`);
 
     await p.query(`
       CREATE TABLE IF NOT EXISTS user_credential (
@@ -3898,6 +3901,142 @@ export async function setSetting(key: string, value: string): Promise<void> {
   const p = getPool();
   await p.query(`INSERT INTO app_setting (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [key, value]);
   settingsCache.del(settingCacheKey(key));
+}
+
+export type ThirdPartyAuthProviderKey = "google" | "github" | "telegram";
+
+export type ThirdPartyOauthProviderSettings = {
+  enabled: boolean;
+  clientId: string;
+  clientSecret: string;
+};
+
+export type ThirdPartyTelegramSettings = ThirdPartyOauthProviderSettings;
+
+export type ThirdPartyAuthSettings = {
+  google: ThirdPartyOauthProviderSettings;
+  github: ThirdPartyOauthProviderSettings;
+  telegram: ThirdPartyTelegramSettings;
+};
+
+type ThirdPartyAuthStoredProvider = {
+  enabled?: boolean;
+  clientId?: string;
+  clientSecretEncrypted?: string | null;
+};
+
+type ThirdPartyAuthStoredSettings = {
+  google?: ThirdPartyAuthStoredProvider;
+  github?: ThirdPartyAuthStoredProvider;
+  telegram?: ThirdPartyAuthStoredProvider;
+};
+
+const ThirdPartyAuthStoredSchema = z.object({
+  google: z.object({
+    enabled: z.boolean().optional(),
+    clientId: z.string().optional(),
+    clientSecretEncrypted: z.string().nullable().optional()
+  }).optional(),
+  github: z.object({
+    enabled: z.boolean().optional(),
+    clientId: z.string().optional(),
+    clientSecretEncrypted: z.string().nullable().optional()
+  }).optional(),
+  telegram: z.object({
+    enabled: z.boolean().optional(),
+    clientId: z.string().optional(),
+    clientSecretEncrypted: z.string().nullable().optional()
+  }).optional()
+});
+
+const ThirdPartyAuthDefaults: ThirdPartyAuthSettings = {
+  google: {
+    enabled: false,
+    clientId: "",
+    clientSecret: ""
+  },
+  github: {
+    enabled: false,
+    clientId: "",
+    clientSecret: ""
+  },
+  telegram: {
+    enabled: false,
+    clientId: "",
+    clientSecret: ""
+  }
+};
+
+function normalizeThirdPartyOauthProvider(input?: ThirdPartyAuthStoredProvider, envClientId?: string, envClientSecret?: string): ThirdPartyOauthProviderSettings {
+  const storedClientId = input?.clientId?.trim() ?? "";
+  const storedSecret = decryptOptionalSecret(input?.clientSecretEncrypted) ?? "";
+  const clientId = storedClientId || envClientId?.trim() || "";
+  const clientSecret = storedSecret || envClientSecret?.trim() || "";
+  const hasStoredEnabled = typeof input?.enabled === "boolean";
+  const enabled = hasStoredEnabled ? Boolean(input?.enabled) : Boolean(clientId && clientSecret);
+
+  return {
+    enabled,
+    clientId,
+    clientSecret
+  };
+}
+
+export async function getThirdPartyAuthSettings(): Promise<ThirdPartyAuthSettings> {
+  const raw = await getSetting("third_party_auth_settings");
+  let parsed: ThirdPartyAuthStoredSettings = {};
+
+  if (raw) {
+    try {
+      parsed = ThirdPartyAuthStoredSchema.parse(JSON.parse(raw));
+    } catch {
+      parsed = {};
+    }
+  }
+
+  const google = normalizeThirdPartyOauthProvider(
+    parsed.google,
+    process.env.GOOGLE_OAUTH_CLIENT_ID,
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET
+  );
+  const github = normalizeThirdPartyOauthProvider(
+    parsed.github,
+    process.env.GITHUB_OAUTH_CLIENT_ID,
+    process.env.GITHUB_OAUTH_CLIENT_SECRET
+  );
+  const telegram = normalizeThirdPartyOauthProvider(
+    parsed.telegram,
+    process.env.TELEGRAM_OAUTH_CLIENT_ID,
+    process.env.TELEGRAM_OAUTH_CLIENT_SECRET
+  );
+
+  return {
+    google,
+    github,
+    telegram
+  };
+}
+
+export async function setThirdPartyAuthSettings(input: ThirdPartyAuthSettings): Promise<void> {
+  const payload: ThirdPartyAuthStoredSettings = {
+    google: {
+      enabled: Boolean(input.google.enabled),
+      clientId: input.google.clientId.trim(),
+      clientSecretEncrypted: encryptOptionalSecret(input.google.clientSecret)
+    },
+    github: {
+      enabled: Boolean(input.github.enabled),
+      clientId: input.github.clientId.trim(),
+      clientSecretEncrypted: encryptOptionalSecret(input.github.clientSecret)
+    },
+    telegram: {
+      enabled: Boolean(input.telegram.enabled),
+      clientId: input.telegram.clientId.trim(),
+      clientSecretEncrypted: encryptOptionalSecret(input.telegram.clientSecret)
+    }
+  };
+
+  await setSetting("third_party_auth_settings", JSON.stringify(payload));
 }
 
 export async function getSettingInt(key: string, fallback: number): Promise<number> {

@@ -30,6 +30,7 @@ export default async function ProfilePage() {
 
   const googleAccount = oauthAccounts.find((account: any) => account.provider === "google") ?? null;
   const githubAccount = oauthAccounts.find((account: any) => account.provider === "github") ?? null;
+  const telegramAccount = oauthAccounts.find((account: any) => account.provider === "telegram") ?? null;
 
   const mfaEnabled = !!dbUser.mfa_secret;
   const groups = normalizeGroupList(dbUser.groups ?? []);
@@ -50,6 +51,7 @@ export default async function ProfilePage() {
         letterboxdUsername: dbUser.letterboxd_username ?? null,
         googleEmail: googleAccount?.providerEmail ?? null,
         githubLogin: githubAccount?.providerLogin ?? null,
+        telegramUsername: telegramAccount?.providerLogin ?? null,
         createdAt: dbUser.created_at,
         lastSeenAt: dbUser.last_seen_at,
         userId: dbUser.id,

@@ -1,6 +1,8 @@
 import { createHash, randomBytes } from "crypto";
+import { getThirdPartyAuthSettings } from "@/db";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 
-export type OAuthProvider = "google" | "github";
+export type OAuthProvider = "google" | "github" | "telegram";
 
 export type OAuthIdentity = {
   providerUserId: string;
@@ -15,6 +17,10 @@ type OAuthConfig = {
   authorizeUrl: string;
   tokenUrl: string;
 };
+
+const TELEGRAM_ISSUER = "https://oauth.telegram.org";
+const TELEGRAM_JWKS_URL = new URL("https://oauth.telegram.org/.well-known/jwks.json");
+const telegramJwks = createRemoteJWKSet(TELEGRAM_JWKS_URL);
 
 function base64Url(input: Buffer): string {
   return input.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
@@ -32,11 +38,13 @@ export function createOAuthState(): string {
   return base64Url(randomBytes(24));
 }
 
-export function getOAuthConfig(provider: OAuthProvider): OAuthConfig | null {
+export async function getOAuthConfig(provider: OAuthProvider): Promise<OAuthConfig | null> {
+  const settings = await getThirdPartyAuthSettings();
+
   if (provider === "google") {
-    const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID?.trim() ?? "";
-    const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET?.trim() ?? "";
-    if (!clientId || !clientSecret) return null;
+    const clientId = settings.google.clientId.trim();
+    const clientSecret = settings.google.clientSecret.trim();
+    if (!settings.google.enabled || !clientId || !clientSecret) return null;
     return {
       clientId,
       clientSecret,
@@ -46,9 +54,22 @@ export function getOAuthConfig(provider: OAuthProvider): OAuthConfig | null {
     };
   }
 
-  const clientId = process.env.GITHUB_OAUTH_CLIENT_ID?.trim() ?? "";
-  const clientSecret = process.env.GITHUB_OAUTH_CLIENT_SECRET?.trim() ?? "";
-  if (!clientId || !clientSecret) return null;
+  if (provider === "telegram") {
+    const clientId = settings.telegram.clientId.trim();
+    const clientSecret = settings.telegram.clientSecret.trim();
+    if (!settings.telegram.enabled || !clientId || !clientSecret) return null;
+    return {
+      clientId,
+      clientSecret,
+      scopes: ["openid", "profile"],
+      authorizeUrl: "https://oauth.telegram.org/auth",
+      tokenUrl: "https://oauth.telegram.org/token"
+    };
+  }
+
+  const clientId = settings.github.clientId.trim();
+  const clientSecret = settings.github.clientSecret.trim();
+  if (!settings.github.enabled || !clientId || !clientSecret) return null;
   return {
     clientId,
     clientSecret,
@@ -59,7 +80,13 @@ export function getOAuthConfig(provider: OAuthProvider): OAuthConfig | null {
 }
 
 export function isOAuthProvider(value: string): value is OAuthProvider {
-  return value === "google" || value === "github";
+  return value === "google" || value === "github" || value === "telegram";
+}
+
+export function getOAuthProviderLabel(provider: OAuthProvider): string {
+  if (provider === "google") return "Google";
+  if (provider === "github") return "GitHub";
+  return "Telegram";
 }
 
 export function getOAuthCallbackPath(provider: OAuthProvider): string {
@@ -72,7 +99,7 @@ export async function exchangeOAuthCode(input: {
   redirectUri: string;
   codeVerifier: string;
 }): Promise<{ accessToken: string; idToken?: string | null }> {
-  const config = getOAuthConfig(input.provider);
+  const config = await getOAuthConfig(input.provider);
   if (!config) throw new Error("OAuth provider not configured");
 
   const body = new URLSearchParams({
@@ -89,12 +116,20 @@ export async function exchangeOAuthCode(input: {
     body.delete("code_verifier");
   }
 
+  const headers: Record<string, string> = {
+    "Content-Type": "application/x-www-form-urlencoded",
+    Accept: "application/json"
+  };
+
+  if (input.provider === "telegram") {
+    body.delete("client_secret");
+    const basic = Buffer.from(`${config.clientId}:${config.clientSecret}`, "utf8").toString("base64");
+    headers.Authorization = `Basic ${basic}`;
+  }
+
   const response = await fetch(config.tokenUrl, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Accept: "application/json"
-    },
+    headers,
     body: body.toString()
   });
 
@@ -123,6 +158,29 @@ export async function fetchOAuthIdentity(provider: OAuthProvider, accessToken: s
       providerUserId: String(data.sub),
       email: data?.email ? String(data.email).toLowerCase() : null,
       login: data?.name ? String(data.name) : null
+    };
+  }
+
+  if (provider === "telegram") {
+    const config = await getOAuthConfig("telegram");
+    if (!config) throw new Error("Telegram provider not configured");
+    const { payload } = await jwtVerify(accessToken, telegramJwks, {
+      issuer: TELEGRAM_ISSUER,
+      audience: config.clientId
+    });
+
+    const sub = typeof payload.sub === "string" ? payload.sub : null;
+    if (!sub) {
+      throw new Error("Missing Telegram subject claim");
+    }
+
+    const preferredUsername = typeof payload.preferred_username === "string" ? payload.preferred_username : null;
+    const name = typeof payload.name === "string" ? payload.name : null;
+
+    return {
+      providerUserId: sub,
+      email: null,
+      login: preferredUsername ?? name
     };
   }
 

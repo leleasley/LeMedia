@@ -510,11 +510,11 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
         <div className="relative p-5 md:p-6">
           <div className="space-y-4">
             {/* Top row: date + services + stats */}
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center gap-2">
                 <p className="text-sm font-medium text-slate-400">{nowLine}</p>
                 {services.length > 0 && (
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
                     {services.map((svc) => (
                       <ServicePill key={svc.name} {...svc} />
                     ))}
@@ -522,25 +522,25 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
                 )}
               </div>
               {/* Inline stats */}
-              <div className="flex items-center gap-3 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-1.5">
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-1.5">
                 <div className="flex items-center gap-1.5">
                   <Clock className="h-3 w-3 text-sky-400" />
                   <span className="text-xs font-bold text-sky-200">{requestStats.pending}</span>
                   <span className="text-[11px] text-slate-500">pending</span>
                 </div>
-                <div className="h-3 w-px bg-white/[0.08]" />
+                <div className="h-3 w-px bg-white/[0.08] hidden xs:block" />
                 <div className="flex items-center gap-1.5">
                   <CheckCircle2 className="h-3 w-3 text-emerald-400" />
                   <span className="text-xs font-bold text-emerald-200">{requestStats.available}</span>
                   <span className="text-[11px] text-slate-500">ready</span>
                 </div>
-                <div className="h-3 w-px bg-white/[0.08]" />
+                <div className="h-3 w-px bg-white/[0.08] hidden xs:block" />
                 <div className="flex items-center gap-1.5">
                   <CircleDashed className="h-3 w-3 text-purple-400" />
                   <span className="text-xs font-bold text-purple-200">{requestStats.partial}</span>
                   <span className="text-[11px] text-slate-500">partial</span>
                 </div>
-                <div className="h-3 w-px bg-white/[0.08]" />
+                <div className="h-3 w-px bg-white/[0.08] hidden xs:block" />
                 <div className="flex items-center gap-1.5">
                   <Download className="h-3 w-3 text-amber-400" />
                   <span className="text-xs font-bold text-amber-200">{requestStats.processing}</span>
@@ -947,7 +947,7 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
 
       {/* ─── Your Requests (compact grid) ─── */}
       <section>
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <h2 className="flex items-center gap-2.5 text-lg font-bold text-white">
             <Sparkles className="h-5 w-5 text-sky-400" />
             Your Requests

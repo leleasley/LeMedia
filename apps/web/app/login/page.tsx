@@ -5,7 +5,7 @@ import { LoginPageClient } from "@/components/auth/LoginPageClient";
 export const metadata = {
   title: "Login - LeMedia",
 };
-import { getActiveOidcProvider, getJellyfinConfig, getSetting, isSetupComplete } from "@/db";
+import { getActiveOidcProvider, getJellyfinConfig, getSetting, getThirdPartyAuthSettings, isSetupComplete } from "@/db";
 import { verifySessionToken } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -36,8 +36,22 @@ export default async function LoginPage() {
   const ssoProviderType = oidcConfig?.providerType ?? (oidcConfig?.duoApiHostname ? "duo_websdk" : "oidc");
   const jellyfinConfig = await getJellyfinConfig();
   const jellyfinEnabled = Boolean(jellyfinConfig.hostname?.trim());
-  const googleOauthEnabled = Boolean(process.env.GOOGLE_OAUTH_CLIENT_ID?.trim() && process.env.GOOGLE_OAUTH_CLIENT_SECRET?.trim());
-  const githubOauthEnabled = Boolean(process.env.GITHUB_OAUTH_CLIENT_ID?.trim() && process.env.GITHUB_OAUTH_CLIENT_SECRET?.trim());
+  const thirdPartyAuthSettings = await getThirdPartyAuthSettings();
+  const googleOauthEnabled = Boolean(
+    thirdPartyAuthSettings.google.enabled
+    && thirdPartyAuthSettings.google.clientId.trim()
+    && thirdPartyAuthSettings.google.clientSecret.trim()
+  );
+  const githubOauthEnabled = Boolean(
+    thirdPartyAuthSettings.github.enabled
+    && thirdPartyAuthSettings.github.clientId.trim()
+    && thirdPartyAuthSettings.github.clientSecret.trim()
+  );
+  const telegramOauthEnabled = Boolean(
+    thirdPartyAuthSettings.telegram.enabled
+    && thirdPartyAuthSettings.telegram.clientId.trim()
+    && thirdPartyAuthSettings.telegram.clientSecret.trim()
+  );
 
   if (existingSession?.username) {
     redirect(from || "/");
@@ -52,6 +66,7 @@ export default async function LoginPage() {
       ssoProviderType={ssoProviderType}
       googleOauthEnabled={googleOauthEnabled}
       githubOauthEnabled={githubOauthEnabled}
+      telegramOauthEnabled={telegramOauthEnabled}
     />
   );
 }

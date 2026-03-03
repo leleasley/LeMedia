@@ -15,6 +15,7 @@ import {
   fetchOAuthIdentity,
   getOAuthCallbackPath,
   getOAuthConfig,
+  getOAuthProviderLabel,
   isOAuthProvider,
   type OAuthProvider
 } from "@/lib/oauth-providers";
@@ -72,15 +73,16 @@ export async function GET(
     return loginError(base, cookieBase, "OAuth session expired. Please try again.");
   }
 
-  if (!getOAuthConfig(provider)) {
-    return loginError(base, cookieBase, `${provider === "google" ? "Google" : "GitHub"} sign-in is not configured`);
+  if (!await getOAuthConfig(provider)) {
+    return loginError(base, cookieBase, `${getOAuthProviderLabel(provider)} sign-in is not configured`);
   }
 
   let identity;
   try {
     const redirectUri = `${base}${getOAuthCallbackPath(provider)}`;
     const token = await exchangeOAuthCode({ provider, code, redirectUri, codeVerifier: cookieVerifier });
-    identity = await fetchOAuthIdentity(provider, token.accessToken);
+    const identityToken = provider === "telegram" ? (token.idToken ?? "") : token.accessToken;
+    identity = await fetchOAuthIdentity(provider, identityToken);
   } catch {
     return loginError(base, cookieBase, "Unable to complete provider sign-in");
   }
@@ -123,7 +125,7 @@ export async function GET(
 
     const returnTo = sanitizeRelativePath(req.cookies.get("lemedia_oauth_link_return")?.value) || "/settings/profile/linked";
     const url = new URL(returnTo, base);
-    url.searchParams.set("success", `${provider === "google" ? "Google" : "GitHub"} account linked`);
+    url.searchParams.set("success", `${getOAuthProviderLabel(provider)} account linked`);
     const res = NextResponse.redirect(url, { status: 303 });
     clearOauthCookies(res, cookieBase);
     return res;
@@ -131,7 +133,7 @@ export async function GET(
 
   const linkedUser = await getUserByOAuthAccount(provider, identity.providerUserId);
   if (!linkedUser) {
-    return loginError(base, cookieBase, `This ${provider === "google" ? "Google" : "GitHub"} account is not linked. Sign in with password and link it from Profile > Linked Accounts.`);
+    return loginError(base, cookieBase, `This ${getOAuthProviderLabel(provider)} account is not linked. Sign in with password and link it from Profile > Linked Accounts.`);
   }
 
   if (linkedUser.banned) {

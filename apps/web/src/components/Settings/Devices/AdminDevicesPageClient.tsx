@@ -110,7 +110,8 @@ export function AdminDevicesPageClient() {
         </div>
       ) : null}
 
-      <div className="overflow-x-auto rounded-2xl border border-white/10 bg-slate-900/70 shadow-lg shadow-black/10">
+      {/* Desktop table */}
+      <div className="hidden sm:block overflow-x-auto rounded-2xl border border-white/10 bg-slate-900/70 shadow-lg shadow-black/10">
         <table className="min-w-full text-sm">
           <thead className="bg-slate-900 text-left text-xs uppercase tracking-wider text-gray-300">
             <tr>
@@ -195,6 +196,94 @@ export function AdminDevicesPageClient() {
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* Mobile card list */}
+      <div className="sm:hidden space-y-3">
+        {sessions.length === 0 ? (
+          <div className="rounded-xl border border-white/10 bg-slate-900/70 px-4 py-6 text-center text-sm text-gray-400">
+            No sessions found.
+          </div>
+        ) : (
+          sessions.map((session) => (
+            <div
+              key={`${session.userId}-${session.jti}-card`}
+              className="rounded-xl border border-white/10 bg-slate-900/70 p-4 space-y-3"
+            >
+              {/* Header row: avatar + name + status badge */}
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="h-9 w-9 shrink-0 rounded-full overflow-hidden bg-white/10 flex items-center justify-center">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={getAvatarSrc({
+                        avatarUrl: session.avatarUrl,
+                        jellyfinUserId: session.jellyfinUserId,
+                        displayName: session.displayName,
+                        username: session.username
+                      })}
+                      alt={getAvatarAlt({
+                        displayName: session.displayName,
+                        username: session.username
+                      })}
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-white">
+                      {session.displayName || session.username}
+                    </p>
+                    <p className="truncate text-xs text-gray-400">
+                      {session.deviceLabel || "Unknown device"}
+                    </p>
+                  </div>
+                </div>
+                {session.revokedAt ? (
+                  <span className="shrink-0 rounded-full bg-red-500/20 px-2 py-1 text-[10px] font-semibold text-red-200">
+                    Revoked
+                  </span>
+                ) : (
+                  <span className="shrink-0 rounded-full bg-emerald-500/20 px-2 py-1 text-[10px] font-semibold text-emerald-200">
+                    Active
+                  </span>
+                )}
+              </div>
+
+              {/* Details grid */}
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <p className="text-gray-500 uppercase tracking-wide text-[10px]">Last Seen</p>
+                  <p className="text-gray-300 mt-0.5">{formatWhen(session.lastSeenAt)}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500 uppercase tracking-wide text-[10px]">
+                    {session.revokedAt ? "Revoked" : "Expires"}
+                  </p>
+                  <p className="text-gray-300 mt-0.5">
+                    {session.revokedAt ? formatWhen(session.revokedAt) : formatWhen(session.expiresAt)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-gray-500 uppercase tracking-wide text-[10px]">IP Address</p>
+                  <p className="text-gray-300 mt-0.5">{session.ipAddress ?? "—"}</p>
+                </div>
+              </div>
+
+              {/* Action */}
+              {session.revokedAt && (
+                <button
+                  onClick={() => deleteRevokedSession(session.jti)}
+                  disabled={deleting === session.jti}
+                  className="w-full rounded-lg bg-white/10 px-3 py-2 text-xs font-semibold text-white hover:bg-white/20 transition-colors disabled:opacity-50"
+                >
+                  {deleting === session.jti ? "Deleting..." : "Delete Session"}
+                </button>
+              )}
+            </div>
+          ))
+        )}
       </div>
     </section>
   );

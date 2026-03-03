@@ -112,6 +112,9 @@ See `docs/JELLYFIN_AVAILABILITY.md` for setup, how the cache works, and troubles
    - `TELEGRAM_BOT_TOKEN`: (optional) Telegram bot token for the interactive bot
    - `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME`: (optional) Your bot's username, e.g. `LeMedia2_bot`
 
+   For **Log In with Telegram (OIDC)** setup, see:
+   - `docs/TELEGRAM_LOGIN_SETUP.md`
+
 3. Start the application:
    ```bash
    docker compose -f docker-compose.release.yml up -d
@@ -293,24 +296,21 @@ To enable Turnstile on login forms:
 
 LeMedia supports OAuth for Google and GitHub.
 
-Environment variables (already included in `.env.example`):
-```bash
-GOOGLE_OAUTH_CLIENT_ID=
-GOOGLE_OAUTH_CLIENT_SECRET=
-GITHUB_OAUTH_CLIENT_ID=
-GITHUB_OAUTH_CLIENT_SECRET=
-```
+You can enable these by going to: `https://your-domain.com/admin/settings/3rd-party`
+
+Enter your keys in the selection box and make sure you enable them, if they're not enabled the option will not show in the "Other Sign-in Methods" dropdown on the login page.
 
 Provider callback URLs to register:
 - Google: `https://your-domain.com/api/auth/oauth/google/callback`
 - GitHub: `https://your-domain.com/api/auth/oauth/github/callback`
+- Telegram: `https://your-domain.com/api/auth/oauth/telegram/callback`
 
 Replace `https://your-domain.com` with your `APP_BASE_URL`.
 
 How it works:
-- Login page shows Google/GitHub under "Other sign in methods".
-- OAuth login only works for accounts that are already linked.
-- Users must sign in normally first, then link providers from `Settings > Profile > Linked Accounts`.
+- Login page shows Google/GitHub/Telegram under "Other sign in methods".
+- OAuth login only works for accounts that are already linked in **Linked Accounts**.
+- Users must sign in normally first, then link providers from `Settings > Profile > Linked Accounts` (including Telegram).
 - Linking/unlinking is protected by MFA re-auth in the app.
 
 Notes:
@@ -353,18 +353,43 @@ LeMedia includes an interactive Telegram bot that lets users request media, chec
 
 1. Create a bot via [@BotFather](https://t.me/BotFather) and copy the token.
 
-2. Add to your `.env`:
+2. (Optional, recommended) Set a bot icon in BotFather using one of LeMedia's hosted logos.
+   Use your public URL and one of these image URLs:
+   - `${APP_BASE_URL}/icon-512.png`
+   - `${APP_BASE_URL}/icon-1024.png`
+
+   Example with a real domain:
+   - `https://media.example.com/icon-512.png`
+
+   Telegram requires this step to be done in BotFather (LeMedia cannot force it automatically).
+
+3. Add to your `.env`:
    ```env
    TELEGRAM_BOT_TOKEN=your-bot-token-here
    NEXT_PUBLIC_TELEGRAM_BOT_USERNAME=YourBot_bot
    ```
 
-3. Restart the application:
+4. Restart the application:
    ```bash
    docker compose -f docker-compose.release.yml up -d
    ```
 
-4. Users connect from **Settings → Profile → Telegram Bot** in the web app — they'll get a one-time code to send to the bot via `/link`.
+5. Users connect from **Settings → Profile → Telegram Bot** in the web app — they'll get a one-time code to send to the bot via `/link`.
+
+### Telegram Login (OIDC)
+
+LeMedia also supports **Sign in with Telegram** through the new BotFather Web Login/OIDC flow.
+
+1. Configure the OAuth app in BotFather (`/newapp`) and set:
+   - Redirect URL: `https://your-domain.com/api/auth/oauth/telegram/callback`
+   - Origin: `https://your-domain.com`
+   - App icon URL (recommended): `${APP_BASE_URL}/icon-512.png`
+2. Add credentials in Admin UI: **Admin Settings → Users & Auth → 3rd Party Sign-ins**.
+3. Enable Telegram there so it appears under **Other sign-in methods** on the login page.
+
+Before users can use **Continue with Telegram**, they must link Telegram from **Settings → Profile → Linked Accounts**.
+
+For full step-by-step instructions, see [Telegram Login Setup](docs/TELEGRAM_LOGIN_SETUP.md).
 
 ### How linking works
 

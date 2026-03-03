@@ -143,13 +143,13 @@ export function SharePageClient({
 
       {/* Content */}
       <div className="relative z-10">
-        <div className="max-w-7xl mx-auto px-4 py-12 md:py-16">
-          <div className="grid lg:grid-cols-[350px_1fr] gap-8 md:gap-12">
+        <div className="max-w-7xl mx-auto px-4 py-8 sm:py-12 md:py-16">
+          <div className="grid lg:grid-cols-[350px_1fr] gap-6 md:gap-8 lg:gap-12">
             {/* Left Column - Poster */}
             <div className="flex flex-col gap-6">
               <div className="flex justify-center lg:justify-start">
                 {posterUrl ? (
-                  <div className="w-full max-w-[350px] rounded-2xl overflow-hidden shadow-2xl border border-white/10">
+                  <div className="w-full max-w-[280px] sm:max-w-[350px] rounded-2xl overflow-hidden shadow-2xl border border-white/10">
                     <Image
                       src={posterUrl}
                       alt={title}
@@ -160,7 +160,7 @@ export function SharePageClient({
                     />
                   </div>
                 ) : (
-                  <div className="w-full max-w-[350px] aspect-[2/3] bg-slate-800 rounded-2xl flex items-center justify-center text-gray-500">
+                  <div className="w-full max-w-[280px] sm:max-w-[350px] aspect-[2/3] bg-slate-800 rounded-2xl flex items-center justify-center text-gray-500">
                     {mediaType === "movie" ? (
                       <Film className="h-24 w-24 opacity-20" />
                     ) : (
@@ -186,7 +186,7 @@ export function SharePageClient({
             <div className="space-y-8">
               {/* Title & Meta */}
               <div>
-                <h1 className="text-4xl md:text-6xl font-bold text-white mb-4 leading-tight">
+                <h1 className="text-3xl sm:text-4xl md:text-6xl font-bold text-white mb-4 leading-tight">
                   {title}
                 </h1>
                 <div className="flex flex-wrap items-center gap-3 text-gray-300">

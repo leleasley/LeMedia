@@ -8,6 +8,7 @@ import {
   createPkceVerifier,
   getOAuthCallbackPath,
   getOAuthConfig,
+  getOAuthProviderLabel,
   isOAuthProvider,
   type OAuthProvider
 } from "@/lib/oauth-providers";
@@ -45,9 +46,9 @@ export async function POST(
     return NextResponse.json({ error: mfaCheck.message }, { status: 400 });
   }
 
-  const config = getOAuthConfig(provider);
+  const config = await getOAuthConfig(provider);
   if (!config) {
-    return NextResponse.json({ error: `${provider === "google" ? "Google" : "GitHub"} linking is not configured` }, { status: 400 });
+    return NextResponse.json({ error: `${getOAuthProviderLabel(provider)} linking is not configured` }, { status: 400 });
   }
 
   const ctx = getRequestContext(req);
@@ -63,9 +64,11 @@ export async function POST(
   authUrl.searchParams.set("response_type", "code");
   authUrl.searchParams.set("scope", config.scopes.join(" "));
   authUrl.searchParams.set("state", state);
-  if (provider === "google") {
+  if (provider !== "github") {
     authUrl.searchParams.set("code_challenge", challenge);
     authUrl.searchParams.set("code_challenge_method", "S256");
+  }
+  if (provider === "google") {
     authUrl.searchParams.set("prompt", "select_account");
   }
 

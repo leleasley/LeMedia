@@ -51,7 +51,7 @@ export default function AdminSettingsUsersPage() {
 
     useEffect(() => {
         let active = true;
-        fetch("/api/v1/admin/settings/users", { credentials: "include" })
+        fetch("/api/admin/settings/users", { credentials: "include" })
             .then(async (res) => {
                 if (!res.ok) throw new Error("Failed to load settings");
                 return res.json();
@@ -75,7 +75,7 @@ export default function AdminSettingsUsersPage() {
     const handleSave = async () => {
         setSaving(true);
         try {
-            const res = await csrfFetch("/api/v1/admin/settings/users", {
+            const res = await csrfFetch("/api/admin/settings/users", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({

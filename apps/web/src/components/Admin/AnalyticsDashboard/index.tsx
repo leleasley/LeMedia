@@ -122,8 +122,8 @@ export function AnalyticsDashboard() {
   return (
     <div className="space-y-6">
       {/* Date Range Picker */}
-      <div className="flex gap-4 flex-wrap items-end">
-        <div>
+      <div className="flex flex-wrap gap-4 items-end">
+        <div className="flex-1 min-w-[140px]">
           <label className="block text-sm font-medium text-gray-300 mb-2">
             Start Date
           </label>
@@ -131,10 +131,10 @@ export function AnalyticsDashboard() {
             type="date"
             value={dateRange.start}
             onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-            className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
           />
         </div>
-        <div>
+        <div className="flex-1 min-w-[140px]">
           <label className="block text-sm font-medium text-gray-300 mb-2">
             End Date
           </label>
@@ -142,7 +142,7 @@ export function AnalyticsDashboard() {
             type="date"
             value={dateRange.end}
             onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-            className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
           />
         </div>
       </div>
@@ -259,28 +259,34 @@ export function AnalyticsDashboard() {
           <Calendar className="h-5 w-5" />
           Requests Trend (Last 30 Days)
         </h3>
-        <div className="h-64 flex items-end gap-1 p-4 bg-white/5 rounded-lg overflow-x-auto">
-          {chartData.length === 0 ? (
-            <p className="text-gray-400 text-sm flex items-center justify-center w-full">
-              No data
-            </p>
-          ) : (
-            chartData.map((item, idx) => {
-              const maxCount = Math.max(...chartData.map((d) => d.count), 1);
-              const height = (item.count / maxCount) * 100;
-              return (
-                <div
-                  key={idx}
-                  className="flex-1 flex flex-col items-center gap-2 min-w-[30px]"
-                  title={`${item.date}: ${item.count} requests`}
-                >
-                  <div className="w-full bg-gradient-to-t from-blue-500 to-blue-400 rounded-t opacity-80 hover:opacity-100 transition-opacity flex-1 min-h-[4px]" style={{ height: `${height}%` }} />
-                  <span className="text-[10px] text-gray-500 text-center">{item.date}</span>
-                </div>
-              );
-            })
-          )}
-        </div>
+        {chartData.length === 0 ? (
+          <p className="text-gray-400 text-sm text-center py-8">No data</p>
+        ) : (() => {
+          const maxCount = Math.max(...chartData.map((d) => d.count), 1);
+          const maxBarPx = 160;
+          return (
+            <div className="overflow-x-auto">
+              <div className="flex items-end gap-1 bg-white/5 rounded-lg p-4 min-w-[400px]" style={{ height: "220px" }}>
+                {chartData.map((item, idx) => {
+                  const barPx = Math.max(Math.round((item.count / maxCount) * maxBarPx), item.count > 0 ? 4 : 0);
+                  return (
+                    <div
+                      key={idx}
+                      className="flex flex-1 flex-col items-center justify-end gap-1.5 min-w-[28px] h-full"
+                      title={`${item.date}: ${item.count} requests`}
+                    >
+                      <div
+                        className="w-full rounded-t bg-gradient-to-t from-blue-500 to-blue-400 opacity-80 hover:opacity-100 transition-opacity"
+                        style={{ height: `${barPx}px` }}
+                      />
+                      <span className="text-[9px] text-gray-500 text-center leading-tight">{item.date}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

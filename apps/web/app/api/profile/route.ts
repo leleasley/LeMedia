@@ -47,6 +47,7 @@ export async function GET(req: NextRequest) {
     ]);
     const googleAccount = oauthAccounts.find((account) => account.provider === "google") ?? null;
     const githubAccount = oauthAccounts.find((account) => account.provider === "github") ?? null;
+    const telegramAccount = oauthAccounts.find((account) => account.provider === "telegram") ?? null;
 
     return cacheableJsonResponseWithETag(req, {
       user: {
@@ -65,6 +66,8 @@ export async function GET(req: NextRequest) {
         googleEmail: googleAccount?.providerEmail ?? null,
         githubLinked: Boolean(githubAccount),
         githubLogin: githubAccount?.providerLogin ?? null,
+        telegramLinked: Boolean(telegramAccount),
+        telegramUsername: telegramAccount?.providerLogin ?? null,
         avatarUrl: dbUser.avatar_url,
         avatarVersion: dbUser.avatar_version ?? null,
         discoverRegion: dbUser.discover_region,

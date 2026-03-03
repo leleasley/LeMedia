@@ -27,6 +27,8 @@ type AdminUser = {
   googleEmail?: string | null;
   githubLinked?: boolean;
   githubLogin?: string | null;
+  telegramLinked?: boolean;
+  telegramUsername?: string | null;
 };
 
 type ProfileResponse = {
@@ -45,6 +47,8 @@ type ProfileResponse = {
     googleEmail?: string | null;
     githubLinked?: boolean;
     githubLogin?: string | null;
+    telegramLinked?: boolean;
+    telegramUsername?: string | null;
   };
 };
 
@@ -202,7 +206,7 @@ export function LinkedAccountsPanel({
   const [mfaCode, setMfaCode] = useState("");
   const [mfaError, setMfaError] = useState<string | null>(null);
   const [mfaBusy, setMfaBusy] = useState(false);
-  const [oauthBusyProvider, setOauthBusyProvider] = useState<"google" | "github" | null>(null);
+  const [oauthBusyProvider, setOauthBusyProvider] = useState<"google" | "github" | "telegram" | null>(null);
   const [pendingMfaAction, setPendingMfaAction] = useState<null | ((code: string) => Promise<void>)>(null);
 
   const adminUrl = userId ? `/api/v1/admin/users/${userId}` : null;
@@ -231,6 +235,8 @@ export function LinkedAccountsPanel({
         googleEmail: admin.googleEmail ?? null,
         githubLinked: admin.githubLinked ?? false,
         githubLogin: admin.githubLogin ?? null,
+        telegramLinked: admin.telegramLinked ?? false,
+        telegramUsername: admin.telegramUsername ?? null,
         traktLinked: false,
         traktTokenExpiresAt: null
       };
@@ -246,6 +252,8 @@ export function LinkedAccountsPanel({
       googleEmail: profile.user?.googleEmail ?? null,
       githubLinked: profile.user?.githubLinked ?? false,
       githubLogin: profile.user?.githubLogin ?? null,
+      telegramLinked: profile.user?.telegramLinked ?? false,
+      telegramUsername: profile.user?.telegramUsername ?? null,
       traktLinked: profile.user?.traktLinked ?? false,
       traktTokenExpiresAt: profile.user?.traktTokenExpiresAt ?? null
     };
@@ -547,7 +555,7 @@ export function LinkedAccountsPanel({
     }
   };
 
-  const handleConnectOAuth = (provider: "google" | "github") => {
+  const handleConnectOAuth = (provider: "google" | "github" | "telegram") => {
     if (mode !== "self") return;
     requestMfa(async (code) => {
       setOauthBusyProvider(provider);
@@ -568,8 +576,8 @@ export function LinkedAccountsPanel({
     });
   };
 
-  const handleUnlinkOAuth = async (provider: "google" | "github") => {
-    const label = provider === "google" ? "Google" : "GitHub";
+  const handleUnlinkOAuth = async (provider: "google" | "github" | "telegram") => {
+    const label = provider === "google" ? "Google" : provider === "github" ? "GitHub" : "Telegram";
     const ok = await confirm(`Are you sure you want to unlink your ${label} account?`, { title: `Unlink ${label}`, destructive: true, confirmLabel: "Unlink" });
     if (!ok) return;
 
@@ -619,6 +627,7 @@ export function LinkedAccountsPanel({
   const hasTraktOauth = Boolean(normalized.traktLinked);
   const hasGoogle = Boolean(normalized.googleLinked);
   const hasGithub = Boolean(normalized.githubLinked);
+  const hasTelegram = Boolean(normalized.telegramLinked);
 
   return (
     <div className="space-y-6">
@@ -792,6 +801,60 @@ export function LinkedAccountsPanel({
                     className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg bg-gray-700/80 text-white hover:bg-gray-700 transition text-xs sm:text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                   >
                     {oauthBusyProvider === "github" ? "Working..." : "Connect"}
+                  </button>
+                )
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Telegram OAuth */}
+      <div className="relative overflow-hidden rounded-2xl border border-sky-500/20 bg-gradient-to-br from-sky-950/40 via-slate-900/60 to-slate-900/40 p-4 sm:p-6 backdrop-blur-md hover:border-sky-500/40 transition-all">
+        <div className="absolute inset-0 bg-gradient-to-br from-sky-500/5 to-transparent pointer-events-none"></div>
+        <div className="relative">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0">
+            <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+              <div className="h-12 w-12 sm:h-14 sm:w-14 rounded-xl bg-gradient-to-br from-sky-500 to-cyan-600 flex flex-shrink-0 items-center justify-center shadow-lg">
+                <Image
+                  src="/telegram.svg"
+                  alt="Telegram"
+                  width={32}
+                  height={32}
+                  className="h-6 w-6 sm:h-8 sm:w-8"
+                />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h4 className="text-base sm:text-lg font-bold text-white">Telegram</h4>
+                <p className="text-xs sm:text-sm text-gray-300 truncate">
+                  {hasTelegram ? (normalized.telegramUsername ? `@${normalized.telegramUsername}` : "Connected") : "Not connected"}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {hasTelegram && (
+                <div className="px-2 sm:px-3 py-1 rounded-full bg-green-500/20 text-green-300 text-xs font-semibold border border-green-500/30 whitespace-nowrap">
+                  Connected
+                </div>
+              )}
+              {hasTelegram ? (
+                <button
+                  type="button"
+                  onClick={() => handleUnlinkOAuth("telegram")}
+                  disabled={oauthBusyProvider === "telegram"}
+                  className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg bg-red-600/80 text-white hover:bg-red-600 transition text-xs sm:text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                >
+                  {oauthBusyProvider === "telegram" ? "Working..." : "Unlink"}
+                </button>
+              ) : (
+                mode === "self" && (
+                  <button
+                    type="button"
+                    onClick={() => handleConnectOAuth("telegram")}
+                    disabled={oauthBusyProvider === "telegram"}
+                    className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg bg-sky-600/80 text-white hover:bg-sky-600 transition text-xs sm:text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  >
+                    {oauthBusyProvider === "telegram" ? "Working..." : "Connect"}
                   </button>
                 )
               )}

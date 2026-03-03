@@ -27,6 +27,7 @@ interface ProfilePageClientProps {
     letterboxdUsername?: string | null;
     googleEmail?: string | null;
     githubLogin?: string | null;
+    telegramUsername?: string | null;
     createdAt?: string;
     lastSeenAt?: string;
     userId?: number;
@@ -183,6 +184,16 @@ export function ProfilePageClient({
       bgClass: "from-gray-950/40 via-slate-900/60 to-slate-900/40",
       iconBgClass: "from-gray-600 to-gray-700",
       glowClass: "from-gray-500/5",
+    },
+    {
+      label: "Telegram",
+      value: profileUser.telegramUsername ?? null,
+      icon: "/telegram.svg",
+      color: "sky",
+      borderClass: "border-sky-500/20 hover:border-sky-500/40",
+      bgClass: "from-sky-950/40 via-slate-900/60 to-slate-900/40",
+      iconBgClass: "from-sky-500 to-cyan-600",
+      glowClass: "from-sky-500/5",
     },
   ];
 
@@ -404,7 +415,13 @@ export function ProfilePageClient({
                     </div>
                     <p className="mt-0.5 text-sm text-gray-300 truncate">
                       {account.value
-                        ? (account.label === "Discord" ? `ID: ${account.value}` : account.label === "Google" ? account.value : `@${account.value}`)
+                        ? (account.label === "Discord"
+                          ? `ID: ${account.value}`
+                          : account.label === "Google"
+                            ? account.value
+                            : account.label === "Telegram"
+                              ? String(account.value).startsWith("@") ? account.value : `@${account.value}`
+                              : `@${account.value}`)
                         : "Connect to get started"}
                     </p>
                   </div>
