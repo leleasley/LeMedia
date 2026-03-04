@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Inbox, LogOut, Search, Settings, User, Clock } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Inbox, LogOut, Search, Settings, User, Clock, X } from "lucide-react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import Link from "next/link";
 import { getAvatarAlt, getAvatarSrc } from "@/lib/avatar";
@@ -16,6 +16,38 @@ type ProfileSummary = {
     jellyfinUserId?: string | null;
 };
 
+// ---------------------------------------------------------------------------
+// Recent-searches helpers (localStorage only, no DB)
+// ---------------------------------------------------------------------------
+
+const MAX_RECENT = 8;
+const MIN_SEARCH_LENGTH = 2;
+const DEBOUNCE_MS = 600; // prevent hammering the server on every keystroke
+
+function getStorageKey(username?: string) {
+    return username ? `recentSearches:${username}` : "recentSearches:global";
+}
+
+function loadRecentSearches(username?: string): string[] {
+    try {
+        const raw = window.localStorage.getItem(getStorageKey(username));
+        const list = raw ? JSON.parse(raw) : [];
+        return Array.isArray(list) ? list.filter((v): v is string => typeof v === "string").slice(0, MAX_RECENT) : [];
+    } catch {
+        return [];
+    }
+}
+
+function saveRecentSearches(items: string[], username?: string) {
+    try {
+        window.localStorage.setItem(getStorageKey(username), JSON.stringify(items.slice(0, MAX_RECENT)));
+    } catch {
+        // localStorage quota / private-browsing – safe to ignore
+    }
+}
+
+// ---------------------------------------------------------------------------
+
 function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQuery: string; isAdmin: boolean; initialProfile?: ProfileSummary | null }) {
     const [searchQuery, setSearchQuery] = useState(initialQuery);
     const router = useRouter();
@@ -29,146 +61,109 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
     const searchRef = useRef<HTMLDivElement | null>(null);
     const [recentOpen, setRecentOpen] = useState(false);
     const [recentSearches, setRecentSearches] = useState<string[]>([]);
-    const lastSavedRef = useRef<string>("");
 
+    // Cleanup debounce timer on unmount
     useEffect(() => {
         return () => {
             if (debounceRef.current) clearTimeout(debounceRef.current);
         };
     }, []);
 
+    // Sync input with external query changes (e.g. back/forward navigation)
     useEffect(() => {
         if (initialQuery === searchQuery) return;
-        const isFocused = inputRef.current === document.activeElement;
-        if (!isFocused) {
-            const id = window.setTimeout(() => setSearchQuery(initialQuery), 0);
-            return () => window.clearTimeout(id);
-        }
+        if (inputRef.current === document.activeElement) return;
+        const id = window.setTimeout(() => setSearchQuery(initialQuery), 0);
+        return () => window.clearTimeout(id);
     }, [initialQuery, searchQuery]);
 
+    // Sync profile prop
     useEffect(() => {
         if (initialProfile) return;
         const id = window.setTimeout(() => setProfile(null), 0);
         return () => window.clearTimeout(id);
     }, [initialProfile]);
 
+    // Load recent searches from localStorage once per user
     useEffect(() => {
-        if (!profile?.username) return;
-        try {
-            const key = `recentSearches:${profile.username}`;
-            const raw = window.localStorage.getItem(key);
-            const rawGlobal = window.localStorage.getItem("recentSearches:global");
-            const list = raw ? JSON.parse(raw) : [];
-            const globalList = rawGlobal ? JSON.parse(rawGlobal) : [];
-            const combined = Array.isArray(list) ? list : [];
-            if (Array.isArray(globalList)) {
-                globalList.forEach((item) => {
-                    if (typeof item === "string" && !combined.includes(item)) {
-                        combined.push(item);
-                    }
-                });
-            }
-            if (combined.length) {
-                const next = combined.filter((v) => typeof v === "string");
-                const id = window.setTimeout(() => setRecentSearches(next), 0);
-                return () => window.clearTimeout(id);
-            }
-        } catch {
-            // ignore localStorage errors
+        const items = loadRecentSearches(profile?.username);
+        if (items.length) {
+            setRecentSearches(items);
         }
     }, [profile?.username]);
 
+    // Close menus on outside click
     useEffect(() => {
-        if (!menuOpen) return;
+        if (!menuOpen && !recentOpen) return;
         const onClick = (event: MouseEvent) => {
-            if (!menuRef.current) return;
-            if (!menuRef.current.contains(event.target as Node)) {
+            if (menuOpen && menuRef.current && !menuRef.current.contains(event.target as Node)) {
                 setMenuOpen(false);
             }
-        };
-        window.addEventListener("click", onClick);
-        return () => window.removeEventListener("click", onClick);
-    }, [menuOpen]);
-
-    useEffect(() => {
-        if (!recentOpen) return;
-        const onClick = (event: MouseEvent) => {
-            if (!searchRef.current) return;
-            if (!searchRef.current.contains(event.target as Node)) {
+            if (recentOpen && searchRef.current && !searchRef.current.contains(event.target as Node)) {
                 setRecentOpen(false);
             }
         };
         window.addEventListener("click", onClick);
         return () => window.removeEventListener("click", onClick);
-    }, [recentOpen]);
+    }, [menuOpen, recentOpen]);
 
-    const persistRecent = (items: string[]) => {
-        setRecentSearches(items);
-        try {
-            if (profile?.username) {
-                window.localStorage.setItem(`recentSearches:${profile.username}`, JSON.stringify(items));
-            }
-            window.localStorage.setItem("recentSearches:global", JSON.stringify(items));
-        } catch {
-            // ignore localStorage errors
-        }
-    };
+    // ---- Recent-search mutations (only on explicit user actions) ----------
 
-    const addRecent = (value: string) => {
+    const persistRecent = useCallback((items: string[]) => {
+        const capped = items.slice(0, MAX_RECENT);
+        setRecentSearches(capped);
+        saveRecentSearches(capped, profile?.username);
+    }, [profile?.username]);
+
+    /** Add a term to recent searches – call ONLY on intentional submit / click */
+    const addRecent = useCallback((value: string) => {
         const trimmed = value.trim();
-        if (trimmed.length < 2) return;
-        if (lastSavedRef.current.toLowerCase() === trimmed.toLowerCase()) return;
-        const next = [trimmed, ...recentSearches.filter((item) => item.toLowerCase() !== trimmed.toLowerCase())].slice(0, 8);
-        lastSavedRef.current = trimmed;
-        persistRecent(next);
-    };
+        if (trimmed.length < MIN_SEARCH_LENGTH) return;
+        setRecentSearches((prev) => {
+            // Dedupe (case-insensitive) and prepend
+            const next = [trimmed, ...prev.filter((item) => item.toLowerCase() !== trimmed.toLowerCase())].slice(0, MAX_RECENT);
+            saveRecentSearches(next, profile?.username);
+            return next;
+        });
+    }, [profile?.username]);
 
-    useEffect(() => {
-        const q = searchParams.get("q") ?? "";
-        const isSearchPage = pathname === "/search";
-        if (!isSearchPage) return;
-        const trimmed = q.trim();
-        if (trimmed.length < 2) return;
-        if (inputRef.current === document.activeElement) return;
-        const id = window.setTimeout(() => {
-            if (lastSavedRef.current.toLowerCase() === trimmed.toLowerCase()) return;
-            setRecentSearches((prev) => {
-                const next = [trimmed, ...prev.filter((item) => item.toLowerCase() !== trimmed.toLowerCase())].slice(0, 8);
-                lastSavedRef.current = trimmed;
-                try {
-                    if (profile?.username) {
-                        window.localStorage.setItem(`recentSearches:${profile.username}`, JSON.stringify(next));
-                    }
-                    window.localStorage.setItem("recentSearches:global", JSON.stringify(next));
-                } catch {
-                    // ignore localStorage errors
-                }
-                return next;
-            });
-        }, 0);
-        return () => window.clearTimeout(id);
-    }, [pathname, profile?.username, searchParams]);
+    const removeRecent = useCallback((term: string) => {
+        setRecentSearches((prev) => {
+            const next = prev.filter((item) => item.toLowerCase() !== term.toLowerCase());
+            saveRecentSearches(next, profile?.username);
+            return next;
+        });
+    }, [profile?.username]);
+
+    // ---- Input / form handlers -------------------------------------------
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const value = e.target.value;
         setSearchQuery(value);
 
-        // Auto-navigate to search results when user types
-        if (value.trim().length >= 2) {
-            if (debounceRef.current) clearTimeout(debounceRef.current);
+        // Cancel any pending navigation
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+
+        // Only navigate after the user pauses typing (DEBOUNCE_MS)
+        // Does NOT save to recent searches – that only happens on submit
+        if (value.trim().length >= MIN_SEARCH_LENGTH) {
             debounceRef.current = setTimeout(() => {
                 router.push(`/search?q=${encodeURIComponent(value.trim())}&type=all`);
-            }, 300);
+            }, DEBOUNCE_MS);
         }
     };
 
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault();
         const q = searchQuery.trim();
-        if (q.length >= 2) {
-            router.push(`/search?q=${encodeURIComponent(q)}&type=all`);
-            addRecent(q);
-        }
+        if (q.length < MIN_SEARCH_LENGTH) return;
+
+        // Cancel any pending debounce – user explicitly submitted
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+
+        router.push(`/search?q=${encodeURIComponent(q)}&type=all`);
+        addRecent(q); // only save on explicit submit
+        setRecentOpen(false);
     };
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -218,20 +213,38 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
                             </div>
                             <div className="max-h-56 overflow-y-auto">
                                 {recentSearches.map((item) => (
-                                    <button
+                                    <div
                                         key={item}
-                                        type="button"
-                                        onClick={() => {
-                                            setSearchQuery(item);
-                                            addRecent(item);
-                                            router.push(`/search?q=${encodeURIComponent(item)}&type=all`);
-                                            setRecentOpen(false);
-                                        }}
                                         className="flex w-full items-center justify-between px-4 py-2.5 text-sm text-white/90 hover:text-white hover:bg-white/10 transition-all group border-b border-white/5 last:border-b-0"
                                     >
-                                        <span className="truncate group-hover:text-indigo-300 transition-colors">{item}</span>
-                                        <Search className="h-3.5 w-3.5 text-white/40 group-hover:text-indigo-400 transition-colors" />
-                                    </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                if (debounceRef.current) clearTimeout(debounceRef.current);
+                                                setSearchQuery(item);
+                                                addRecent(item);
+                                                router.push(`/search?q=${encodeURIComponent(item)}&type=all`);
+                                                setRecentOpen(false);
+                                            }}
+                                            className="flex-1 text-left truncate group-hover:text-indigo-300 transition-colors"
+                                        >
+                                            {item}
+                                        </button>
+                                        <div className="flex items-center gap-2 shrink-0 ml-2">
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    removeRecent(item);
+                                                }}
+                                                className="p-0.5 rounded-full text-white/30 hover:text-red-400 hover:bg-white/10 transition-colors"
+                                                title="Remove"
+                                            >
+                                                <X className="h-3 w-3" />
+                                            </button>
+                                            <Search className="h-3.5 w-3.5 text-white/40 group-hover:text-indigo-400 transition-colors" />
+                                        </div>
+                                    </div>
                                 ))}
                             </div>
                         </div>
