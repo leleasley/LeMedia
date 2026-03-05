@@ -127,7 +127,6 @@ export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, 
         const current = pathname ?? "/";
         return [
             { href: "/recommendations", label: "Recommendations", icon: Sparkles, isActive: current === "/recommendations" },
-            { href: "/reviews", label: "Reviews", icon: Star, isActive: current.startsWith("/reviews") },
             { href: "/calendar", label: "Calendar", icon: CalendarDays, isActive: current === "/calendar" },
         ];
     }, [pathname]);
@@ -136,6 +135,7 @@ export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, 
         const current = pathname ?? "/";
         return [
             { href: "/social", label: "Feed", icon: Heart, isActive: current === "/social" },
+            { href: "/reviews", label: "Reviews", icon: Star, isActive: current.startsWith("/reviews") },
             { href: "/friends", label: "Friends", icon: Users, isActive: current === "/friends" },
             { href: "/social/discover", label: "Discover People", icon: Search, isActive: current === "/social/discover" },
         ];

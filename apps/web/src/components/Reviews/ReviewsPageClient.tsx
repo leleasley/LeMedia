@@ -99,7 +99,7 @@ export function ReviewsPageClient({ imageProxyEnabled }: ReviewsPageClientProps)
                       )}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
-                          <PrefetchLink href={href} className="text-sm font-semibold text-white hover:text-indigo-300 line-clamp-1">
+                          <PrefetchLink href={href} className="text-sm font-semibold text-white hover:text-pink-300 line-clamp-1">
                             {review.title} {review.releaseYear ? `(${review.releaseYear})` : ""}
                           </PrefetchLink>
                           <span className="text-xs text-gray-400">{formatDate(review.createdAt)}</span>
@@ -150,7 +150,7 @@ export function ReviewsPageClient({ imageProxyEnabled }: ReviewsPageClientProps)
                       href={review.link}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-xs text-indigo-300 hover:text-indigo-200 inline-flex items-center gap-1"
+                      className="text-xs text-pink-300 hover:text-pink-200 inline-flex items-center gap-1"
                     >
                       View <ExternalLink className="h-3 w-3" />
                     </Link>

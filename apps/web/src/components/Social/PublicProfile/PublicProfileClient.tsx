@@ -202,7 +202,7 @@ export function PublicProfileClient({
         </div>
         <h1 className="text-2xl font-bold text-white mb-2">User Not Found</h1>
         <p className="text-gray-400">The user &ldquo;{username}&rdquo; doesn&apos;t exist or has been banned.</p>
-        <Link href="/social" className="inline-flex items-center gap-2 mt-6 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">
+        <Link href="/social" className="inline-flex items-center gap-2 mt-6 px-5 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-500 text-white transition-colors">
           Explore Users
         </Link>
       </div>
@@ -251,7 +251,7 @@ export function PublicProfileClient({
             priority
           />
         ) : (
-          <div className="absolute inset-0 bg-gradient-to-br from-indigo-900/40 via-purple-900/30 to-pink-900/20" />
+          <div className="absolute inset-0 bg-gradient-to-br from-pink-900/40 via-rose-900/30 to-fuchsia-900/20" />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-[#0b1120] via-[#0b1120]/50 to-transparent" />
       </div>
@@ -261,7 +261,7 @@ export function PublicProfileClient({
         <div className="flex flex-col sm:flex-row items-start sm:items-end gap-4 sm:gap-6">
           {/* Avatar */}
           <div className="relative">
-            <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-2xl ring-4 ring-[#0b1120] overflow-hidden bg-gradient-to-br from-indigo-600 to-purple-700 flex-shrink-0 shadow-2xl relative">
+            <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-2xl ring-4 ring-[#0b1120] overflow-hidden bg-gradient-to-br from-pink-600 to-rose-700 flex-shrink-0 shadow-2xl relative">
               {avatarBypass ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={avatarSrc} alt={getAvatarAlt(profile)} className="object-cover w-full h-full" />
@@ -343,8 +343,8 @@ export function PublicProfileClient({
       {stats && profile.showStats && (
         <div className="px-4 sm:px-8 py-5 border-b border-white/5">
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
-            <StatCard icon={<Users className="w-5 h-5" />} label="Friends" value={stats.friendCount} color="indigo" />
-            <StatCard icon={<ListChecks className="w-5 h-5" />} label="Lists" value={stats.listCount} color="purple" />
+            <StatCard icon={<Users className="w-5 h-5" />} label="Friends" value={stats.friendCount} color="pink" />
+            <StatCard icon={<ListChecks className="w-5 h-5" />} label="Lists" value={stats.listCount} color="pink" />
             <StatCard icon={<Star className="w-5 h-5" />} label="Reviews" value={stats.reviewCount} color="amber" />
             <StatCard icon={<Film className="w-5 h-5" />} label="Watchlist" value={stats.watchlistCount} color="blue" />
             <StatCard icon={<Heart className="w-5 h-5" />} label="Favorites" value={stats.favoriteCount} color="pink" />
@@ -355,9 +355,9 @@ export function PublicProfileClient({
       {/* Mutual Taste Insights */}
       {mutualInsights && (mutualInsights.overlapPercentage > 0 || mutualInsights.sharedGenres.length > 0) && (
         <div className="px-4 sm:px-8 py-5 border-b border-white/5">
-          <div className="bg-gradient-to-r from-indigo-500/5 via-purple-500/5 to-pink-500/5 border border-white/5 rounded-2xl p-5">
+          <div className="bg-gradient-to-r from-pink-500/5 via-rose-500/5 to-fuchsia-500/5 border border-white/5 rounded-2xl p-5">
             <div className="flex items-center gap-2 mb-4">
-              <Sparkles className="w-5 h-5 text-purple-400" />
+              <Sparkles className="w-5 h-5 text-pink-400" />
               <h3 className="text-sm font-semibold text-white">Taste Match</h3>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -373,8 +373,8 @@ export function PublicProfileClient({
                     />
                     <defs>
                       <linearGradient id="overlapGradient" x1="0" y1="0" x2="1" y2="1">
-                        <stop offset="0%" stopColor="#818cf8" />
-                        <stop offset="100%" stopColor="#e879f9" />
+                        <stop offset="0%" stopColor="#f472b6" />
+                        <stop offset="100%" stopColor="#fb7185" />
                       </linearGradient>
                     </defs>
                   </svg>
@@ -392,7 +392,7 @@ export function PublicProfileClient({
                 <p className="text-xs text-gray-400 mb-2">Shared Genres</p>
                 <div className="flex flex-wrap gap-1.5">
                   {mutualInsights.sharedGenres.slice(0, 5).map((genre) => (
-                    <span key={genre} className="px-2 py-0.5 rounded-md bg-purple-500/10 border border-purple-500/20 text-purple-300 text-xs">
+                    <span key={genre} className="px-2 py-0.5 rounded-md bg-pink-500/10 border border-pink-500/20 text-pink-300 text-xs">
                       {genre}
                     </span>
                   ))}
@@ -411,7 +411,7 @@ export function PublicProfileClient({
         <div className="px-4 sm:px-8 py-6">
           <div className="flex items-center justify-between mb-5">
             <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-              <ListChecks className="w-5 h-5 text-indigo-400" />
+              <ListChecks className="w-5 h-5 text-pink-400" />
               Lists
             </h2>
             <div className="flex bg-white/5 rounded-xl p-0.5 border border-white/5">
@@ -421,7 +421,7 @@ export function PublicProfileClient({
                   onClick={() => setListTab(tab)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                     listTab === tab
-                      ? "bg-indigo-600 text-white shadow-md"
+                      ? "bg-pink-600 text-white shadow-md"
                       : "text-gray-400 hover:text-white"
                   }`}
                 >
@@ -441,7 +441,7 @@ export function PublicProfileClient({
             <div className="text-center mt-6">
               <Link
                 href={`/u/${username}/lists`}
-                className="inline-flex items-center gap-2 text-sm text-indigo-400 hover:text-indigo-300 transition-colors"
+                className="inline-flex items-center gap-2 text-sm text-pink-400 hover:text-pink-300 transition-colors"
               >
                 View all {lists.length} lists <ChevronRight className="w-4 h-4" />
               </Link>
@@ -514,7 +514,7 @@ function FriendButton({
       <button
         onClick={() => onAction("accept", profileId)}
         disabled={loading}
-        className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-sm font-medium shadow-lg shadow-indigo-500/20 transition-all"
+        className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 text-white text-sm font-medium shadow-lg shadow-pink-500/20 transition-all"
       >
         <UserPlus className="w-4 h-4" />
         Accept Request
@@ -530,7 +530,7 @@ function FriendButton({
     <button
       onClick={() => onAction("send_request", profileId)}
       disabled={loading}
-      className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-sm font-medium shadow-lg shadow-indigo-500/20 transition-all"
+      className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 text-white text-sm font-medium shadow-lg shadow-pink-500/20 transition-all"
     >
       <UserPlus className="w-4 h-4" />
       Add Friend
@@ -540,8 +540,8 @@ function FriendButton({
 
 function StatCard({ icon, label, value, color }: { icon: React.ReactNode; label: string; value: number; color: string }) {
   const colorMap: Record<string, string> = {
-    indigo: "from-indigo-500/10 to-indigo-500/5 border-indigo-500/10 text-indigo-400",
-    purple: "from-purple-500/10 to-purple-500/5 border-purple-500/10 text-purple-400",
+    indigo: "from-pink-500/10 to-pink-500/5 border-pink-500/10 text-pink-400",
+    purple: "from-rose-500/10 to-rose-500/5 border-rose-500/10 text-rose-400",
     amber: "from-amber-500/10 to-amber-500/5 border-amber-500/10 text-amber-400",
     blue: "from-blue-500/10 to-blue-500/5 border-blue-500/10 text-blue-400",
     pink: "from-pink-500/10 to-pink-500/5 border-pink-500/10 text-pink-400",
@@ -568,10 +568,10 @@ function ListCard({ list, imageProxyEnabled }: { list: ListItem; imageProxyEnabl
   return (
     <Link
       href={`/lists/${list.id}`}
-      className="group relative bg-white/[0.02] hover:bg-white/[0.05] border border-white/5 hover:border-white/10 rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-xl hover:shadow-indigo-500/5"
+      className="group relative bg-white/[0.02] hover:bg-white/[0.05] border border-white/5 hover:border-white/10 rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-xl hover:shadow-pink-500/5"
     >
       {/* Cover */}
-      <div className="relative h-36 bg-gradient-to-br from-indigo-900/20 via-purple-900/15 to-pink-900/10">
+      <div className="relative h-36 bg-gradient-to-br from-pink-900/20 via-rose-900/15 to-fuchsia-900/10">
         {coverUrl && (
           <Image src={coverUrl} alt={list.name} fill className="object-cover group-hover:scale-105 transition-transform duration-500" />
         )}
@@ -603,7 +603,7 @@ function ListCard({ list, imageProxyEnabled }: { list: ListItem; imageProxyEnabl
 
       {/* Content */}
       <div className="p-3.5">
-        <h3 className="font-semibold text-white text-sm truncate group-hover:text-indigo-300 transition-colors">
+        <h3 className="font-semibold text-white text-sm truncate group-hover:text-pink-300 transition-colors">
           {list.name}
         </h3>
         {list.description && (
@@ -619,7 +619,7 @@ function ListCard({ list, imageProxyEnabled }: { list: ListItem; imageProxyEnabl
           )}
           {list.commentCount > 0 && (
             <span className="flex items-center gap-1">
-              <MessageCircle className="w-3 h-3 text-blue-400" /> {list.commentCount}
+              <MessageCircle className="w-3 h-3 text-pink-400" /> {list.commentCount}
             </span>
           )}
           {list.saveCount > 0 && (
@@ -674,7 +674,7 @@ function FriendsOnlyProfileBanner({
 
   return (
     <div className="text-center py-20">
-      <div className="w-24 h-24 rounded-2xl overflow-hidden bg-gradient-to-br from-indigo-600 to-purple-700 mx-auto mb-6 ring-4 ring-[#0b1120] relative">
+      <div className="w-24 h-24 rounded-2xl overflow-hidden bg-gradient-to-br from-pink-600 to-rose-700 mx-auto mb-6 ring-4 ring-[#0b1120] relative">
         {avatarBypass ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={avatarSrc} alt={getAvatarAlt(profile)} className="object-cover w-full h-full" />
@@ -723,7 +723,7 @@ function ReportModal({
           <select
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-pink-500"
           >
             <option value="spam">Spam</option>
             <option value="harassment">Harassment</option>
@@ -738,7 +738,7 @@ function ReportModal({
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Provide additional details..."
             rows={3}
-            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-pink-500 resize-none"
           />
         </div>
         <div className="flex justify-end gap-3">

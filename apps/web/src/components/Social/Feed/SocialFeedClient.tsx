@@ -96,7 +96,7 @@ export function SocialFeedClient() {
             onClick={() => setFeedType("friends")}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
               feedType === "friends"
-                ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/20"
+                ? "bg-pink-600 text-white shadow-md shadow-pink-500/20"
                 : "text-gray-400 hover:text-white"
             }`}
           >
@@ -106,7 +106,7 @@ export function SocialFeedClient() {
             onClick={() => setFeedType("public")}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
               feedType === "public"
-                ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/20"
+                ? "bg-pink-600 text-white shadow-md shadow-pink-500/20"
                 : "text-gray-400 hover:text-white"
             }`}
           >
@@ -177,7 +177,7 @@ function FeedEventCard({ event }: { event: SocialEvent }) {
     <div className="flex gap-3 p-4 bg-white/[0.02] hover:bg-white/[0.04] border border-white/5 rounded-xl transition-colors">
       {/* Avatar */}
       <Link href={`/u/${event.username}`} className="flex-shrink-0">
-        <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-indigo-600 to-purple-700">
+        <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-pink-600 to-rose-700">
           {bypass ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={avatarSrc} alt={event.username} className="object-cover w-full h-full" />
@@ -195,7 +195,7 @@ function FeedEventCard({ event }: { event: SocialEvent }) {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm text-gray-200">
-              <Link href={`/u/${event.username}`} className="font-semibold text-white hover:text-indigo-300 transition-colors">
+              <Link href={`/u/${event.username}`} className="font-semibold text-white hover:text-pink-300 transition-colors">
                 {event.displayName || event.username}
               </Link>{" "}
               {text}
@@ -235,23 +235,23 @@ function getEventDisplay(event: SocialEvent): { icon: React.ReactNode; text: Rea
     case "created_list":
       return {
         icon: <Plus className="w-3.5 h-3.5" />,
-        text: <>created a new list{listName && <> &ldquo;<Link href={listLink || "#"} className="text-indigo-400 hover:text-indigo-300">{listName}</Link>&rdquo;</>}</>,
+        text: <>created a new list{listName && <> &ldquo;<Link href={listLink || "#"} className="text-pink-400 hover:text-pink-300">{listName}</Link>&rdquo;</>}</>,
         link: listLink,
         accent: "bg-emerald-500/10 text-emerald-400",
       };
     case "updated_list":
       return {
         icon: <ListChecks className="w-3.5 h-3.5" />,
-        text: <>updated their list{listName && <> &ldquo;<Link href={listLink || "#"} className="text-indigo-400 hover:text-indigo-300">{listName}</Link>&rdquo;</>}</>,
+        text: <>updated their list{listName && <> &ldquo;<Link href={listLink || "#"} className="text-pink-400 hover:text-pink-300">{listName}</Link>&rdquo;</>}</>,
         link: listLink,
-        accent: "bg-blue-500/10 text-blue-400",
+        accent: "bg-pink-500/10 text-pink-400",
       };
     case "added_item":
       return {
         icon: <Plus className="w-3.5 h-3.5" />,
-        text: <>added an item to{listName && <> &ldquo;<Link href={listLink || "#"} className="text-indigo-400 hover:text-indigo-300">{listName}</Link>&rdquo;</>}</>,
+        text: <>added an item to{listName && <> &ldquo;<Link href={listLink || "#"} className="text-pink-400 hover:text-pink-300">{listName}</Link>&rdquo;</>}</>,
         link: listLink,
-        accent: "bg-cyan-500/10 text-cyan-400",
+        accent: "bg-rose-500/10 text-rose-400",
       };
     case "hit_milestone":
       return {
@@ -263,30 +263,30 @@ function getEventDisplay(event: SocialEvent): { icon: React.ReactNode; text: Rea
     case "liked_list":
       return {
         icon: <Heart className="w-3.5 h-3.5" />,
-        text: <>liked{listName && <> &ldquo;<Link href={listLink || "#"} className="text-indigo-400 hover:text-indigo-300">{listName}</Link>&rdquo;</>}{event.metadata?.listOwner && <> by @{event.metadata.listOwner as string}</>}</>,
+        text: <>liked{listName && <> &ldquo;<Link href={listLink || "#"} className="text-pink-400 hover:text-pink-300">{listName}</Link>&rdquo;</>}{event.metadata?.listOwner && <> by @{event.metadata.listOwner as string}</>}</>,
         link: listLink,
         accent: "bg-pink-500/10 text-pink-400",
       };
     case "commented_list":
       return {
         icon: <MessageCircle className="w-3.5 h-3.5" />,
-        text: <>commented on{listName && <> &ldquo;<Link href={listLink || "#"} className="text-indigo-400 hover:text-indigo-300">{listName}</Link>&rdquo;</>}</>,
+        text: <>commented on{listName && <> &ldquo;<Link href={listLink || "#"} className="text-pink-400 hover:text-pink-300">{listName}</Link>&rdquo;</>}</>,
         link: listLink,
-        accent: "bg-blue-500/10 text-blue-400",
+        accent: "bg-pink-500/10 text-pink-400",
       };
     case "saved_list":
       return {
         icon: <Bookmark className="w-3.5 h-3.5" />,
-        text: <>{event.metadata?.isRemix ? "remixed" : "saved"}{listName && <> &ldquo;<Link href={listLink || "#"} className="text-indigo-400 hover:text-indigo-300">{listName}</Link>&rdquo;</>}</>,
+        text: <>{event.metadata?.isRemix ? "remixed" : "saved"}{listName && <> &ldquo;<Link href={listLink || "#"} className="text-pink-400 hover:text-pink-300">{listName}</Link>&rdquo;</>}</>,
         link: listLink,
         accent: "bg-amber-500/10 text-amber-400",
       };
     case "became_friends":
       return {
         icon: <Users className="w-3.5 h-3.5" />,
-        text: <>became friends with <Link href={`/u/${event.metadata?.friendUsername as string}`} className="font-semibold text-white hover:text-indigo-300">{event.metadata?.friendUsername as string}</Link></>,
+        text: <>became friends with <Link href={`/u/${event.metadata?.friendUsername as string}`} className="font-semibold text-white hover:text-pink-300">{event.metadata?.friendUsername as string}</Link></>,
         link: null,
-        accent: "bg-indigo-500/10 text-indigo-400",
+        accent: "bg-pink-500/10 text-pink-400",
       };
     default:
       return {
@@ -301,11 +301,11 @@ function getEventDisplay(event: SocialEvent): { icon: React.ReactNode; text: Rea
 function EmptyFeed({ feedType }: { feedType: FeedType }) {
   return (
     <div className="text-center py-20">
-      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border border-white/5 mx-auto mb-4 flex items-center justify-center">
+      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-pink-500/10 to-rose-500/10 border border-white/5 mx-auto mb-4 flex items-center justify-center">
         {feedType === "friends" ? (
-          <Users className="w-8 h-8 text-indigo-400" />
+          <Users className="w-8 h-8 text-pink-400" />
         ) : (
-          <TrendingUp className="w-8 h-8 text-purple-400" />
+          <TrendingUp className="w-8 h-8 text-rose-400" />
         )}
       </div>
       <h3 className="text-lg font-semibold text-white mb-2">
@@ -320,7 +320,7 @@ function EmptyFeed({ feedType }: { feedType: FeedType }) {
       <div className="flex items-center justify-center gap-3">
         <Link
           href="/friends"
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-pink-600 hover:bg-pink-500 text-white text-sm font-medium transition-colors"
         >
           <Users className="w-4 h-4" /> Find Friends
         </Link>

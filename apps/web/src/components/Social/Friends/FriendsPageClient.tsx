@@ -156,7 +156,7 @@ export function FriendsPageClient() {
             onClick={() => setTab(t.id)}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${
               tab === t.id
-                ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/20"
+                ? "bg-pink-600 text-white shadow-md shadow-pink-500/20"
                 : "text-gray-400 hover:text-white hover:bg-white/5"
             }`}
           >
@@ -184,7 +184,7 @@ export function FriendsPageClient() {
               placeholder="Search friends..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-pink-500"
             />
           </div>
 
@@ -200,7 +200,7 @@ export function FriendsPageClient() {
               <p className="text-gray-400 text-sm mb-4">
                 {searchQuery ? "No friends match your search" : "You haven't added any friends yet"}
               </p>
-              <Link href="/social/discover" className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors">
+              <Link href="/social/discover" className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-pink-600 hover:bg-pink-500 text-white text-sm font-medium transition-colors">
                 <UserPlus className="w-4 h-4" /> Discover People
               </Link>
             </div>
@@ -265,7 +265,7 @@ export function FriendsPageClient() {
                     size="md"
                   />
                   <div className="flex-1 min-w-0">
-                    <Link href={`/u/${req.toUsername}`} className="font-medium text-white hover:text-indigo-300 transition-colors">
+                    <Link href={`/u/${req.toUsername}`} className="font-medium text-white hover:text-pink-300 transition-colors">
                       {req.toDisplayName || req.toUsername}
                     </Link>
                     <p className="text-xs text-gray-500">@{req.toUsername} &middot; Sent {formatDistanceToNow(new Date(req.createdAt), { addSuffix: true })}</p>
@@ -330,7 +330,7 @@ function UserAvatar({ src, name, size = "md", user }: { src?: string | null; nam
   const bypass = shouldBypassNextImage(imgSrc);
   const alt = user ? getAvatarAlt(user) : name;
   return (
-    <div className={`${sizeMap[size]} rounded-xl overflow-hidden bg-gradient-to-br from-indigo-600 to-purple-700 flex-shrink-0`}>
+    <div className={`${sizeMap[size]} rounded-xl overflow-hidden bg-gradient-to-br from-pink-600 to-rose-700 flex-shrink-0`}>
       {bypass ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={imgSrc} alt={alt} className="object-cover w-full h-full" />
@@ -358,7 +358,7 @@ function FriendCard({ friend, onRemove }: { friend: Friend; onRemove: () => void
         />
       </Link>
       <div className="flex-1 min-w-0">
-        <Link href={`/u/${friend.username}`} className="font-medium text-white hover:text-indigo-300 transition-colors">
+        <Link href={`/u/${friend.username}`} className="font-medium text-white hover:text-pink-300 transition-colors">
           {friend.displayName || friend.username}
         </Link>
         <p className="text-xs text-gray-500">@{friend.username}</p>
@@ -411,12 +411,12 @@ function RequestCard({
   onDecline: () => void;
 }) {
   return (
-    <div className="flex items-center gap-4 p-4 bg-white/[0.02] border border-indigo-500/10 rounded-xl">
+    <div className="flex items-center gap-4 p-4 bg-white/[0.02] border border-pink-500/10 rounded-xl">
       <Link href={`/u/${request.fromUsername}`}>
         <UserAvatar user={{ avatarUrl: request.fromAvatarUrl, jellyfinUserId: request.fromJellyfinUserId, displayName: request.fromDisplayName, username: request.fromUsername }} name={request.fromDisplayName || request.fromUsername} size="md" />
       </Link>
       <div className="flex-1 min-w-0">
-        <Link href={`/u/${request.fromUsername}`} className="font-medium text-white hover:text-indigo-300 transition-colors">
+        <Link href={`/u/${request.fromUsername}`} className="font-medium text-white hover:text-pink-300 transition-colors">
           {request.fromDisplayName || request.fromUsername}
         </Link>
         <p className="text-xs text-gray-500">@{request.fromUsername} &middot; {formatDistanceToNow(new Date(request.createdAt), { addSuffix: true })}</p>
@@ -427,7 +427,7 @@ function RequestCard({
       <div className="flex items-center gap-2 flex-shrink-0">
         <button
           onClick={onAccept}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition-colors"
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-pink-600 hover:bg-pink-500 text-white text-xs font-medium transition-colors"
         >
           <Check className="w-3.5 h-3.5" /> Accept
         </button>

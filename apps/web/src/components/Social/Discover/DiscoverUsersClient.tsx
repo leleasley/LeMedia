@@ -120,7 +120,7 @@ export function DiscoverUsersClient() {
           placeholder="Search by username or name..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full bg-white/5 border border-white/10 rounded-xl pl-4 pr-11 py-3 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          className="w-full bg-white/5 border border-white/10 rounded-xl pl-4 pr-11 py-3 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-pink-500"
         />
       </div>
 
@@ -133,7 +133,7 @@ export function DiscoverUsersClient() {
               onClick={() => setFilter(f.id)}
               className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-medium whitespace-nowrap transition-all ${
                 filter === f.id
-                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/20"
+                  ? "bg-pink-600 text-white shadow-md shadow-pink-500/20"
                   : "bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 border border-white/5"
               }`}
             >
@@ -193,7 +193,7 @@ function UserCard({
     <div className="bg-white/[0.02] hover:bg-white/[0.05] border border-white/5 hover:border-white/10 rounded-xl p-4 transition-all">
       <div className="flex items-start gap-3">
         <Link href={`/u/${user.username}`} className="flex-shrink-0">
-          <div className="w-12 h-12 rounded-xl overflow-hidden bg-gradient-to-br from-indigo-600 to-purple-700">
+          <div className="w-12 h-12 rounded-xl overflow-hidden bg-gradient-to-br from-pink-600 to-rose-700">
             {bypass ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={avatarSrc} alt={getAvatarAlt(user)} className="object-cover w-full h-full" />
@@ -203,7 +203,7 @@ function UserCard({
           </div>
         </Link>
         <div className="flex-1 min-w-0">
-          <Link href={`/u/${user.username}`} className="font-semibold text-white hover:text-indigo-300 text-sm transition-colors">
+          <Link href={`/u/${user.username}`} className="font-semibold text-white hover:text-pink-300 text-sm transition-colors">
             {user.displayName || user.username}
           </Link>
           <p className="text-xs text-gray-500">@{user.username}</p>
@@ -225,7 +225,7 @@ function UserCard({
           <button
             onClick={onSendRequest}
             disabled={loading}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition-colors disabled:opacity-50"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-pink-600 hover:bg-pink-500 text-white text-xs font-medium transition-colors disabled:opacity-50"
           >
             <UserPlus className="w-3 h-3" /> Add
           </button>
@@ -247,7 +247,7 @@ function UserCard({
         {user.friendStatus === "pending_received" && (
           <Link
             href="/friends"
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-indigo-500/10 text-indigo-400 text-xs font-medium border border-indigo-500/20 hover:bg-indigo-500/20"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-pink-500/10 text-pink-400 text-xs font-medium border border-pink-500/20 hover:bg-pink-500/20"
           >
             <UserPlus className="w-3 h-3" /> Respond
           </Link>

@@ -352,7 +352,7 @@ export default function AppLayoutClient({
     const progressBarClass = useMemo(() => {
         const p = pathname ?? "/";
         if (p.startsWith("/admin")) return "from-amber-400 via-amber-300 to-amber-500";
-        if (p.startsWith("/social") || p.startsWith("/friends")) return "from-pink-400 via-pink-300 to-pink-500";
+        if (p.startsWith("/social") || p.startsWith("/friends") || p.startsWith("/reviews") || p.startsWith("/u/")) return "from-pink-400 via-pink-300 to-pink-500";
         if (p.startsWith("/requests")) return "from-violet-400 via-violet-300 to-violet-500";
         // Browse: everything else
         return "from-sky-400 via-sky-300 to-sky-500";
@@ -421,10 +421,6 @@ export default function AppLayoutClient({
                                     <Sparkles className={iconClass(pathname === "/recommendations", "text-sky-400")} />
                                     <span>Recommendations</span>
                                 </PrefetchLink>
-                                <PrefetchLink href="/reviews" className={linkClass(pathname === "/reviews", "border-sky-400")}>
-                                    <Star className={iconClass(pathname === "/reviews", "text-sky-400")} />
-                                    <span>Reviews</span>
-                                </PrefetchLink>
                                 <PrefetchLink href="/movies" className={linkClass(pathname === "/movies", "border-sky-400")}>
                                     <Film className={iconClass(pathname === "/movies", "text-sky-400")} />
                                     <span>Movies</span>
@@ -447,6 +443,10 @@ export default function AppLayoutClient({
                                 <PrefetchLink href="/social" className={linkClass(pathname === "/social", "border-pink-400")}>
                                     <Heart className={iconClass(pathname === "/social", "text-pink-400")} />
                                     <span>Feed</span>
+                                </PrefetchLink>
+                                <PrefetchLink href="/reviews" className={linkClass(pathname?.startsWith("/reviews") ?? false, "border-pink-400")}>
+                                    <Star className={iconClass(pathname?.startsWith("/reviews") ?? false, "text-pink-400")} />
+                                    <span>Reviews</span>
                                 </PrefetchLink>
                                 <PrefetchLink href="/friends" className={linkClass(pathname === "/friends", "border-pink-400")}>
                                     <Users className={iconClass(pathname === "/friends", "text-pink-400")} />
