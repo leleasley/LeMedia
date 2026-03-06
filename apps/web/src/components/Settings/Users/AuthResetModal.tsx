@@ -131,7 +131,7 @@ export function AuthResetModal({ userId, isOpen, onClose }: AuthResetModalProps)
                               type="checkbox"
                               checked={options.unlinkSso}
                               onChange={(e) => setOptions({ ...options, unlinkSso: e.target.checked })}
-                              className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500"
+                              className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-amber-500 focus:ring-amber-500"
                             />
                             <div>
                               <span className="block text-sm font-medium text-white">Unlink SSO (OIDC)</span>
@@ -144,7 +144,7 @@ export function AuthResetModal({ userId, isOpen, onClose }: AuthResetModalProps)
                               type="checkbox"
                               checked={options.resetOtp}
                               onChange={(e) => setOptions({ ...options, resetOtp: e.target.checked })}
-                              className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500"
+                              className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-amber-500 focus:ring-amber-500"
                             />
                             <div>
                               <span className="block text-sm font-medium text-white">Reset MFA (OTP)</span>
@@ -157,7 +157,7 @@ export function AuthResetModal({ userId, isOpen, onClose }: AuthResetModalProps)
                               type="checkbox"
                               checked={options.removePasskeys}
                               onChange={(e) => setOptions({ ...options, removePasskeys: e.target.checked })}
-                              className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500"
+                              className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-amber-500 focus:ring-amber-500"
                             />
                             <div>
                               <span className="block text-sm font-medium text-white">Remove All Passkeys</span>
@@ -170,7 +170,7 @@ export function AuthResetModal({ userId, isOpen, onClose }: AuthResetModalProps)
                               type="checkbox"
                               checked={options.logoutSessions}
                               onChange={(e) => setOptions({ ...options, logoutSessions: e.target.checked })}
-                              className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500"
+                              className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-amber-500 focus:ring-amber-500"
                             />
                             <div>
                               <span className="block text-sm font-medium text-white">Logout All Sessions</span>

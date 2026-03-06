@@ -305,7 +305,7 @@ export function UserGeneralSettingsClient() {
     if (!user) {
         return (
             <div className="flex items-center justify-center p-12">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent"></div>
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-amber-500 border-t-transparent"></div>
             </div>
         );
     }
@@ -335,7 +335,7 @@ export function UserGeneralSettingsClient() {
                         type="text"
                         value={formData.displayName}
                         onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
-                        className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                         placeholder="Enter display name"
                     />
                 </div>
@@ -347,7 +347,7 @@ export function UserGeneralSettingsClient() {
                         type="email"
                         value={formData.email}
                         onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                        className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                         placeholder="Enter email address"
                     />
                 </div>
@@ -361,7 +361,7 @@ export function UserGeneralSettingsClient() {
                         pattern="[0-9]*"
                         value={formData.discordUserId}
                         onChange={(e) => setFormData({ ...formData, discordUserId: e.target.value })}
-                        className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                         placeholder="Enter Discord User ID"
                     />
                     <p className="mt-1 text-xs text-gray-400">
@@ -429,7 +429,7 @@ export function UserGeneralSettingsClient() {
                                                 : Math.max(prev.movieDays || defaultMovieDays, 1)
                                         }));
                                     }}
-                                    className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500"
+                                    className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-amber-500 focus:ring-amber-500"
                                 />
                                 Use global defaults
                             </label>
@@ -472,7 +472,7 @@ export function UserGeneralSettingsClient() {
                                                 : Math.max(prev.seriesDays || defaultSeriesDays, 1)
                                         }));
                                     }}
-                                    className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500"
+                                    className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-amber-500 focus:ring-amber-500"
                                 />
                                 Use global defaults
                             </label>
@@ -667,7 +667,7 @@ export function UserGeneralSettingsClient() {
                     <button
                         onClick={handleSave}
                         disabled={saving}
-                        className="px-6 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium shadow-lg shadow-indigo-600/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="px-6 py-2.5 bg-amber-500 text-slate-900 rounded-lg hover:bg-amber-400 transition font-medium shadow-lg shadow-amber-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {saving ? "Saving..." : "Save Changes"}
                     </button>

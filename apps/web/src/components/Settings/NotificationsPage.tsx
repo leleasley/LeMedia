@@ -161,8 +161,8 @@ export function NotificationsSettingsPage({ initialEnabled }: NotificationsSetti
     return (
       <div className="rounded-2xl md:rounded-3xl border border-white/10 bg-white/[0.02] p-6 md:p-8">
         <div className="flex items-center gap-4 mb-6">
-          <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 ring-1 ring-white/10">
-            <Bell className="w-6 h-6 text-blue-300" />
+          <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 ring-1 ring-white/10">
+            <Bell className="w-6 h-6 text-amber-300" />
           </div>
           <div className="flex-1">
             <h3 className="text-xl font-bold text-white">Web Push Notifications</h3>
@@ -199,8 +199,8 @@ export function NotificationsSettingsPage({ initialEnabled }: NotificationsSetti
   return (
     <div className="rounded-2xl md:rounded-3xl border border-white/10 bg-white/[0.02] p-6 md:p-8">
       <div className="flex items-center gap-4 mb-6">
-        <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 ring-1 ring-white/10">
-          <Bell className="w-6 h-6 text-blue-300" />
+        <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 ring-1 ring-white/10">
+          <Bell className="w-6 h-6 text-amber-300" />
         </div>
         <div className="flex-1">
           <h3 className="text-xl font-bold text-white">Web Push Notifications</h3>

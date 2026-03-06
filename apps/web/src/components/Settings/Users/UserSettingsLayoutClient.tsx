@@ -66,7 +66,7 @@ export function UserSettingsLayoutClient({ children }: { children: ReactNode }) 
                             <h2 className="text-2xl font-bold text-white">{user.displayName || user.email}</h2>
                             <p className="text-gray-400">{user.email}</p>
                             {user.jellyfinUsername && (
-                                <p className="text-xs text-indigo-300">Jellyfin: {user.jellyfinUsername}</p>
+                                <p className="text-xs text-amber-300">Jellyfin: {user.jellyfinUsername}</p>
                             )}
                         </div>
                     </div>
@@ -81,7 +81,7 @@ export function UserSettingsLayoutClient({ children }: { children: ReactNode }) 
                             key={tab.name}
                             href={tab.href}
                             className={`shrink-0 rounded-full px-3 py-2 text-xs font-semibold transition md:rounded-none md:px-0 md:py-0 md:pb-4 md:text-sm md:border-b-2 ${tab.active
-                                    ? "bg-indigo-500/15 text-indigo-300 md:border-indigo-500 md:bg-transparent"
+                                    ? "bg-amber-500/15 text-amber-300 md:border-amber-500 md:bg-transparent"
                                     : "text-gray-400 hover:text-gray-200 md:border-transparent"
                                 }`}
                         >

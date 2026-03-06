@@ -186,13 +186,6 @@ export default function NotificationsSystemAlerts() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold mb-2">System Alerts</h2>
-        <p className="text-gray-400">
-          Configure health alert thresholds and cooldowns for Sonarr, Radarr, Prowlarr, and Jellyfin.
-        </p>
-      </div>
-
       <div className="space-y-4">
         <AnimatedCheckbox
           id="alerts-enabled"

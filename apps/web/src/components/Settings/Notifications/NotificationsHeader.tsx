@@ -1,0 +1,33 @@
+"use client";
+
+import { usePathname } from "next/navigation";
+import { BellIcon, ShieldExclamationIcon } from "@heroicons/react/24/outline";
+
+export function NotificationsHeader() {
+    const pathname = usePathname();
+    const isSystemAlertsPage = pathname?.startsWith("/admin/settings/notifications/system-alerts");
+    const HeaderIcon = isSystemAlertsPage ? ShieldExclamationIcon : BellIcon;
+
+    return (
+        <div className="relative overflow-hidden rounded-2xl md:rounded-3xl border border-white/10 bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-transparent p-6 md:p-8">
+            <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iMC4wMyI+PGNpcmNsZSBjeD0iMzAiIGN5PSIzMCIgcj0iMiIvPjwvZz48L2c+PC9zdmc+')] opacity-50" />
+            <div className="relative">
+                <div className="flex items-center gap-4 mb-4">
+                    <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 ring-1 ring-white/10">
+                        <HeaderIcon className="w-7 h-7 text-amber-300" />
+                    </div>
+                    <div>
+                        <h1 className="text-2xl md:text-3xl font-bold text-white">
+                            {isSystemAlertsPage ? "System Alerts" : "Notifications"}
+                        </h1>
+                        <p className="text-sm text-white/60 mt-1">
+                            {isSystemAlertsPage
+                                ? "Configure health and outage alerts for Sonarr, Radarr, Prowlarr, and Jellyfin"
+                                : "Configure and enable notification agents to send alerts for requests and issues"}
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}

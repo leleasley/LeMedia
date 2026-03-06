@@ -307,7 +307,7 @@ export function AdminUsersPageClient() {
   if (!data || !pageInfo) {
     return (
       <div className="flex items-center justify-center p-12">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent"></div>
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-amber-500 border-t-transparent"></div>
       </div>
     );
   }
@@ -328,17 +328,17 @@ export function AdminUsersPageClient() {
               placeholder="Search users..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="block w-full rounded-lg border border-gray-600 bg-gray-800 !pl-12 pr-3 py-2 text-sm text-white placeholder-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 sm:w-64 transition shadow-sm"
+              className="block w-full rounded-lg border border-gray-600 bg-gray-800 !pl-12 pr-3 py-2 text-sm text-white placeholder-gray-400 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 sm:w-64 transition shadow-sm"
             />
             <div className="pointer-events-none absolute inset-y-0 left-0 z-10 flex w-10 items-center justify-center">
-              <MagnifyingGlassIcon className="h-5 w-5 text-gray-400 group-focus-within:text-indigo-400 transition" />
+              <MagnifyingGlassIcon className="h-5 w-5 text-gray-400 group-focus-within:text-amber-300 transition" />
             </div>
           </div>
 
           <div className="flex gap-2 w-full sm:w-auto">
             <button 
               onClick={() => setCreateModalOpen(true)}
-              className="flex-1 sm:flex-none items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition shadow-sm inline-flex"
+              className="flex-1 sm:flex-none items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-400 transition shadow-sm inline-flex"
               title="Create Local User"
             >
               <UserPlusIcon className="h-5 w-5" />
@@ -402,7 +402,7 @@ export function AdminUsersPageClient() {
               type="checkbox"
               checked={allSelected}
               onChange={(e) => toggleSelectAll(e.target.checked)}
-              className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-gray-900"
+              className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-amber-500 focus:ring-amber-500 focus:ring-offset-gray-900"
             />
             Select all
           </label>
@@ -427,7 +427,7 @@ export function AdminUsersPageClient() {
                   type="checkbox"
                   checked={selectedUserIds.includes(user.id)}
                   onChange={() => toggleSelectUser(user.id)}
-                  className="h-5 w-5 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-gray-900"
+                  className="h-5 w-5 rounded border-gray-600 bg-gray-800 text-amber-500 focus:ring-amber-500 focus:ring-offset-gray-900"
                  />
                </div>
 
@@ -446,7 +446,7 @@ export function AdminUsersPageClient() {
                   <div className="flex items-center gap-2">
                      <h3 className="truncate text-base font-semibold text-white">{user.displayName || user.email}</h3>
                    {user.isAdmin && (
-                      <span className="inline-flex items-center rounded-full bg-purple-500/10 px-2 py-0.5 text-[10px] font-medium text-purple-400 ring-1 ring-inset ring-purple-500/20">
+                       <span className="inline-flex items-center rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-300 ring-1 ring-inset ring-amber-500/20">
                         Admin
                       </span>
                    )}
@@ -519,7 +519,7 @@ export function AdminUsersPageClient() {
               </PrefetchLink>
               <button
                 onClick={() => openGroupModal(user)}
-                className="flex items-center justify-center gap-2 rounded-lg bg-indigo-500/10 text-indigo-200 hover:bg-indigo-500/20 px-3 py-2 text-sm font-medium transition"
+                className="flex items-center justify-center gap-2 rounded-lg bg-amber-500/10 text-amber-200 hover:bg-amber-500/20 px-3 py-2 text-sm font-medium transition"
               >
                 <Bars3BottomLeftIcon className="h-4 w-4" />
                 Groups
@@ -536,7 +536,7 @@ export function AdminUsersPageClient() {
               </button>
               <button
                 onClick={() => handleLogoutSessions(user)}
-                className="flex items-center justify-center gap-2 rounded-lg bg-indigo-500/10 text-indigo-200 hover:bg-indigo-500/20 px-3 py-2 text-sm font-medium transition"
+                className="flex items-center justify-center gap-2 rounded-lg bg-amber-500/10 text-amber-200 hover:bg-amber-500/20 px-3 py-2 text-sm font-medium transition"
               >
                 <ArrowRightOnRectangleIcon className="h-4 w-4" />
                 Logout devices
@@ -563,7 +563,7 @@ export function AdminUsersPageClient() {
                   type="checkbox"
                   checked={allSelected}
                   onChange={(e) => toggleSelectAll(e.target.checked)}
-                  className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-gray-900"
+                  className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-amber-500 focus:ring-amber-500 focus:ring-offset-gray-900"
                 />
               </th>
               <th className="px-6 py-4">User</th>
@@ -591,7 +591,7 @@ export function AdminUsersPageClient() {
                     type="checkbox"
                     checked={selectedUserIds.includes(user.id)}
                     onChange={() => toggleSelectUser(user.id)}
-                    className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-gray-900 transition opacity-50 group-hover:opacity-100"
+                    className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-amber-500 focus:ring-amber-500 focus:ring-offset-gray-900 transition opacity-50 group-hover:opacity-100"
                   />
                 </td>
                 <td className="px-6 py-4">
@@ -606,7 +606,7 @@ export function AdminUsersPageClient() {
                       />
                     </div>
                     <div className="min-w-0">
-                      <div className="truncate text-sm font-medium text-white group-hover:text-indigo-200 transition">{user.displayName || user.email}</div>
+                      <div className="truncate text-sm font-medium text-white group-hover:text-amber-200 transition">{user.displayName || user.email}</div>
                       <div className="truncate text-xs text-gray-500">{user.email}</div>
                     </div>
                   </div>
@@ -618,7 +618,7 @@ export function AdminUsersPageClient() {
                         key={group}
                         className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium border ${
                           group === "administrators"
-                            ? "bg-purple-500/10 text-purple-400 border-purple-500/20"
+                            ? "bg-amber-500/10 text-amber-300 border-amber-500/20"
                             : group === "moderators"
                               ? "bg-amber-500/10 text-amber-300 border-amber-500/20"
                               : "bg-gray-800 text-gray-400 border-gray-700"
@@ -677,7 +677,7 @@ export function AdminUsersPageClient() {
                     </button>
                     <button
                       onClick={() => handleLogoutSessions(user)}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-700 bg-gray-800 text-indigo-300 transition hover:border-indigo-500/50 hover:bg-indigo-500/10 hover:text-indigo-100"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-700 bg-gray-800 text-amber-300 transition hover:border-amber-500/50 hover:bg-amber-500/10 hover:text-amber-100"
                       title="Logout all devices"
                     >
                       <ArrowRightOnRectangleIcon className="h-4 w-4" />
@@ -691,14 +691,14 @@ export function AdminUsersPageClient() {
                     </button>
                     <PrefetchLink
                       href={`/admin/users/${user.id}/settings`}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-700 bg-gray-800 text-gray-400 transition hover:border-indigo-500/50 hover:bg-indigo-500/10 hover:text-indigo-400"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-700 bg-gray-800 text-gray-400 transition hover:border-amber-500/50 hover:bg-amber-500/10 hover:text-amber-300"
                       title="Edit User"
                     >
                       <PencilIcon className="h-4 w-4" />
                     </PrefetchLink>
                     <button
                       onClick={() => openGroupModal(user)}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-700 bg-gray-800 text-indigo-300 transition hover:border-indigo-500/50 hover:bg-indigo-500/10 hover:text-indigo-100"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-700 bg-gray-800 text-amber-300 transition hover:border-amber-500/50 hover:bg-amber-500/10 hover:text-amber-100"
                       title="Edit Groups"
                     >
                       <Bars3BottomLeftIcon className="h-4 w-4" />

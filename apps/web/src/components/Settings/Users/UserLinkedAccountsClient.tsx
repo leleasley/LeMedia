@@ -60,7 +60,7 @@ export function UserLinkedAccountsClient() {
     if (!user) {
         return (
             <div className="flex items-center justify-center p-12">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent"></div>
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-amber-500 border-t-transparent"></div>
             </div>
         );
     }
@@ -75,7 +75,7 @@ export function UserLinkedAccountsClient() {
             <div className="rounded-lg border border-white/10 bg-slate-900/60 p-6">
                 {user.jellyfinUserId ? (
                     <div className="space-y-4">
-                        <div className="flex items-center gap-4 p-4 rounded-lg bg-purple-500/10 border border-purple-500/20">
+                        <div className="flex items-center gap-4 p-4 rounded-lg bg-amber-500/10 border border-amber-500/20">
                             <Image
                                 src="/images/jellyfin.svg"
                                 alt="Jellyfin"

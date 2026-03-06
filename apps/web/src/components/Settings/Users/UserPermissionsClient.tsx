@@ -127,7 +127,7 @@ export function UserPermissionsClient({ userId: userIdProp, editable, variant }:
     if (!user || !permissions) {
         return (
             <div className="flex items-center justify-center p-12">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent"></div>
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-amber-500 border-t-transparent"></div>
             </div>
         );
     }
@@ -361,7 +361,7 @@ export function UserPermissionsClient({ userId: userIdProp, editable, variant }:
                         <button
                             onClick={handleSave}
                             disabled={!canEdit || saving}
-                            className="px-6 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium shadow-lg shadow-indigo-600/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="px-6 py-2.5 bg-amber-500 text-slate-900 rounded-lg hover:bg-amber-400 transition font-medium shadow-lg shadow-amber-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {saving ? "Saving..." : "Save Permissions"}
                         </button>

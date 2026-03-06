@@ -29,6 +29,7 @@ import { Modal } from "@/components/Common/Modal";
 import { emitRequestsChanged } from "@/lib/request-refresh";
 import { ReleaseSearchModal } from "@/components/Media/ReleaseSearchModal";
 import { CommentsListForm } from "@/components/Requests/CommentsListForm";
+import { PrefetchLink } from "@/components/Layout/PrefetchLink";
 
 const statusConfig: Record<string, {
   bg: string;
@@ -170,6 +171,11 @@ type FilterStatus = "all" | "pending" | "submitted" | "downloading" | "available
 
 function formatStatusLabel(status: string) {
   return status.replace(/_/g, " ").replace(/\b\w/g, m => m.toUpperCase());
+}
+
+function getMediaHref(request: Request) {
+  const mediaType = request.request_type === "movie" ? "movie" : "tv";
+  return `/${mediaType}/${request.tmdb_id}`;
 }
 
 function isNextRedirectError(err: unknown) {
@@ -489,7 +495,7 @@ export function AllRequestsClient({
                       <button
                         type="button"
                         onClick={() => handleAction("approve", detailsBaseRequest.id, detailsBaseRequest.mergedRequestIds)}
-                        className="btn btn-primary btn-sm gap-2"
+                        className="btn btn-primary btn-sm gap-2 bg-amber-500 text-slate-900 border-amber-500 hover:bg-amber-400 shadow-amber-500/25"
                       >
                         <Check className="h-4 w-4" />
                         Approve
@@ -524,7 +530,7 @@ export function AllRequestsClient({
                       <button
                         type="button"
                         onClick={() => handleAction("markAvailable", detailsBaseRequest.id, detailsBaseRequest.mergedRequestIds)}
-                        className="btn btn-ghost btn-sm gap-2"
+                        className="btn btn-outline btn-sm gap-2 text-amber-200 border-amber-500/40 hover:bg-amber-500/10"
                       >
                         <CheckCircle2 className="h-4 w-4" />
                         Mark Available
@@ -550,7 +556,7 @@ export function AllRequestsClient({
                   type="button"
                   onClick={handleTryFindFiles}
                   disabled={isSyncing}
-                  className="btn btn-outline btn-sm gap-2"
+                  className="btn btn-outline btn-sm gap-2 text-amber-200 border-amber-500/40 hover:bg-amber-500/10"
                 >
                   <RefreshCw className={cn("h-4 w-4", isSyncing && "animate-spin")} />
                   Try Find Files
@@ -607,7 +613,7 @@ export function AllRequestsClient({
                             <button
                               type="button"
                               className={cn(
-                                "btn btn-ghost btn-xs",
+                                "btn btn-outline btn-xs text-amber-200 border-amber-500/40 hover:bg-amber-500/10",
                                 item.status === "available" && "opacity-50 cursor-not-allowed"
                               )}
                               disabled={item.status === "available"}
@@ -694,21 +700,21 @@ export function AllRequestsClient({
               placeholder="Search by title or username..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full h-10 pl-4 pr-12 rounded-lg border border-white/10 bg-white/5 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-transparent"
+              className="w-full h-10 pl-4 pr-12 rounded-lg border border-white/10 bg-white/5 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-transparent"
             />
           </div>
           <div className="flex gap-2">
             <button
               onClick={handleSync}
               disabled={isSyncing}
-              className="btn btn-outline btn-sm gap-2"
+              className="btn btn-outline btn-sm gap-2 text-amber-200 border-amber-500/40 hover:bg-amber-500/10"
             >
               <RefreshCw className={cn("h-4 w-4", isSyncing && "animate-spin")} />
               Sync
             </button>
             <button
               onClick={() => setViewMode(viewMode === "grid" ? "list" : "grid")}
-              className="btn btn-outline btn-sm gap-2"
+              className="btn btn-outline btn-sm gap-2 text-amber-200 border-amber-500/40 hover:bg-amber-500/10"
             >
               {viewMode === "grid" ? <List className="h-4 w-4" /> : <LayoutGrid className="h-4 w-4" />}
               {viewMode === "grid" ? "List" : "Grid"}
@@ -724,7 +730,7 @@ export function AllRequestsClient({
               className={cn(
                 "px-3 py-1.5 rounded-lg text-xs font-medium transition-all",
                 filterStatus === status
-                  ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/25"
+                  ? "bg-amber-500 text-slate-900 shadow-lg shadow-amber-500/25"
                   : "bg-white/5 text-white/60 hover:bg-white/10 hover:text-white"
               )}
             >
@@ -763,7 +769,11 @@ export function AllRequestsClient({
 
               <div className="relative z-10 p-4 space-y-3">
                 <div className="flex gap-3">
-                  <div className="relative w-16 h-24 flex-shrink-0 rounded-lg overflow-hidden bg-black/40 ring-1 ring-white/10 shadow-xl">
+                  <PrefetchLink
+                    href={getMediaHref(r)}
+                    className="relative w-16 h-24 flex-shrink-0 rounded-lg overflow-hidden bg-black/40 ring-1 ring-white/10 shadow-xl"
+                    aria-label={`Open ${r.title}`}
+                  >
                     {r.poster_path ? (
                       <Image
                         src={r.poster_path}
@@ -776,12 +786,14 @@ export function AllRequestsClient({
                         No Image
                       </div>
                     )}
-                  </div>
+                  </PrefetchLink>
                   <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-white truncate">{r.title}</div>
-                    <div className="text-xs text-white/60 uppercase tracking-wider mt-1">
+                    <PrefetchLink href={getMediaHref(r)} className="block font-semibold text-white truncate transition hover:text-amber-200">
+                      {r.title}
+                    </PrefetchLink>
+                    <PrefetchLink href={getMediaHref(r)} className="mt-1 inline-block text-xs text-white/60 uppercase tracking-wider transition hover:text-amber-200">
                       {r.request_type === "movie" ? "Movie" : "TV Show"}
-                    </div>
+                    </PrefetchLink>
                     <div className="mt-2">
                       <StatusBadge status={r.status} />
                     </div>
@@ -795,7 +807,7 @@ export function AllRequestsClient({
 
                 <div className="flex items-center justify-between text-xs text-white/60 pt-2 border-t border-white/10">
                   <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-full overflow-hidden bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center flex-shrink-0">
+                    <div className="w-6 h-6 rounded-full overflow-hidden bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center flex-shrink-0">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={getAvatarSrc({
@@ -819,7 +831,7 @@ export function AllRequestsClient({
                   {r.request_type === "episode" && (
                     <button
                       onClick={() => openDetails(r)}
-                      className="w-full btn btn-ghost btn-sm gap-1.5"
+                      className="w-full btn btn-outline btn-sm gap-1.5 text-amber-200 border-amber-500/40 hover:bg-amber-500/10"
                     >
                       <Eye className="h-3.5 w-3.5" />
                       View Details
@@ -829,7 +841,7 @@ export function AllRequestsClient({
                     <>
                       <button
                         onClick={() => handleAction("approve", r.id, r.mergedRequestIds)}
-                        className="flex-1 btn btn-primary btn-sm gap-1.5"
+                        className="flex-1 btn btn-primary btn-sm gap-1.5 bg-amber-500 text-slate-900 border-amber-500 hover:bg-amber-400 shadow-amber-500/25"
                       >
                         <Check className="h-3.5 w-3.5" />
                         Approve
@@ -884,7 +896,11 @@ export function AllRequestsClient({
                 {filteredRequests.map((r) => (
                   <tr key={r.id} className="hover:bg-white/5 transition-colors group">
                     <td className="p-3 pl-6">
-                      <div className="relative w-10 h-14 rounded overflow-hidden bg-black/20 shadow-sm border border-white/5">
+                      <PrefetchLink
+                        href={getMediaHref(r)}
+                        className="relative w-10 h-14 rounded overflow-hidden bg-black/20 shadow-sm border border-white/5 block"
+                        aria-label={`Open ${r.title}`}
+                      >
                         {r.poster_path ? (
                           <Image
                             src={r.poster_path}
@@ -897,17 +913,19 @@ export function AllRequestsClient({
                             No Img
                           </div>
                         )}
-                      </div>
+                      </PrefetchLink>
                     </td>
                     <td className="p-4">
-                      <div className="font-medium text-white">{r.title}</div>
-                      <div className="text-xs text-white/60 uppercase tracking-wider mt-0.5">
-                        {r.request_type}
-                      </div>
+                      <PrefetchLink href={getMediaHref(r)} className="block font-medium text-white transition hover:text-amber-200">
+                        {r.title}
+                      </PrefetchLink>
+                      <PrefetchLink href={getMediaHref(r)} className="mt-0.5 inline-block text-xs text-white/60 uppercase tracking-wider transition hover:text-amber-200">
+                        {r.request_type === "movie" ? "Movie" : "TV Show"}
+                      </PrefetchLink>
                     </td>
                     <td className="p-4 whitespace-nowrap">
                       <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full overflow-hidden bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center flex-shrink-0">
+                        <div className="w-6 h-6 rounded-full overflow-hidden bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center flex-shrink-0">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={getAvatarSrc({
@@ -939,7 +957,7 @@ export function AllRequestsClient({
                         {r.request_type === "episode" && (
                           <button
                             onClick={() => openDetails(r)}
-                            className="btn btn-ghost btn-xs gap-1"
+                            className="btn btn-outline btn-xs gap-1 text-amber-200 border-amber-500/40 hover:bg-amber-500/10"
                           >
                             <Eye className="h-3 w-3" />
                             Details
@@ -949,7 +967,7 @@ export function AllRequestsClient({
                           <>
                             <button
                               onClick={() => handleAction("approve", r.id, r.mergedRequestIds)}
-                              className="btn btn-primary btn-xs gap-1"
+                              className="btn btn-primary btn-xs gap-1 bg-amber-500 text-slate-900 border-amber-500 hover:bg-amber-400 shadow-amber-500/25"
                             >
                               <Check className="h-3 w-3" />
                               Approve
