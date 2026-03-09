@@ -29,7 +29,8 @@ function toCards(list: MediaGridItem[], type: "movie" | "tv", availability: Reco
       ? (item.release_date ?? "").slice(0, 4)
       : (item.first_air_date ?? "").slice(0, 4),
     rating: item.vote_average ?? 0,
-    poster: tmdbImageUrl(item.poster_path, "w500"),
+    // w342 is sufficient for the grid card footprint and reduces mobile bandwidth.
+    poster: tmdbImageUrl(item.poster_path, "w342"),
     href: type === "movie" ? `/movie/${item.id}` : `/tv/${item.id}`,
     overview: item.overview,
     // Use shared utility for consistent status mapping (handles both availability and request statuses)
@@ -69,11 +70,25 @@ export function MediaGrid({
     availabilityState.key === resetKey ? availabilityState.data : {},
     [availabilityState, resetKey]
   );
+  const [appendState, setAppendState] = useState({ key: resetKey, startIndex: null as number | null });
+  const appendedStartIndex = appendState.key === resetKey ? appendState.startIndex : null;
   const setAvailability = useCallback((data: Record<number, string> | ((prev: Record<number, string>) => Record<number, string>)) => {
     setAvailabilityState(prev => ({
       key: resetKey,
       data: typeof data === 'function' ? data(prev.key === resetKey ? prev.data : {}) : data
     }));
+  }, [resetKey]);
+  const markAppendedStartIndex = useCallback((currentCount: number) => {
+    setAppendState((prev) => {
+      if (prev.key === resetKey && prev.startIndex !== null) {
+        return prev;
+      }
+
+      return {
+        key: resetKey,
+        startIndex: currentCount,
+      };
+    });
   }, [resetKey]);
   
   const availabilityRef = useRef<Record<number, string>>({});
@@ -134,8 +149,9 @@ export function MediaGrid({
     (!!data && !!data[data.length - 1]?.total_pages && size >= data[data.length - 1]!.total_pages!);
 
   const loadMore = useCallback(() => {
+    markAppendedStartIndex(items.length);
     setSize((current) => current + 1);
-  }, [setSize]);
+  }, [items.length, markAppendedStartIndex, setSize]);
 
   useEffect(() => {
     if (!items.length) return;
@@ -168,25 +184,31 @@ export function MediaGrid({
 
       {/* Grid - 3 columns on mobile, auto-fill on larger screens */}
       <ul className="grid grid-cols-3 gap-2 sm:gap-4 sm:grid-cols-none sm:[grid-template-columns:repeat(auto-fill,minmax(150px,1fr))]">
-        {cards.map((m, index) => (
-          <li key={`${m.id}-${index}`}>
-            <HoverMediaCard
-              id={m.id}
-              title={m.title}
-              posterUrl={m.poster}
-              href={m.href}
-              year={m.year}
-              rating={m.rating}
-              description={m.overview}
-              mediaType={type}
-              mediaStatus={m.mediaStatus}
-              imagePriority={index < 12}
-              imageLoading={index < 12 ? "eager" : "lazy"}
-              imageFetchPriority={index < 12 ? "high" : "auto"}
-              cardMode="requestable"
-            />
-          </li>
-        ))}
+        {cards.map((m, index) => {
+          const shouldPreloadImage = index < 12;
+          const shouldEagerLoadAppendedImage = appendedStartIndex !== null && index >= appendedStartIndex;
+          const shouldEagerLoadImage = shouldPreloadImage || shouldEagerLoadAppendedImage;
+
+          return (
+            <li key={m.id}>
+              <HoverMediaCard
+                id={m.id}
+                title={m.title}
+                posterUrl={m.poster}
+                href={m.href}
+                year={m.year}
+                rating={m.rating}
+                description={m.overview}
+                mediaType={type}
+                mediaStatus={m.mediaStatus}
+                imagePriority={shouldPreloadImage}
+                imageLoading={shouldEagerLoadImage ? "eager" : undefined}
+                imageFetchPriority={shouldPreloadImage ? "high" : undefined}
+                cardMode="requestable"
+              />
+            </li>
+          );
+        })}
         {/* Loading placeholders */}
         {(isLoadingMore || isLoadingInitial) &&
           [...Array(20)].map((_, i) => (

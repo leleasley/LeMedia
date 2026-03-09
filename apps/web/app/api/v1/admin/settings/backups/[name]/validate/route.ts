@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/auth";
 import { requireCsrf } from "@/lib/csrf";
-import { validateBackupArchive } from "@/lib/backups";
+import { setBackupValidation, validateBackupArchive } from "@/lib/backups";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +17,10 @@ export async function POST(
   const { name } = await params;
   const result = await validateBackupArchive(name);
   if (!result.ok) {
+    await setBackupValidation(name, "invalid");
     return NextResponse.json(result, { status: 400 });
   }
+
+  await setBackupValidation(name, "valid");
   return NextResponse.json(result);
 }

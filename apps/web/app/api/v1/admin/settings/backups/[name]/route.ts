@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/auth";
 import { requireCsrf } from "@/lib/csrf";
-import { deleteBackupArchive } from "@/lib/backups";
+import { clearBackupValidation, deleteBackupArchive } from "@/lib/backups";
 
 export const dynamic = "force-dynamic";
 
@@ -19,5 +19,7 @@ export async function DELETE(
   if (!result.ok) {
     return NextResponse.json(result, { status: result.error === "Backup file not found" ? 404 : 400 });
   }
+
+  await clearBackupValidation(name);
   return NextResponse.json(result);
 }

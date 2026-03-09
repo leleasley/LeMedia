@@ -42,7 +42,7 @@ export function AnimatedCheckbox({
                     disabled={disabled}
                     className="peer absolute inset-0 h-5 w-5 cursor-pointer opacity-0"
                 />
-                <div className="h-5 w-5 rounded border-2 border-gray-600 bg-gray-800 transition-all duration-200 peer-checked:border-indigo-500 peer-checked:bg-indigo-600 peer-focus-visible:ring-2 peer-focus-visible:ring-indigo-400/70 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-transparent peer-disabled:border-gray-700 peer-disabled:bg-gray-900/70" />
+                <div className="h-5 w-5 rounded border-2 border-gray-600 bg-gray-800 transition-all duration-200 peer-checked:border-amber-500 peer-checked:bg-amber-500 peer-focus-visible:ring-2 peer-focus-visible:ring-amber-400/70 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-transparent peer-disabled:border-gray-700 peer-disabled:bg-gray-900/70" />
                 {/* Checkmark */}
                 <svg
                     className="pointer-events-none absolute inset-0 m-auto h-3.5 w-3.5 origin-center scale-0 text-white opacity-0 transition-all duration-200 ease-out peer-checked:scale-100 peer-checked:opacity-100"

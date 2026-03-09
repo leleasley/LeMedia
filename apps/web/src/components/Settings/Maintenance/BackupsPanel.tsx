@@ -1,12 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import useSWR from "swr";
 import { csrfFetch } from "@/lib/csrf-client";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { ConfirmModal, useConfirm } from "@/components/Common/ConfirmModal";
-
-const VALIDATION_STORAGE_KEY = "lemedia:backup-validations";
 
 type BackupSummary = {
   name: string;
@@ -17,6 +15,7 @@ type BackupSummary = {
 type BackupResponse = {
   backups: BackupSummary[];
   maxFiles: number;
+  validations?: Record<string, "valid" | "invalid">;
 };
 
 const fetcher = (url: string) => fetch(url, { cache: "no-store", credentials: "include" }).then((res) => res.json());
@@ -48,23 +47,6 @@ export function BackupsPanel() {
   const [creating, setCreating] = useState(false);
   const [validating, setValidating] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
-  const [validationResult, setValidationResultRaw] = useState<Record<string, "valid" | "invalid">>(() => {
-    if (typeof window === "undefined") return {};
-    try {
-      const stored = localStorage.getItem(VALIDATION_STORAGE_KEY);
-      return stored ? JSON.parse(stored) : {};
-    } catch {
-      return {};
-    }
-  });
-
-  const setValidationResult: typeof setValidationResultRaw = useCallback((action) => {
-    setValidationResultRaw((prev) => {
-      const next = typeof action === "function" ? action(prev) : action;
-      try { localStorage.setItem(VALIDATION_STORAGE_KEY, JSON.stringify(next)); } catch {}
-      return next;
-    });
-  }, []);
 
   const { data, mutate, isLoading } = useSWR<BackupResponse>("/api/v1/admin/settings/backups", fetcher, {
     refreshInterval: 20000,
@@ -72,20 +54,39 @@ export function BackupsPanel() {
   });
 
   const backups = useMemo(() => data?.backups ?? [], [data]);
+  const validationResult = useMemo(() => data?.validations ?? {}, [data?.validations]);
   const maxFiles = data?.maxFiles ?? 5;
 
-  // Prune validation results for backups that no longer exist
-  useEffect(() => {
-    if (!data) return;
-    const names = new Set(data.backups.map((b) => b.name));
-    setValidationResult((prev) => {
-      const pruned = Object.fromEntries(
-        Object.entries(prev).filter(([key]) => names.has(key))
-      ) as Record<string, "valid" | "invalid">;
-      if (Object.keys(pruned).length === Object.keys(prev).length) return prev;
-      return pruned;
-    });
-  }, [data, setValidationResult]);
+  function setValidationInCache(name: string, status: "valid" | "invalid") {
+    void mutate(
+      (prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          validations: {
+            ...(prev.validations ?? {}),
+            [name]: status,
+          },
+        };
+      },
+      { revalidate: false }
+    );
+  }
+
+  function removeValidationInCache(name: string) {
+    void mutate(
+      (prev) => {
+        if (!prev) return prev;
+        const next = { ...(prev.validations ?? {}) };
+        delete next[name];
+        return {
+          ...prev,
+          validations: next,
+        };
+      },
+      { revalidate: false }
+    );
+  }
 
   async function createBackup() {
     setCreating(true);
@@ -115,13 +116,16 @@ export function BackupsPanel() {
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         const message = body?.error || "Validation failed";
-        setValidationResult((prev) => ({ ...prev, [name]: "invalid" }));
+        setValidationInCache(name, "invalid");
         toast.error(`Validation failed for ${name}: ${message}`);
         return;
       }
-      setValidationResult((prev) => ({ ...prev, [name]: "valid" }));
+      setValidationInCache(name, "valid");
       toast.success(`Validated ${name}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : `Validation failed for ${name}`);
     } finally {
+      mutate();
       setValidating(null);
     }
   }
@@ -353,11 +357,7 @@ export function BackupsPanel() {
                             throw new Error(body?.error || "Failed to delete backup");
                           }
                           toast.success(`Deleted ${backup.name}`);
-                          setValidationResult((prev) => {
-                            const next = { ...prev };
-                            delete next[backup.name];
-                            return next;
-                          });
+                          removeValidationInCache(backup.name);
                           mutate();
                         } catch (error) {
                           toast.error(error instanceof Error ? error.message : "Failed to delete backup");

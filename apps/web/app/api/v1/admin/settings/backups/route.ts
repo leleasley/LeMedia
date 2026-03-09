@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/auth";
-import { createBackupArchive, getBackupMaxFiles, listBackups } from "@/lib/backups";
+import { createBackupArchive, getBackupMaxFiles, getBackupValidations, listBackups } from "@/lib/backups";
 import { requireCsrf } from "@/lib/csrf";
 import { logger } from "@/lib/logger";
 
@@ -11,9 +11,11 @@ export async function GET() {
   if (admin instanceof NextResponse) return admin;
 
   const backups = await listBackups();
+  const validations = await getBackupValidations(backups.map((backup) => backup.name));
   return NextResponse.json({
     backups,
     maxFiles: getBackupMaxFiles(),
+    validations,
   });
 }
 

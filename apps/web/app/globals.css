@@ -317,6 +317,10 @@
   }
 
   /* Form Elements - Modernized Glass Theme */
+  input[type="checkbox"] {
+    accent-color: #f59e0b;
+  }
+
   input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
   select,
   textarea {

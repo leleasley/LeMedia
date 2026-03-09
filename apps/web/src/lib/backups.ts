@@ -4,7 +4,7 @@ import fs from "fs/promises";
 import path from "path";
 import { createClient } from "redis";
 import JSZip from "jszip";
-import { getPool } from "@/db";
+import { getPool, getSetting, setSetting } from "@/db";
 import { logger } from "@/lib/logger";
 
 export type BackupSummary = {
@@ -13,7 +13,11 @@ export type BackupSummary = {
   createdAt: string;
 };
 
+export type BackupValidationStatus = "valid" | "invalid";
+export type BackupValidationMap = Record<string, BackupValidationStatus>;
+
 const DEFAULT_BACKUP_MAX_FILES = 5;
+const BACKUP_VALIDATION_SETTING_KEY = "backups.validation_results";
 
 type BackupManifest = {
   version: 1;
@@ -51,6 +55,72 @@ function safeBackupName(raw: string): string | null {
   if (!/^[a-zA-Z0-9._-]+\.zip$/.test(name)) return null;
   if (name.includes("..")) return null;
   return name;
+}
+
+function normalizeValidationMap(raw: string | null): BackupValidationMap {
+  if (!raw) return {};
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+
+    const next: BackupValidationMap = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      const safeName = safeBackupName(String(key));
+      if (!safeName) continue;
+      if (value === "valid" || value === "invalid") {
+        next[safeName] = value;
+      }
+    }
+    return next;
+  } catch {
+    return {};
+  }
+}
+
+async function saveValidationMap(map: BackupValidationMap) {
+  await setSetting(BACKUP_VALIDATION_SETTING_KEY, JSON.stringify(map));
+}
+
+export async function getBackupValidations(existingNames?: string[]): Promise<BackupValidationMap> {
+  const raw = await getSetting(BACKUP_VALIDATION_SETTING_KEY);
+  const current = normalizeValidationMap(raw);
+
+  if (!existingNames) return current;
+
+  const allowed = new Set(existingNames);
+  const pruned: BackupValidationMap = {};
+  for (const [name, status] of Object.entries(current)) {
+    if (allowed.has(name)) {
+      pruned[name] = status;
+    }
+  }
+
+  if (Object.keys(pruned).length !== Object.keys(current).length) {
+    await saveValidationMap(pruned);
+  }
+
+  return pruned;
+}
+
+export async function setBackupValidation(name: string, status: BackupValidationStatus) {
+  const safe = safeBackupName(name);
+  if (!safe) return;
+
+  const current = await getBackupValidations();
+  current[safe] = status;
+  await saveValidationMap(current);
+}
+
+export async function clearBackupValidation(name: string) {
+  const safe = safeBackupName(name);
+  if (!safe) return;
+
+  const current = await getBackupValidations();
+  if (!(safe in current)) return;
+
+  delete current[safe];
+  await saveValidationMap(current);
 }
 
 async function ensureBackupDir() {

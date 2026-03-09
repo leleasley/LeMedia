@@ -1,10 +1,10 @@
 import { redirect } from "next/navigation";
 import { getUser } from "@/auth";
+import { AdminSettingsPanel } from "@/components/Settings/General/AdminSettingsPanel";
 
 export const metadata = {
   title: "General Settings - LeMedia",
 };
-import { AdminSettingsPanel } from "@/components/Settings/General/AdminSettingsPanel";
 
 export default async function AdminSettingsGeneralPage() {
     const user = await getUser().catch(() => null);
