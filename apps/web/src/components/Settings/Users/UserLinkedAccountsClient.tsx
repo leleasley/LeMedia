@@ -6,6 +6,7 @@ import useSWR from "swr";
 import Image from "next/image";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { logger } from "@/lib/logger";
+import { ConfirmModal, useConfirm } from "@/components/Common/ConfirmModal";
 
 interface User {
     id: number;
@@ -22,11 +23,13 @@ export function UserLinkedAccountsClient() {
     const userId = params?.id;
     const toast = useToast();
     const [unlinking, setUnlinking] = useState(false);
+    const { confirm, modalProps } = useConfirm();
 
     const { data: user, error, mutate } = useSWR<User>(userId ? `/api/v1/admin/users/${userId}` : null);
 
     const handleUnlink = async () => {
-        if (!confirm("Are you sure you want to unlink this Jellyfin account?")) {
+        const ok = await confirm("Are you sure you want to unlink this Jellyfin account?", { title: "Unlink Jellyfin", confirmLabel: "Unlink", destructive: true });
+        if (!ok) {
             return;
         }
 
@@ -67,6 +70,7 @@ export function UserLinkedAccountsClient() {
 
     return (
         <div className="space-y-6">
+            <ConfirmModal {...modalProps} />
             <div>
                 <h3 className="text-lg font-semibold text-white mb-1">Linked Accounts</h3>
                 <p className="text-sm text-gray-400">View and manage connected external accounts</p>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { useToast } from "@/components/Providers/ToastProvider";
 import {
   CheckSquare,
   Square,
@@ -26,6 +27,7 @@ export function AdminBulkActionsToolbar({
   onActionComplete,
 }: AdminBulkActionsToolbarProps) {
   const [loading, setLoading] = useState<"approve" | "deny" | null>(null);
+  const toast = useToast();
   const [showDenyReason, setShowDenyReason] = useState(false);
   const [denyReason, setDenyReason] = useState("");
 
@@ -57,7 +59,7 @@ export function AdminBulkActionsToolbar({
         }
 
         const result = await res.json();
-        alert(
+        toast.success(
           `${result.action === "approve" ? "Approved" : "Denied"} ${result.updated} request(s).`
         );
         onClear();
@@ -65,12 +67,12 @@ export function AdminBulkActionsToolbar({
         setShowDenyReason(false);
         setDenyReason("");
       } catch (err) {
-        alert(err instanceof Error ? err.message : "Failed to process requests");
+        toast.error(err instanceof Error ? err.message : "Failed to process requests");
       } finally {
         setLoading(null);
       }
     },
-    [selectedRequestIds, loading, denyReason, showDenyReason, onClear, onActionComplete]
+    [selectedRequestIds, loading, denyReason, showDenyReason, onClear, onActionComplete, toast]
   );
 
   if (selectedRequestIds.length === 0) return null;

@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Modal } from "@/components/Common/Modal";
+import { ConfirmModal, useConfirm } from "@/components/Common/ConfirmModal";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { csrfFetch } from "@/lib/csrf-client";
 import useSWR from "swr";
@@ -227,6 +228,7 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
     const toast = useToast();
     const router = useRouter();
     const searchParams = useSearchParams();
+    const { confirm, modalProps } = useConfirm();
     const [traktConfig, setTraktConfig] = useState<TraktConfig>({
         enabled: false,
         clientId: "",
@@ -709,7 +711,8 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
                     </button>
                     <button
                         onClick={async () => {
-                            if (!confirm("Delete this service? This action cannot be undone.")) return;
+                            const ok = await confirm("Delete this service? This action cannot be undone.", { title: "Delete Service", confirmLabel: "Delete", destructive: true });
+                            if (!ok) return;
                             await csrfFetch(`/api/v1/admin/services/${service.id}`, { method: "DELETE", credentials: "include" });
                             mutate();
                         }}
@@ -756,7 +759,7 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
                     <div className="absolute inset-0 z-0 bg-white/0 transition-colors group-hover:bg-white/10" />
                 </button>
             </div>
-            
+
             <div className="flex-1 bg-gradient-to-b from-transparent to-black/20 p-4">
                 {serviceList.length === 0 ? (
                     <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-white/10 bg-white/[0.01] py-8 text-center transition-colors hover:bg-white/[0.02]">
@@ -773,84 +776,85 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
 
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <ConfirmModal {...modalProps} />
             {/* Status & Integrations Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* 1. Trakt Status Card */}
                 <div className={`rounded-2xl border bg-gradient-to-br p-4 space-y-3 ${traktAuthorized ? "from-emerald-500/10 to-teal-500/5 border-emerald-500/20" : "from-gray-800/50 to-gray-900/50 border-white/10"}`}>
-                   <div className="flex items-center justify-between">
-                       <div className="flex items-center gap-2">
-                           <div className={`p-1.5 rounded-lg ${traktAuthorized ? "bg-emerald-500/20 text-emerald-400" : "bg-white/10 text-gray-400"}`}>
-                               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
-                                   <path fillRule="evenodd" d="M4.5 3.75a3 3 0 00-3 3v10.5a3 3 0 003 3h15a3 3 0 003-3V6.75a3 3 0 00-3-3h-15zm4.125 3a2.25 2.25 0 100 4.5 2.25 2.25 0 000-4.5zm-3.873 8.703a4.126 4.126 0 017.746 0 .75.75 0 01-.351.92 7.47 7.47 0 01-3.522.877 7.47 7.47 0 01-3.522-.877.75.75 0 01-.351-.92zM15 8.25a.75.75 0 01.75-.75h3.75a.75.75 0 010 1.5H15.75a.75.75 0 01-.75-.75zM15 12a.75.75 0 01.75-.75h3.75a.75.75 0 010 1.5H15.75a.75.75 0 01-.75-.75zM15 15.75a.75.75 0 01.75-.75h3.75a.75.75 0 010 1.5H15.75a.75.75 0 01-.75-.75z" clipRule="evenodd" />
-                               </svg>
-                           </div>
-                           <span className="text-sm font-semibold text-white">Trakt</span>
-                       </div>
-                       {traktAuthorized ? (
-                           <span className="flex h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-                       ) : (
-                           <button 
-                               onClick={() => document.getElementById('trakt-settings')?.scrollIntoView({ behavior: 'smooth' })}
-                               className="text-[10px] bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded text-white transition-colors"
-                           >
-                               Setup
-                           </button>
-                       )}
-                   </div>
-                   <div className="text-xs text-white/40">
-                       {traktAuthorized ? "Account connected & syncing" : "Not connected"}
-                   </div>
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <div className={`p-1.5 rounded-lg ${traktAuthorized ? "bg-emerald-500/20 text-emerald-400" : "bg-white/10 text-gray-400"}`}>
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                                    <path fillRule="evenodd" d="M4.5 3.75a3 3 0 00-3 3v10.5a3 3 0 003 3h15a3 3 0 003-3V6.75a3 3 0 00-3-3h-15zm4.125 3a2.25 2.25 0 100 4.5 2.25 2.25 0 000-4.5zm-3.873 8.703a4.126 4.126 0 017.746 0 .75.75 0 01-.351.92 7.47 7.47 0 01-3.522.877 7.47 7.47 0 01-3.522-.877.75.75 0 01-.351-.92zM15 8.25a.75.75 0 01.75-.75h3.75a.75.75 0 010 1.5H15.75a.75.75 0 01-.75-.75zM15 12a.75.75 0 01.75-.75h3.75a.75.75 0 010 1.5H15.75a.75.75 0 01-.75-.75zM15 15.75a.75.75 0 01.75-.75h3.75a.75.75 0 010 1.5H15.75a.75.75 0 01-.75-.75z" clipRule="evenodd" />
+                                </svg>
+                            </div>
+                            <span className="text-sm font-semibold text-white">Trakt</span>
+                        </div>
+                        {traktAuthorized ? (
+                            <span className="flex h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                        ) : (
+                            <button
+                                onClick={() => document.getElementById('trakt-settings')?.scrollIntoView({ behavior: 'smooth' })}
+                                className="text-[10px] bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded text-white transition-colors"
+                            >
+                                Setup
+                            </button>
+                        )}
+                    </div>
+                    <div className="text-xs text-white/40">
+                        {traktAuthorized ? "Account connected & syncing" : "Not connected"}
+                    </div>
                 </div>
 
                 {/* 2. System Health Card */}
                 <div className={`rounded-2xl border bg-gradient-to-br p-4 space-y-3 ${healthData?.database && healthData?.tmdb ? "from-emerald-500/10 to-teal-500/5 border-emerald-500/20" : "from-red-500/10 to-orange-500/5 border-red-500/20"}`}>
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                           <div className={`p-1.5 rounded-lg ${healthData?.database ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"}`}>
-                               <Database className="w-4 h-4" />
-                           </div>
-                           <span className="text-sm font-semibold text-white">System</span>
+                            <div className={`p-1.5 rounded-lg ${healthData?.database ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"}`}>
+                                <Database className="w-4 h-4" />
+                            </div>
+                            <span className="text-sm font-semibold text-white">System</span>
                         </div>
-                         <span className={`text-xs font-bold ${healthData?.database && healthData?.tmdb ? "text-emerald-400" : "text-red-400"}`}>
+                        <span className={`text-xs font-bold ${healthData?.database && healthData?.tmdb ? "text-emerald-400" : "text-red-400"}`}>
                             {healthData?.database && healthData?.tmdb ? "Healthy" : "Issues"}
                         </span>
                     </div>
-                     <div className="flex gap-2 text-[10px] text-white/40">
-                        <span className={healthData?.database ? "text-emerald-400" : "text-red-400"}>DB</span> • 
-                        <span className={healthData?.tmdb ? "text-emerald-400" : "text-red-400"}>TMDB</span> • 
+                    <div className="flex gap-2 text-[10px] text-white/40">
+                        <span className={healthData?.database ? "text-emerald-400" : "text-red-400"}>DB</span> •
+                        <span className={healthData?.tmdb ? "text-emerald-400" : "text-red-400"}>TMDB</span> •
                         <span className={healthData?.jellyfin ? "text-emerald-400" : "text-red-400"}>Jellyfin</span>
                     </div>
                 </div>
 
                 {/* 3. Media Services Status */}
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-3">
-                     <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                           <div className="p-1.5 rounded-lg bg-blue-500/20 text-blue-400">
-                               <Server className="w-4 h-4" />
-                           </div>
-                           <span className="text-sm font-semibold text-white">Services</span>
+                            <div className="p-1.5 rounded-lg bg-blue-500/20 text-blue-400">
+                                <Server className="w-4 h-4" />
+                            </div>
+                            <span className="text-sm font-semibold text-white">Services</span>
                         </div>
                         <span className="text-xs text-white/40">{services.length} Total</span>
                     </div>
-                     <div className="text-xs text-white/40">
+                    <div className="text-xs text-white/40">
                         {mediaDetails.filter(s => s.healthy).length} Online • {mediaDetails.filter(s => !s.healthy).length} Offline
                     </div>
                 </div>
 
                 {/* 4. Download Clients Status */}
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-3">
-                     <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                           <div className="p-1.5 rounded-lg bg-cyan-500/20 text-cyan-400">
-                               <Download className="w-4 h-4" />
-                           </div>
-                           <span className="text-sm font-semibold text-white">Downloaders</span>
+                            <div className="p-1.5 rounded-lg bg-cyan-500/20 text-cyan-400">
+                                <Download className="w-4 h-4" />
+                            </div>
+                            <span className="text-sm font-semibold text-white">Downloaders</span>
                         </div>
                         <span className="text-xs text-white/40">{downloaderServices.length} Active</span>
                     </div>
                     <div className="text-xs text-white/40">
-                         {downloaderServices.map(s => s.type).join(", ") || "None configured"}
+                        {downloaderServices.map(s => s.type).join(", ") || "None configured"}
                     </div>
                 </div>
             </div>
@@ -885,7 +889,7 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
                         </div>
                     </div>
                     <div className="flex-1 p-4">
-                         {prowlarrServices.length === 0 ? (
+                        {prowlarrServices.length === 0 ? (
                             <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-white/10 bg-white/[0.01] py-8 text-center">
                                 <p className="text-xs font-medium text-gray-400">No Prowlarr servers</p>
                             </div>
@@ -895,7 +899,7 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
                                     {prowlarrServices.map(renderServiceCard)}
                                 </div>
                                 <div className="rounded-xl border border-white/5 bg-black/20 overflow-hidden">
-                                     <button
+                                    <button
                                         onClick={() => setShowIndexers(!showIndexers)}
                                         className="w-full flex items-center justify-between p-3 hover:bg-white/5 transition-colors"
                                     >
@@ -907,7 +911,7 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
                                                 </span>
                                             )}
                                         </div>
-                                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={`w-4 h-4 text-gray-400 transition-transform ${showIndexers ? "rotate-180" : ""}`}>
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={`w-4 h-4 text-gray-400 transition-transform ${showIndexers ? "rotate-180" : ""}`}>
                                             <path fillRule="evenodd" d="M12.53 16.28a.75.75 0 01-1.06 0l-7.5-7.5a.75.75 0 011.06-1.06L12 14.69l6.97-6.97a.75.75 0 111.06 1.06l-7.5 7.5z" clipRule="evenodd" />
                                         </svg>
                                     </button>
@@ -944,8 +948,8 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
                                 <p className="text-xs font-medium text-gray-400">Clients</p>
                             </div>
                         </div>
-                         <div className="flex gap-1">
-                             {(['sabnzbd', 'qbittorrent', 'nzbget'] as const).map(id => (
+                        <div className="flex gap-1">
+                            {(['sabnzbd', 'qbittorrent', 'nzbget'] as const).map(id => (
                                 <button
                                     key={id}
                                     onClick={() => openCreate(id as any)}
@@ -955,7 +959,7 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
                                     <span className="sr-only">Add {id}</span>
                                     {logoMap[id] ? <Image src={logoMap[id]} alt={id} className="w-4 h-4 object-contain opacity-70 hover:opacity-100" /> : <div className="w-4 h-4 bg-gray-500 rounded" />}
                                 </button>
-                             ))}
+                            ))}
                         </div>
                     </div>
                     <div className="flex-1 p-4">
@@ -974,7 +978,7 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
 
             {/* Manual Trakt Settings (Hidden unless not connected or explictly shown, but kept in DOM for functionality) */}
             <div id="trakt-settings" className="rounded-3xl border border-white/10 bg-black/20 backdrop-blur-xl overflow-hidden">
-                <button 
+                <button
                     onClick={() => setExpandedSection(expandedSection === "trakt" ? "" : "trakt")}
                     className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors"
                 >
@@ -987,7 +991,7 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
                 </button>
                 {expandedSection === "trakt" && (
                     <div className="p-6 border-t border-white/10 bg-black/10">
-                         <form onSubmit={handleSaveTrakt} className="space-y-4 max-w-2xl">
+                        <form onSubmit={handleSaveTrakt} className="space-y-4 max-w-2xl">
                             <label className="flex items-center gap-3 rounded-lg border border-white/5 bg-white/5 p-3 transition-colors hover:bg-white/10 cursor-pointer">
                                 <input
                                     type="checkbox"
@@ -1030,17 +1034,17 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
                             </div>
 
                             <div className="flex items-center gap-3 pt-2">
-                                <button 
-                                    className="btn-primary flex items-center gap-2 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30" 
-                                    type="submit" 
+                                <button
+                                    className="btn-primary flex items-center gap-2 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30"
+                                    type="submit"
                                     disabled={traktSaving}
                                 >
                                     {traktSaving ? "Saving..." : "Save Settings"}
                                 </button>
                                 {canStartTraktOAuth && !traktConfig.appAuthorizedAt && (
-                                     <div className="text-xs text-amber-400 flex items-center gap-1">
-                                         <Server className="w-3 h-3" /> Save to enable OAuth
-                                     </div>
+                                    <div className="text-xs text-amber-400 flex items-center gap-1">
+                                        <Server className="w-3 h-3" /> Save to enable OAuth
+                                    </div>
                                 )}
                             </div>
                         </form>

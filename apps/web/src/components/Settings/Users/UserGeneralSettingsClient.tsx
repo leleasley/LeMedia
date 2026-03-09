@@ -8,6 +8,7 @@ import { csrfFetch } from "@/lib/csrf-client";
 import { logger } from "@/lib/logger";
 import { RequestLimitSelector } from "@/components/Common/RequestLimitSelector";
 import { AuthResetModal } from "@/components/Settings/Users/AuthResetModal";
+import { ConfirmModal, useConfirm } from "@/components/Common/ConfirmModal";
 import {
     Select,
     SelectContent,
@@ -63,6 +64,7 @@ export function UserGeneralSettingsClient() {
     const [revokingAll, setRevokingAll] = useState(false);
     const [apiTokenVisible, setApiTokenVisible] = useState(false);
     const [apiTokenSaving, setApiTokenSaving] = useState(false);
+    const { confirm, modalProps } = useConfirm();
 
     const { data: user, error, mutate } = useSWR<User>(userId ? `/api/v1/admin/users/${userId}` : null);
     const { data: defaultLimits } = useSWR<DefaultLimits>("/api/v1/admin/settings/users");
@@ -232,7 +234,8 @@ export function UserGeneralSettingsClient() {
     };
 
     const handleResetMfa = async () => {
-        if (!confirm("Are you sure you want to reset MFA for this user?")) {
+        const ok = await confirm("Are you sure you want to reset MFA for this user?", { title: "Reset MFA", confirmLabel: "Reset", destructive: true });
+        if (!ok) {
             return;
         }
 
@@ -322,6 +325,7 @@ export function UserGeneralSettingsClient() {
 
     return (
         <div className="space-y-6">
+            <ConfirmModal {...modalProps} />
             <div>
                 <h3 className="text-lg font-semibold text-white mb-1">General Settings</h3>
                 <p className="text-sm text-gray-400">Manage basic user information and account settings</p>
@@ -395,9 +399,9 @@ export function UserGeneralSettingsClient() {
                 {/* Role */}
                 <div>
                     <label className="block text-sm font-medium text-white mb-2">Role</label>
-                <div className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-gray-400">
+                    <div className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-gray-400">
                         {user.id === 1 ? "Owner" : user.isAdmin ? "Administrator" : "User"}
-                </div>
+                    </div>
                 </div>
 
                 {/* Request Limits */}
@@ -509,10 +513,10 @@ export function UserGeneralSettingsClient() {
                         Manage Authentication
                     </button>
                     {user && (
-                        <AuthResetModal 
-                            userId={user.id} 
-                            isOpen={resettingMfa} 
-                            onClose={() => setResettingMfa(false)} 
+                        <AuthResetModal
+                            userId={user.id}
+                            isOpen={resettingMfa}
+                            onClose={() => setResettingMfa(false)}
                         />
                     )}
 

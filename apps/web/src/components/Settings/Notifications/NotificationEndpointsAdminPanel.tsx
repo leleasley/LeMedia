@@ -2,6 +2,7 @@
 
 import { FormEvent, useMemo, useState, useCallback } from "react";
 import { Modal } from "@/components/Common/Modal";
+import { ConfirmModal, useConfirm } from "@/components/Common/ConfirmModal";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { csrfFetch } from "@/lib/csrf-client";
 import { formatDate } from "@/lib/dateFormat";
@@ -91,6 +92,7 @@ function formatEvents(events: string[]) {
 
 export function NotificationEndpointsAdminPanel({ initialEndpoints }: { initialEndpoints: Endpoint[] }) {
   const toast = useToast();
+  const { confirm, modalProps } = useConfirm();
   const [endpoints, setEndpoints] = useState<Endpoint[]>(initialEndpoints);
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<"create" | "edit">("create");
@@ -210,7 +212,8 @@ export function NotificationEndpointsAdminPanel({ initialEndpoints }: { initialE
   };
 
   const handleDelete = async (endpoint: Endpoint) => {
-    if (!confirm(`Delete notification "${endpoint.name}"?`)) return;
+    const ok = await confirm(`Delete notification "${endpoint.name}"?`, { title: "Delete Channel", confirmLabel: "Delete", destructive: true });
+    if (!ok) return;
     try {
       const res = await csrfFetch(`/api/v1/notification-endpoints/${endpoint.id}`, { method: "DELETE", credentials: "include" });
       const body = await res.json().catch(() => ({}));
@@ -257,6 +260,7 @@ export function NotificationEndpointsAdminPanel({ initialEndpoints }: { initialE
 
   return (
     <div className="rounded-lg border border-white/10 bg-slate-900/60 p-6 shadow-lg shadow-black/10 space-y-4">
+      <ConfirmModal {...modalProps} />
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-muted">Notifications</p>
@@ -284,7 +288,7 @@ export function NotificationEndpointsAdminPanel({ initialEndpoints }: { initialE
                 </div>
                 <div className={`shrink-0 w-2 h-2 rounded-full mt-2 ${e.enabled ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]" : "bg-red-500/50"}`} title={e.enabled ? "Enabled" : "Disabled"} />
               </div>
-              
+
               <div className="mt-4 space-y-2 text-sm text-muted">
                 <div className="flex items-center gap-2">
                   <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider border ${e.is_global ? "border-purple-500/30 bg-purple-500/10 text-purple-200" : "border-white/10 bg-white/5 text-muted"}`}>
@@ -293,7 +297,7 @@ export function NotificationEndpointsAdminPanel({ initialEndpoints }: { initialE
                   <span className="text-xs opacity-50">•</span>
                   <span className="text-xs opacity-70">{formatDate(e.created_at)}</span>
                 </div>
-                
+
                 <div className="pt-2">
                   <div className="text-xs uppercase tracking-wider opacity-50 mb-1">Trigger events</div>
                   <p className="text-xs leading-relaxed opacity-80 line-clamp-2" title={formatEvents(e.events)}>

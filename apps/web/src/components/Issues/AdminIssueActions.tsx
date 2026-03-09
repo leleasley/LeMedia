@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { csrfFetch } from "@/lib/csrf-client";
+import { ConfirmModal, useConfirm } from "@/components/Common/ConfirmModal";
 
 type Props = {
   issueId: string;
@@ -13,6 +14,7 @@ export function AdminIssueActions({ issueId, status }: Props) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const { confirm, modalProps } = useConfirm();
 
   const markResolved = async () => {
     setError(null);
@@ -32,7 +34,8 @@ export function AdminIssueActions({ issueId, status }: Props) {
 
   const deleteIssue = async () => {
     setError(null);
-    if (!window.confirm("Delete this issue? This cannot be undone.")) return;
+    const ok = await confirm("Delete this issue? This cannot be undone.", { title: "Delete Issue", destructive: true, confirmLabel: "Delete" });
+    if (!ok) return;
     const res = await csrfFetch(`/api/v1/issues/${issueId}`, {
       method: "DELETE",
       credentials: "include"
@@ -47,6 +50,7 @@ export function AdminIssueActions({ issueId, status }: Props) {
 
   return (
     <div className="space-y-2">
+      <ConfirmModal {...modalProps} />
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"

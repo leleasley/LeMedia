@@ -9,6 +9,7 @@ import { useToast } from "@/components/Providers/ToastProvider";
 import { DashboardSlider } from "@/lib/dashboard-sliders";
 import CreateSlider from "@/components/Dashboard/CreateSlider";
 import DashboardSliderEdit from "@/components/Dashboard/DashboardSliderEdit";
+import { ConfirmModal, useConfirm } from "@/components/Common/ConfirmModal";
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
 
@@ -25,6 +26,7 @@ type DashboardCustomizeClientProps = {
 
 export default function DashboardCustomizeClient({ sliderComponents, initialSliders = [] }: DashboardCustomizeClientProps) {
   const toast = useToast();
+  const { confirm, modalProps } = useConfirm();
   const { data: dashboardData, mutate } = useSWR<DashboardSlider[]>(
     "/api/v1/settings/dashboard",
     fetcher,
@@ -115,6 +117,7 @@ export default function DashboardCustomizeClient({ sliderComponents, initialSlid
 
   return (
     <>
+      <ConfirmModal {...modalProps} />
       {isEditing && (
         <div className="my-6 rounded-lg bg-gray-800">
           <div className="flex items-center space-x-2 rounded-t-lg border-t border-l border-r border-gray-800 bg-gray-900 p-4 text-lg font-semibold text-gray-400">
@@ -170,8 +173,9 @@ export default function DashboardCustomizeClient({ sliderComponents, initialSlid
             <span>Stop Editing</span>
           </button>
           <button
-            onClick={() => {
-              if (confirm("Reset all sliders to default. This will also delete any custom sliders!")) {
+            onClick={async () => {
+              const ok = await confirm("Reset all sliders to default. This will also delete any custom sliders!", { title: "Reset Sliders", confirmLabel: "Reset", destructive: true });
+              if (ok) {
                 resetSliders();
               }
             }}

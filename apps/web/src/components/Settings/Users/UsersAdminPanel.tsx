@@ -2,6 +2,7 @@
 
 import { FormEvent, useState, useCallback } from "react";
 import { Modal } from "@/components/Common/Modal";
+import { ConfirmModal, useConfirm } from "@/components/Common/ConfirmModal";
 import { JellyfinImportModal } from "@/components/Settings/Jellyfin/JellyfinImportModal";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { normalizeGroupList } from "@/lib/groups";
@@ -47,6 +48,7 @@ export function UsersAdminPanel({ initialUsers, initialEndpoints }: { initialUse
   const toast = useToast();
   const [users, setUsers] = useState(initialUsers);
   const [modal, setModal] = useState<ModalState | null>(null);
+  const { confirm, modalProps } = useConfirm();
   const [importOpen, setImportOpen] = useState(false);
   const [formState, setFormState] = useState<FormState>({
     username: "",
@@ -171,7 +173,7 @@ export function UsersAdminPanel({ initialUsers, initialEndpoints }: { initialUse
   };
 
   const handleDelete = async (user: AdminUser) => {
-    if (!confirm(`Delete user "${user.username}"? This cannot be undone.`)) return;
+    if (!(await confirm(`Delete user "${user.username}"? This cannot be undone.`, { destructive: true, confirmLabel: "Delete" }))) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -193,7 +195,7 @@ export function UsersAdminPanel({ initialUsers, initialEndpoints }: { initialUse
   };
 
   const handleResetMfa = async (user: AdminUser) => {
-    if (!confirm(`Reset MFA for "${user.username}"? They will be prompted to configure it again on next login.`)) return;
+    if (!(await confirm(`Reset MFA for "${user.username}"? They will be prompted to configure it again on next login.`, { destructive: true, confirmLabel: "Reset MFA" }))) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -243,9 +245,8 @@ export function UsersAdminPanel({ initialUsers, initialEndpoints }: { initialUse
                 <div className="text-xs text-muted">{user.email ?? "—"}</div>
               </div>
               <span
-                className={`rounded-full px-2 py-0.5 text-[0.6rem] font-semibold ${
-                  user.mfa_enabled ? "bg-emerald-500/20 text-emerald-200" : "bg-white/5 text-muted"
-                }`}
+                className={`rounded-full px-2 py-0.5 text-[0.6rem] font-semibold ${user.mfa_enabled ? "bg-emerald-500/20 text-emerald-200" : "bg-white/5 text-muted"
+                  }`}
               >
                 {user.mfa_enabled ? "MFA enabled" : "MFA not set"}
               </span>
@@ -367,9 +368,8 @@ export function UsersAdminPanel({ initialUsers, initialEndpoints }: { initialUse
                     <span className="text-xs font-semibold text-amber-400">No email</span>
                   ) : (
                     <span
-                      className={`rounded-full px-2 py-0.5 text-[0.6rem] font-semibold ${
-                        user.weeklyDigestOptIn ? "bg-emerald-500/20 text-emerald-200" : "bg-white/5 text-muted"
-                      }`}
+                      className={`rounded-full px-2 py-0.5 text-[0.6rem] font-semibold ${user.weeklyDigestOptIn ? "bg-emerald-500/20 text-emerald-200" : "bg-white/5 text-muted"
+                        }`}
                     >
                       {user.weeklyDigestOptIn ? "Enabled" : "Disabled"}
                     </span>
@@ -377,9 +377,8 @@ export function UsersAdminPanel({ initialUsers, initialEndpoints }: { initialUse
                 </td>
                 <td className="p-4">
                   <span
-                    className={`rounded-full px-2 py-0.5 text-[0.6rem] font-semibold ${
-                      user.mfa_enabled ? "bg-emerald-500/20 text-emerald-200" : "bg-white/5 text-muted"
-                    }`}
+                    className={`rounded-full px-2 py-0.5 text-[0.6rem] font-semibold ${user.mfa_enabled ? "bg-emerald-500/20 text-emerald-200" : "bg-white/5 text-muted"
+                      }`}
                   >
                     {user.mfa_enabled ? "Enabled" : "Not setup"}
                   </span>
@@ -486,9 +485,8 @@ export function UsersAdminPanel({ initialUsers, initialEndpoints }: { initialUse
                   {initialEndpoints.map(endpoint => (
                     <label
                       key={endpoint.id}
-                      className={`flex items-center justify-between rounded-lg border px-3 py-2 ${
-                        endpoint.enabled ? "border-border bg-surface" : "border-border/50 bg-surface/50 opacity-60"
-                      }`}
+                      className={`flex items-center justify-between rounded-lg border px-3 py-2 ${endpoint.enabled ? "border-border bg-surface" : "border-border/50 bg-surface/50 opacity-60"
+                        }`}
                     >
                       <div>
                         <div className="text-sm font-semibold text-text">{endpoint.name}</div>
@@ -563,6 +561,7 @@ export function UsersAdminPanel({ initialUsers, initialEndpoints }: { initialUse
           }
         }}
       />
+      <ConfirmModal {...modalProps} />
     </div>
   );
 }

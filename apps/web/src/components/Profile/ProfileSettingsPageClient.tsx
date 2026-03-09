@@ -12,6 +12,7 @@ import { useToast } from "@/components/Providers/ToastProvider";
 import { LinkedAccountsPanel } from "@/components/LinkedAccounts/LinkedAccountsPanel";
 import { csrfFetch } from "@/lib/csrf-client";
 import { Modal } from "@/components/Common/Modal";
+import { ConfirmModal, useConfirm } from "@/components/Common/ConfirmModal";
 import { TelegramBotPanel } from "@/components/Profile/TelegramBotPanel";
 
 interface AssignedEndpoint {
@@ -95,6 +96,7 @@ export function ProfileSettingsPageClient({
   const [passwordPromptError, setPasswordPromptError] = useState<string | null>(null);
   const [passwordPromptAction, setPasswordPromptAction] = useState<null | ((password: string) => Promise<void>)>(null);
   const toast = useToast();
+  const { confirm, modalProps } = useConfirm();
 
   const passkeyCount = passkeysData ? passkeysData.length : null;
   const activeSessions = sessionsData ? sessionsData.sessions.filter(session => !session.revokedAt).length : null;
@@ -164,6 +166,7 @@ export function ProfileSettingsPageClient({
 
   return (
     <div className="min-h-screen">
+      <ConfirmModal {...modalProps} />
       <Modal
         open={passwordPromptOpen}
         title="Confirm with password"
@@ -244,7 +247,7 @@ export function ProfileSettingsPageClient({
                 <div className="flex items-center gap-4 mb-6">
                   <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500/20 to-indigo-500/20 ring-1 ring-white/10">
                     <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-300">
-                      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
                     </svg>
                   </div>
                   <div>
@@ -381,12 +384,13 @@ export function ProfileSettingsPageClient({
                     type="button"
                     className="btn flex-1 sm:flex-none"
                     disabled={apiTokenSaving}
-                    onClick={() => {
+                    onClick={async () => {
                       if (!apiToken) {
                         void rotateApiToken();
                         return;
                       }
-                      if (!confirm("Rotate your personal API token? Existing integrations will stop working.")) return;
+                      const ok = await confirm("Rotate your personal API token? Existing integrations will stop working.", { title: "Rotate API Token", confirmLabel: "Rotate", destructive: true });
+                      if (!ok) return;
                       void rotateApiToken();
                     }}
                   >
@@ -396,9 +400,10 @@ export function ProfileSettingsPageClient({
                     type="button"
                     className="btn-danger flex-1 sm:flex-none"
                     disabled={!apiToken || apiTokenSaving}
-                    onClick={() => {
+                    onClick={async () => {
                       if (!apiToken) return;
-                      if (!confirm("Revoke your personal API token? This cannot be undone.")) return;
+                      const ok = await confirm("Revoke your personal API token? This cannot be undone.", { title: "Revoke API Token", confirmLabel: "Revoke", destructive: true });
+                      if (!ok) return;
                       void revokeApiToken();
                     }}
                   >
@@ -526,8 +531,8 @@ export function ProfileSettingsPageClient({
               <div className="flex items-center gap-4 mb-6">
                 <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-slate-500/20 to-gray-500/20 ring-1 ring-white/10">
                   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-300">
-                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                    <path d="M9 12l2 2 4-4"/>
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                    <path d="M9 12l2 2 4-4" />
                   </svg>
                 </div>
                 <div className="flex-1">
@@ -668,9 +673,8 @@ function WeeklyDigestSettings({
           <h3 className="text-xl font-bold text-white">Weekly Digest</h3>
           <p className="text-sm text-gray-400 mt-1">Get upcoming releases delivered to your inbox</p>
         </div>
-        <div className={`rounded-full px-3 py-1 text-xs font-semibold ${
-          enabled ? 'bg-emerald-500/20 text-emerald-200' : 'bg-white/10 text-gray-300'
-        }`}>
+        <div className={`rounded-full px-3 py-1 text-xs font-semibold ${enabled ? 'bg-emerald-500/20 text-emerald-200' : 'bg-white/10 text-gray-300'
+          }`}>
           {enabled ? 'Active' : 'Inactive'}
         </div>
       </div>
@@ -700,11 +704,10 @@ function WeeklyDigestSettings({
           <button
             onClick={handleToggle}
             disabled={loading || (!email && !enabled)}
-            className={`inline-flex items-center gap-2 rounded-lg px-5 py-2 text-sm font-medium transition-colors disabled:opacity-50 ${
-              enabled
+            className={`inline-flex items-center gap-2 rounded-lg px-5 py-2 text-sm font-medium transition-colors disabled:opacity-50 ${enabled
                 ? 'bg-red-500/20 text-red-200 hover:bg-red-500/30'
                 : 'bg-emerald-600 text-white hover:bg-emerald-500'
-            }`}
+              }`}
           >
             {loading ? 'Saving...' : enabled ? 'Disable' : 'Enable'}
           </button>

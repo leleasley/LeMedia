@@ -4,6 +4,7 @@ import { useState } from "react";
 import useSWR from "swr";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { csrfFetch } from "@/lib/csrf-client";
+import { ConfirmModal, useConfirm } from "@/components/Common/ConfirmModal";
 
 const fetcher = (url: string) =>
   fetch(url, { credentials: "include", cache: "no-store" }).then(r => r.json());
@@ -29,9 +30,11 @@ export function TelegramBotPanel() {
   const toast = useToast();
   const { data, isLoading, mutate } = useSWR<LinkStatus>("/api/telegram/link", fetcher);
   const [unlinking, setUnlinking] = useState(false);
+  const { confirm, modalProps } = useConfirm();
 
   async function handleUnlink() {
-    if (!confirm("Are you sure you want to unlink your Telegram account?")) return;
+    const ok = await confirm("Are you sure you want to unlink your Telegram account?", { title: "Unlink Telegram", destructive: true, confirmLabel: "Unlink" });
+    if (!ok) return;
     setUnlinking(true);
     try {
       const res = await csrfFetch("/api/telegram/link", { method: "DELETE" });
@@ -49,6 +52,7 @@ export function TelegramBotPanel() {
 
   return (
     <div className="space-y-6">
+      <ConfirmModal {...modalProps} />
       {/* Header */}
       <div>
         <h2 className="text-lg font-semibold text-white">Telegram Bot</h2>

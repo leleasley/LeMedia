@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { useToast } from "@/components/Providers/ToastProvider";
 import {
   CheckSquare,
   Square,
@@ -33,6 +34,7 @@ export function BulkActionsToolbar({
 }: BulkActionsToolbarProps) {
   const [loading, setLoading] = useState(false);
   const [showListPicker, setShowListPicker] = useState(false);
+  const toast = useToast();
 
   const handleBulkRequest = useCallback(async () => {
     if (selectedItems.length === 0 || loading) return;
@@ -57,14 +59,14 @@ export function BulkActionsToolbar({
       }
 
       const result = await res.json();
-      alert(`Created ${result.created} request(s). ${result.skipped} skipped (already requested).`);
+      toast.success(`Created ${result.created} request(s). ${result.skipped} skipped (already requested).`);
       onClear();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to create requests");
+      toast.error(err instanceof Error ? err.message : "Failed to create requests");
     } finally {
       setLoading(false);
     }
-  }, [selectedItems, loading, onClear]);
+  }, [selectedItems, loading, onClear, toast]);
 
   if (selectedItems.length === 0) return null;
 
