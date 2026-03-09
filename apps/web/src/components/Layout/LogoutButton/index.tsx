@@ -3,6 +3,7 @@
 import { LogOut } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/components/Providers/ToastProvider";
+import { performLogout } from "@/lib/logout-client";
 
 interface LogoutButtonProps {
     className?: string;
@@ -20,8 +21,8 @@ export function LogoutButton({ className, variant = 'default', onClick }: Logout
         onClick?.();
         setIsLoading(true);
         try {
-            // Force a top-level navigation so the server can set/clear cookies and redirect to /login
-            window.location.href = '/logout';
+            // Submit a POST form with CSRF token for secure logout
+            performLogout();
         } catch (error) {
             toast.error('Logout failed. Redirecting to login...');
             window.location.href = '/login';

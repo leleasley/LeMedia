@@ -40,7 +40,7 @@ export function SessionResetModal() {
 
   const onContinue = () => {
     COOKIE_NAMES.forEach(deleteCookie);
-    window.location.assign("/logout");
+    window.location.assign("/login");
   };
 
   return (
@@ -50,7 +50,7 @@ export function SessionResetModal() {
         {/* Animated gradient border glow */}
         <div className="absolute -inset-[1px] rounded-2xl bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-500 opacity-60 blur-sm animate-pulse" />
         <div className="absolute -inset-[1px] rounded-2xl bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-500 opacity-30" />
-        
+
         {/* Main modal container */}
         <div className="relative w-full rounded-2xl bg-gradient-to-b from-gray-900/95 via-gray-900/98 to-gray-950 border border-white/10 shadow-[0_0_50px_rgba(59,130,246,0.15)] backdrop-blur-2xl overflow-hidden p-6 text-center">
           <div className="relative mb-4">
@@ -65,8 +65,8 @@ export function SessionResetModal() {
           <p className="mt-3 text-sm text-gray-400 leading-relaxed">
             Your session has been refreshed for security. Click continue to clear local session data and sign in again.
           </p>
-          <button 
-            className="mt-6 w-full rounded-xl px-5 py-3 text-sm font-semibold text-white bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 shadow-lg shadow-blue-500/25 transition-all duration-200" 
+          <button
+            className="mt-6 w-full rounded-xl px-5 py-3 text-sm font-semibold text-white bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 shadow-lg shadow-blue-500/25 transition-all duration-200"
             onClick={onContinue}
           >
             Continue

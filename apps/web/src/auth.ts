@@ -88,7 +88,7 @@ export async function getUser(): Promise<AppUser> {
 
   const { groups, isAdmin } = dbUser;
 
-  if (process.env.AUTH_DEBUG === "1") {
+  if (process.env.AUTH_DEBUG === "1" && process.env.NODE_ENV !== "production") {
     logger.debug("[AUTH] session verified", { verified: !!session });
     logger.debug("[AUTH] username", { username: username || "(none)" });
     logger.debug("[AUTH] groups", { groups });

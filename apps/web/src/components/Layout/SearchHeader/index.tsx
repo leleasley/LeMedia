@@ -6,6 +6,7 @@ import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import Link from "next/link";
 import { getAvatarAlt, getAvatarSrc } from "@/lib/avatar";
 import { NotificationBell } from "@/components/Notifications/NotificationBell";
+import { performLogout } from "@/lib/logout-client";
 
 type ProfileSummary = {
     username: string;
@@ -353,7 +354,7 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
                                         e.preventDefault();
                                         setMenuOpen(false);
                                         setTimeout(() => {
-                                            window.location.assign('/logout');
+                                            performLogout();
                                         }, 100);
                                     }}
                                     className="ios-pressable flex items-center gap-3 px-4 py-2.5 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors w-full text-left"

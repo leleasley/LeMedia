@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getActiveOidcProvider, getSetting, revokeSessionByJti } from "@/db";
 import { getCookieBase, getRequestContext, isSameOriginRequest } from "@/lib/proxy";
+import { isValidCsrfToken } from "@/lib/csrf";
 import { verifySessionToken } from "@/lib/session";
 import { logger } from "@/lib/logger";
 
@@ -18,7 +19,14 @@ function sanitizeFrom(base: string, raw: string | null): string {
   }
 }
 
+// GET /logout — fallback for bookmarks or direct navigation
 export async function GET(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const base = ctx.base;
+  return NextResponse.redirect(new URL("/login", base));
+}
+
+export async function POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   const base = ctx.base;
   const oidcConfig = await getActiveOidcProvider();
@@ -33,7 +41,7 @@ export async function GET(req: NextRequest) {
       // ignore revoke errors during logout
     }
   }
-  
+
   // Check for Authelia session - if present, we need to logout from Authelia too
   const autheliaSession = req.cookies.get("authelia_session")?.value;
   const autheliaLogoutUrl = await getSetting("authelia_logout_url");
@@ -44,9 +52,27 @@ export async function GET(req: NextRequest) {
   logger.debug("[LOGOUT] Authelia session present", { present: !!autheliaSession });
   logger.debug("[LOGOUT] Authelia logout URL configured", { url: autheliaLogoutUrl || "(none)" });
 
-  const fromPath = isSameOriginRequest(req, base) ? sanitizeFrom(base, req.headers.get("referer")) : "/";
+  // Validate origin + CSRF
+  if (!isSameOriginRequest(req, base)) {
+    return NextResponse.json({ error: "Invalid origin" }, { status: 403 });
+  }
+
+  let csrfToken: string | null = null;
+  const contentType = req.headers.get("content-type") || "";
+  if (contentType.includes("application/x-www-form-urlencoded")) {
+    const formData = await req.formData();
+    csrfToken = formData.get("csrf_token")?.toString() || null;
+  } else {
+    csrfToken = req.headers.get("x-csrf-token") || req.headers.get("x-xsrf-token") || null;
+  }
+
+  if (!isValidCsrfToken(req, csrfToken)) {
+    return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
+  }
+
+  const fromPath = sanitizeFrom(base, req.headers.get("referer"));
   let redirectTarget = new URL("/login", base);
-  
+
   // Priority 1: If Authelia is being used and logout URL is configured, redirect there
   if (autheliaSession && autheliaLogoutUrl) {
     try {
@@ -70,10 +96,10 @@ export async function GET(req: NextRequest) {
       // fallback to local logout redirect
     }
   }
-  
+
   const res = NextResponse.redirect(redirectTarget);
   const cookieBase = getCookieBase(ctx, true);
-  
+
   // Build cookie deletion string - must match EXACTLY how cookies were set during login
   // IMPORTANT: If domain was not set during login, we must NOT include Domain attribute
   const buildDeleteCookie = (name: string, httpOnly: boolean, includeDomain: boolean) => {
@@ -156,12 +182,12 @@ export async function GET(req: NextRequest) {
   res.headers.append("Set-Cookie", buildSetCookie("lemedia_flash", "logged-out", 120, true));
   res.headers.append("Set-Cookie", buildSetCookie("lemedia_login_redirect", fromPath || "/", 60 * 30, true));
   res.headers.append("Set-Cookie", buildSetCookie("lemedia_force_login", "1", 60 * 30, true));
-  
+
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, private");
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
 
   logger.debug("[LOGOUT] Set-Cookie headers being sent", { cookies: res.headers.getSetCookie() });
-  
+
   return res;
 }

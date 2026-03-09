@@ -15,11 +15,12 @@ is created on login and destroyed on logout.
 
 | File | Purpose |
 |------|---------|
-| `app/logout/route.ts` | **CRITICAL** - Handles logout, cookie clearing |
+| `app/logout/route.ts` | **CRITICAL** - Handles logout (POST), cookie clearing |
 | `app/api/login/route.ts` | Handles login, creates session token |
 | `src/lib/session.ts` | JWT token creation/verification |
 | `src/lib/proxy.ts` | Cookie configuration (domain, secure, sameSite) |
 | `src/auth.ts` | Server-side auth helpers (`getUser`, `requireUser`) |
+| `src/lib/logout-client.ts` | Client-side logout helper (submits POST form with CSRF) |
 
 ## Cookie Configuration
 
@@ -58,8 +59,11 @@ getCookieBase(ctx, httpOnly) → {
 
 ## Logout Route - CRITICAL IMPLEMENTATION DETAILS
 
-The logout route (`app/logout/route.ts`) uses **raw `Set-Cookie` headers** exclusively.
-This is intentional and required for proper cookie clearing.
+The logout route (`app/logout/route.ts`) is a **POST** endpoint that requires CSRF
+validation. A GET fallback redirects to `/login` for bookmarks/direct navigation.
+
+Client-side logout is triggered via `performLogout()` from `src/lib/logout-client.ts`,
+which submits a hidden form with the CSRF token.
 
 ### Why Raw Headers?
 
@@ -208,5 +212,5 @@ This will log session token presence, verification results, and user info to the
 
 ---
 
-**Last Updated**: January 2026
+**Last Updated**: March 2026
 **Author**: Initial implementation and documentation
