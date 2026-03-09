@@ -87,9 +87,15 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
     // Load recent searches from localStorage once per user
     useEffect(() => {
         const items = loadRecentSearches(profile?.username);
-        if (items.length) {
-            setRecentSearches(items);
-        }
+        const id = window.setTimeout(() => {
+            setRecentSearches((prev) => {
+                if (prev.length === items.length && prev.every((item, index) => item === items[index])) {
+                    return prev;
+                }
+                return items;
+            });
+        }, 0);
+        return () => window.clearTimeout(id);
     }, [profile?.username]);
 
     // Close menus on outside click
