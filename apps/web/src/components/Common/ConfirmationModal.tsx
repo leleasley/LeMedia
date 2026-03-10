@@ -47,7 +47,7 @@ export function ConfirmationModal({
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xl animate-in fade-in duration-300"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-xl overflow-y-auto animate-in fade-in duration-300"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -55,16 +55,16 @@ export function ConfirmationModal({
       {/* Outer wrapper for animated gradient border */}
       <div className="relative w-full max-w-md animate-in zoom-in-95 fade-in duration-300">
         {/* Animated gradient border glow */}
-        <div className={`absolute -inset-[1px] rounded-2xl bg-gradient-to-r ${gradientColors[variant]} opacity-60 blur-sm animate-pulse`} />
-        <div className={`absolute -inset-[1px] rounded-2xl bg-gradient-to-r ${gradientColors[variant]} opacity-30`} />
+        <div className={`absolute -inset-[1px] rounded-t-2xl sm:rounded-2xl bg-gradient-to-r ${gradientColors[variant]} opacity-60 blur-sm animate-pulse`} />
+        <div className={`absolute -inset-[1px] rounded-t-2xl sm:rounded-2xl bg-gradient-to-r ${gradientColors[variant]} opacity-30`} />
         
         {/* Main modal container */}
         <div 
-          className="relative w-full rounded-2xl bg-gradient-to-b from-gray-900/95 via-gray-900/98 to-gray-950 border border-white/10 shadow-2xl backdrop-blur-2xl overflow-hidden"
+          className="relative w-full rounded-t-2xl sm:rounded-2xl bg-gradient-to-b from-gray-900/95 via-gray-900/98 to-gray-950 border border-white/10 shadow-2xl backdrop-blur-2xl overflow-hidden max-h-[92dvh] sm:max-h-[85vh]"
           role="dialog"
           aria-modal="true"
         >
-          <div className="p-6">
+          <div className="p-5 sm:p-6 overflow-y-auto">
             <div className="flex items-start gap-4">
               {/* Icon with glow effect */}
               <div className="relative flex-shrink-0">

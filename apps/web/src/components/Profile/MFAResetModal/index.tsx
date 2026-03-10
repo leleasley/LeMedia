@@ -57,8 +57,8 @@ export function MFAResetModal() {
             </button>
 
             {isOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-                    <div className="rounded-2xl glass-strong border border-white/10 p-6 md:p-8 shadow-2xl max-w-sm w-full mx-4">
+                <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 overflow-y-auto">
+                    <div className="rounded-t-2xl sm:rounded-2xl glass-strong border border-white/10 p-5 md:p-8 shadow-2xl max-w-sm w-full max-h-[92dvh] sm:max-h-[85vh] overflow-y-auto">
                         <div className="flex items-center gap-3 mb-4">
                             <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-amber-500/20">
                                 <span className="text-lg">⚠️</span>

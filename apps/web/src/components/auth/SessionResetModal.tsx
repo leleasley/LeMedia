@@ -44,15 +44,15 @@ export function SessionResetModal() {
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-xl p-4 animate-in fade-in duration-300">
+    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-xl p-0 sm:p-4 overflow-y-auto animate-in fade-in duration-300">
       {/* Outer wrapper for animated gradient border */}
       <div className="relative w-full max-w-md animate-in zoom-in-95 fade-in duration-300">
         {/* Animated gradient border glow */}
-        <div className="absolute -inset-[1px] rounded-2xl bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-500 opacity-60 blur-sm animate-pulse" />
-        <div className="absolute -inset-[1px] rounded-2xl bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-500 opacity-30" />
+        <div className="absolute -inset-[1px] rounded-t-2xl sm:rounded-2xl bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-500 opacity-60 blur-sm animate-pulse" />
+        <div className="absolute -inset-[1px] rounded-t-2xl sm:rounded-2xl bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-500 opacity-30" />
 
         {/* Main modal container */}
-        <div className="relative w-full rounded-2xl bg-gradient-to-b from-gray-900/95 via-gray-900/98 to-gray-950 border border-white/10 shadow-[0_0_50px_rgba(59,130,246,0.15)] backdrop-blur-2xl overflow-hidden p-6 text-center">
+        <div className="relative w-full rounded-t-2xl sm:rounded-2xl bg-gradient-to-b from-gray-900/95 via-gray-900/98 to-gray-950 border border-white/10 shadow-[0_0_50px_rgba(59,130,246,0.15)] backdrop-blur-2xl overflow-hidden p-5 sm:p-6 text-center max-h-[92dvh] sm:max-h-[85vh] overflow-y-auto">
           <div className="relative mb-4">
             <div className="absolute inset-0 rounded-xl bg-blue-500 opacity-20 blur-lg mx-auto w-fit" />
             <div className="relative mx-auto w-fit rounded-xl p-3 bg-blue-500/10 border border-blue-500/20">

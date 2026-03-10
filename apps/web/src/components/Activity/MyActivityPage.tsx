@@ -273,11 +273,11 @@ function WatchHistoryModal({
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/70 backdrop-blur-sm overflow-y-auto"
       onClick={onClose}
     >
       <div 
-        className="glass-strong rounded-3xl border border-white/10 w-full max-w-3xl max-h-[80vh] overflow-hidden flex flex-col"
+        className="glass-strong rounded-t-3xl sm:rounded-3xl border border-white/10 w-full max-w-3xl max-h-[92dvh] sm:max-h-[80vh] overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -445,11 +445,11 @@ function AchievementsModal({ achievement, onClose }: { achievement: Achievement;
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/70 backdrop-blur-sm overflow-y-auto"
       onClick={onClose}
     >
       <div
-        className="glass-strong rounded-3xl border border-white/10 w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col"
+        className="glass-strong rounded-t-3xl sm:rounded-3xl border border-white/10 w-full max-w-3xl max-h-[92dvh] sm:max-h-[85vh] overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-6 border-b border-white/10 flex items-center justify-between">

@@ -81,15 +81,15 @@ export function ReportIssueModal(props: {
   if (!open) return null;
 
   const content = (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 backdrop-blur-xl p-4 animate-in fade-in duration-300">
+    <div className="fixed inset-0 z-[1000] flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-xl p-0 sm:p-4 overflow-y-auto animate-in fade-in duration-300">
       {/* Outer wrapper for animated gradient border */}
       <div className="relative w-full max-w-2xl animate-in zoom-in-95 fade-in duration-300">
         {/* Animated gradient border glow */}
-        <div className="absolute -inset-[1px] rounded-2xl bg-gradient-to-r from-violet-500 via-purple-500 to-fuchsia-500 opacity-60 blur-sm animate-pulse" />
-        <div className="absolute -inset-[1px] rounded-2xl bg-gradient-to-r from-violet-500 via-purple-500 to-fuchsia-500 opacity-30" />
+        <div className="absolute -inset-[1px] rounded-t-2xl sm:rounded-2xl bg-gradient-to-r from-violet-500 via-purple-500 to-fuchsia-500 opacity-60 blur-sm animate-pulse" />
+        <div className="absolute -inset-[1px] rounded-t-2xl sm:rounded-2xl bg-gradient-to-r from-violet-500 via-purple-500 to-fuchsia-500 opacity-30" />
         
         {/* Main modal container */}
-        <div className="relative w-full rounded-2xl bg-gradient-to-b from-gray-900/95 via-gray-900/98 to-gray-950 border border-white/10 shadow-[0_0_50px_rgba(139,92,246,0.15)] backdrop-blur-2xl overflow-hidden">
+        <div className="relative w-full rounded-t-2xl sm:rounded-2xl bg-gradient-to-b from-gray-900/95 via-gray-900/98 to-gray-950 border border-white/10 shadow-[0_0_50px_rgba(139,92,246,0.15)] backdrop-blur-2xl overflow-hidden max-h-[92dvh] sm:max-h-[90vh] flex flex-col">
           {/* Header */}
           <div className="relative px-6 py-5">
             <div className="absolute inset-0 bg-gradient-to-br from-violet-500/5 via-purple-500/5 to-fuchsia-500/5" />
@@ -121,7 +121,7 @@ export function ReportIssueModal(props: {
           </div>
 
           {/* Content */}
-          <div className="px-6 pb-6 space-y-5">
+          <div className="px-5 sm:px-6 pb-5 sm:pb-6 space-y-5 overflow-y-auto">
             {/* Category selection */}
             <div className="space-y-2">
               <label className="flex items-center gap-2 text-sm font-semibold text-gray-200">

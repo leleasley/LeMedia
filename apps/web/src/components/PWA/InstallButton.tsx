@@ -85,8 +85,8 @@ export function PWAInstallButton({ mobileMenu = false }: { mobileMenu?: boolean 
     if (!showIOSModal || !isIOS || !mounted) return null;
 
     return createPortal(
-      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-        <div className="max-h-[80vh] w-full max-w-md overflow-y-auto rounded-2xl bg-gray-900 p-6 border border-white/10">
+      <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4 overflow-y-auto">
+        <div className="max-h-[92dvh] sm:max-h-[80vh] w-full max-w-md overflow-y-auto rounded-t-2xl sm:rounded-2xl bg-gray-900 p-5 sm:p-6 border border-white/10">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-bold text-white">Install LeMedia on iOS</h2>
             <button

@@ -65,6 +65,20 @@ validation. A GET fallback redirects to `/login` for bookmarks/direct navigation
 Client-side logout is triggered via `performLogout()` from `src/lib/logout-client.ts`,
 which submits a hidden form with the CSRF token.
 
+### Redirect status requirement (important)
+
+For successful `POST /logout`, the route must return **303 See Other** when redirecting.
+
+- `303` forces the browser to follow the redirect using `GET`
+- `307/308` preserve the original `POST` method and can break SSO logout redirects
+- In iOS PWA/Safari flows, a preserved `POST` redirect can surface as "Safari can't open the page because the address is invalid"
+
+Example:
+
+```typescript
+const res = NextResponse.redirect(redirectTarget, { status: 303 });
+```
+
 ### Why Raw Headers?
 
 1. **Next.js cookies API limitation**: When using `res.cookies.set()`, Next.js manages cookies
@@ -188,10 +202,11 @@ This will log session token presence, verification results, and user info to the
 1. Login to the application
 2. Open browser DevTools → Network tab
 3. Click logout
-4. Check the response headers for `Set-Cookie` entries
-5. Verify `lemedia_session` cookie is being cleared (Max-Age=0, Expires in past)
-6. Check that you're redirected to `/login`
-7. Verify the flash message "You have logged out" appears
+4. Verify `POST /logout` returns **303 See Other**
+5. Check the response headers for `Set-Cookie` entries
+6. Verify `lemedia_session` cookie is being cleared (Max-Age=0, Expires in past)
+7. Check the `Location` header points to `/login` or the configured IdP logout URL
+8. Verify the flash message "You have logged out" appears
 
 ## Common Issues
 
@@ -199,6 +214,11 @@ This will log session token presence, verification results, and user info to the
 - Check if cookie domain matches between login and logout
 - Verify both host-only and domain variants are being cleared
 - Look for proxy stripping `Set-Cookie` headers
+
+### "Safari says the address is invalid after logout"
+- Confirm `POST /logout` responds with `303` (not `307` or `308`)
+- If using Authelia/OIDC logout, ensure redirect parameters point to a valid HTTPS URL
+- Check reverse-proxy `X-Forwarded-Proto` and `X-Forwarded-Host` values are correct
 
 ### "Flash messages don't show"
 - Check if cookie is HttpOnly (should be)
@@ -212,5 +232,5 @@ This will log session token presence, verification results, and user info to the
 
 ---
 
-**Last Updated**: March 2026
+**Last Updated**: 10 March 2026
 **Author**: Initial implementation and documentation

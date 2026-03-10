@@ -97,7 +97,8 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const res = NextResponse.redirect(redirectTarget);
+  // Use 303 so browsers follow with GET after POST /logout.
+  const res = NextResponse.redirect(redirectTarget, { status: 303 });
   const cookieBase = getCookieBase(ctx, true);
 
   // Build cookie deletion string - must match EXACTLY how cookies were set during login

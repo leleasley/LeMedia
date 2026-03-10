@@ -89,13 +89,13 @@ export function AuthResetModal({ userId, isOpen, onClose }: AuthResetModalProps)
               leaveFrom="opacity-100 translate-y-0 sm:scale-100"
               leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
             >
-              <Dialog.Panel className="relative sm:my-8 sm:w-full sm:max-w-lg">
+              <Dialog.Panel className="relative w-full max-w-lg sm:my-8 max-h-[92dvh] sm:max-h-[85vh]">
                 {/* Animated gradient border glow */}
-                <div className="absolute -inset-[1px] rounded-2xl bg-gradient-to-r from-red-500 via-rose-500 to-orange-500 opacity-60 blur-sm animate-pulse" />
-                <div className="absolute -inset-[1px] rounded-2xl bg-gradient-to-r from-red-500 via-rose-500 to-orange-500 opacity-30" />
+                <div className="absolute -inset-[1px] rounded-t-2xl sm:rounded-2xl bg-gradient-to-r from-red-500 via-rose-500 to-orange-500 opacity-60 blur-sm animate-pulse" />
+                <div className="absolute -inset-[1px] rounded-t-2xl sm:rounded-2xl bg-gradient-to-r from-red-500 via-rose-500 to-orange-500 opacity-30" />
                 
                 {/* Main modal container */}
-                <div className="relative transform overflow-hidden rounded-2xl bg-gradient-to-b from-gray-900/95 via-gray-900/98 to-gray-950 border border-white/10 px-5 pb-5 pt-5 text-left shadow-[0_0_50px_rgba(239,68,68,0.15)] backdrop-blur-2xl sm:p-6">
+                <div className="relative transform overflow-hidden rounded-t-2xl sm:rounded-2xl bg-gradient-to-b from-gray-900/95 via-gray-900/98 to-gray-950 border border-white/10 px-5 pb-5 pt-5 text-left shadow-[0_0_50px_rgba(239,68,68,0.15)] backdrop-blur-2xl sm:p-6 overflow-y-auto max-h-[92dvh] sm:max-h-[85vh]">
                   <div className="absolute right-0 top-0 pr-4 pt-4 sm:pr-5 sm:pt-5">
                     <button
                       type="button"

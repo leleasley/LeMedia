@@ -28,7 +28,7 @@ export function ConfirmModal({
 
   return (
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-xl p-4 animate-in fade-in duration-300"
+      className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-xl p-0 sm:p-4 overflow-y-auto animate-in fade-in duration-300"
       onClick={(e) => {
         if (e.target === e.currentTarget) onCancel();
       }}
@@ -40,12 +40,12 @@ export function ConfirmModal({
       {/* Outer wrapper for animated gradient border */}
       <div className="relative w-full max-w-md animate-in zoom-in-95 fade-in duration-300">
         {/* Animated gradient border glow */}
-        <div className={`absolute -inset-[1px] rounded-2xl ${destructive ? "bg-gradient-to-r from-red-500 via-rose-500 to-orange-500" : "bg-gradient-to-r from-amber-500 via-orange-500 to-yellow-500"} opacity-60 blur-sm animate-pulse`} />
-        <div className={`absolute -inset-[1px] rounded-2xl ${destructive ? "bg-gradient-to-r from-red-500 via-rose-500 to-orange-500" : "bg-gradient-to-r from-amber-500 via-orange-500 to-yellow-500"} opacity-30`} />
+        <div className={`absolute -inset-[1px] rounded-t-2xl sm:rounded-2xl ${destructive ? "bg-gradient-to-r from-red-500 via-rose-500 to-orange-500" : "bg-gradient-to-r from-amber-500 via-orange-500 to-yellow-500"} opacity-60 blur-sm animate-pulse`} />
+        <div className={`absolute -inset-[1px] rounded-t-2xl sm:rounded-2xl ${destructive ? "bg-gradient-to-r from-red-500 via-rose-500 to-orange-500" : "bg-gradient-to-r from-amber-500 via-orange-500 to-yellow-500"} opacity-30`} />
         
         {/* Main modal container */}
-        <div className="relative w-full rounded-2xl bg-gradient-to-b from-gray-900/95 via-gray-900/98 to-gray-950 border border-white/10 shadow-2xl backdrop-blur-2xl overflow-hidden">
-          <div className="p-6">
+        <div className="relative w-full rounded-t-2xl sm:rounded-2xl bg-gradient-to-b from-gray-900/95 via-gray-900/98 to-gray-950 border border-white/10 shadow-2xl backdrop-blur-2xl overflow-hidden max-h-[92dvh] sm:max-h-[85vh]">
+          <div className="p-5 sm:p-6 overflow-y-auto">
             <div className="flex items-start gap-4">
               {/* Icon with glow effect */}
               <div className="relative flex-shrink-0">

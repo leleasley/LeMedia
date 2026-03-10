@@ -750,8 +750,8 @@ export function AdminUsersPageClient() {
 
       {/* Delete Modal */}
       {deleteModal.isOpen && deleteModal.user && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm transition-all">
-          <div className="w-full max-w-sm rounded-xl border border-white/10 bg-slate-900 p-6 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4 backdrop-blur-sm transition-all overflow-y-auto">
+          <div className="w-full max-w-sm rounded-t-xl sm:rounded-xl border border-white/10 bg-slate-900 p-5 sm:p-6 shadow-2xl max-h-[92dvh] sm:max-h-[85vh] overflow-y-auto">
             <h2 className="text-lg font-bold text-white">Delete User</h2>
             <p className="mt-2 text-sm text-gray-400">
               Are you sure you want to delete <span className="font-semibold text-white">{deleteModal.user.displayName || deleteModal.user.email}</span>? This action cannot be undone.

@@ -197,8 +197,8 @@ export function WebPushPrompt() {
   if (!shown) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="glass-strong rounded-2xl p-6 max-w-md w-full border border-slate-700/50 shadow-2xl animate-in fade-in zoom-in duration-300">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4 overflow-y-auto">
+      <div className="glass-strong rounded-t-2xl sm:rounded-2xl p-5 sm:p-6 max-w-md w-full border border-slate-700/50 shadow-2xl animate-in fade-in zoom-in duration-300 max-h-[92dvh] sm:max-h-[85vh] overflow-y-auto">
         <div className="flex items-start gap-4">
           <div className="bg-blue-500/20 p-3 rounded-lg flex-shrink-0">
             <Bell className="h-6 w-6 text-blue-400" />

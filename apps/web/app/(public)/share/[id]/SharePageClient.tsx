@@ -347,11 +347,11 @@ export function SharePageClient({
       {/* Trailer Modal */}
       {trailerEmbedUrl && trailerOpen && (
         <div
-          className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+          className="fixed inset-0 z-[1000] flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-0 sm:p-4 overflow-y-auto animate-in fade-in duration-200"
           onClick={() => setTrailerOpen(false)}
         >
           <div
-            className="w-full max-w-5xl rounded-xl bg-slate-900 border border-white/10 shadow-2xl p-4 animate-in fade-in zoom-in-95 duration-200"
+            className="w-full max-w-5xl rounded-t-xl sm:rounded-xl bg-slate-900 border border-white/10 shadow-2xl p-3 sm:p-4 animate-in fade-in zoom-in-95 duration-200 max-h-[92dvh] sm:max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">

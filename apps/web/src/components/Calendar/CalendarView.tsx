@@ -809,8 +809,8 @@ function AgendaView({ events, onEventClick, getEventColor, getEventIcon, getEven
 // Day View Modal
 function DayViewModal({ date, events, onClose, onEventClick, getEventColor, getEventIcon }: any) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-gray-900 border border-white/10 rounded-2xl max-w-2xl w-full max-h-[80vh] shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/70 backdrop-blur-sm overflow-y-auto" onClick={onClose}>
+      <div className="bg-gray-900 border border-white/10 rounded-t-2xl sm:rounded-2xl max-w-2xl w-full max-h-[92dvh] sm:max-h-[80vh] shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
         <div className="p-6 border-b border-white/10">
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-bold text-white">
@@ -864,8 +864,8 @@ function EventDetailsModal({ event, onClose, getEventColor, getEventIcon, getEve
     : null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-gray-900 border border-white/10 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-sm overflow-y-auto" onClick={onClose}>
+      <div className="bg-gray-900 border border-white/10 rounded-t-2xl sm:rounded-2xl max-w-md w-full max-h-[92dvh] sm:max-h-[85vh] shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200 flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="relative aspect-video bg-gray-800">
           {posterSrc ? (
             <Image
@@ -896,7 +896,7 @@ function EventDetailsModal({ event, onClose, getEventColor, getEventIcon, getEve
           </div>
         </div>
 
-        <div className="p-6 space-y-4">
+        <div className="p-6 space-y-4 overflow-y-auto">
           <div className="flex items-center gap-2 text-sm flex-wrap">
             <span className={clsx("px-2 py-1 rounded-full border", getEventColor(event.type))}>
               {getEventTypeLabel(event).toUpperCase()}
