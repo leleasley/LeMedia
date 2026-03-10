@@ -1,27 +1,18 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 import Link from "next/link";
-import { getCookieConsent, setCookieConsent } from "@/lib/cookie-consent";
-import { X } from "lucide-react";
+import { getCookieConsent, setCookieConsent, subscribeCookieConsent } from "@/lib/cookie-consent";
 
 export function CookieConsentBanner() {
-  const [overrideConsent, setOverrideConsent] = useState<"accepted" | "declined" | null | undefined>(undefined);
-  const storedConsent = useSyncExternalStore(
-    () => () => {},
-    () => getCookieConsent(),
-    () => "accepted"
-  );
-  const consent = overrideConsent ?? storedConsent;
+  const consent = useSyncExternalStore(subscribeCookieConsent, getCookieConsent, () => null);
 
   const handleAccept = () => {
     setCookieConsent("accepted");
-    setOverrideConsent("accepted");
   };
 
   const handleDecline = () => {
     setCookieConsent("declined");
-    setOverrideConsent("declined");
   };
 
   if (consent !== null) {

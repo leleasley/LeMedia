@@ -5,6 +5,40 @@ export type CookieConsent = "accepted" | "declined" | null;
 
 const CONSENT_COOKIE_NAME = "lemedia_consent";
 const CONSENT_COOKIE_MAX_AGE = 365 * 24 * 60 * 60; // 1 year
+const CONSENT_CHANGED_EVENT = "lemedia:consent-changed";
+
+function emitConsentChanged(consent: CookieConsent): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent(CONSENT_CHANGED_EVENT, {
+      detail: { consent }
+    })
+  );
+}
+
+export function subscribeCookieConsent(onStoreChange: () => void): () => void {
+  if (typeof window === "undefined") {
+    return () => {};
+  }
+
+  const handleConsentChanged = () => {
+    onStoreChange();
+  };
+
+  const handleStorage = (event: StorageEvent) => {
+    if (event.key === CONSENT_COOKIE_NAME) {
+      onStoreChange();
+    }
+  };
+
+  window.addEventListener(CONSENT_CHANGED_EVENT, handleConsentChanged);
+  window.addEventListener("storage", handleStorage);
+
+  return () => {
+    window.removeEventListener(CONSENT_CHANGED_EVENT, handleConsentChanged);
+    window.removeEventListener("storage", handleStorage);
+  };
+}
 
 /**
  * Gets the current cookie consent status from localStorage
@@ -48,14 +82,7 @@ export function setCookieConsent(consent: "accepted" | "declined"): void {
     document.cookie = `${CONSENT_COOKIE_NAME}=${consent}; path=/; max-age=${maxAge}; SameSite=Lax`;
   }
   
-  // Dispatch custom event for other components to react to
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(
-      new CustomEvent("lemedia:consent-changed", {
-        detail: { consent }
-      })
-    );
-  }
+  emitConsentChanged(consent);
 }
 
 /**
@@ -73,6 +100,8 @@ export function clearCookieConsent(): void {
   if (typeof document !== "undefined") {
     document.cookie = `${CONSENT_COOKIE_NAME}=; path=/; max-age=0; SameSite=Lax`;
   }
+
+  emitConsentChanged(null);
 }
 
 /**

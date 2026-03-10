@@ -20,7 +20,7 @@ export default function CookiesPage() {
           <h1 className="text-4xl font-bold mb-8 text-white">Cookies Policy</h1>
 
           <p className="mb-6 text-gray-300">
-            <strong>Last Updated:</strong> February 2026
+            <strong>Last Updated:</strong> March 2026
           </p>
 
           <h2 className="text-2xl font-semibold mt-8 mb-4 text-white">Introduction</h2>
@@ -122,7 +122,12 @@ export default function CookiesPage() {
           </p>
           <ol className="list-decimal list-inside mb-4 text-gray-300 space-y-2">
             <li>Looking for the cookie banner on the login page</li>
-            <li>Accessing your account settings (coming soon)</li>
+            <li>
+              Accessing your account settings at{" "}
+              <Link href="/settings/profile/general" className="text-blue-400 hover:text-blue-300">
+                /settings/profile/general
+              </Link>
+            </li>
             <li>Clearing your browser cookies and revisiting the app</li>
           </ol>
 

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import useSWR from "swr";
 import { Loader2, Film, Tv, RefreshCw } from "lucide-react";
 import { useToast } from "@/components/Providers/ToastProvider";
@@ -15,6 +15,12 @@ import { Switch } from "@headlessui/react";
 import { PasswordPolicyChecklist } from "@/components/Common/PasswordPolicyChecklist";
 import { getPasswordPolicyResult } from "@/lib/password-policy";
 import { formatDate } from "@/lib/dateFormat";
+import {
+  clearCookieConsent,
+  getCookieConsent,
+  setCookieConsent,
+  subscribeCookieConsent,
+} from "@/lib/cookie-consent";
 
 type ProfileResponse = {
   user: {
@@ -134,6 +140,7 @@ export function ProfileSettings({
   const [tokenPasswordValue, setTokenPasswordValue] = useState("");
   const [tokenPasswordError, setTokenPasswordError] = useState<string | null>(null);
   const [tokenPasswordAction, setTokenPasswordAction] = useState<null | ((password: string) => Promise<void>)>(null);
+  const cookieConsent = useSyncExternalStore(subscribeCookieConsent, getCookieConsent, () => null);
   const showPassword = section === "all" || section === "security";
 
   const fetcher = async (url: string) => {
@@ -393,6 +400,17 @@ export function ProfileSettings({
   }
 
   const [syncing, setSyncing] = useState(false);
+
+  function handleCookiePreference(consent: "accepted" | "declined") {
+    setCookieConsent(consent);
+    toast.success(consent === "accepted" ? "Cookie preference set to accepted" : "Cookie preference set to declined");
+  }
+
+  function handleResetCookiePreference() {
+    clearCookieConsent();
+    toast.success("Cookie preference reset. The banner will appear again on sign-in.");
+  }
+
   async function handleSync() {
     setSyncing(true);
     try {
@@ -657,6 +675,54 @@ export function ProfileSettings({
                         onChange={(val) => updateField("originalLanguage", val)}
                         label="Original Language" 
                     />
+                </div>
+
+                <div className="border-t border-white/10 my-6"></div>
+                <h3 className="text-lg font-bold text-foreground mb-4">Cookie Preferences</h3>
+                <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 md:p-5">
+                  <p className="text-sm text-foreground/70">
+                    Essential cookies are always required for authentication and security.
+                    You can choose whether non-essential cookies are allowed.
+                  </p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleCookiePreference("accepted")}
+                      className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                        cookieConsent === "accepted"
+                          ? "border-emerald-400/60 bg-emerald-500/20 text-emerald-200"
+                          : "border-white/15 bg-white/5 text-foreground/80 hover:bg-white/10"
+                      }`}
+                    >
+                      Accept non-essential
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleCookiePreference("declined")}
+                      className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                        cookieConsent === "declined"
+                          ? "border-amber-400/60 bg-amber-500/20 text-amber-200"
+                          : "border-white/15 bg-white/5 text-foreground/80 hover:bg-white/10"
+                      }`}
+                    >
+                      Decline non-essential
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleResetCookiePreference}
+                      className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm font-medium text-foreground/80 transition-colors hover:bg-white/10"
+                    >
+                      Reset preference
+                    </button>
+                  </div>
+                  <p className="mt-3 text-xs text-foreground/60">
+                    Current preference: {cookieConsent === "accepted" ? "Accepted" : cookieConsent === "declined" ? "Declined" : "Not set"}
+                  </p>
+                  <p className="mt-1 text-xs text-foreground/60">
+                    <Link href="/cookies" className="text-blue-400 hover:text-blue-300">
+                      Read the Cookies Policy
+                    </Link>
+                  </p>
                 </div>
 
                 <div className="border-t border-white/10 my-6"></div>
