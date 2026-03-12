@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/auth";
 import { getJobRuntimeMetrics, getRunningJobNames } from "@/lib/jobs";
+import { buildJobMetricsSummary } from "@/lib/jobs-metrics-summary";
 
 export const dynamic = "force-dynamic";
 
@@ -10,23 +11,10 @@ export async function GET() {
 
   const metrics = getJobRuntimeMetrics();
   const runningJobs = getRunningJobNames();
-  const totalRuns = metrics.reduce((acc, item) => acc + item.totalRuns, 0);
-  const totalSuccess = metrics.reduce((acc, item) => acc + item.successRuns, 0);
-  const totalFailed = metrics.reduce((acc, item) => acc + item.failedRuns, 0);
-  const avgDurationMs =
-    metrics.length > 0
-      ? metrics.reduce((acc, item) => acc + item.avgDurationMs, 0) / metrics.length
-      : 0;
+  const summary = buildJobMetricsSummary(metrics);
 
   const res = NextResponse.json({
-    summary: {
-      totalJobsTracked: metrics.length,
-      totalRuns,
-      totalSuccess,
-      totalFailed,
-      successRate: totalRuns > 0 ? totalSuccess / totalRuns : 0,
-      avgDurationMs,
-    },
+    summary,
     metrics,
     runningJobs,
   });

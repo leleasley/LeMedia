@@ -5,11 +5,28 @@ export interface SearchResult {
   mediaType: "movie" | "tv";
   title: string;
   year: number | null;
+  releaseDate: string | null;
+  firstAirDate: string | null;
   overview: string | null;
   posterPath: string | null;
   requestStatus: string | null;
   available: boolean;
   voteAverage: number | null;
+}
+
+export interface FollowedMediaItem {
+  id: string;
+  mediaType: "movie" | "tv";
+  tmdbId: number;
+  title: string;
+  posterPath: string | null;
+  theatricalReleaseDate: string | null;
+  digitalReleaseDate: string | null;
+  notifyOnTheatrical: boolean;
+  notifyOnDigital: boolean;
+  notifiedTheatricalAt: string | null;
+  notifiedDigitalAt: string | null;
+  createdAt: string;
 }
 
 export interface RequestItem {
@@ -68,12 +85,140 @@ export async function searchMedia(query: string, apiToken: string): Promise<Sear
         : r.first_air_date
           ? parseInt(r.first_air_date.slice(0, 4))
           : null,
+      releaseDate: r.release_date ?? null,
+      firstAirDate: r.first_air_date ?? null,
       overview: r.overview ?? null,
       posterPath: r.poster_path ?? null,
       requestStatus: r.request_status ?? null,
       available: !!(r.available_in_jellyfin ?? r.available),
       voteAverage: typeof r.vote_average === "number" ? parseFloat(r.vote_average.toFixed(1)) : null
     }));
+}
+
+export async function listFollowing(apiToken: string): Promise<FollowedMediaItem[]> {
+  const res = await apiFetch("/api/following", apiToken);
+  if (!res.ok) throw new Error(`Failed to fetch following: ${res.status}`);
+  const body = await res.json().catch(() => ({})) as Record<string, unknown>;
+  const items = Array.isArray((body as any)?.items) ? (body as any).items : [];
+  return items.map((item: any) => ({
+    id: String(item.id),
+    mediaType: item.mediaType === "tv" ? "tv" : "movie",
+    tmdbId: Number(item.tmdbId),
+    title: String(item.title ?? "Unknown"),
+    posterPath: item.posterPath ? String(item.posterPath) : null,
+    theatricalReleaseDate: item.theatricalReleaseDate ? String(item.theatricalReleaseDate) : null,
+    digitalReleaseDate: item.digitalReleaseDate ? String(item.digitalReleaseDate) : null,
+    notifyOnTheatrical: Boolean(item.notifyOnTheatrical),
+    notifyOnDigital: Boolean(item.notifyOnDigital),
+    notifiedTheatricalAt: item.notifiedTheatricalAt ? String(item.notifiedTheatricalAt) : null,
+    notifiedDigitalAt: item.notifiedDigitalAt ? String(item.notifiedDigitalAt) : null,
+    createdAt: String(item.createdAt ?? ""),
+  }));
+}
+
+export async function followMedia(input: {
+  mediaType: "movie" | "tv";
+  tmdbId: number;
+  notifyOnTheatrical?: boolean;
+  notifyOnDigital?: boolean;
+}, apiToken: string): Promise<{ ok: boolean; item?: FollowedMediaItem; message?: string }> {
+  const res = await apiFetch("/api/following", apiToken, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  const body = await res.json().catch(() => ({})) as Record<string, unknown>;
+  if (!res.ok) {
+    return { ok: false, message: String((body as any)?.error ?? "Failed to follow media") };
+  }
+  const item = (body as any)?.item;
+  return {
+    ok: true,
+    item: item
+      ? {
+        id: String(item.id),
+        mediaType: item.mediaType === "tv" ? "tv" : "movie",
+        tmdbId: Number(item.tmdbId),
+        title: String(item.title ?? "Unknown"),
+        posterPath: item.posterPath ? String(item.posterPath) : null,
+        theatricalReleaseDate: item.theatricalReleaseDate ? String(item.theatricalReleaseDate) : null,
+        digitalReleaseDate: item.digitalReleaseDate ? String(item.digitalReleaseDate) : null,
+        notifyOnTheatrical: Boolean(item.notifyOnTheatrical),
+        notifyOnDigital: Boolean(item.notifyOnDigital),
+        notifiedTheatricalAt: item.notifiedTheatricalAt ? String(item.notifiedTheatricalAt) : null,
+        notifiedDigitalAt: item.notifiedDigitalAt ? String(item.notifiedDigitalAt) : null,
+        createdAt: String(item.createdAt ?? ""),
+      }
+      : undefined,
+  };
+}
+
+export async function unfollowMedia(input: {
+  id?: string;
+  mediaType?: "movie" | "tv";
+  tmdbId?: number;
+}, apiToken: string): Promise<{ ok: boolean; message?: string }> {
+  const res = await apiFetch("/api/following", apiToken, {
+    method: "DELETE",
+    body: JSON.stringify(input),
+  });
+  if (res.ok) return { ok: true };
+  const body = await res.json().catch(() => ({})) as Record<string, unknown>;
+  return { ok: false, message: String((body as any)?.error ?? "Failed to unfollow media") };
+}
+
+export async function getFollowingStatus(
+  mediaType: "movie" | "tv",
+  tmdbId: number,
+  apiToken: string
+): Promise<{ followed: boolean; item?: FollowedMediaItem | null }> {
+  const res = await apiFetch(`/api/following/status?mediaType=${mediaType}&tmdbId=${tmdbId}`, apiToken);
+  if (!res.ok) throw new Error(`Failed to fetch follow status: ${res.status}`);
+  const body = await res.json().catch(() => ({})) as Record<string, unknown>;
+  const item = (body as any)?.item;
+  return {
+    followed: Boolean((body as any)?.followed),
+    item: item
+      ? {
+        id: String(item.id),
+        mediaType: item.mediaType === "tv" ? "tv" : "movie",
+        tmdbId: Number(item.tmdbId),
+        title: String(item.title ?? "Unknown"),
+        posterPath: item.posterPath ? String(item.posterPath) : null,
+        theatricalReleaseDate: item.theatricalReleaseDate ? String(item.theatricalReleaseDate) : null,
+        digitalReleaseDate: item.digitalReleaseDate ? String(item.digitalReleaseDate) : null,
+        notifyOnTheatrical: Boolean(item.notifyOnTheatrical),
+        notifyOnDigital: Boolean(item.notifyOnDigital),
+        notifiedTheatricalAt: item.notifiedTheatricalAt ? String(item.notifiedTheatricalAt) : null,
+        notifiedDigitalAt: item.notifiedDigitalAt ? String(item.notifiedDigitalAt) : null,
+        createdAt: String(item.createdAt ?? ""),
+      }
+      : null,
+  };
+}
+
+export async function getMovieReleaseInfo(
+  tmdbId: number,
+  apiToken: string
+): Promise<{ theatricalReleaseDate: string | null; digitalReleaseDate: string | null }> {
+  const [movieRes, mediaInfoRes] = await Promise.all([
+    apiFetch(`/api/tmdb/movie/${tmdbId}`, apiToken),
+    apiFetch(`/api/media-info/movie/${tmdbId}`, apiToken),
+  ]);
+
+  let theatricalReleaseDate: string | null = null;
+  let digitalReleaseDate: string | null = null;
+
+  if (movieRes.ok) {
+    const movie = await movieRes.json().catch(() => ({})) as Record<string, unknown>;
+    theatricalReleaseDate = typeof movie.release_date === "string" ? movie.release_date : null;
+  }
+
+  if (mediaInfoRes.ok) {
+    const media = await mediaInfoRes.json().catch(() => ({})) as Record<string, unknown>;
+    digitalReleaseDate = typeof (media as any).digitalReleaseDate === "string" ? String((media as any).digitalReleaseDate) : null;
+  }
+
+  return { theatricalReleaseDate, digitalReleaseDate };
 }
 
 export async function requestMovie(tmdbId: number, apiToken: string): Promise<{ ok: boolean; message: string }> {

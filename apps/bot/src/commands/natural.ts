@@ -2,6 +2,7 @@ import { Context } from "grammy";
 import { getLinkedUser, isUserAdmin } from "../db";
 import { decryptSecret } from "../encryption";
 import { getServiceHealth, type ServiceDetail } from "../api";
+import { answerReleaseDateQuestion, replyFollowingUpdate, runFollowByQuery, runUnfollowByQuery } from "./follow";
 import { runSearch } from "./request";
 
 const SERVICES_SECRET_KEY = process.env.SERVICES_SECRET_KEY ?? "";
@@ -30,6 +31,40 @@ const REQUEST_PATTERNS = [
   /(?:want to watch)\s+(.+)/i,
 ];
 
+const FOLLOWING_UPDATE_PATTERNS = [
+  /\b(update|summary|status)\b.{0,40}\b(following|follow list)\b/i,
+  /\b(show|list|view|check)\b.{0,20}\b(my\s+)?(following|follow list)\b/i,
+  /\bwhat(?:'s| is)?\s+in\s+my\s+(following|follow list)\b/i,
+  /\bwhat\s+am\s+i\s+following\b/i,
+];
+
+const DIGITAL_RELEASE_PATTERNS = [
+  /(?:when is|what is|tell me)\s+(?:the\s+)?digital release date\s+(?:for\s+)?(.+)/i,
+  /digital release(?: date)?\s+(?:for\s+)?(.+)/i,
+];
+
+const RELEASE_PATTERNS = [
+  /(?:when is|what is|give me|tell me)\s+(?:the\s+)?release date\s+(?:for\s+)?(.+)/i,
+  /release date\s+(?:for\s+)?(.+)/i,
+  /(?:do you know\s+)?when\s+will\s+(.+?)\s+(?:be\s+released|come\s+out|be\s+out)/i,
+  /when\s+does\s+(.+?)\s+(?:come\s+out|get\s+released|release)/i,
+  /when\s+is\s+(.+?)\s+(?:coming\s+out|being\s+released|released)/i,
+  /do\s+you\s+know\s+when\s+(.+?)\s+will\s+(?:be\s+released|come\s+out)/i,
+  /(?:can you\s+)?(?:check|see)\s+if\s+(.+?)\s+has\s+been\s+released/i,
+  /has\s+(.+?)\s+been\s+released/i,
+  /is\s+(.+?)\s+released/i,
+];
+
+const FOLLOW_PATTERNS = [
+  /(?:please\s+)?(?:follow|track|notify me about)\s+(.+)/i,
+  /(?:please\s+)?(?:add|put)\s+(.+?)\s+(?:to|into)\s+my\s+(?:following|follow list)/i,
+  /(?:please\s+)?(?:add|put)\s+(.+?)\s+to\s+following/i,
+];
+
+const UNFOLLOW_PATTERNS = [
+  /(?:please\s+)?(?:unfollow|stop following|untrack)\s+(.+)/i,
+];
+
 function extractRequestTitle(text: string): string | null {
   for (const pattern of REQUEST_PATTERNS) {
     const match = text.match(pattern);
@@ -43,6 +78,20 @@ function extractRequestTitle(text: string): string | null {
 
 function isServiceQuery(text: string): boolean {
   return SERVICE_PATTERNS.some(p => p.test(text));
+}
+
+function isFollowingUpdateQuery(text: string): boolean {
+  return FOLLOWING_UPDATE_PATTERNS.some(p => p.test(text));
+}
+
+function extractFromPatterns(text: string, patterns: RegExp[]): string | null {
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) {
+      return match[1].replace(/\s*(?:please|for me|thanks?|[?!.]+)\s*$/i, "").trim();
+    }
+  }
+  return null;
 }
 
 async function handleNaturalServices(ctx: Context) {
@@ -112,6 +161,35 @@ export async function handleNaturalLanguage(ctx: Context): Promise<boolean> {
   // Service status check
   if (isServiceQuery(text)) {
     await handleNaturalServices(ctx);
+    return true;
+  }
+
+  const digitalReleaseTitle = extractFromPatterns(text, DIGITAL_RELEASE_PATTERNS);
+  if (digitalReleaseTitle) {
+    await answerReleaseDateQuestion(ctx, digitalReleaseTitle, { digitalOnly: true });
+    return true;
+  }
+
+  const releaseTitle = extractFromPatterns(text, RELEASE_PATTERNS);
+  if (releaseTitle) {
+    await answerReleaseDateQuestion(ctx, releaseTitle);
+    return true;
+  }
+
+  const unfollowTitle = extractFromPatterns(text, UNFOLLOW_PATTERNS);
+  if (unfollowTitle) {
+    await runUnfollowByQuery(ctx, unfollowTitle);
+    return true;
+  }
+
+  const followTitle = extractFromPatterns(text, FOLLOW_PATTERNS);
+  if (followTitle) {
+    await runFollowByQuery(ctx, followTitle);
+    return true;
+  }
+
+  if (isFollowingUpdateQuery(text)) {
+    await replyFollowingUpdate(ctx);
     return true;
   }
 

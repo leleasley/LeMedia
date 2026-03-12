@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import type { MouseEvent } from "react";
 import { cn } from "@/lib/utils";
 
 type SettingsRoute = {
@@ -82,64 +83,79 @@ export function AdminSettingsNav() {
     ];
 
     const allRoutes = groups.flatMap(g => g.routes);
-    const selectedRoute = allRoutes.find(route => pathname?.match(route.match))?.href ?? allRoutes[0]?.href;
+
+    function navigate(event: MouseEvent<HTMLAnchorElement>, href: string) {
+        event.preventDefault();
+        router.push(href);
+        router.refresh();
+    }
 
     return (
-        <>
-            {/* Mobile dropdown */}
-            <div className="sm:hidden">
-                <select
-                    id="admin-settings-tabs"
-                    value={selectedRoute}
-                    onChange={event => router.push(event.target.value)}
-                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-                >
-                    {groups.map(group => (
-                        <optgroup key={group.id} label={group.label}>
-                            {group.routes.map(route => (
-                                <option key={route.id} value={route.href}>
-                                    {route.label}
-                                </option>
-                            ))}
-                        </optgroup>
-                    ))}
-                </select>
+        <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-slate-950/65 p-2.5 backdrop-blur-sm sm:p-3">
+            <div
+                className="pointer-events-none absolute inset-0 opacity-90"
+                aria-hidden="true"
+                style={{
+                    background:
+                        "radial-gradient(120% 140% at 0% 0%, rgba(245, 158, 11, 0.14) 0%, rgba(245, 158, 11, 0) 52%), radial-gradient(120% 160% at 100% 0%, rgba(56, 189, 248, 0.12) 0%, rgba(56, 189, 248, 0) 48%)"
+                }}
+            />
+
+            <div className="relative sm:hidden">
+                <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-300/85">Admin sections</p>
+                <nav className="-mx-1 flex snap-x snap-mandatory gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Admin settings mobile">
+                    {allRoutes.map(route => {
+                        const isActive = pathname?.match(route.match);
+                        return (
+                            <Link
+                                key={route.id}
+                                href={route.href}
+                                prefetch={false}
+                                onClick={event => navigate(event, route.href)}
+                                className={cn(
+                                    "snap-start whitespace-nowrap rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors",
+                                    isActive
+                                        ? "border-amber-300/45 bg-amber-400/20 text-amber-100"
+                                        : "border-white/10 bg-white/[0.04] text-slate-200/85 hover:border-white/20 hover:bg-white/[0.08]"
+                                )}
+                                aria-current={isActive ? "page" : undefined}
+                            >
+                                {route.label}
+                            </Link>
+                        );
+                    })}
+                </nav>
             </div>
 
-            {/* Desktop: single compact inline nav */}
-            <nav className="hidden sm:flex flex-wrap items-center gap-x-1 gap-y-1 rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2" aria-label="Admin settings">
-                {groups.map((group, groupIndex) => (
-                    <div key={group.id} className="contents">
-                        {groupIndex > 0 && (
-                            <span className="mx-1 h-4 w-px bg-white/10" aria-hidden="true" />
-                        )}
-                        {group.routes.map(route => {
-                            const isActive = pathname?.match(route.match);
-                            return (
-                                <Link
-                                    key={route.id}
-                                    href={route.href}
-                                    prefetch={false}
-                                    onClick={event => {
-                                        event.preventDefault();
-                                        router.push(route.href);
-                                        router.refresh();
-                                    }}
-                                    className={cn(
-                                        "rounded-md px-2 py-1 text-xs font-medium transition-colors whitespace-nowrap",
-                                        isActive
-                                            ? "bg-amber-500/20 text-amber-200"
-                                            : "text-white/55 hover:bg-white/5 hover:text-white/90"
-                                    )}
-                                    aria-current={isActive ? "page" : undefined}
-                                >
-                                    {route.label}
-                                </Link>
-                            );
-                        })}
-                    </div>
+            <nav className="relative hidden sm:grid sm:grid-cols-2 xl:grid-cols-3 gap-2" aria-label="Admin settings">
+                {groups.map(group => (
+                    <section key={group.id} className="rounded-xl border border-white/10 bg-black/25 p-2">
+                        <p className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-300/80">{group.label}</p>
+                        <div className="flex flex-wrap gap-1.5">
+                            {group.routes.map(route => {
+                                const isActive = pathname?.match(route.match);
+                                return (
+                                    <Link
+                                        key={route.id}
+                                        href={route.href}
+                                        prefetch={false}
+                                        onClick={event => navigate(event, route.href)}
+                                        className={cn(
+                                            "whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors",
+                                            isActive
+                                                ? "border-amber-300/50 bg-gradient-to-r from-amber-400/25 to-orange-400/15 text-amber-100"
+                                                : "border-white/10 bg-white/[0.03] text-slate-200/80 hover:border-white/20 hover:bg-white/[0.07] hover:text-slate-100"
+                                        )}
+                                        aria-current={isActive ? "page" : undefined}
+                                    >
+                                        {route.label}
+                                    </Link>
+                                );
+                            })}
+                        </div>
+                    </section>
                 ))}
             </nav>
-        </>
+        </div>
     );
 }

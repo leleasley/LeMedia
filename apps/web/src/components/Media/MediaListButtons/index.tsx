@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { HeartIcon, StarIcon, ListBulletIcon } from "@heroicons/react/24/outline";
-import { HeartIcon as HeartIconSolid, StarIcon as StarIconSolid } from "@heroicons/react/24/solid";
+import { HeartIcon, StarIcon, ListBulletIcon, BellIcon } from "@heroicons/react/24/outline";
+import { HeartIcon as HeartIconSolid, StarIcon as StarIconSolid, BellIcon as BellIconSolid } from "@heroicons/react/24/solid";
 import { cn } from "@/lib/utils";
 import { csrfFetch } from "@/lib/csrf-client";
 import { useToast } from "@/components/Providers/ToastProvider";
@@ -28,6 +28,7 @@ export function MediaListButtons({
 }) {
   const [favorite, setFavorite] = useState(Boolean(initialFavorite));
   const [watchlist, setWatchlist] = useState(Boolean(initialWatchlist));
+  const [followed, setFollowed] = useState(false);
   const [loading, setLoading] = useState(initialFavorite == null || initialWatchlist == null);
   const [saving, setSaving] = useState(false);
   const [listModalOpen, setListModalOpen] = useState(false);
@@ -51,10 +52,46 @@ export function MediaListButtons({
       .finally(() => {
         if (active) setLoading(false);
       });
+
+    fetch(`/api/following/status?tmdbId=${tmdbId}&mediaType=${mediaType}`, { credentials: "include" })
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => {
+        if (!active || !data) return;
+        setFollowed(Boolean(data.followed));
+      })
+      .catch(() => {});
+
     return () => {
       active = false;
     };
   }, [tmdbId, mediaType, initialFavorite, initialWatchlist]);
+
+  const toggleFollow = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const res = followed
+        ? await csrfFetch("/api/following", {
+          method: "DELETE",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mediaType, tmdbId })
+        })
+        : await csrfFetch("/api/following", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mediaType, tmdbId })
+        });
+      if (!res.ok) throw new Error("Request failed");
+      setFollowed(!followed);
+      toast.success(!followed ? "Now following this title" : "Stopped following this title", { timeoutMs: 3000 });
+    } catch {
+      toast.error("Failed to update follow status", { timeoutMs: 3000 });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const toggle = async (listType: "favorite" | "watchlist") => {
     if (saving) return;
@@ -121,6 +158,21 @@ export function MediaListButtons({
             <StarIconSolid className="h-4 w-4 text-yellow-500" />
           ) : (
             <StarIcon className="h-4 w-4 text-yellow-500" />
+          )}
+        </Button>
+        <Button
+          buttonType="ghost"
+          buttonSize="md"
+          onClick={toggleFollow}
+          disabled={loading || saving}
+          className="z-40"
+          aria-label={followed ? "Unfollow release notifications" : "Follow release notifications"}
+          aria-pressed={followed}
+        >
+          {followed ? (
+            <BellIconSolid className="h-4 w-4 text-cyan-400" />
+          ) : (
+            <BellIcon className="h-4 w-4 text-cyan-400" />
           )}
         </Button>
         <Button

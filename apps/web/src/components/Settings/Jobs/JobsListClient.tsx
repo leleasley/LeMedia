@@ -6,6 +6,7 @@ import {
   PlayIcon,
   ClockIcon,
   CheckCircleIcon,
+  ExclamationTriangleIcon,
   XCircleIcon,
   ChevronDownIcon,
   ChevronUpIcon,
@@ -810,6 +811,7 @@ export function JobsListClient() {
   // Log view state
   const [activeTab, setActiveTab] = useState<"jobs" | "logs">("jobs");
   const [logJobFilter, setLogJobFilter] = useState<string | null>(null);
+  const [runningOverdue, setRunningOverdue] = useState(false);
 
   const openLogsFor = (jobName: string | null) => {
     setLogJobFilter(jobName);
@@ -926,6 +928,42 @@ export function JobsListClient() {
 
   const metricsByName = new Map((runtimeData?.metrics ?? []).map((item) => [item.name, item]));
   const serverRunningSet = new Set(runtimeData?.runningJobs ?? []);
+  const nowMs = Date.now();
+  const overdueJobs = (jobs ?? []).filter((job) => {
+    if (!job.enabled || !job.nextRun) return false;
+    if (serverRunningSet.has(job.name)) return false;
+    const nextRunMs = new Date(job.nextRun).getTime();
+    if (!Number.isFinite(nextRunMs)) return false;
+    return nextRunMs + 2 * 60 * 1000 < nowMs;
+  });
+  const failingJobs = (jobs ?? []).filter((job) => {
+    const metric = metricsByName.get(job.name);
+    if (!job.enabled) return false;
+    if ((job.failureCount ?? 0) >= 3) return true;
+    if (!metric) return false;
+    if (metric.lastResult === "failure" && metric.totalRuns >= 3 && metric.failureRate >= 0.5) return true;
+    return metric.failedRuns >= 3;
+  });
+
+  const runOverdueJobs = async () => {
+    if (overdueJobs.length === 0 || runningOverdue) return;
+    setRunningOverdue(true);
+    let started = 0;
+    try {
+      for (const job of overdueJobs) {
+        const res = await csrfFetch(`/api/v1/admin/jobs/${job.id}/run`, { method: "POST" });
+        if (res.ok) started += 1;
+      }
+      if (started > 0) {
+        toast.success(`Started ${started} overdue job${started === 1 ? "" : "s"}`);
+      } else {
+        toast.error("Could not start overdue jobs");
+      }
+      setTimeout(() => mutate(), 1000);
+    } finally {
+      setRunningOverdue(false);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -953,6 +991,71 @@ export function JobsListClient() {
             </div>
           </div>
         </div>
+      )}
+
+      {(overdueJobs.length > 0 || failingJobs.length > 0) && (
+        <section className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-4 space-y-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2 text-amber-200">
+              <ExclamationTriangleIcon className="h-4.5 w-4.5" />
+              <h3 className="text-sm font-semibold">Admin attention needed</h3>
+            </div>
+            {overdueJobs.length > 0 && (
+              <button
+                type="button"
+                onClick={() => void runOverdueJobs()}
+                disabled={runningOverdue}
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-amber-300/30 bg-amber-400/10 px-3 py-1.5 text-xs font-semibold text-amber-100 transition-colors hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <PlayIcon className="h-3.5 w-3.5" />
+                {runningOverdue ? "Starting..." : `Run overdue (${overdueJobs.length})`}
+              </button>
+            )}
+          </div>
+
+          <div className="grid gap-2 md:grid-cols-2">
+            {overdueJobs.map((job) => (
+              <div key={`overdue-${job.id}`} className="rounded-lg border border-amber-500/20 bg-black/20 p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-white truncate">{job.name}</p>
+                    <p className="text-xs text-amber-200/90">Overdue: next run was {job.nextRun ? formatRelativeTime(job.nextRun) : "unknown"}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => openLogsFor(job.name)}
+                    className="shrink-0 rounded-md bg-white/10 px-2 py-1 text-[11px] font-medium text-white/90 hover:bg-white/15 transition-colors"
+                  >
+                    Logs
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            {failingJobs.map((job) => {
+              const metric = metricsByName.get(job.name);
+              const failedRuns = metric?.failedRuns ?? 0;
+              const failureCount = Math.max(job.failureCount ?? 0, failedRuns);
+              return (
+                <div key={`failing-${job.id}`} className="rounded-lg border border-red-500/25 bg-red-500/10 p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-white truncate">{job.name}</p>
+                      <p className="text-xs text-red-200/90">{failureCount} recent failures{metric?.lastError ? ` • ${metric.lastError}` : ""}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => openLogsFor(job.name)}
+                      className="shrink-0 rounded-md bg-white/10 px-2 py-1 text-[11px] font-medium text-white/90 hover:bg-white/15 transition-colors"
+                    >
+                      Logs
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
       )}
 
       {/* Tab bar */}

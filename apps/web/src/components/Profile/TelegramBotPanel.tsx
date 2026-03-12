@@ -13,6 +13,7 @@ type LinkStatus = {
   linked: boolean;
   telegramId?: string;
   linkedAt?: string;
+  followedMediaNotifications?: boolean;
 };
 
 const BOT_USERNAME = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME?.trim();
@@ -30,6 +31,7 @@ export function TelegramBotPanel() {
   const toast = useToast();
   const { data, isLoading, mutate } = useSWR<LinkStatus>("/api/telegram/link", fetcher);
   const [unlinking, setUnlinking] = useState(false);
+  const [savingFollowPref, setSavingFollowPref] = useState(false);
   const { confirm, modalProps } = useConfirm();
 
   async function handleUnlink() {
@@ -45,6 +47,25 @@ export function TelegramBotPanel() {
       toast.error("Failed to unlink Telegram account.");
     } finally {
       setUnlinking(false);
+    }
+  }
+
+  async function handleFollowedMediaPrefChange(nextValue: boolean) {
+    if (!data?.linked || savingFollowPref) return;
+    setSavingFollowPref(true);
+    try {
+      const res = await csrfFetch("/api/telegram/link", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ followedMediaNotifications: nextValue }),
+      });
+      if (!res.ok) throw new Error("Failed to update preference");
+      mutate({ ...data, followedMediaNotifications: nextValue }, { revalidate: false });
+      toast.success(nextValue ? "Telegram followed-media notifications enabled" : "Telegram followed-media notifications disabled");
+    } catch {
+      toast.error("Failed to update Telegram preference");
+    } finally {
+      setSavingFollowPref(false);
     }
   }
 
@@ -164,6 +185,11 @@ export function TelegramBotPanel() {
           <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-gray-400">
             {[
               { icon: "🎬", text: "/request — Search & request media" },
+              { icon: "🔔", text: "/follow — Follow title(s) for release updates" },
+              { icon: "📌", text: "/following — Get an update on your following list" },
+              { icon: "🧹", text: "/unfollow — Stop following a title" },
+              { icon: "🗓", text: "/release — Theatrical/premiere and digital dates" },
+              { icon: "💿", text: "/digitalrelease — Digital release date lookup" },
               { icon: "🔔", text: "/watch — Alert me when this/title becomes available" },
               { icon: "🛎", text: "/alerts — View all your active alerts" },
               { icon: "🛑", text: "/stopalerts — Stop one or all alerts" },
@@ -171,6 +197,8 @@ export function TelegramBotPanel() {
               { icon: "📈", text: "/trending — Browse popular movies and TV" },
               { icon: "🆕", text: "/newstuff — See recently added media" },
               { icon: "🤖", text: "Natural language: “I want to watch Dune”" },
+              { icon: "💬", text: "Natural language: “Give me an update on my following”" },
+              { icon: "💬", text: "Natural language: “When is the digital release date for Dune?”" },
               { icon: "⚡", text: "Proactive updates: download started / available / failed" },
               { icon: "🖥", text: "/services — Service health (admin)" },
               { icon: "⏳", text: "/pending — Approve or deny pending requests (admin)" },
@@ -183,6 +211,29 @@ export function TelegramBotPanel() {
               </li>
             ))}
           </ul>
+
+          <div className="mt-5 border-t border-gray-700 pt-4">
+            <label className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium text-white">Followed media notifications</p>
+                <p className="text-xs text-gray-400 mt-1">
+                  Notify me in Telegram when followed titles hit theatrical/premiere or digital release.
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={Boolean(data.followedMediaNotifications)}
+                disabled={savingFollowPref}
+                onClick={() => void handleFollowedMediaPrefChange(!Boolean(data.followedMediaNotifications))}
+                className={`ui-switch ui-switch-md transition-colors ${Boolean(data.followedMediaNotifications) ? "bg-[#229ED9]" : "bg-gray-700"} ${savingFollowPref ? "opacity-60" : ""}`}
+              >
+                <span
+                  className={`ui-switch-thumb ${Boolean(data.followedMediaNotifications) ? "translate-x-6" : "translate-x-0"}`}
+                />
+              </button>
+            </label>
+          </div>
         </div>
       )}
     </div>

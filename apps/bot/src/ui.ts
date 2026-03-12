@@ -5,10 +5,11 @@ export function mainShortcutKeyboard() {
     .text("/request")
     .text("/mystuff")
     .row()
+    .text("/follow")
+    .text("/following")
+    .row()
     .text("/trending")
     .text("/services")
-    .row()
-    .text("/watch")
     .text("/help")
     .resized();
 }
@@ -18,9 +19,11 @@ export function adminShortcutKeyboard() {
     .text("/request")
     .text("/mystuff")
     .row()
+    .text("/follow")
+    .text("/following")
+    .row()
     .text("/trending")
     .text("/services")
-    .row()
     .text("/pending")
     .text("/help")
     .resized();

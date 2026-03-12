@@ -433,6 +433,10 @@ export default function AppLayoutClient({
                                     <CalendarDays className={iconClass(pathname === "/calendar", "text-sky-400")} />
                                     <span>Calendar</span>
                                 </PrefetchLink>
+                                <PrefetchLink href="/following" className={linkClass(pathname === "/following", "border-sky-400")}>
+                                    <Bell className={iconClass(pathname === "/following", "text-sky-400")} />
+                                    <span>Following</span>
+                                </PrefetchLink>
                             </div>
                         </div>
 

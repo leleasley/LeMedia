@@ -128,6 +128,7 @@ export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, 
         return [
             { href: "/recommendations", label: "Recommendations", icon: Sparkles, isActive: current === "/recommendations" },
             { href: "/calendar", label: "Calendar", icon: CalendarDays, isActive: current === "/calendar" },
+            { href: "/following", label: "Following", icon: Bell, isActive: current === "/following" },
         ];
     }, [pathname]);
 

@@ -228,6 +228,42 @@
     @apply pb-12;
   }
 
+  /* Reusable switch styles to keep thumbs aligned across pages */
+  .ui-switch {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    border-radius: 9999px;
+  }
+
+  .ui-switch-sm {
+    --switch-h: 1.5rem;
+    --switch-w: 2.75rem;
+    --switch-thumb: 1rem;
+    width: var(--switch-w);
+    height: var(--switch-h);
+  }
+
+  .ui-switch-md {
+    --switch-h: 1.75rem;
+    --switch-w: 3rem;
+    --switch-thumb: 1.25rem;
+    width: var(--switch-w);
+    height: var(--switch-h);
+  }
+
+  .ui-switch-thumb {
+    position: absolute;
+    left: 0.25rem;
+    top: calc((var(--switch-h) - var(--switch-thumb)) / 2);
+    width: var(--switch-thumb);
+    height: var(--switch-thumb);
+    border-radius: 9999px;
+    background: #ffffff;
+    transition: transform 200ms ease;
+    will-change: transform;
+  }
+
   .crew-job {
     @apply text-sm font-semibold text-gray-400;
   }

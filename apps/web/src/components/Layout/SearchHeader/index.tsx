@@ -62,6 +62,8 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
     const searchRef = useRef<HTMLDivElement | null>(null);
     const [recentOpen, setRecentOpen] = useState(false);
     const [recentSearches, setRecentSearches] = useState<string[]>([]);
+    const [searchFocused, setSearchFocused] = useState(false);
+    const [shortcutLabel, setShortcutLabel] = useState("Ctrl+K");
 
     // Cleanup debounce timer on unmount
     useEffect(() => {
@@ -84,6 +86,11 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
         const id = window.setTimeout(() => setProfile(null), 0);
         return () => window.clearTimeout(id);
     }, [initialProfile]);
+
+    useEffect(() => {
+        const isMac = /Mac|iPhone|iPad|iPod/i.test(window.navigator.platform);
+        setShortcutLabel(isMac ? "Cmd+K" : "Ctrl+K");
+    }, []);
 
     // Load recent searches from localStorage once per user
     useEffect(() => {
@@ -113,6 +120,35 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
         window.addEventListener("click", onClick);
         return () => window.removeEventListener("click", onClick);
     }, [menuOpen, recentOpen]);
+
+    useEffect(() => {
+        const shouldIgnoreTarget = (target: EventTarget | null) => {
+            if (!(target instanceof Element)) return false;
+            const tag = target.tagName;
+            if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+            if ((target as HTMLElement).isContentEditable) return true;
+            return false;
+        };
+
+        const onGlobalKeyDown = (event: KeyboardEvent) => {
+            if (shouldIgnoreTarget(event.target)) return;
+
+            const isQuickSearchShortcut = (event.key === "k" || event.key === "K") && (event.metaKey || event.ctrlKey);
+            const isSlashShortcut = event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey;
+            if (!isQuickSearchShortcut && !isSlashShortcut) return;
+
+            event.preventDefault();
+            inputRef.current?.focus();
+            setRecentOpen(true);
+            const input = inputRef.current;
+            if (input && input.value.length > 0) {
+                input.setSelectionRange(0, input.value.length);
+            }
+        };
+
+        window.addEventListener("keydown", onGlobalKeyDown);
+        return () => window.removeEventListener("keydown", onGlobalKeyDown);
+    }, []);
 
     // ---- Recent-search mutations (only on explicit user actions) ----------
 
@@ -189,6 +225,11 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
             <form onSubmit={handleSearch} className="flex-1" autoComplete="off">
                 <div className="relative w-full" ref={searchRef}>
                     <Search className="pointer-events-none absolute right-2.5 sm:right-3 top-1/2 h-3.5 w-3.5 sm:h-4 sm:w-4 -translate-y-1/2 text-gray-400 z-10" />
+                    {!searchFocused && !searchQuery.trim() ? (
+                        <span className="pointer-events-none absolute right-8 sm:right-11 top-1/2 -translate-y-1/2 hidden sm:inline-flex items-center rounded-md border border-white/15 bg-white/5 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white/45">
+                            {shortcutLabel}
+                        </span>
+                    ) : null}
                     <input
                         ref={inputRef}
                         type="text"
@@ -196,7 +237,11 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
                         value={searchQuery}
                         onChange={handleInputChange}
                         onKeyDown={handleKeyDown}
-                        onFocus={() => setRecentOpen(true)}
+                        onFocus={() => {
+                            setSearchFocused(true);
+                            setRecentOpen(true);
+                        }}
+                        onBlur={() => setSearchFocused(false)}
                         className="block w-full rounded-full border border-white/10 bg-white/8 py-1.5 sm:py-2 pl-3 sm:pl-4 pr-8 sm:pr-11 text-sm sm:text-base text-white placeholder-gray-500 hover:border-white/20 focus:border-white/30 focus:bg-white/12 focus:placeholder-gray-400 focus:outline-none focus:ring-0 relative transition-all duration-200"
                         style={{
                             backdropFilter: 'blur(8px)',

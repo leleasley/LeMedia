@@ -2331,8 +2331,21 @@ async function ensureUserSchema() {
     `);
     await p.query(`CREATE INDEX IF NOT EXISTS idx_user_oauth_account_user_id ON user_oauth_account(user_id);`);
     await p.query(`CREATE INDEX IF NOT EXISTS idx_user_oauth_account_provider ON user_oauth_account(provider);`);
-    await p.query(`ALTER TABLE user_oauth_account DROP CONSTRAINT IF EXISTS user_oauth_account_provider_check;`);
-    await p.query(`ALTER TABLE user_oauth_account ADD CONSTRAINT user_oauth_account_provider_check CHECK (provider IN ('google','github','telegram')) NOT VALID;`);
+    await p.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1
+          FROM pg_constraint
+          WHERE conname = 'user_oauth_account_provider_check'
+            AND conrelid = 'user_oauth_account'::regclass
+        ) THEN
+          ALTER TABLE user_oauth_account
+          ADD CONSTRAINT user_oauth_account_provider_check
+          CHECK (provider IN ('google','github','telegram')) NOT VALID;
+        END IF;
+      END $$;
+    `);
     await p.query(`ALTER TABLE user_oauth_account VALIDATE CONSTRAINT user_oauth_account_provider_check;`);
 
     await p.query(`
@@ -2406,6 +2419,37 @@ async function ensureUserSchema() {
       );
     `);
     await p.query(`CREATE INDEX IF NOT EXISTS idx_user_trakt_token_expires_at ON user_trakt_token(expires_at);`);
+
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS followed_media (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        user_id BIGINT NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+        media_type TEXT NOT NULL CHECK (media_type IN ('movie','tv')),
+        tmdb_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        poster_path TEXT,
+        theatrical_release_date DATE,
+        digital_release_date DATE,
+        notify_on_theatrical BOOLEAN NOT NULL DEFAULT TRUE,
+        notify_on_digital BOOLEAN NOT NULL DEFAULT TRUE,
+        notified_theatrical_at TIMESTAMPTZ,
+        notified_digital_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (user_id, media_type, tmdb_id)
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_followed_media_user_created ON followed_media(user_id, created_at DESC);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_followed_media_due_theatrical ON followed_media(notify_on_theatrical, theatrical_release_date, notified_theatrical_at);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_followed_media_due_digital ON followed_media(notify_on_digital, digital_release_date, notified_digital_at);`);
+
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS user_telegram_preference (
+        user_id BIGINT PRIMARY KEY REFERENCES app_user(id) ON DELETE CASCADE,
+        followed_media_notifications BOOLEAN NOT NULL DEFAULT FALSE,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
 
     await p.query(`
       CREATE TABLE IF NOT EXISTS webauthn_challenge (
@@ -3342,6 +3386,7 @@ async function ensureSchema() {
           ('prowlarr-indexer-sync', '*/5 * * * *', 300, 'system', TRUE),
           ('plex-availability-sync', '0 */4 * * *', 14400, 'system', FALSE),
           ('system-alerts', '*/5 * * * *', 300, 'system', TRUE),
+          ('followed-media-release-notifications', '0 * * * *', 3600, 'system', TRUE),
           ('backup-snapshot', '30 2 * * *', 86400, 'system', FALSE)
       ON CONFLICT (name) DO NOTHING;
     `);
@@ -6701,6 +6746,331 @@ export interface CalendarEventSubscription {
   episodeNumber?: number | null;
   notifyOnAvailable: boolean;
   createdAt: string;
+}
+
+export type FollowedMediaItem = {
+  id: string;
+  userId: number;
+  mediaType: "movie" | "tv";
+  tmdbId: number;
+  title: string;
+  posterPath: string | null;
+  theatricalReleaseDate: string | null;
+  digitalReleaseDate: string | null;
+  notifyOnTheatrical: boolean;
+  notifyOnDigital: boolean;
+  notifiedTheatricalAt: string | null;
+  notifiedDigitalAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type DueFollowedMediaReleaseNotification = FollowedMediaItem & {
+  releaseType: "theatrical" | "digital";
+  telegramId: string | null;
+  telegramFollowOptIn: boolean;
+};
+
+export async function getUserTelegramFollowedMediaPreference(userId: number): Promise<boolean> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query<{ followed_media_notifications: boolean }>(
+    `SELECT followed_media_notifications
+     FROM user_telegram_preference
+     WHERE user_id = $1
+     LIMIT 1`,
+    [userId]
+  );
+  return !!res.rows[0]?.followed_media_notifications;
+}
+
+export async function setUserTelegramFollowedMediaPreference(userId: number, enabled: boolean): Promise<void> {
+  await ensureUserSchema();
+  const p = getPool();
+  await p.query(
+    `INSERT INTO user_telegram_preference (user_id, followed_media_notifications, updated_at)
+     VALUES ($1, $2, NOW())
+     ON CONFLICT (user_id)
+     DO UPDATE SET followed_media_notifications = EXCLUDED.followed_media_notifications, updated_at = NOW()`,
+    [userId, enabled]
+  );
+}
+
+export async function listFollowedMediaForUser(userId: number): Promise<FollowedMediaItem[]> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `SELECT
+      id,
+      user_id as "userId",
+      media_type as "mediaType",
+      tmdb_id as "tmdbId",
+      title,
+      poster_path as "posterPath",
+      theatrical_release_date::text as "theatricalReleaseDate",
+      digital_release_date::text as "digitalReleaseDate",
+      notify_on_theatrical as "notifyOnTheatrical",
+      notify_on_digital as "notifyOnDigital",
+      notified_theatrical_at as "notifiedTheatricalAt",
+      notified_digital_at as "notifiedDigitalAt",
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+     FROM followed_media
+     WHERE user_id = $1
+     ORDER BY created_at DESC`,
+    [userId]
+  );
+  return res.rows;
+}
+
+export async function getFollowedMediaByTmdb(userId: number, mediaType: "movie" | "tv", tmdbId: number): Promise<FollowedMediaItem | null> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `SELECT
+      id,
+      user_id as "userId",
+      media_type as "mediaType",
+      tmdb_id as "tmdbId",
+      title,
+      poster_path as "posterPath",
+      theatrical_release_date::text as "theatricalReleaseDate",
+      digital_release_date::text as "digitalReleaseDate",
+      notify_on_theatrical as "notifyOnTheatrical",
+      notify_on_digital as "notifyOnDigital",
+      notified_theatrical_at as "notifiedTheatricalAt",
+      notified_digital_at as "notifiedDigitalAt",
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+     FROM followed_media
+     WHERE user_id = $1 AND media_type = $2 AND tmdb_id = $3
+     LIMIT 1`,
+    [userId, mediaType, tmdbId]
+  );
+  return res.rows[0] ?? null;
+}
+
+export async function upsertFollowedMedia(input: {
+  userId: number;
+  mediaType: "movie" | "tv";
+  tmdbId: number;
+  title: string;
+  posterPath?: string | null;
+  theatricalReleaseDate?: string | null;
+  digitalReleaseDate?: string | null;
+  notifyOnTheatrical?: boolean;
+  notifyOnDigital?: boolean;
+}): Promise<FollowedMediaItem> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `INSERT INTO followed_media (
+      user_id,
+      media_type,
+      tmdb_id,
+      title,
+      poster_path,
+      theatrical_release_date,
+      digital_release_date,
+      notify_on_theatrical,
+      notify_on_digital,
+      updated_at
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
+    ON CONFLICT (user_id, media_type, tmdb_id)
+    DO UPDATE SET
+      title = EXCLUDED.title,
+      poster_path = EXCLUDED.poster_path,
+      theatrical_release_date = EXCLUDED.theatrical_release_date,
+      digital_release_date = EXCLUDED.digital_release_date,
+      notify_on_theatrical = EXCLUDED.notify_on_theatrical,
+      notify_on_digital = EXCLUDED.notify_on_digital,
+      updated_at = NOW()
+    RETURNING
+      id,
+      user_id as "userId",
+      media_type as "mediaType",
+      tmdb_id as "tmdbId",
+      title,
+      poster_path as "posterPath",
+      theatrical_release_date::text as "theatricalReleaseDate",
+      digital_release_date::text as "digitalReleaseDate",
+      notify_on_theatrical as "notifyOnTheatrical",
+      notify_on_digital as "notifyOnDigital",
+      notified_theatrical_at as "notifiedTheatricalAt",
+      notified_digital_at as "notifiedDigitalAt",
+      created_at as "createdAt",
+      updated_at as "updatedAt"`,
+    [
+      input.userId,
+      input.mediaType,
+      input.tmdbId,
+      input.title,
+      input.posterPath ?? null,
+      input.theatricalReleaseDate ?? null,
+      input.digitalReleaseDate ?? null,
+      input.notifyOnTheatrical ?? true,
+      input.notifyOnDigital ?? true,
+    ]
+  );
+  return res.rows[0];
+}
+
+export async function removeFollowedMediaById(userId: number, id: string): Promise<boolean> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(`DELETE FROM followed_media WHERE user_id = $1 AND id = $2`, [userId, id]);
+  return (res.rowCount ?? 0) > 0;
+}
+
+export async function removeFollowedMediaByTmdb(userId: number, mediaType: "movie" | "tv", tmdbId: number): Promise<boolean> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(`DELETE FROM followed_media WHERE user_id = $1 AND media_type = $2 AND tmdb_id = $3`, [userId, mediaType, tmdbId]);
+  return (res.rowCount ?? 0) > 0;
+}
+
+export async function updateFollowedMediaOptions(userId: number, id: string, input: {
+  notifyOnTheatrical?: boolean;
+  notifyOnDigital?: boolean;
+}): Promise<FollowedMediaItem | null> {
+  await ensureUserSchema();
+  const clauses: string[] = [];
+  const values: any[] = [userId, id];
+  let idx = 3;
+  if (input.notifyOnTheatrical !== undefined) {
+    clauses.push(`notify_on_theatrical = $${idx++}`);
+    values.push(input.notifyOnTheatrical);
+  }
+  if (input.notifyOnDigital !== undefined) {
+    clauses.push(`notify_on_digital = $${idx++}`);
+    values.push(input.notifyOnDigital);
+  }
+  if (clauses.length === 0) {
+    return getPool().query(
+      `SELECT
+        id,
+        user_id as "userId",
+        media_type as "mediaType",
+        tmdb_id as "tmdbId",
+        title,
+        poster_path as "posterPath",
+        theatrical_release_date::text as "theatricalReleaseDate",
+        digital_release_date::text as "digitalReleaseDate",
+        notify_on_theatrical as "notifyOnTheatrical",
+        notify_on_digital as "notifyOnDigital",
+        notified_theatrical_at as "notifiedTheatricalAt",
+        notified_digital_at as "notifiedDigitalAt",
+        created_at as "createdAt",
+        updated_at as "updatedAt"
+       FROM followed_media
+       WHERE user_id = $1 AND id = $2
+       LIMIT 1`,
+      [userId, id]
+    ).then(r => r.rows[0] ?? null);
+  }
+  const p = getPool();
+  const res = await p.query(
+    `UPDATE followed_media
+     SET ${clauses.join(", ")}, updated_at = NOW()
+     WHERE user_id = $1 AND id = $2
+     RETURNING
+      id,
+      user_id as "userId",
+      media_type as "mediaType",
+      tmdb_id as "tmdbId",
+      title,
+      poster_path as "posterPath",
+      theatrical_release_date::text as "theatricalReleaseDate",
+      digital_release_date::text as "digitalReleaseDate",
+      notify_on_theatrical as "notifyOnTheatrical",
+      notify_on_digital as "notifyOnDigital",
+      notified_theatrical_at as "notifiedTheatricalAt",
+      notified_digital_at as "notifiedDigitalAt",
+      created_at as "createdAt",
+      updated_at as "updatedAt"`,
+    values
+  );
+  return res.rows[0] ?? null;
+}
+
+export async function listDueFollowedMediaReleaseNotifications(limit = 200): Promise<DueFollowedMediaReleaseNotification[]> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `WITH due_theatrical AS (
+      SELECT
+        f.id,
+        f.user_id as "userId",
+        f.media_type as "mediaType",
+        f.tmdb_id as "tmdbId",
+        f.title,
+        f.poster_path as "posterPath",
+        f.theatrical_release_date::text as "theatricalReleaseDate",
+        f.digital_release_date::text as "digitalReleaseDate",
+        f.notify_on_theatrical as "notifyOnTheatrical",
+        f.notify_on_digital as "notifyOnDigital",
+        f.notified_theatrical_at as "notifiedTheatricalAt",
+        f.notified_digital_at as "notifiedDigitalAt",
+        f.created_at as "createdAt",
+        f.updated_at as "updatedAt",
+        'theatrical'::text as "releaseType",
+        tu.telegram_id as "telegramId",
+        COALESCE(utp.followed_media_notifications, FALSE) as "telegramFollowOptIn"
+      FROM followed_media f
+      LEFT JOIN telegram_users tu ON tu.user_id = f.user_id
+      LEFT JOIN user_telegram_preference utp ON utp.user_id = f.user_id
+      WHERE f.notify_on_theatrical = TRUE
+        AND f.notified_theatrical_at IS NULL
+        AND f.theatrical_release_date IS NOT NULL
+        AND f.theatrical_release_date <= CURRENT_DATE
+    ), due_digital AS (
+      SELECT
+        f.id,
+        f.user_id as "userId",
+        f.media_type as "mediaType",
+        f.tmdb_id as "tmdbId",
+        f.title,
+        f.poster_path as "posterPath",
+        f.theatrical_release_date::text as "theatricalReleaseDate",
+        f.digital_release_date::text as "digitalReleaseDate",
+        f.notify_on_theatrical as "notifyOnTheatrical",
+        f.notify_on_digital as "notifyOnDigital",
+        f.notified_theatrical_at as "notifiedTheatricalAt",
+        f.notified_digital_at as "notifiedDigitalAt",
+        f.created_at as "createdAt",
+        f.updated_at as "updatedAt",
+        'digital'::text as "releaseType",
+        tu.telegram_id as "telegramId",
+        COALESCE(utp.followed_media_notifications, FALSE) as "telegramFollowOptIn"
+      FROM followed_media f
+      LEFT JOIN telegram_users tu ON tu.user_id = f.user_id
+      LEFT JOIN user_telegram_preference utp ON utp.user_id = f.user_id
+      WHERE f.notify_on_digital = TRUE
+        AND f.notified_digital_at IS NULL
+        AND f.digital_release_date IS NOT NULL
+        AND f.digital_release_date <= CURRENT_DATE
+    )
+    SELECT *
+    FROM (
+      SELECT * FROM due_theatrical
+      UNION ALL
+      SELECT * FROM due_digital
+    ) due
+    ORDER BY "createdAt" ASC
+    LIMIT $1`,
+    [limit]
+  );
+  return res.rows as DueFollowedMediaReleaseNotification[];
+}
+
+export async function markFollowedMediaReleaseNotified(id: string, releaseType: "theatrical" | "digital"): Promise<void> {
+  await ensureUserSchema();
+  const p = getPool();
+  if (releaseType === "theatrical") {
+    await p.query(`UPDATE followed_media SET notified_theatrical_at = NOW(), updated_at = NOW() WHERE id = $1`, [id]);
+    return;
+  }
+  await p.query(`UPDATE followed_media SET notified_digital_at = NOW(), updated_at = NOW() WHERE id = $1`, [id]);
 }
 
 export async function listCalendarSubscriptions(userId: number): Promise<CalendarEventSubscription[]> {

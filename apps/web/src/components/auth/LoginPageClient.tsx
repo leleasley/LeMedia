@@ -125,6 +125,15 @@ export function LoginPageClient({
     ? backdrops.map((path) => `https://image.tmdb.org/t/p/w1280${path}`)
     : [];
 
+  const startOidcLogin = () => {
+    if (isTurnstileEnabled && !turnstileToken) return;
+    if (ssoProviderType === "duo_websdk") {
+      setShowDuoModal(true);
+      return;
+    }
+    startSsoFlow(`/api/v1/auth/oidc/login?from=${encodeURIComponent(from)}&turnstile_token=${encodeURIComponent(turnstileToken)}`);
+  };
+
   const redirectToSso = (url: string) => {
     setRedirectingToSso(true);
     window.location.href = url;
@@ -319,7 +328,7 @@ export function LoginPageClient({
                   </DropdownMenuTrigger>
                   <DropdownMenuContent
                     align="center"
-                    className="min-w-[240px] p-2 !bg-gray-900/95 !backdrop-blur-none border border-white/10"
+                    className="w-[min(22rem,calc(100vw-2rem))] min-w-0 p-2 !bg-gray-900/95 !backdrop-blur-none border border-white/10"
                   >
                     <DropdownMenuItem
                       onSelect={() => handlePasskeyLogin()}
@@ -331,14 +340,7 @@ export function LoginPageClient({
                     </DropdownMenuItem>
                     {oidcEnabled ? (
                       <DropdownMenuItem
-                        onSelect={() => {
-                          if (isTurnstileEnabled && !turnstileToken) return;
-                          if (ssoProviderType === "duo_websdk") {
-                            setShowDuoModal(true);
-                            return;
-                          }
-                          startSsoFlow(`/api/v1/auth/oidc/login?from=${encodeURIComponent(from)}&turnstile_token=${encodeURIComponent(turnstileToken)}`);
-                        }}
+                        onSelect={startOidcLogin}
                         disabled={isTurnstileEnabled && !turnstileToken}
                         className={`cursor-pointer gap-2 px-3 py-2 text-sm ${isTurnstileEnabled && !turnstileToken ? "opacity-50" : ""}`}
                       >

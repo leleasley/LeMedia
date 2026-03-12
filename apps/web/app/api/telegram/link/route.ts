@@ -3,13 +3,17 @@ import { z } from "zod";
 import { requireUser } from "@/auth";
 import { requireCsrf } from "@/lib/csrf";
 import { logger } from "@/lib/logger";
-import { getPool } from "@/db";
+import { createUserApiToken, getPool, getUserTelegramFollowedMediaPreference, setUserTelegramFollowedMediaPreference } from "@/db";
 import { generateUserApiToken } from "@/lib/api-tokens";
-import { createUserApiToken } from "@/db";
 import { encryptSecret } from "@/lib/encryption";
+import { sendTelegramMessage } from "@/notifications/telegram";
 
 const LinkBody = z.object({
   code: z.string().trim().min(1).max(20)
+});
+
+const PreferenceBody = z.object({
+  followedMediaNotifications: z.boolean(),
 });
 
 // POST /api/telegram/link
@@ -105,14 +109,67 @@ export async function GET(_req: NextRequest) {
   );
 
   if (res.rows.length === 0) {
-    return NextResponse.json({ linked: false });
+    const followedMediaNotifications = await getUserTelegramFollowedMediaPreference(user.id);
+    return NextResponse.json({ linked: false, followedMediaNotifications });
   }
+
+  const followedMediaNotifications = await getUserTelegramFollowedMediaPreference(user.id);
 
   return NextResponse.json({
     linked: true,
     telegramId: res.rows[0].telegram_id,
-    linkedAt: res.rows[0].linked_at
+    linkedAt: res.rows[0].linked_at,
+    followedMediaNotifications,
   });
+}
+
+// PATCH /api/telegram/link
+// Updates telegram-linked user preferences
+export async function PATCH(req: NextRequest) {
+  const user = await requireUser();
+  if (user instanceof NextResponse) return user;
+
+  const csrf = requireCsrf(req);
+  if (csrf) return csrf;
+
+  let body: { followedMediaNotifications: boolean };
+  try {
+    body = PreferenceBody.parse(await req.json());
+  } catch {
+    return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+  }
+
+  const pool = getPool();
+  const linked = await pool.query(
+    "SELECT telegram_id FROM telegram_users WHERE user_id = $1 LIMIT 1",
+    [user.id]
+  );
+  if (linked.rows.length === 0) {
+    return NextResponse.json({ error: "Telegram account is not linked" }, { status: 400 });
+  }
+
+  await setUserTelegramFollowedMediaPreference(user.id, body.followedMediaNotifications);
+
+  if (body.followedMediaNotifications) {
+    const botToken = String(process.env.TELEGRAM_BOT_TOKEN ?? "").trim();
+    const chatId = String(linked.rows[0].telegram_id ?? "").trim();
+    if (botToken && chatId) {
+      try {
+        await sendTelegramMessage({
+          botToken,
+          chatId,
+          text: "You have enabled Notifications for followed media.",
+        });
+      } catch (err) {
+        logger.warn("[TelegramLink] Failed to send followed-media preference confirmation", {
+          userId: user.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  }
+
+  return NextResponse.json({ ok: true, followedMediaNotifications: body.followedMediaNotifications });
 }
 
 // DELETE /api/telegram/link

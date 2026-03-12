@@ -8,6 +8,16 @@ import { handleTrending, handleTrendingCallback } from "./commands/trending";
 import { handleNewStuff } from "./commands/newstuff";
 import { handleNaturalLanguage } from "./commands/natural";
 import {
+  handleDigitalRelease,
+  handleAwaitingReleaseQuery,
+  handleFollow,
+  handleFollowPickCallback,
+  handleFollowing,
+  handleReleasePickCallback,
+  handleRelease,
+  handleUnfollow,
+} from "./commands/follow";
+import {
   handleAlerts,
   handleAwaitingWatchQuery,
   handleStopAlerts,
@@ -65,6 +75,11 @@ bot.command("help", async ctx => {
     `🔗 /link — Connect your LeMedia account\n` +
     `🔓 /unlink — Disconnect your account\n\n` +
     `🎬 /request — Search and request media\n` +
+    `🔔 /follow [title|this] — Follow for release updates\n` +
+    `📌 /following — See everything you follow\n` +
+    `🧹 /unfollow [title|this] — Stop following a title\n` +
+    `🗓 /release [title|this] — Theatrical/premiere + digital dates\n` +
+    `💿 /digitalrelease [title|this] — Digital release date\n` +
     `🔔 /watch [title|this] — Alert me when available\n` +
     `🛎 /alerts — View active alerts\n` +
     `🛑 /stopalerts [all|id] — Stop alerts\n` +
@@ -76,6 +91,8 @@ bot.command("help", async ctx => {
     `💡 <i>Tip: You can also just type naturally!</i>\n` +
     `  • "I want to watch Dune"\n` +
     `  • "Can I get Breaking Bad?"\n` +
+    `  • "Give me an update on my following"\n` +
+    `  • "When is the digital release date for Dune?"\n` +
     `  • "Are my services running?"`,
     { parse_mode: "HTML", reply_markup: mainShortcutKeyboard() }
   );
@@ -90,6 +107,11 @@ bot.command(["request", "movie", "tv", "search"], handleRequest);
 bot.command(["watch", "alert"], handleWatch);
 bot.command(["alerts", "myalerts"], handleAlerts);
 bot.command(["stopalerts", "stopalert"], handleStopAlerts);
+bot.command(["follow", "track"], handleFollow);
+bot.command(["following", "myfollowing"], handleFollowing);
+bot.command(["unfollow", "untrack"], handleUnfollow);
+bot.command(["release", "releasedate"], handleRelease);
+bot.command(["digitalrelease", "digital"], handleDigitalRelease);
 bot.command("mystuff", handleMyStuff);
 bot.command(["trending", "popular"], handleTrending);
 bot.command(["newstuff", "new", "recent"], handleNewStuff);
@@ -103,6 +125,8 @@ bot.callbackQuery(/^req:/, handleSearchCallback);
 bot.callbackQuery(/^trend:/, handleTrendingCallback);
 bot.callbackQuery(/^watchpick:/, handleWatchPickCallback);
 bot.callbackQuery(/^watchstop:/, handleWatchStopCallback);
+bot.callbackQuery(/^followpick:/, handleFollowPickCallback);
+bot.callbackQuery(/^releasepick:/, handleReleasePickCallback);
 bot.callbackQuery(/^appr:/, handleApproveCallback);
 bot.callbackQuery(/^deny:/, handleDenyCallback);
 
@@ -115,11 +139,15 @@ bot.on("message:text", async ctx => {
   const handledWatch = await handleAwaitingWatchQuery(ctx);
   if (handledWatch) return;
 
-  // 2. User was prompted "What would you like to request?" — treat as search query
+  // 2. User was prompted for a release lookup title (/release or /digitalrelease)
+  const handledRelease = await handleAwaitingReleaseQuery(ctx);
+  if (handledRelease) return;
+
+  // 3. User was prompted "What would you like to request?" — treat as search query
   const handled = await handleAwaitingQuery(ctx);
   if (handled) return;
 
-  // 3. Natural language: "I want to watch Dune" / "are services running?" etc.
+  // 4. Natural language: "I want to watch Dune" / "are services running?" etc.
   await handleNaturalLanguage(ctx);
 });
 

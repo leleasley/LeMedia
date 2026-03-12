@@ -10,6 +10,7 @@ import { importLetterboxdReviews } from "@/lib/letterboxd";
 import { createBackupArchive } from "@/lib/backups";
 import { runSystemAlertChecks } from "@/lib/system-alerts";
 import { sendTelegramAdminDigestJob } from "@/lib/jobs/telegram-admin-digest";
+import { sendFollowedMediaReleaseNotificationsJob } from "@/lib/jobs/followed-media-release-notifications";
 
 export type JobHandler = () => Promise<string | void>;
 
@@ -90,6 +91,11 @@ export const jobHandlers: Record<string, JobHandler> = {
   "telegram-admin-digest": async () => {
     const result = await sendTelegramAdminDigestJob();
     logger.info(`[Job] telegram-admin-digest completed: ${result}`);
+    return result;
+  },
+  "followed-media-release-notifications": async () => {
+    const result = await sendFollowedMediaReleaseNotificationsJob();
+    logger.info(`[Job] followed-media-release-notifications completed: ${result}`);
     return result;
   },
 };
