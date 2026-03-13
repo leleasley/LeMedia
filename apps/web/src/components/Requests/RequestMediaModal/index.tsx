@@ -65,7 +65,7 @@ export function RequestMediaModal({
   const router = useRouter();
   const toast = useToast();
 
-  const blockedMessage = "Requesting blocked until notifications are applied";
+  const blockedMessage = "Please configure notifications in /settings/profile/notifications before requesting.";
   const canOpenRaw = Boolean(isAdmin && prowlarrEnabled && allowRaw);
 
   async function submit() {

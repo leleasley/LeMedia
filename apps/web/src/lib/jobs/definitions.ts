@@ -11,6 +11,7 @@ import { createBackupArchive } from "@/lib/backups";
 import { runSystemAlertChecks } from "@/lib/system-alerts";
 import { sendTelegramAdminDigestJob } from "@/lib/jobs/telegram-admin-digest";
 import { sendFollowedMediaReleaseNotificationsJob } from "@/lib/jobs/followed-media-release-notifications";
+import { sendEpisodeAirRemindersJob } from "@/lib/jobs/episode-air-reminders";
 
 export type JobHandler = () => Promise<string | void>;
 
@@ -96,6 +97,11 @@ export const jobHandlers: Record<string, JobHandler> = {
   "followed-media-release-notifications": async () => {
     const result = await sendFollowedMediaReleaseNotificationsJob();
     logger.info(`[Job] followed-media-release-notifications completed: ${result}`);
+    return result;
+  },
+  "episode-air-reminders": async () => {
+    const result = await sendEpisodeAirRemindersJob();
+    logger.info(`[Job] episode-air-reminders completed: ${result}`);
     return result;
   },
 };

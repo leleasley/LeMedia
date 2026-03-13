@@ -61,7 +61,7 @@ export function CollectionRequestModal(props: {
     }, 0);
   }, [props.movies, statusById]);
 
-  const blockedMessage = "Requesting blocked until notifications are applied";
+  const blockedMessage = "Please configure notifications in /settings/profile/notifications before requesting.";
 
   useEffect(() => {
     if (!props.open) return;

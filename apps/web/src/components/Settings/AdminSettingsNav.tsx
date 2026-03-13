@@ -68,7 +68,7 @@ export function AdminSettingsNav() {
             id: "notifications",
             label: "Notifications",
             routes: [
-                { id: "notifications", label: "Notifications", href: "/admin/settings/notifications", match: /^\/admin\/settings\/notifications(?!\/system-alerts)/ },
+                { id: "notifications", label: "Global Channels", href: "/admin/settings/notifications", match: /^\/admin\/settings\/notifications(?!\/system-alerts)/ },
                 { id: "system-alerts", label: "System Alerts", href: "/admin/settings/notifications/system-alerts", match: /^\/admin\/settings\/notifications\/system-alerts/ },
             ]
         },

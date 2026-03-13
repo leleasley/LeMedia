@@ -383,6 +383,76 @@ export async function notifyRequestEvent(event: RequestNotificationEvent, ctx: R
             await sendGenericWebhook({ url, body: webhookPayload });
             return;
           }
+          if (endpoint.type === "slack") {
+            const webhookUrl = String((endpoint.config as any)?.webhookUrl ?? "");
+            if (!webhookUrl) throw new NotificationDeliverySkipError("Slack webhook URL is not configured");
+            const res = await fetch(webhookUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                text: `[LeMedia] ${status}: ${title}`,
+                blocks: [{ type: "section", text: { type: "mrkdwn", text: plain } }],
+              }),
+            });
+            if (!res.ok) throw new Error(`Slack webhook failed: HTTP ${res.status}`);
+            return;
+          }
+          if (endpoint.type === "gotify") {
+            const baseUrl = String((endpoint.config as any)?.baseUrl ?? "").replace(/\/+$/, "");
+            const token = String((endpoint.config as any)?.token ?? "");
+            if (!baseUrl || !token) throw new NotificationDeliverySkipError("Gotify base URL or token missing");
+            const res = await fetch(`${baseUrl}/message?token=${encodeURIComponent(token)}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ title: `${status}: ${title}`, message: plain, priority: 8 }),
+            });
+            if (!res.ok) throw new Error(`Gotify request failed: HTTP ${res.status}`);
+            return;
+          }
+          if (endpoint.type === "ntfy") {
+            const topic = String((endpoint.config as any)?.topic ?? "");
+            const baseUrl = String((endpoint.config as any)?.baseUrl ?? "https://ntfy.sh").replace(/\/+$/, "");
+            if (!topic) throw new NotificationDeliverySkipError("ntfy topic is not configured");
+            const res = await fetch(`${baseUrl}/${encodeURIComponent(topic)}`, {
+              method: "POST",
+              headers: { "Content-Type": "text/plain" },
+              body: plain,
+            });
+            if (!res.ok) throw new Error(`ntfy request failed: HTTP ${res.status}`);
+            return;
+          }
+          if (endpoint.type === "pushbullet") {
+            const accessToken = String((endpoint.config as any)?.accessToken ?? "");
+            if (!accessToken) throw new NotificationDeliverySkipError("Pushbullet access token is not configured");
+            const res = await fetch("https://api.pushbullet.com/v2/pushes", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Access-Token": accessToken,
+              },
+              body: JSON.stringify({ type: "note", title: `${status}: ${title}`, body: plain }),
+            });
+            if (!res.ok) throw new Error(`Pushbullet request failed: HTTP ${res.status}`);
+            return;
+          }
+          if (endpoint.type === "pushover") {
+            const apiToken = String((endpoint.config as any)?.apiToken ?? "");
+            const userKey = String((endpoint.config as any)?.userKey ?? "");
+            if (!apiToken || !userKey) throw new NotificationDeliverySkipError("Pushover token or user key missing");
+            const params = new URLSearchParams({
+              token: apiToken,
+              user: userKey,
+              title: `${status}: ${title}`,
+              message: plain,
+            });
+            const res = await fetch("https://api.pushover.net/1/messages.json", {
+              method: "POST",
+              headers: { "Content-Type": "application/x-www-form-urlencoded" },
+              body: params.toString(),
+            });
+            if (!res.ok) throw new Error(`Pushover request failed: HTTP ${res.status}`);
+            return;
+          }
           throw new NotificationDeliverySkipError(`Unsupported endpoint type for request events: ${(endpoint as { type: string }).type}`);
         }
       );

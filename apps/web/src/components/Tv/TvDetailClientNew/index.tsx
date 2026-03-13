@@ -322,7 +322,7 @@ export function TvDetailClientNew({
     const [requestInfoLoaded, setRequestInfoLoaded] = useState(Boolean(prefetchedAggregate));
     const router = useRouter();
     const toast = useToast();
-    const blockedMessage = "Requesting blocked until notifications are applied";
+    const blockedMessage = "Please configure notifications in /settings/profile/notifications before requesting.";
 
     const [qualityProfilesState, setQualityProfilesState] = useState<QualityProfile[]>(qualityProfiles);
     const [requestsBlockedState, setRequestsBlockedState] = useState<boolean>(requestsBlocked);

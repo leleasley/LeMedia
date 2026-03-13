@@ -14,6 +14,7 @@ import { csrfFetch } from "@/lib/csrf-client";
 import { Modal } from "@/components/Common/Modal";
 import { ConfirmModal, useConfirm } from "@/components/Common/ConfirmModal";
 import { TelegramBotPanel } from "@/components/Profile/TelegramBotPanel";
+import { UserNotificationChannelsPanel } from "@/components/Profile/UserNotificationChannelsPanel";
 
 interface AssignedEndpoint {
   id: number;
@@ -106,6 +107,7 @@ export function ProfileSettingsPageClient({
   // Notifications data
   const { data: pushData } = useSWR<PushPreference>("/api/push/preference", securityFetcher);
   const pushEnabled = pushData?.enabled ?? null;
+  const showSystemChannelsSection = assignedEndpoints.length > 0;
 
   const apiToken = apiTokenData?.token ?? null;
 
@@ -450,137 +452,85 @@ export function ProfileSettingsPageClient({
         )}
 
         {activeTab === "notifications" && (
-          <div className="space-y-8">
-            {/* Notifications Header */}
-            <div className="relative overflow-hidden rounded-2xl md:rounded-3xl border border-white/10 bg-gradient-to-br from-blue-500/10 via-indigo-500/5 to-transparent p-6 md:p-8">
-              <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iMC4wMyI+PGNpcmNsZSBjeD0iMzAiIGN5PSIzMCIgcj0iMiIvPjwvZz48L2c+PC9zdmc+')] opacity-50" />
+          <div className="space-y-6">
+            <div className="relative overflow-hidden rounded-3xl border border-fuchsia-400/20 bg-gradient-to-br from-fuchsia-900/20 via-slate-950 to-cyan-950/30 p-6 md:p-8">
+              <div className="pointer-events-none absolute -top-20 -left-16 h-52 w-52 rounded-full bg-fuchsia-500/20 blur-3xl" />
+              <div className="pointer-events-none absolute -bottom-24 -right-20 h-64 w-64 rounded-full bg-cyan-500/20 blur-3xl" />
               <div className="relative">
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500/20 to-indigo-500/20 ring-1 ring-white/10">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-300">
-                      <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path>
-                      <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path>
-                    </svg>
-                  </div>
+                <div className="flex flex-wrap items-center justify-between gap-4">
                   <div>
-                    <h1 className="text-2xl md:text-3xl font-bold text-white">Notification Center</h1>
-                    <p className="text-sm text-white/60 mt-1">Manage how and when you receive notifications</p>
-                  </div>
-                </div>
-
-                {/* Status Cards */}
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <div className="flex items-center gap-3 rounded-xl bg-black/20 border border-white/5 p-4">
-                    <div className={`flex items-center justify-center w-10 h-10 rounded-full ${pushEnabled ? 'bg-emerald-500/20' : 'bg-white/10'}`}>
-                      <span className="text-lg">{pushEnabled ? '🔔' : '🔕'}</span>
+                    <div className="inline-flex items-center gap-2 rounded-full border border-fuchsia-200/30 bg-fuchsia-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-fuchsia-100">
+                      Notification Matrix
                     </div>
-                    <div>
-                      <div className="text-xs text-white/50 uppercase tracking-wider">Push</div>
-                      <div className={`font-semibold ${pushEnabled ? 'text-emerald-300' : 'text-white/70'}`}>
-                        {pushEnabled === null ? 'Loading...' : pushEnabled ? 'Enabled' : 'Disabled'}
+                    <h1 className="mt-3 text-3xl font-bold text-white">Profile Notifications</h1>
+                    <p className="mt-2 text-sm text-slate-300">
+                      Your channels, release alerts, and browser push now share one global timezone and one clean control center.
+                    </p>
+                  </div>
+                  <div className="grid w-full gap-2 sm:w-auto sm:grid-cols-3">
+                    <div className="rounded-xl border border-white/15 bg-black/25 px-4 py-3">
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400">Push</div>
+                      <div className="mt-1 font-semibold text-white">
+                        {pushEnabled === null ? "Loading" : pushEnabled ? "Enabled" : "Disabled"}
                       </div>
                     </div>
-                  </div>
-
-                  <div className="flex items-center gap-3 rounded-xl bg-black/20 border border-white/5 p-4">
-                    <div className={`flex items-center justify-center w-10 h-10 rounded-full ${user.weeklyDigestOptIn ? 'bg-emerald-500/20' : 'bg-white/10'}`}>
-                      <span className="text-lg">📬</span>
+                    <div className="rounded-xl border border-white/15 bg-black/25 px-4 py-3">
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400">Digest</div>
+                      <div className="mt-1 font-semibold text-white">{user.weeklyDigestOptIn ? "Weekly" : "Off"}</div>
                     </div>
-                    <div>
-                      <div className="text-xs text-white/50 uppercase tracking-wider">Digest</div>
-                      <div className={`font-semibold ${user.weeklyDigestOptIn ? 'text-emerald-300' : 'text-white/70'}`}>
-                        {user.weeklyDigestOptIn ? 'Weekly' : 'Disabled'}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3 rounded-xl bg-black/20 border border-white/5 p-4">
-                    <div className={`flex items-center justify-center w-10 h-10 rounded-full ${assignedEndpoints.length > 0 ? 'bg-emerald-500/20' : 'bg-amber-500/20'}`}>
-                      <span className="text-lg">{assignedEndpoints.length > 0 ? '📡' : '⚠️'}</span>
-                    </div>
-                    <div>
-                      <div className="text-xs text-white/50 uppercase tracking-wider">Channels</div>
-                      <div className={`font-semibold ${assignedEndpoints.length > 0 ? 'text-emerald-300' : 'text-amber-300'}`}>
-                        {assignedEndpoints.length > 0 ? `${assignedEndpoints.length} active` : 'None'}
+                    <div className="rounded-xl border border-white/15 bg-black/25 px-4 py-3">
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400">System</div>
+                      <div className="mt-1 font-semibold text-white">
+                        {assignedEndpoints.length > 0 ? `${assignedEndpoints.length} linked` : "Admin-managed"}
                       </div>
                     </div>
                   </div>
                 </div>
-
-                {/* Status message */}
-                {assignedEndpoints.length === 0 && (
-                  <div className="mt-4 flex items-center gap-3 rounded-lg bg-amber-500/10 border border-amber-500/20 px-4 py-3 text-sm text-amber-200">
-                    <span>⚠️</span>
-                    <span>No admin channels assigned - ask an administrator to enable notifications for your account</span>
-                  </div>
-                )}
               </div>
             </div>
 
-            {/* Web Push Notifications */}
-            <NotificationsSettingsPage initialEnabled={pushEnabled} />
+            <div className="grid gap-6 2xl:grid-cols-2">
+              <NotificationsSettingsPage initialEnabled={pushEnabled} />
+              <WeeklyDigestSettings
+                initialEnabled={!!user.weeklyDigestOptIn}
+                email={user.email ?? null}
+              />
+            </div>
 
-            {/* Weekly Digest */}
-            <WeeklyDigestSettings
-              initialEnabled={!!user.weeklyDigestOptIn}
-              email={user.email ?? null}
-            />
+            <UserNotificationChannelsPanel />
 
-            {/* Admin-assigned Channels */}
-            <div className="rounded-2xl md:rounded-3xl border border-white/10 bg-white/[0.02] p-6 md:p-8">
-              <div className="flex items-center gap-4 mb-6">
-                <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-slate-500/20 to-gray-500/20 ring-1 ring-white/10">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-300">
-                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                    <path d="M9 12l2 2 4-4" />
-                  </svg>
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-xl font-bold text-white">Admin Channels</h3>
-                  <p className="text-sm text-gray-400 mt-1">Notification channels managed by administrators</p>
-                </div>
-                {assignedEndpoints.length > 0 && (
-                  <div className="rounded-full px-3 py-1 text-xs font-semibold bg-emerald-500/20 text-emerald-200">
-                    {assignedEndpoints.length} Active
+            {showSystemChannelsSection ? (
+              <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900/80 to-slate-950 p-6 md:p-8">
+                <div className="mb-5 flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-xl font-bold text-white">System Alert Channels</h3>
+                    <p className="mt-1 text-sm text-slate-400">
+                      Operational channels managed by an administrator and linked to your account.
+                    </p>
                   </div>
-                )}
-              </div>
+                  <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold text-slate-200">
+                    {assignedEndpoints.length} linked
+                  </span>
+                </div>
 
-              {assignedEndpoints.length > 0 ? (
-                <div className="divide-y divide-white/10 rounded-xl border border-white/10 bg-black/20 overflow-hidden">
+                <div className="grid gap-3 md:grid-cols-2">
                   {assignedEndpoints.map(endpoint => (
-                    <div key={endpoint.id} className="flex items-center justify-between px-5 py-4 hover:bg-white/5 transition-colors">
-                      <div className="flex items-center gap-3">
-                        <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-white/5">
-                          <span className="text-base">
-                            {endpoint.type === 'discord' && '💬'}
-                            {endpoint.type === 'email' && '📧'}
-                            {endpoint.type === 'telegram' && '✈️'}
-                            {endpoint.type === 'slack' && '💼'}
-                            {endpoint.type === 'webhook' && '🔗'}
-                            {!['discord', 'email', 'telegram', 'slack', 'webhook'].includes(endpoint.type) && '📡'}
-                          </span>
+                    <div key={endpoint.id} className="rounded-xl border border-white/10 bg-black/25 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate font-semibold text-white">{endpoint.name}</div>
+                          <div className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-400">{endpoint.type}</div>
                         </div>
-                        <div>
-                          <div className="font-medium text-white">{endpoint.name}</div>
-                          <div className="text-xs text-gray-500 uppercase tracking-wider">{endpoint.type}</div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                        <span className="text-xs text-emerald-200 font-medium">Active</span>
+                        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300/30 bg-emerald-500/15 px-2 py-1 text-[10px] font-semibold text-emerald-100">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
+                          Active
+                        </span>
                       </div>
                     </div>
                   ))}
                 </div>
-              ) : (
-                <div className="text-center py-8 rounded-xl border border-dashed border-white/10 bg-white/[0.02]">
-                  <div className="text-3xl mb-3 opacity-30">📡</div>
-                  <p className="text-gray-400 text-sm">No channels assigned</p>
-                  <p className="text-gray-500 text-xs mt-1">Contact an admin to set up notification channels</p>
-                </div>
-              )}
-            </div>
+              </div>
+            ) : null}
           </div>
         )}
 

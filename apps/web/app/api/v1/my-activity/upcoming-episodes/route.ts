@@ -4,6 +4,13 @@ import { getUserByUsername, upsertUser, listUserMediaList } from "@/db";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
 import { logger } from "@/lib/logger";
 import { getTv, getTvSeason } from "@/lib/tmdb";
+import {
+  addDaysToIsoDate,
+  diffIsoDays,
+  getAppTimezone,
+  getIsoDateInTimeZone,
+  normalizeDateOnly,
+} from "@/lib/app-timezone";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +37,9 @@ async function resolveUserId() {
 export async function GET(req: NextRequest) {
   try {
     const userId = await resolveUserId();
+    const timeZone = await getAppTimezone();
+    const todayIso = getIsoDateInTimeZone(Date.now(), timeZone);
+    const maxUpcomingIso = addDaysToIsoDate(todayIso, 7);
     
     // Get user's favorites and watchlist (TV shows only)
     const [favorites, watchlist] = await Promise.all([
@@ -47,13 +57,12 @@ export async function GET(req: NextRequest) {
     if (trackedShows.size === 0) {
       return cacheableJsonResponseWithETag(req, {
         items: [],
-        message: "No TV shows in favorites or watchlist"
+        message: "No TV shows in favorites or watchlist",
+        timezone: timeZone,
       }, { maxAge: 300 });
     }
 
     const upcomingEpisodes: UpcomingEpisode[] = [];
-    const now = new Date();
-    const oneWeekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
     // Check each tracked show for upcoming episodes
     await Promise.all(
@@ -77,12 +86,12 @@ export async function GET(req: NextRequest) {
 
               for (const episode of seasonDetails.episodes) {
                 if (!episode.air_date) continue;
-                
-                const airDate = new Date(episode.air_date);
-                
-                // Only include episodes within the next week
-                if (airDate >= now && airDate <= oneWeekFromNow) {
-                  const daysUntil = Math.ceil((airDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+                const airDate = normalizeDateOnly(String(episode.air_date));
+                if (!airDate) continue;
+
+                // Compare by app-local date window to avoid UTC/day-boundary drift.
+                if (airDate >= todayIso && airDate <= maxUpcomingIso) {
+                  const daysUntil = Math.max(0, diffIsoDays(todayIso, airDate));
                   
                   upcomingEpisodes.push({
                     seriesId: tmdbId,
@@ -91,7 +100,7 @@ export async function GET(req: NextRequest) {
                     seasonNumber: episode.season_number,
                     episodeNumber: episode.episode_number,
                     episodeName: episode.name || "TBA",
-                    airDate: episode.air_date,
+                    airDate,
                     daysUntil
                   });
                 }
@@ -110,7 +119,8 @@ export async function GET(req: NextRequest) {
     upcomingEpisodes.sort((a, b) => a.airDate.localeCompare(b.airDate));
 
     return cacheableJsonResponseWithETag(req, {
-      items: upcomingEpisodes.slice(0, 10)
+      items: upcomingEpisodes.slice(0, 10),
+      timezone: timeZone,
     }, { maxAge: 3600 }); // Cache for 1 hour
   } catch (error) {
     if (error instanceof Response) return error;

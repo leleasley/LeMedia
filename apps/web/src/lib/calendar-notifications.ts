@@ -152,6 +152,74 @@ async function sendCalendarNotification(subscription: any) {
           const url = String(config?.url ?? "");
           if (!url) continue;
           await sendWebhookNotification(url, title, subscription);
+        } else if (endpoint.type === "slack") {
+          const webhookUrl = String((endpoint.config as any)?.webhookUrl ?? "");
+          if (!webhookUrl) continue;
+          const res = await fetch(webhookUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              text: `[LeMedia] ${title} is now available`,
+              blocks: [{ type: "section", text: { type: "mrkdwn", text: `🎉 *${title}* is now available in Jellyfin.` } }],
+            }),
+          });
+          if (!res.ok) throw new Error(`Slack webhook failed: HTTP ${res.status}`);
+        } else if (endpoint.type === "gotify") {
+          const baseUrl = String((endpoint.config as any)?.baseUrl ?? "").replace(/\/+$/, "");
+          const token = String((endpoint.config as any)?.token ?? "");
+          if (!baseUrl || !token) continue;
+          const res = await fetch(`${baseUrl}/message?token=${encodeURIComponent(token)}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title: `${title} is now available`,
+              message: `You can watch ${title} now in Jellyfin.`,
+              priority: 8,
+            }),
+          });
+          if (!res.ok) throw new Error(`Gotify request failed: HTTP ${res.status}`);
+        } else if (endpoint.type === "ntfy") {
+          const topic = String((endpoint.config as any)?.topic ?? "");
+          const baseUrl = String((endpoint.config as any)?.baseUrl ?? "https://ntfy.sh").replace(/\/+$/, "");
+          if (!topic) continue;
+          const res = await fetch(`${baseUrl}/${encodeURIComponent(topic)}`, {
+            method: "POST",
+            headers: { "Content-Type": "text/plain" },
+            body: `🎉 ${title} is now available in Jellyfin.`,
+          });
+          if (!res.ok) throw new Error(`ntfy request failed: HTTP ${res.status}`);
+        } else if (endpoint.type === "pushbullet") {
+          const accessToken = String((endpoint.config as any)?.accessToken ?? "");
+          if (!accessToken) continue;
+          const res = await fetch("https://api.pushbullet.com/v2/pushes", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Access-Token": accessToken,
+            },
+            body: JSON.stringify({
+              type: "note",
+              title: `${title} is now available`,
+              body: `You can watch ${title} now in Jellyfin.`,
+            }),
+          });
+          if (!res.ok) throw new Error(`Pushbullet request failed: HTTP ${res.status}`);
+        } else if (endpoint.type === "pushover") {
+          const apiToken = String((endpoint.config as any)?.apiToken ?? "");
+          const userKey = String((endpoint.config as any)?.userKey ?? "");
+          if (!apiToken || !userKey) continue;
+          const params = new URLSearchParams({
+            token: apiToken,
+            user: userKey,
+            title: `${title} is now available`,
+            message: `You can watch ${title} now in Jellyfin.`,
+          });
+          const res = await fetch("https://api.pushover.net/1/messages.json", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: params.toString(),
+          });
+          if (!res.ok) throw new Error(`Pushover request failed: HTTP ${res.status}`);
         }
       } catch (error) {
         logger.error(`[Calendar Notifications] Error sending to ${endpoint.type}:`, error);

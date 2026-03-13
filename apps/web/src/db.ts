@@ -2747,6 +2747,27 @@ export async function getUserByUsername(username: string): Promise<DbUserWithHas
   };
 }
 
+export async function listUsersByUsernames(usernames: string[]): Promise<Array<{ id: number; username: string; displayName: string | null }>> {
+  await ensureUserSchema();
+  const normalized = Array.from(new Set(usernames.map((name) => name.trim().toLowerCase()).filter(Boolean)));
+  if (normalized.length === 0) return [];
+
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, username, display_name as "displayName"
+     FROM app_user
+     WHERE lower(username) = ANY($1::text[])
+       AND COALESCE(banned, FALSE) = FALSE`,
+    [normalized]
+  );
+
+  return res.rows.map((row) => ({
+    id: Number(row.id),
+    username: String(row.username),
+    displayName: (row.displayName as string | null) ?? null,
+  }));
+}
+
 export type UserMediaListType = "favorite" | "watchlist";
 
 export type UserMediaListItem = {
@@ -2868,6 +2889,125 @@ export async function getUserMediaListStatusBulk(input: {
     });
   }
   return map;
+}
+
+export async function hasUserMediaListEntry(input: {
+  userId: number;
+  mediaType: "movie" | "tv";
+  tmdbId: number;
+  listTypes?: UserMediaListType[];
+}): Promise<boolean> {
+  await ensureMediaListSchema();
+  const p = getPool();
+  const listTypes = Array.from(new Set((input.listTypes ?? ["favorite", "watchlist"]).filter(Boolean)));
+  if (!listTypes.length) return false;
+
+  const res = await p.query(
+    `SELECT 1
+     FROM user_media_list
+     WHERE user_id = $1
+       AND media_type = $2
+       AND tmdb_id = $3
+       AND list_type = ANY($4::text[])
+     LIMIT 1`,
+    [input.userId, input.mediaType, input.tmdbId, listTypes]
+  );
+  return res.rows.length > 0;
+}
+
+export async function listTrackedTvForEpisodeReminders(maxShowsPerUser = 100): Promise<Array<{ userId: number; tmdbId: number }>> {
+  await ensureMediaListSchema();
+  await ensureUserSchema();
+  const p = getPool();
+  const perUserLimit = Math.min(Math.max(maxShowsPerUser, 1), 500);
+  const res = await p.query(
+    `WITH dedup AS (
+       SELECT uml.user_id, uml.tmdb_id, MAX(uml.created_at) AS last_added
+       FROM user_media_list uml
+       JOIN app_user u ON u.id = uml.user_id
+       WHERE uml.media_type = 'tv'
+         AND uml.list_type IN ('favorite', 'watchlist')
+         AND COALESCE(u.banned, FALSE) = FALSE
+       GROUP BY uml.user_id, uml.tmdb_id
+     ), ranked AS (
+       SELECT
+         user_id,
+         tmdb_id,
+         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY last_added DESC, tmdb_id DESC) AS rn
+       FROM dedup
+     )
+     SELECT user_id as "userId", tmdb_id as "tmdbId"
+     FROM ranked
+     WHERE rn <= $1
+     ORDER BY user_id ASC, tmdb_id ASC`,
+    [perUserLimit]
+  );
+
+  return res.rows.map((row) => ({
+    userId: Number(row.userId),
+    tmdbId: Number(row.tmdbId),
+  }));
+}
+
+export async function markEpisodeAirReminderSent(input: {
+  userId: number;
+  tmdbId: number;
+  seasonNumber: number;
+  episodeNumber: number;
+  airDate: string;
+}): Promise<boolean> {
+  const p = getPool();
+  const res = await p.query(
+    `INSERT INTO episode_air_reminder_sent
+      (user_id, tmdb_id, season_number, episode_number, air_date)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (user_id, tmdb_id, season_number, episode_number, air_date) DO NOTHING
+     RETURNING id`,
+    [input.userId, input.tmdbId, input.seasonNumber, input.episodeNumber, input.airDate]
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
+export async function cleanupEpisodeAirReminderSent(olderThanDays = 60): Promise<number> {
+  const p = getPool();
+  const days = Math.min(Math.max(olderThanDays, 1), 365);
+  const res = await p.query(
+    `DELETE FROM episode_air_reminder_sent
+     WHERE created_at < NOW() - ($1::text || ' days')::interval`,
+    [days]
+  );
+  return res.rowCount ?? 0;
+}
+
+export async function listEpisodeAirReminderTelegramTargets(userIds: number[]): Promise<Map<number, { telegramId: string | null; telegramFollowOptIn: boolean }>> {
+  await ensureUserSchema();
+  const out = new Map<number, { telegramId: string | null; telegramFollowOptIn: boolean }>();
+  if (!userIds.length) return out;
+
+  const ids = Array.from(new Set(userIds.filter((id) => Number.isFinite(id) && id > 0)));
+  if (!ids.length) return out;
+
+  const p = getPool();
+  const res = await p.query(
+    `SELECT
+       u.id as "userId",
+       tu.telegram_id as "telegramId",
+       COALESCE(utp.followed_media_notifications, FALSE) as "telegramFollowOptIn"
+     FROM app_user u
+     LEFT JOIN telegram_users tu ON tu.user_id = u.id
+     LEFT JOIN user_telegram_preference utp ON utp.user_id = u.id
+     WHERE u.id = ANY($1::bigint[])`,
+    [ids]
+  );
+
+  for (const row of res.rows) {
+    out.set(Number(row.userId), {
+      telegramId: row.telegramId ? String(row.telegramId) : null,
+      telegramFollowOptIn: !!row.telegramFollowOptIn,
+    });
+  }
+
+  return out;
 }
 
 export async function listUsersWithWatchlistSync(userId?: number) {
@@ -3193,9 +3333,10 @@ async function ensureSchema() {
       CREATE TABLE IF NOT EXISTS notification_endpoint (
         id BIGSERIAL PRIMARY KEY,
         name TEXT NOT NULL,
-        type TEXT NOT NULL CHECK (type IN ('telegram','discord','email','webhook')),
+        type TEXT NOT NULL CHECK (type IN ('telegram','discord','email','webhook','webpush','gotify','ntfy','pushbullet','pushover','slack')),
         enabled BOOLEAN NOT NULL DEFAULT TRUE,
         is_global BOOLEAN NOT NULL DEFAULT FALSE,
+        owner_user_id BIGINT REFERENCES app_user(id) ON DELETE CASCADE,
         events JSONB NOT NULL DEFAULT '["request_pending","request_submitted","request_denied","request_failed","request_already_exists","request_partially_available","request_downloading","request_available","request_removed","issue_reported","issue_resolved"]'::jsonb,
         config JSONB NOT NULL DEFAULT '{}'::jsonb,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -3203,12 +3344,32 @@ async function ensureSchema() {
     `);
     await p.query(`ALTER TABLE notification_endpoint ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE;`);
     await p.query(`ALTER TABLE notification_endpoint ADD COLUMN IF NOT EXISTS is_global BOOLEAN NOT NULL DEFAULT FALSE;`);
+    await p.query(`ALTER TABLE notification_endpoint ADD COLUMN IF NOT EXISTS owner_user_id BIGINT REFERENCES app_user(id) ON DELETE CASCADE;`);
+    await p.query(`
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1
+          FROM pg_constraint
+          WHERE conname = 'notification_endpoint_type_check'
+            AND conrelid = 'notification_endpoint'::regclass
+        ) THEN
+          ALTER TABLE notification_endpoint DROP CONSTRAINT notification_endpoint_type_check;
+        END IF;
+        ALTER TABLE notification_endpoint
+          ADD CONSTRAINT notification_endpoint_type_check
+          CHECK (type IN ('telegram','discord','email','webhook','webpush','gotify','ntfy','pushbullet','pushover','slack'));
+      EXCEPTION
+        WHEN duplicate_object THEN NULL;
+      END $$;
+    `);
     await p.query(
       `ALTER TABLE notification_endpoint ADD COLUMN IF NOT EXISTS events JSONB NOT NULL DEFAULT '["request_pending","request_submitted","request_denied","request_failed","request_already_exists","request_partially_available","request_downloading","request_available","request_removed","issue_reported","issue_resolved"]'::jsonb;`
     );
     await p.query(`CREATE INDEX IF NOT EXISTS idx_notification_endpoint_type ON notification_endpoint(type);`);
     await p.query(`CREATE INDEX IF NOT EXISTS idx_notification_endpoint_enabled ON notification_endpoint(enabled);`);
     await p.query(`CREATE INDEX IF NOT EXISTS idx_notification_endpoint_is_global ON notification_endpoint(is_global);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_notification_endpoint_owner_user_id ON notification_endpoint(owner_user_id);`);
     await p.query(`
       CREATE TABLE IF NOT EXISTS app_setting (
         key TEXT PRIMARY KEY,
@@ -3386,6 +3547,7 @@ async function ensureSchema() {
           ('prowlarr-indexer-sync', '*/5 * * * *', 300, 'system', TRUE),
           ('plex-availability-sync', '0 */4 * * *', 14400, 'system', FALSE),
           ('system-alerts', '*/5 * * * *', 300, 'system', TRUE),
+          ('episode-air-reminders', '*/30 * * * *', 1800, 'system', TRUE),
           ('followed-media-release-notifications', '0 * * * *', 3600, 'system', TRUE),
           ('backup-snapshot', '30 2 * * *', 86400, 'system', FALSE)
       ON CONFLICT (name) DO NOTHING;
@@ -3805,7 +3967,17 @@ export async function clearRequestsForTmdb(mediaType: "movie" | "tv", tmdbId: nu
   }
 }
 
-export type NotificationEndpointType = "telegram" | "discord" | "email" | "webhook";
+export type NotificationEndpointType =
+  | "telegram"
+  | "discord"
+  | "email"
+  | "webhook"
+  | "webpush"
+  | "gotify"
+  | "ntfy"
+  | "pushbullet"
+  | "pushover"
+  | "slack";
 
 export type NotificationEndpointPublic = {
   id: number;
@@ -3813,6 +3985,7 @@ export type NotificationEndpointPublic = {
   type: NotificationEndpointType;
   enabled: boolean;
   is_global: boolean;
+  owner_user_id: number | null;
   events: string[];
   types: number;
   created_at: string;
@@ -3826,6 +3999,29 @@ export type TelegramConfig = {
 
 export type DiscordConfig = {
   webhookUrl: string;
+};
+
+export type SlackConfig = {
+  webhookUrl: string;
+};
+
+export type GotifyConfig = {
+  baseUrl: string;
+  token: string;
+};
+
+export type NtfyConfig = {
+  topic: string;
+  baseUrl?: string;
+};
+
+export type PushbulletConfig = {
+  accessToken: string;
+};
+
+export type PushoverConfig = {
+  apiToken: string;
+  userKey: string;
 };
 
 export type EmailConfig = {
@@ -3849,17 +4045,31 @@ export type WebhookConfig = {
   url: string;
 };
 
+export type WebPushConfig = Record<string, never>;
+
 export type NotificationEndpointConfig =
   | TelegramConfig
   | DiscordConfig
+  | SlackConfig
+  | GotifyConfig
+  | NtfyConfig
+  | PushbulletConfig
+  | PushoverConfig
   | EmailConfig
   | WebhookConfig
+  | WebPushConfig
   | Record<string, unknown>; // Fallback for unknown configs
 
 export type NotificationEndpointFull =
   | (NotificationEndpointPublic & { type: "discord"; config: DiscordConfig })
   | (NotificationEndpointPublic & { type: "telegram"; config: TelegramConfig })
+  | (NotificationEndpointPublic & { type: "slack"; config: SlackConfig })
+  | (NotificationEndpointPublic & { type: "gotify"; config: GotifyConfig })
+  | (NotificationEndpointPublic & { type: "ntfy"; config: NtfyConfig })
+  | (NotificationEndpointPublic & { type: "pushbullet"; config: PushbulletConfig })
+  | (NotificationEndpointPublic & { type: "pushover"; config: PushoverConfig })
   | (NotificationEndpointPublic & { type: "email"; config: EmailConfig })
+  | (NotificationEndpointPublic & { type: "webpush"; config: WebPushConfig })
   | (NotificationEndpointPublic & { type: "webhook"; config: WebhookConfig });
 
 export async function listNotificationEndpoints(): Promise<NotificationEndpointPublic[]> {
@@ -3867,7 +4077,7 @@ export async function listNotificationEndpoints(): Promise<NotificationEndpointP
   const p = getPool();
   const res = await p.query(
     `
-    SELECT id, name, type, enabled, is_global, events, types, created_at
+    SELECT id, name, type, enabled, is_global, owner_user_id, events, types, created_at
     FROM notification_endpoint
     ORDER BY created_at DESC
     `
@@ -3880,6 +4090,7 @@ export async function listNotificationEndpoints(): Promise<NotificationEndpointP
       type: r.type,
       enabled: !!r.enabled,
       is_global: !!r.is_global,
+      owner_user_id: r.owner_user_id == null ? null : Number(r.owner_user_id),
       events: Array.isArray(r.events) ? r.events.map((e: unknown) => String(e)) : [],
       types: Number.isFinite(Number(r.types)) ? Number(r.types) : 0,
       config: r.config,
@@ -3893,7 +4104,7 @@ export async function listNotificationEndpointsFull(): Promise<NotificationEndpo
   const p = getPool();
   const res = await p.query(
     `
-    SELECT id, name, type, enabled, is_global, events, types, config, created_at
+    SELECT id, name, type, enabled, is_global, owner_user_id, events, types, config, created_at
     FROM notification_endpoint
     ORDER BY created_at DESC
     `
@@ -3906,6 +4117,7 @@ export async function listNotificationEndpointsFull(): Promise<NotificationEndpo
       type: r.type,
       enabled: !!r.enabled,
       is_global: !!r.is_global,
+      owner_user_id: r.owner_user_id == null ? null : Number(r.owner_user_id),
       events: Array.isArray(r.events) ? r.events.map((e: unknown) => String(e)) : [],
       types: Number.isFinite(Number(r.types)) ? Number(r.types) : 0,
       config: r.config,
@@ -4931,6 +5143,7 @@ export async function createNotificationEndpoint(input: {
   type: NotificationEndpointType;
   enabled?: boolean;
   is_global?: boolean;
+  owner_user_id?: number | null;
   events?: string[];
   config: NotificationEndpointConfig;
 }) {
@@ -4938,15 +5151,16 @@ export async function createNotificationEndpoint(input: {
   const p = getPool();
   const res = await p.query(
     `
-    INSERT INTO notification_endpoint (name, type, enabled, is_global, events, config)
-    VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)
-    RETURNING id, name, type, enabled, is_global, events, types, created_at
+    INSERT INTO notification_endpoint (name, type, enabled, is_global, owner_user_id, events, config)
+    VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb)
+    RETURNING id, name, type, enabled, is_global, owner_user_id, events, types, created_at
     `,
     [
       input.name,
       input.type,
       input.enabled ?? true,
       input.is_global ?? false,
+      input.owner_user_id ?? null,
       JSON.stringify(
         input.events ?? [
           "request_pending",
@@ -4972,6 +5186,7 @@ export async function createNotificationEndpoint(input: {
     type: row.type as NotificationEndpointType,
     enabled: !!row.enabled,
     is_global: !!row.is_global,
+    owner_user_id: row.owner_user_id == null ? null : Number(row.owner_user_id),
     events: Array.isArray(row.events) ? row.events.map((e: unknown) => String(e)) : [],
     types: Number.isFinite(Number(row.types)) ? Number(row.types) : 0,
     created_at: row.created_at as string
@@ -4989,7 +5204,7 @@ export async function getNotificationEndpointByIdFull(id: number): Promise<Notif
   const p = getPool();
   const res = await p.query(
     `
-    SELECT id, name, type, enabled, is_global, events, types, config, created_at
+    SELECT id, name, type, enabled, is_global, owner_user_id, events, types, config, created_at
     FROM notification_endpoint
     WHERE id = $1
     LIMIT 1
@@ -5004,6 +5219,7 @@ export async function getNotificationEndpointByIdFull(id: number): Promise<Notif
     type: r.type,
     enabled: !!r.enabled,
     is_global: !!r.is_global,
+    owner_user_id: r.owner_user_id == null ? null : Number(r.owner_user_id),
     events: Array.isArray(r.events) ? r.events.map((e: unknown) => String(e)) : [],
     types: Number.isFinite(Number(r.types)) ? Number(r.types) : 0,
     config: r.config,
@@ -5013,7 +5229,14 @@ export async function getNotificationEndpointByIdFull(id: number): Promise<Notif
 
 export async function updateNotificationEndpoint(
   id: number,
-  input: { name: string; enabled: boolean; is_global: boolean; events: string[]; config: NotificationEndpointConfig }
+  input: {
+    name: string;
+    enabled: boolean;
+    is_global: boolean;
+    owner_user_id?: number | null;
+    events: string[];
+    config: NotificationEndpointConfig;
+  }
 ): Promise<NotificationEndpointPublic | null> {
   await ensureSchema();
   const p = getPool();
@@ -5023,16 +5246,18 @@ export async function updateNotificationEndpoint(
     SET name = $2,
         enabled = $3,
         is_global = $4,
-        events = $5::jsonb,
-        config = $6::jsonb
+        owner_user_id = $5,
+        events = $6::jsonb,
+        config = $7::jsonb
     WHERE id = $1
-    RETURNING id, name, type, enabled, is_global, events, types, created_at
+    RETURNING id, name, type, enabled, is_global, owner_user_id, events, types, created_at
     `,
     [
       id,
       input.name,
       input.enabled,
       input.is_global,
+      input.owner_user_id ?? null,
       JSON.stringify(input.events ?? []),
       JSON.stringify(input.config ?? {})
     ]
@@ -5045,6 +5270,7 @@ export async function updateNotificationEndpoint(
     type: row.type as NotificationEndpointType,
     enabled: !!row.enabled,
     is_global: !!row.is_global,
+    owner_user_id: row.owner_user_id == null ? null : Number(row.owner_user_id),
     events: Array.isArray(row.events) ? row.events.map((e: unknown) => String(e)) : [],
     types: Number.isFinite(Number(row.types)) ? Number(row.types) : 0,
     created_at: row.created_at as string
@@ -5056,7 +5282,7 @@ export async function listGlobalNotificationEndpointsFull(): Promise<Notificatio
   const p = getPool();
   const res = await p.query(
     `
-    SELECT id, name, type, enabled, is_global, events, types, config, created_at
+    SELECT id, name, type, enabled, is_global, owner_user_id, events, types, config, created_at
     FROM notification_endpoint
     WHERE enabled = TRUE AND is_global = TRUE
     ORDER BY created_at DESC
@@ -5070,6 +5296,7 @@ export async function listGlobalNotificationEndpointsFull(): Promise<Notificatio
       type: r.type,
       enabled: !!r.enabled,
       is_global: !!r.is_global,
+      owner_user_id: r.owner_user_id == null ? null : Number(r.owner_user_id),
       events: Array.isArray(r.events) ? r.events.map((e: unknown) => String(e)) : [],
       types: Number.isFinite(Number(r.types)) ? Number(r.types) : 0,
       config: r.config,
@@ -5083,7 +5310,7 @@ export async function listNotificationEndpointsForUser(userId: number): Promise<
   const p = getPool();
   const res = await p.query(
     `
-    SELECT e.id, e.name, e.type, e.enabled, e.is_global, e.events, e.types, e.config, e.created_at
+    SELECT e.id, e.name, e.type, e.enabled, e.is_global, e.owner_user_id, e.events, e.types, e.config, e.created_at
     FROM notification_endpoint e
     JOIN user_notification_endpoint u ON u.endpoint_id = e.id
     WHERE u.user_id = $1
@@ -5100,6 +5327,7 @@ export async function listNotificationEndpointsForUser(userId: number): Promise<
       type: r.type,
       enabled: !!r.enabled,
       is_global: !!r.is_global,
+      owner_user_id: r.owner_user_id == null ? null : Number(r.owner_user_id),
       events: Array.isArray(r.events) ? r.events.map((e: unknown) => String(e)) : [],
       types: Number.isFinite(Number(r.types)) ? Number(r.types) : 0,
       config: r.config,
@@ -5113,7 +5341,7 @@ export async function listNotificationEndpointsForAllUsers(): Promise<Notificati
   const p = getPool();
   const res = await p.query(
     `
-    SELECT DISTINCT e.id, e.name, e.type, e.enabled, e.is_global, e.events, e.types, e.config, e.created_at
+    SELECT DISTINCT e.id, e.name, e.type, e.enabled, e.is_global, e.owner_user_id, e.events, e.types, e.config, e.created_at
     FROM notification_endpoint e
     JOIN user_notification_endpoint u ON u.endpoint_id = e.id
     WHERE e.enabled = TRUE
@@ -5128,12 +5356,68 @@ export async function listNotificationEndpointsForAllUsers(): Promise<Notificati
       type: r.type,
       enabled: !!r.enabled,
       is_global: !!r.is_global,
+      owner_user_id: r.owner_user_id == null ? null : Number(r.owner_user_id),
       events: Array.isArray(r.events) ? r.events.map((e: unknown) => String(e)) : [],
       types: Number.isFinite(Number(r.types)) ? Number(r.types) : 0,
       config: r.config,
       created_at: r.created_at
     };
   });
+}
+
+export async function listNotificationEndpointsForOwner(userId: number): Promise<NotificationEndpointFull[]> {
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT id, name, type, enabled, is_global, owner_user_id, events, types, config, created_at
+    FROM notification_endpoint
+    WHERE owner_user_id = $1
+    ORDER BY created_at DESC
+    `,
+    [userId]
+  );
+
+  return res.rows.map((r) => ({
+    id: Number(r.id),
+    name: String(r.name),
+    type: r.type,
+    enabled: !!r.enabled,
+    is_global: !!r.is_global,
+    owner_user_id: r.owner_user_id == null ? null : Number(r.owner_user_id),
+    events: Array.isArray(r.events) ? r.events.map((e: unknown) => String(e)) : [],
+    types: Number.isFinite(Number(r.types)) ? Number(r.types) : 0,
+    config: r.config,
+    created_at: String(r.created_at),
+  }));
+}
+
+export async function getNotificationEndpointByIdForOwner(id: number, userId: number): Promise<NotificationEndpointFull | null> {
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT id, name, type, enabled, is_global, owner_user_id, events, types, config, created_at
+    FROM notification_endpoint
+    WHERE id = $1 AND owner_user_id = $2
+    LIMIT 1
+    `,
+    [id, userId]
+  );
+  if (!res.rows.length) return null;
+  const row = res.rows[0];
+  return {
+    id: Number(row.id),
+    name: String(row.name),
+    type: row.type,
+    enabled: !!row.enabled,
+    is_global: !!row.is_global,
+    owner_user_id: row.owner_user_id == null ? null : Number(row.owner_user_id),
+    events: Array.isArray(row.events) ? row.events.map((e: unknown) => String(e)) : [],
+    types: Number.isFinite(Number(row.types)) ? Number(row.types) : 0,
+    config: row.config,
+    created_at: String(row.created_at),
+  };
 }
 
 export type NotificationDeliveryAttemptStatus = "success" | "failure" | "skipped";
@@ -5377,6 +5661,15 @@ export async function listUserNotificationEndpointIds(userId: number): Promise<n
   return res.rows
     .map(r => Number(r.endpoint_id))
     .filter(n => Number.isFinite(n));
+}
+
+export async function addUserNotificationEndpointId(userId: number, endpointId: number): Promise<void> {
+  await ensureSchema();
+  const p = getPool();
+  await p.query(
+    `INSERT INTO user_notification_endpoint (user_id, endpoint_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+    [userId, endpointId]
+  );
 }
 
 export async function setUserNotificationEndpointIds(userId: number, endpointIds: number[]) {
@@ -5709,6 +6002,251 @@ export async function deleteUserReview(id: number, userId: number): Promise<bool
     [id, userId]
   );
   return (res.rowCount ?? 0) > 0;
+}
+
+export type ReviewComment = {
+  id: number;
+  reviewId: number;
+  userId: number;
+  parentId: number | null;
+  content: string;
+  edited: boolean;
+  createdAt: string;
+  updatedAt: string;
+  user: {
+    id: number;
+    username: string;
+    displayName: string | null;
+    avatarUrl: string | null;
+    avatarVersion: number | null;
+    jellyfinUserId: string | null;
+  };
+  replyCount: number;
+};
+
+export async function getReviewById(reviewId: number): Promise<{
+  id: number;
+  userId: number;
+  mediaType: "movie" | "tv";
+  tmdbId: number;
+  title: string;
+  reviewerUsername: string;
+} | null> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT r.id, r.user_id as "userId", r.media_type as "mediaType", r.tmdb_id as "tmdbId", r.title,
+            u.username as "reviewerUsername"
+     FROM user_review r
+     JOIN app_user u ON u.id = r.user_id
+     WHERE r.id = $1
+     LIMIT 1`,
+    [reviewId]
+  );
+  return (res.rows[0] as {
+    id: number;
+    userId: number;
+    mediaType: "movie" | "tv";
+    tmdbId: number;
+    title: string;
+    reviewerUsername: string;
+  } | undefined) ?? null;
+}
+
+export async function getReviewCommentById(commentId: number): Promise<{ id: number; reviewId: number; userId: number } | null> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, review_id as "reviewId", user_id as "userId"
+     FROM review_comment
+     WHERE id = $1
+     LIMIT 1`,
+    [commentId]
+  );
+  return (res.rows[0] as { id: number; reviewId: number; userId: number } | undefined) ?? null;
+}
+
+export async function addReviewComment(reviewId: number, userId: number, content: string, parentId?: number): Promise<ReviewComment> {
+  const p = getPool();
+  const res = await p.query(
+    `INSERT INTO review_comment (review_id, user_id, content, parent_id)
+     VALUES ($1, $2, $3, $4)
+     RETURNING
+       id,
+       review_id as "reviewId",
+       user_id as "userId",
+       parent_id as "parentId",
+       content,
+       edited,
+       created_at as "createdAt",
+       updated_at as "updatedAt"`,
+    [reviewId, userId, content, parentId ?? null]
+  );
+
+  const userRes = await p.query(
+    `SELECT id, username, display_name as "displayName", avatar_url as "avatarUrl",
+            avatar_version as "avatarVersion", jellyfin_user_id as "jellyfinUserId"
+     FROM app_user
+     WHERE id = $1`,
+    [userId]
+  );
+
+  const row = res.rows[0];
+  const user = userRes.rows[0];
+  return {
+    id: Number(row.id),
+    reviewId: Number(row.reviewId),
+    userId: Number(row.userId),
+    parentId: row.parentId === null ? null : Number(row.parentId),
+    content: String(row.content),
+    edited: !!row.edited,
+    createdAt: String(row.createdAt),
+    updatedAt: String(row.updatedAt),
+    user: {
+      id: Number(user.id),
+      username: String(user.username),
+      displayName: (user.displayName as string | null) ?? null,
+      avatarUrl: (user.avatarUrl as string | null) ?? null,
+      avatarVersion: user.avatarVersion == null ? null : Number(user.avatarVersion),
+      jellyfinUserId: (user.jellyfinUserId as string | null) ?? null,
+    },
+    replyCount: 0,
+  };
+}
+
+export async function updateReviewComment(reviewId: number, commentId: number, userId: number, content: string): Promise<ReviewComment | null> {
+  const p = getPool();
+  const res = await p.query(
+    `UPDATE review_comment
+     SET content = $1, edited = TRUE, updated_at = NOW()
+     WHERE review_id = $2 AND id = $3 AND user_id = $4
+     RETURNING
+       id,
+       review_id as "reviewId",
+       user_id as "userId",
+       parent_id as "parentId",
+       content,
+       edited,
+       created_at as "createdAt",
+       updated_at as "updatedAt"`,
+    [content, reviewId, commentId, userId]
+  );
+  if (!res.rows.length) return null;
+
+  const userRes = await p.query(
+    `SELECT id, username, display_name as "displayName", avatar_url as "avatarUrl",
+            avatar_version as "avatarVersion", jellyfin_user_id as "jellyfinUserId"
+     FROM app_user
+     WHERE id = $1`,
+    [userId]
+  );
+
+  const row = res.rows[0];
+  const user = userRes.rows[0];
+  return {
+    id: Number(row.id),
+    reviewId: Number(row.reviewId),
+    userId: Number(row.userId),
+    parentId: row.parentId === null ? null : Number(row.parentId),
+    content: String(row.content),
+    edited: !!row.edited,
+    createdAt: String(row.createdAt),
+    updatedAt: String(row.updatedAt),
+    user: {
+      id: Number(user.id),
+      username: String(user.username),
+      displayName: (user.displayName as string | null) ?? null,
+      avatarUrl: (user.avatarUrl as string | null) ?? null,
+      avatarVersion: user.avatarVersion == null ? null : Number(user.avatarVersion),
+      jellyfinUserId: (user.jellyfinUserId as string | null) ?? null,
+    },
+    replyCount: 0,
+  };
+}
+
+export async function deleteReviewComment(reviewId: number, commentId: number, userId: number, isAdmin = false): Promise<boolean> {
+  const p = getPool();
+  const res = isAdmin
+    ? await p.query(`DELETE FROM review_comment WHERE review_id = $1 AND id = $2`, [reviewId, commentId])
+    : await p.query(`DELETE FROM review_comment WHERE review_id = $1 AND id = $2 AND user_id = $3`, [reviewId, commentId, userId]);
+  return (res.rowCount ?? 0) > 0;
+}
+
+export async function getReviewComments(reviewId: number, parentId: number | null = null, limit = 100, offset = 0): Promise<ReviewComment[]> {
+  const p = getPool();
+  const boundedLimit = Math.min(Math.max(limit, 1), 200);
+  const boundedOffset = Math.max(offset, 0);
+  const params: Array<number | null> = [reviewId, boundedLimit, boundedOffset];
+  let parentClause = "";
+
+  if (parentId === null) {
+    parentClause = "";
+  } else {
+    params.push(parentId);
+    parentClause = `AND rc.parent_id = $4`;
+  }
+
+  const res = await p.query(
+    `SELECT
+       rc.id,
+       rc.review_id as "reviewId",
+       rc.user_id as "userId",
+       rc.parent_id as "parentId",
+       rc.content,
+       rc.edited,
+       rc.created_at as "createdAt",
+       rc.updated_at as "updatedAt",
+       u.id as "authorId",
+       u.username,
+       u.display_name as "displayName",
+       u.avatar_url as "avatarUrl",
+       u.avatar_version as "avatarVersion",
+       u.jellyfin_user_id as "jellyfinUserId",
+       (SELECT COUNT(*) FROM review_comment c WHERE c.parent_id = rc.id)::int as "replyCount"
+     FROM review_comment rc
+     JOIN app_user u ON u.id = rc.user_id
+     WHERE rc.review_id = $1
+       ${parentClause}
+     ORDER BY rc.created_at ASC
+     LIMIT $2 OFFSET $3`,
+    params
+  );
+
+  return res.rows.map((row) => ({
+    id: Number(row.id),
+    reviewId: Number(row.reviewId),
+    userId: Number(row.userId),
+    parentId: row.parentId === null ? null : Number(row.parentId),
+    content: String(row.content),
+    edited: !!row.edited,
+    createdAt: String(row.createdAt),
+    updatedAt: String(row.updatedAt),
+    user: {
+      id: Number(row.authorId),
+      username: String(row.username),
+      displayName: (row.displayName as string | null) ?? null,
+      avatarUrl: (row.avatarUrl as string | null) ?? null,
+      avatarVersion: row.avatarVersion == null ? null : Number(row.avatarVersion),
+      jellyfinUserId: (row.jellyfinUserId as string | null) ?? null,
+    },
+    replyCount: Number(row.replyCount ?? 0),
+  }));
+}
+
+export async function getReviewCommentCount(reviewId: number): Promise<number> {
+  const p = getPool();
+  const res = await p.query(`SELECT COUNT(*)::int as count FROM review_comment WHERE review_id = $1`, [reviewId]);
+  return Number(res.rows[0]?.count ?? 0);
+}
+
+export async function addReviewCommentMentions(commentId: number, mentionedUserIds: number[]): Promise<void> {
+  const ids = Array.from(new Set(mentionedUserIds.filter((id) => Number.isFinite(id) && id > 0)));
+  if (!ids.length) return;
+  const p = getPool();
+  await p.query(
+    `INSERT INTO review_comment_mention (comment_id, mentioned_user_id)
+     SELECT $1, unnest($2::bigint[])
+     ON CONFLICT (comment_id, mentioned_user_id) DO NOTHING`,
+    [commentId, ids]
+  );
 }
 
 // ============================================
@@ -6993,7 +7531,10 @@ export async function updateFollowedMediaOptions(userId: number, id: string, inp
   return res.rows[0] ?? null;
 }
 
-export async function listDueFollowedMediaReleaseNotifications(limit = 200): Promise<DueFollowedMediaReleaseNotification[]> {
+export async function listDueFollowedMediaReleaseNotifications(
+  limit = 200,
+  timeZone = "Europe/London"
+): Promise<DueFollowedMediaReleaseNotification[]> {
   await ensureUserSchema();
   const p = getPool();
   const res = await p.query(
@@ -7022,7 +7563,7 @@ export async function listDueFollowedMediaReleaseNotifications(limit = 200): Pro
       WHERE f.notify_on_theatrical = TRUE
         AND f.notified_theatrical_at IS NULL
         AND f.theatrical_release_date IS NOT NULL
-        AND f.theatrical_release_date <= CURRENT_DATE
+        AND f.theatrical_release_date <= (NOW() AT TIME ZONE $2)::date
     ), due_digital AS (
       SELECT
         f.id,
@@ -7048,7 +7589,7 @@ export async function listDueFollowedMediaReleaseNotifications(limit = 200): Pro
       WHERE f.notify_on_digital = TRUE
         AND f.notified_digital_at IS NULL
         AND f.digital_release_date IS NOT NULL
-        AND f.digital_release_date <= CURRENT_DATE
+        AND f.digital_release_date <= (NOW() AT TIME ZONE $2)::date
     )
     SELECT *
     FROM (
@@ -7058,7 +7599,7 @@ export async function listDueFollowedMediaReleaseNotifications(limit = 200): Pro
     ) due
     ORDER BY "createdAt" ASC
     LIMIT $1`,
-    [limit]
+    [limit, timeZone]
   );
   return res.rows as DueFollowedMediaReleaseNotification[];
 }

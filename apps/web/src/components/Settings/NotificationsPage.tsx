@@ -159,33 +159,36 @@ export function NotificationsSettingsPage({ initialEnabled }: NotificationsSetti
   // iOS not supported - show within card
   if (isIOS) {
     return (
-      <div className="rounded-2xl md:rounded-3xl border border-white/10 bg-white/[0.02] p-6 md:p-8">
-        <div className="flex items-center gap-4 mb-6">
-          <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 ring-1 ring-white/10">
-            <Bell className="w-6 h-6 text-amber-300" />
+      <div className="relative overflow-hidden rounded-3xl border border-amber-300/30 bg-gradient-to-br from-amber-900/40 via-orange-900/30 to-slate-950 p-6 md:p-8">
+        <div className="pointer-events-none absolute -right-10 -top-16 h-44 w-44 rounded-full bg-amber-500/25 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-16 -left-14 h-48 w-48 rounded-full bg-orange-500/20 blur-3xl" />
+
+        <div className="relative mb-6 flex items-center gap-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-amber-200/30 bg-amber-500/20">
+            <Bell className="h-6 w-6 text-amber-100" />
           </div>
           <div className="flex-1">
-            <h3 className="text-xl font-bold text-white">Web Push Notifications</h3>
-            <p className="text-sm text-gray-400 mt-1">Receive instant updates in your browser</p>
+            <h3 className="text-xl font-bold text-white">Browser Push Alerts</h3>
+            <p className="mt-1 text-sm text-amber-100/80">This browser can&apos;t register Web Push right now.</p>
           </div>
-          <div className="rounded-full px-3 py-1 text-xs font-semibold bg-amber-500/20 text-amber-200">
+          <div className="rounded-full border border-amber-200/30 bg-amber-400/20 px-3 py-1 text-xs font-semibold text-amber-100">
             Unavailable
           </div>
         </div>
 
-        <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-5">
+        <div className="relative rounded-2xl border border-amber-200/25 bg-black/25 p-5 backdrop-blur">
           <div className="flex items-start gap-4">
-            <Smartphone className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+            <Smartphone className="mt-0.5 h-5 w-5 shrink-0 text-amber-200" />
             <div>
-              <p className="font-semibold text-amber-200 mb-2">Not available on iOS Safari</p>
-              <p className="text-sm text-amber-200/70 mb-3">
+              <p className="mb-2 font-semibold text-amber-100">Not available on iOS Safari</p>
+              <p className="mb-3 text-sm text-amber-100/80">
                 iOS Safari doesn&apos;t support the Web Push Protocol. Push notifications are available on:
               </p>
               <div className="flex flex-wrap gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-black/20 px-3 py-1 text-xs text-amber-200/80">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200/25 bg-black/30 px-3 py-1 text-xs text-amber-100">
                   <span>💻</span> Desktop browsers
                 </span>
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-black/20 px-3 py-1 text-xs text-amber-200/80">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200/25 bg-black/30 px-3 py-1 text-xs text-amber-100">
                   <span>📱</span> Android devices
                 </span>
               </div>
@@ -197,33 +200,37 @@ export function NotificationsSettingsPage({ initialEnabled }: NotificationsSetti
   }
 
   return (
-    <div className="rounded-2xl md:rounded-3xl border border-white/10 bg-white/[0.02] p-6 md:p-8">
-      <div className="flex items-center gap-4 mb-6">
-        <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 ring-1 ring-white/10">
-          <Bell className="w-6 h-6 text-amber-300" />
+    <div className="relative overflow-hidden rounded-3xl border border-cyan-300/25 bg-gradient-to-br from-cyan-900/30 via-slate-900 to-blue-950/30 p-6 md:p-8">
+      <div className="pointer-events-none absolute -top-20 -right-20 h-56 w-56 rounded-full bg-cyan-400/20 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-20 -left-16 h-56 w-56 rounded-full bg-blue-500/20 blur-3xl" />
+
+      <div className="relative mb-6 flex items-center gap-4">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-cyan-200/30 bg-cyan-400/20">
+          <Bell className="h-6 w-6 text-cyan-100" />
         </div>
         <div className="flex-1">
-          <h3 className="text-xl font-bold text-white">Web Push Notifications</h3>
-          <p className="text-sm text-gray-400 mt-1">Receive instant updates in your browser</p>
+          <h3 className="text-xl font-bold text-white">Browser Push Alerts</h3>
+          <p className="mt-1 text-sm text-cyan-100/80">Instant desktop and mobile alerts for requests and releases.</p>
         </div>
-        <div className={`rounded-full px-3 py-1 text-xs font-semibold ${
+        <div className={`rounded-full border px-3 py-1 text-xs font-semibold ${
           isEnabled === null
-            ? 'bg-white/10 text-gray-300'
+            ? 'border-white/20 bg-white/10 text-slate-200'
             : isEnabled
-              ? 'bg-emerald-500/20 text-emerald-200'
-              : 'bg-white/10 text-gray-300'
+              ? 'border-emerald-300/30 bg-emerald-500/20 text-emerald-100'
+              : 'border-white/20 bg-white/10 text-slate-200'
         }`}>
           {isEnabled === null ? 'Loading...' : isEnabled ? 'Active' : 'Inactive'}
         </div>
       </div>
 
       {/* Main toggle area */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-black/20 border border-white/5 mb-5">
+      <div className="relative mb-5 rounded-2xl border border-white/15 bg-black/25 p-4 backdrop-blur">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <div className="text-sm text-white font-medium mb-1">
+          <div className="mb-1 text-sm font-semibold text-white">
             {isEnabled ? 'Push notifications are enabled' : 'Push notifications are disabled'}
           </div>
-          <div className="text-xs text-gray-400">
+          <div className="text-xs text-slate-300/80">
             {isEnabled
               ? 'You\'ll receive notifications even when the app is closed'
               : 'Enable to get instant alerts for requests and updates'}
@@ -234,7 +241,7 @@ export function NotificationsSettingsPage({ initialEnabled }: NotificationsSetti
             <button
               onClick={handleTestNotification}
               disabled={isTesting}
-              className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white hover:bg-white/10 transition-colors disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-lg border border-cyan-200/30 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-100 transition hover:bg-cyan-500/20 disabled:opacity-50"
             >
               {isTesting ? (
                 <>
@@ -254,8 +261,8 @@ export function NotificationsSettingsPage({ initialEnabled }: NotificationsSetti
             disabled={isLoading}
             className={`inline-flex items-center gap-2 rounded-lg px-5 py-2 text-sm font-medium transition-colors disabled:opacity-50 ${
               isEnabled
-                ? 'bg-red-500/20 text-red-200 hover:bg-red-500/30'
-                : 'bg-emerald-600 text-white hover:bg-emerald-500'
+                ? 'border border-red-300/30 bg-red-500/20 text-red-100 hover:bg-red-500/30'
+                : 'border border-emerald-300/30 bg-emerald-500/30 text-emerald-50 hover:bg-emerald-500/40'
             }`}
           >
             {isLoading ? (
@@ -274,9 +281,10 @@ export function NotificationsSettingsPage({ initialEnabled }: NotificationsSetti
           </button>
         </div>
       </div>
+      </div>
 
       {/* Info section */}
-      <div className="rounded-lg bg-white/5 border border-white/5 p-4">
+      <div className="rounded-xl border border-white/10 bg-white/5 p-4">
         <div className="flex items-start gap-3">
           <AlertCircle className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
           <div className="text-xs text-gray-400 space-y-1">

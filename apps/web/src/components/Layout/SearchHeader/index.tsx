@@ -63,7 +63,7 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
     const [recentOpen, setRecentOpen] = useState(false);
     const [recentSearches, setRecentSearches] = useState<string[]>([]);
     const [searchFocused, setSearchFocused] = useState(false);
-    const [shortcutLabel, setShortcutLabel] = useState("Ctrl+K");
+    const shortcutLabel = "Ctrl/Cmd+K";
 
     // Cleanup debounce timer on unmount
     useEffect(() => {
@@ -86,11 +86,6 @@ function SearchHeaderForm({ initialQuery, isAdmin, initialProfile }: { initialQu
         const id = window.setTimeout(() => setProfile(null), 0);
         return () => window.clearTimeout(id);
     }, [initialProfile]);
-
-    useEffect(() => {
-        const isMac = /Mac|iPhone|iPad|iPod/i.test(window.navigator.platform);
-        setShortcutLabel(isMac ? "Cmd+K" : "Ctrl+K");
-    }, []);
 
     // Load recent searches from localStorage once per user
     useEffect(() => {

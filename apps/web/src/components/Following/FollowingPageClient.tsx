@@ -31,10 +31,9 @@ function formatDate(dateStr: string | null) {
   return d.toLocaleDateString(undefined, { month: "short", day: "2-digit", year: "numeric" });
 }
 
-function isPastOrToday(dateStr: string | null) {
+function isPastOrToday(dateStr: string | null, todayIso: string) {
   if (!dateStr) return false;
-  const today = new Date().toISOString().slice(0, 10);
-  return dateStr <= today;
+  return dateStr <= todayIso;
 }
 
 function followLink(item: FollowedMediaItem) {
@@ -48,12 +47,13 @@ function posterUrl(path: string | null) {
 
 export function FollowingPageClient() {
   const toast = useToast();
-  const { data, isLoading, mutate } = useSWR<{ items: FollowedMediaItem[] }>("/api/following", fetcher, {
+  const { data, isLoading, mutate } = useSWR<{ items: FollowedMediaItem[]; todayIso?: string }>("/api/following", fetcher, {
     revalidateOnFocus: true,
     refreshInterval: 60_000,
   });
 
   const items = Array.isArray(data?.items) ? data!.items : [];
+  const todayIso = data?.todayIso ?? new Date().toISOString().slice(0, 10);
 
   const removeFollow = async (item: FollowedMediaItem) => {
     try {
@@ -118,8 +118,8 @@ export function FollowingPageClient() {
         <div className="grid gap-3 md:grid-cols-2">
           {items.map((item) => {
             const poster = posterUrl(item.posterPath);
-            const theatricalReleased = isPastOrToday(item.theatricalReleaseDate);
-            const digitalReleased = isPastOrToday(item.digitalReleaseDate);
+            const theatricalReleased = isPastOrToday(item.theatricalReleaseDate, todayIso);
+            const digitalReleased = isPastOrToday(item.digitalReleaseDate, todayIso);
 
             return (
               <article key={item.id} className="rounded-xl border border-white/10 bg-white/[0.03] p-3">

@@ -14,6 +14,7 @@ import {
 import { getMovie, getMovieReleaseDates, getTv } from "@/lib/tmdb";
 import { requireCsrf } from "@/lib/csrf";
 import { logger } from "@/lib/logger";
+import { getAppTimezone, getIsoDateInTimeZone } from "@/lib/app-timezone";
 
 const MediaTypeSchema = z.enum(["movie", "tv"]);
 
@@ -74,23 +75,27 @@ function getDigitalReleaseDate(releaseDates: any, region = (process.env.TMDB_REG
   return null;
 }
 
-function isPastOrToday(dateStr: string | null) {
+function isPastOrToday(dateStr: string | null, todayIso: string) {
   if (!dateStr) return false;
-  const today = new Date().toISOString().slice(0, 10);
-  return dateStr <= today;
+  return dateStr <= todayIso;
 }
 
 export async function GET(req: NextRequest) {
   const { userId } = await resolveAuthUser(req);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const timeZone = await getAppTimezone();
+  const todayIso = getIsoDateInTimeZone(Date.now(), timeZone);
   const items = await listFollowedMediaForUser(userId);
-  return NextResponse.json({ items });
+  return NextResponse.json({ items, todayIso, timezone: timeZone });
 }
 
 export async function POST(req: NextRequest) {
   const { userId, tokenAuth } = await resolveAuthUser(req);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const timeZone = await getAppTimezone();
+  const todayIso = getIsoDateInTimeZone(Date.now(), timeZone);
 
   if (!tokenAuth) {
     const csrf = requireCsrf(req);
@@ -122,8 +127,8 @@ export async function POST(req: NextRequest) {
         posterPath,
         theatricalReleaseDate,
         digitalReleaseDate,
-        notifyOnTheatrical: requestedTheatrical && !isPastOrToday(theatricalReleaseDate),
-        notifyOnDigital: requestedDigital && !isPastOrToday(digitalReleaseDate),
+        notifyOnTheatrical: requestedTheatrical && !isPastOrToday(theatricalReleaseDate, todayIso),
+        notifyOnDigital: requestedDigital && !isPastOrToday(digitalReleaseDate, todayIso),
       });
 
       return NextResponse.json({ ok: true, item });
@@ -143,7 +148,7 @@ export async function POST(req: NextRequest) {
       posterPath,
       theatricalReleaseDate: premiereDate,
       digitalReleaseDate: null,
-      notifyOnTheatrical: requestedTheatrical && !isPastOrToday(premiereDate),
+      notifyOnTheatrical: requestedTheatrical && !isPastOrToday(premiereDate, todayIso),
       notifyOnDigital: false,
     });
 

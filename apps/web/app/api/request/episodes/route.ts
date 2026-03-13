@@ -142,7 +142,11 @@ export async function POST(req: NextRequest) {
   const hasNotifications = await hasAssignedNotificationEndpoints(dbUser.id);
   if (!hasNotifications) {
     return NextResponse.json(
-      { ok: false, error: "notifications_required", message: "Requesting blocked until notifications are applied" },
+      {
+        ok: false,
+        error: "notifications_required",
+        message: "Please configure notifications in /settings/profile/notifications before requesting.",
+      },
       { status: 403 }
     );
   }

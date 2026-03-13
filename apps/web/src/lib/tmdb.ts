@@ -2,6 +2,7 @@ import "server-only";
 import { z } from "zod";
 import ExternalAPI from "@/lib/external-api";
 import { logger } from "@/lib/logger";
+import { getAppTimezone, getIsoDateInTimeZone } from "@/lib/app-timezone";
 import { tmdbImageUrl } from "./tmdb-images";
 import cacheManager from "@/lib/cache-manager";
 
@@ -193,7 +194,8 @@ export async function getUpcomingMovies(page = 1) {
 }
 
 export async function getUpcomingMoviesAccurate(page = 1) {
-  const today = new Date().toISOString().slice(0, 10);
+  const timeZone = await getAppTimezone();
+  const today = getIsoDateInTimeZone(Date.now(), timeZone);
   const region = (process.env.TMDB_REGION || "GB").trim();
   const language = (process.env.TMDB_LANGUAGE || "en-GB").trim();
   const params: Record<string, string | number | boolean> = {
@@ -211,7 +213,8 @@ export async function getUpcomingMoviesAccurate(page = 1) {
 }
 
 export async function getUpcomingMoviesAccurateCombined(page = 1) {
-  const today = new Date().toISOString().slice(0, 10);
+  const timeZone = await getAppTimezone();
+  const today = getIsoDateInTimeZone(Date.now(), timeZone);
   const language = (process.env.TMDB_LANGUAGE || "en-GB").trim();
   const baseParams: Record<string, string | number | boolean> = {
     page,
@@ -238,7 +241,8 @@ export async function getUpcomingMoviesAccurateCombined(page = 1) {
 }
 
 export async function getUpcomingMoviesUkLatest(page = 1) {
-  const today = new Date().toISOString().slice(0, 10);
+  const timeZone = await getAppTimezone();
+  const today = getIsoDateInTimeZone(Date.now(), timeZone);
   const language = (process.env.TMDB_LANGUAGE || "en-GB").trim();
   // Prioritize UK latest by popularity and recent release dates
   const data = await tmdbGet("/discover/movie", {
@@ -267,12 +271,14 @@ export async function getUpcomingMoviesUkLatest(page = 1) {
 }
 
 export async function getUpcomingTvAccurate(page = 1) {
-  const today = new Date().toISOString().slice(0, 10);
+  const timeZone = await getAppTimezone();
+  const now = new Date();
+  const today = getIsoDateInTimeZone(now, timeZone);
   
   // Get date 3 months from now to avoid showing shows too far in the future
-  const threeMonthsFromNow = new Date();
+  const threeMonthsFromNow = new Date(now);
   threeMonthsFromNow.setMonth(threeMonthsFromNow.getMonth() + 3);
-  const maxDate = threeMonthsFromNow.toISOString().slice(0, 10);
+  const maxDate = getIsoDateInTimeZone(threeMonthsFromNow, timeZone);
   
   const language = (process.env.TMDB_LANGUAGE || "en-GB").trim();
 

@@ -109,25 +109,28 @@ export default function NotificationList({
         <div className="space-y-6">
             <ConfirmModal {...modalProps} />
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <h2 className="text-lg font-semibold text-white">{typeName} Notifications</h2>
+                <div>
+                    <h2 className="text-lg font-semibold text-white">{typeName} Global Channels</h2>
+                    <p className="mt-1 text-sm text-gray-400">Shared {typeName.toLowerCase()} endpoints available for global delivery and routed system alerts.</p>
+                </div>
                 <button
                     onClick={() => router.push(`/admin/settings/notifications/${type}/new`)}
                     className="btn btn-primary"
                 >
-                    Add New {typeName}
+                    Add {typeName} Channel
                 </button>
             </div>
 
             {!hasEndpoints ? (
                 <div className="glass-strong rounded-3xl overflow-hidden border border-white/10 shadow-2xl p-12 text-center">
                     <p className="text-gray-400">
-                        No {typeName.toLowerCase()} notification endpoints configured yet.
+                        No {typeName.toLowerCase()} global channels configured yet.
                     </p>
                     <button
                         onClick={() => router.push(`/admin/settings/notifications/${type}/new`)}
                         className="mt-4 btn btn-primary"
                     >
-                        Create Your First {typeName} Endpoint
+                        Create your first {typeName} channel
                     </button>
                 </div>
             ) : (
@@ -198,7 +201,7 @@ export default function NotificationList({
                                             Name
                                         </th>
                                         <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-white/60">
-                                            Type
+                                            Scope
                                         </th>
                                         <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-white/60">
                                             Status

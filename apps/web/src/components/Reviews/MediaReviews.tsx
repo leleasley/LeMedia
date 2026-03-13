@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import Image from "next/image";
-import { Star, Loader2, Trash2, EyeOff, Eye } from "lucide-react";
+import { Star, Loader2, Trash2, EyeOff, Eye, MessageSquare } from "lucide-react";
 import { formatDate } from "@/lib/dateFormat";
 import { tmdbImageUrl } from "@/lib/tmdb-images";
 import { cn } from "@/lib/utils";
@@ -12,6 +12,7 @@ import { useToast } from "@/components/Providers/ToastProvider";
 import { logger } from "@/lib/logger";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { getAvatarAlt, getAvatarSrc, shouldBypassNextImage } from "@/lib/avatar";
+import { ReviewCommentsThread } from "@/components/Reviews/ReviewCommentsThread";
 
 interface MediaReviewsProps {
   tmdbId: number;
@@ -51,6 +52,11 @@ interface Review {
 interface ReviewsResponse {
   stats: { total: number; average: number };
   reviews: Review[];
+  viewer?: {
+    id: number;
+    username: string;
+    isAdmin: boolean;
+  };
   userReview: {
     id: number;
     rating: number;
@@ -116,8 +122,10 @@ export function MediaReviews({ tmdbId, mediaType, title, posterPath, releaseYear
   const [spoiler, setSpoiler] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [revealed, setRevealed] = useState<Record<number, boolean>>({});
+  const [openThreads, setOpenThreads] = useState<Record<number, boolean>>({});
 
   const userReview = data?.userReview ?? null;
+  const viewer = data?.viewer ?? null;
 
   useEffect(() => {
     if (userReview) {
@@ -317,7 +325,7 @@ export function MediaReviews({ tmdbId, mediaType, title, posterPath, releaseYear
               });
               const avatarAlt = getAvatarAlt({ displayName, username: review.user.username });
               return (
-                <div key={review.id} className="glass-strong rounded-xl border border-white/10 p-4">
+                <div id={`review-${review.id}`} key={review.id} className="glass-strong rounded-xl border border-white/10 p-4">
                   <div className="flex items-center gap-3">
                     <div className="relative h-9 w-9 overflow-hidden rounded-full">
                       <Image
@@ -362,6 +370,25 @@ export function MediaReviews({ tmdbId, mediaType, title, posterPath, releaseYear
                        aria-hidden={isSpoilerHidden}>
                       {review.reviewText}
                     </p>
+                  )}
+
+                  <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-3">
+                    <button
+                      type="button"
+                      onClick={() => setOpenThreads((prev) => ({ ...prev, [review.id]: !prev[review.id] }))}
+                      className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-white"
+                    >
+                      <MessageSquare className="h-3.5 w-3.5" />
+                      {openThreads[review.id] ? "Hide comments" : "View comments"}
+                    </button>
+                  </div>
+
+                  {openThreads[review.id] && (
+                    <ReviewCommentsThread
+                      reviewId={review.id}
+                      currentUserId={viewer?.id}
+                      isAdmin={viewer?.isAdmin}
+                    />
                   )}
                 </div>
               );

@@ -36,6 +36,8 @@ export async function GET(req: NextRequest) {
     const rawJobTimezone = await getSetting("jobs.timezone");
     const envJobTimezone = process.env.JOBS_TIMEZONE || process.env.TZ || "";
     const jobTimezone = (rawJobTimezone ?? "").trim() || envJobTimezone.trim();
+    const rawAppTimezone = await getSetting("app.timezone");
+    const appTimezone = (rawAppTimezone ?? "").trim() || jobTimezone;
 
     return jsonResponseWithETag(req, {
         session_max_age: sessionMaxAge,
@@ -44,7 +46,8 @@ export async function GET(req: NextRequest) {
         sso_enabled: ssoEnabled,
         enforce_mfa_admin: enforceMfaAdmin,
         enforce_mfa_all: enforceMfaAll,
-        job_timezone: jobTimezone
+        job_timezone: jobTimezone,
+        app_timezone: appTimezone
     });
 }
 
@@ -88,12 +91,17 @@ export async function PUT(req: NextRequest) {
                 return NextResponse.json({ error: "Invalid job_timezone" }, { status: 400 });
             }
             await setSetting("jobs.timezone", normalized);
+            await setSetting("app.timezone", normalized);
             process.env.JOBS_TIMEZONE = normalized;
+            process.env.APP_TIMEZONE = normalized;
         } else {
             await setSetting("jobs.timezone", "");
+            await setSetting("app.timezone", "");
             if (process.env.JOBS_TIMEZONE) delete process.env.JOBS_TIMEZONE;
+            if (process.env.APP_TIMEZONE) delete process.env.APP_TIMEZONE;
         }
         changedFields.push("jobs.timezone");
+        changedFields.push("app.timezone");
     }
 
     if (hasSession) {

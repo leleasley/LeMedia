@@ -38,7 +38,9 @@ export default async function ProfileSettingsTabPage({
 
   const selectedIds = dbUser ? await listUserNotificationEndpointIds(dbUser.id) : [];
   const enabledEndpoints = (endpoints as any[]).filter(e => e?.enabled !== false);
-  const assignedEndpoints = enabledEndpoints.filter(endpoint => selectedIds.includes(endpoint.id));
+  const assignedEndpoints = enabledEndpoints
+    .filter(endpoint => selectedIds.includes(endpoint.id))
+    .filter(endpoint => endpoint?.owner_user_id == null);
   const mfaEnabled = !!dbUser?.mfa_secret;
   const groups = normalizeGroupList(dbUser?.groups ?? []);
   const isAdmin = user.isAdmin || isAdminGroup(groups);

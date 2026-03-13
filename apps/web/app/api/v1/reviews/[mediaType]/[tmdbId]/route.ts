@@ -34,5 +34,10 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
     stats,
     reviews,
     userReview,
+    viewer: {
+      id: dbUser.id,
+      username: user.username,
+      isAdmin: user.isAdmin,
+    },
   });
 }

@@ -127,7 +127,7 @@ export function SeriesRequestModal({
   const [checkedEpisodes, setCheckedEpisodes] = useState<Record<number, Set<number>>>({});
   const prefetchStartedRef = useRef(false);
 
-  const blockedMessage = "Requesting blocked until notifications are applied";
+  const blockedMessage = "Please configure notifications in /settings/profile/notifications before requesting.";
 
   // Load seasons when modal opens
   useEffect(() => {

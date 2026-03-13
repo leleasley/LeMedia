@@ -28,7 +28,7 @@ export function RequestMovieButton(props: {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
 
-  const blockedMessage = "Requesting blocked until notifications are applied";
+  const blockedMessage = "Please configure notifications in /settings/profile/notifications before requesting.";
 
   async function submit() {
     if (isSubmitting) return;

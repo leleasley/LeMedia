@@ -91,59 +91,66 @@ export async function POST(req: NextRequest) {
     if (csrf) return csrf;
 
     const body = Body.parse(await req.json());
-  const tv = await getTv(body.tmdbId);
-  const title = tv?.name ?? `TMDB ${body.tmdbId}`;
-  const tvMeta = buildTvNotificationMeta(tv);
+    const tv = await getTv(body.tmdbId);
+    const title = tv?.name ?? `TMDB ${body.tmdbId}`;
+    const tvMeta = buildTvNotificationMeta(tv);
 
-  const external = await getTvExternalIds(body.tmdbId);
-  const tvdbId = external?.tvdb_id;
-  if (!tvdbId) {
-    return NextResponse.json({ ok: false, error: "TV series requires a TVDB id" }, { status: 400 });
-  }
-
-  let targetUserId = body.userId;
-  let targetUsername = user.username;
-  let targetIsAdmin = user.isAdmin;
-
-  if (targetUserId !== undefined && targetUserId !== null) {
-    if (!user.isAdmin) {
-      return NextResponse.json({ ok: false, error: "forbidden", message: "Only admins can request for other users" }, { status: 403 });
+    const external = await getTvExternalIds(body.tmdbId);
+    const tvdbId = external?.tvdb_id;
+    if (!tvdbId) {
+      return NextResponse.json({ ok: false, error: "TV series requires a TVDB id" }, { status: 400 });
     }
-    const { getUserById } = await import("@/db");
-    const targetUser = await getUserById(targetUserId);
-    if (!targetUser) {
-      return NextResponse.json({ ok: false, error: "user_not_found", message: "Target user not found" }, { status: 404 });
+
+    let targetUserId = body.userId;
+    let targetUsername = user.username;
+    let targetIsAdmin = user.isAdmin;
+
+    if (targetUserId !== undefined && targetUserId !== null) {
+      if (!user.isAdmin) {
+        return NextResponse.json({ ok: false, error: "forbidden", message: "Only admins can request for other users" }, { status: 403 });
+      }
+      const { getUserById } = await import("@/db");
+      const targetUser = await getUserById(targetUserId);
+      if (!targetUser) {
+        return NextResponse.json({ ok: false, error: "user_not_found", message: "Target user not found" }, { status: 404 });
+      }
+      targetUsername = targetUser.username;
+      targetIsAdmin = isAdminGroup(targetUser.groups);
+    } else {
+      const dbUser = await upsertUser(user.username, user.groups);
+      targetUserId = dbUser.id;
     }
-    targetUsername = targetUser.username;
-    targetIsAdmin = isAdminGroup(targetUser.groups);
-  } else {
-    const dbUser = await upsertUser(user.username, user.groups);
-    targetUserId = dbUser.id;
-  }
 
-  const hasNotifications = await hasAssignedNotificationEndpoints(targetUserId);
-  if (REQUESTS_REQUIRE_NOTIFICATIONS && !hasNotifications) {
-    return NextResponse.json({ ok: false, error: "notifications_required", message: "Requesting blocked until notifications are applied" }, { status: 403 });
-  }
-
-  if (!targetIsAdmin) {
-    const limitStatus = await getUserRequestLimitStatus(targetUserId, "episode");
-    if (!limitStatus.unlimited && (limitStatus.remaining ?? 0) <= 0) {
+    const hasNotifications = await hasAssignedNotificationEndpoints(targetUserId);
+    if (REQUESTS_REQUIRE_NOTIFICATIONS && !hasNotifications) {
       return NextResponse.json(
         {
           ok: false,
-          error: "limit_reached",
-          message: `Request limit reached (${limitStatus.limit} per ${limitStatus.days} days).`,
-          limit: limitStatus.limit,
-          remaining: limitStatus.remaining,
-          days: limitStatus.days
+          error: "notifications_required",
+          message: "Please configure notifications in /settings/profile/notifications before requesting.",
         },
-        { status: 429 }
+        { status: 403 }
       );
     }
-  }
 
-  let response: NextResponse | null = null;
+    if (!targetIsAdmin) {
+      const limitStatus = await getUserRequestLimitStatus(targetUserId, "episode");
+      if (!limitStatus.unlimited && (limitStatus.remaining ?? 0) <= 0) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: "limit_reached",
+            message: `Request limit reached (${limitStatus.limit} per ${limitStatus.days} days).`,
+            limit: limitStatus.limit,
+            remaining: limitStatus.remaining,
+            days: limitStatus.days,
+          },
+          { status: 429 }
+        );
+      }
+    }
+
+    let response: NextResponse | null = null;
 
   await asyncLock.dispatch(body.tmdbId, async () => {
     const existing = await findActiveRequestByTmdb({ requestType: "episode", tmdbId: body.tmdbId });
