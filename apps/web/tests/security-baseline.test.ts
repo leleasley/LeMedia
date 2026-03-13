@@ -20,6 +20,12 @@ test("same-origin request validation accepts same origin and rejects cross-origi
     headers: { origin: "https://evil.example.net" }
   });
   assert.equal(isSameOriginRequest(crossOriginReq, "https://app.example.com"), false);
+
+  const mixedSchemeReq = new NextRequest("https://app.example.com/api/login", {
+    method: "POST",
+    headers: { origin: "http://app.example.com" }
+  });
+  assert.equal(isSameOriginRequest(mixedSchemeReq, "https://app.example.com"), false);
 });
 
 test("in-memory rate limit and lockout work without Redis", async () => {

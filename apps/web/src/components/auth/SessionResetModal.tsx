@@ -28,9 +28,21 @@ function getCookieValue(name: string): string | null {
 
 function deleteCookie(name: string) {
   const base = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
-  document.cookie = base;
   const host = window.location.hostname;
-  document.cookie = `${base}; domain=${host}`;
+  const domainCandidates = new Set<string>([host]);
+
+  if (host.includes(".")) {
+    const parts = host.split(".");
+    for (let index = 1; index < parts.length - 1; index += 1) {
+      domainCandidates.add(parts.slice(index).join("."));
+    }
+  }
+
+  document.cookie = base;
+  for (const domain of domainCandidates) {
+    document.cookie = `${base}; domain=${domain}`;
+    document.cookie = `${base}; domain=.${domain}`;
+  }
 }
 
 export function SessionResetModal() {

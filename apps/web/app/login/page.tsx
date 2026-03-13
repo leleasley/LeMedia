@@ -1,12 +1,12 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { getUser } from "@/auth";
 import { LoginPageClient } from "@/components/auth/LoginPageClient";
 
 export const metadata = {
   title: "Login - LeMedia",
 };
 import { getActiveOidcProvider, getJellyfinConfig, getSetting, getThirdPartyAuthSettings, isSetupComplete } from "@/db";
-import { verifySessionToken } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -25,8 +25,6 @@ export default async function LoginPage() {
   }
   const cookieStore = await cookies();
   const csrfToken = cookieStore.get("lemedia_csrf")?.value;
-  const sessionToken = cookieStore.get("lemedia_session")?.value ?? "";
-  const existingSession = sessionToken ? await verifySessionToken(sessionToken) : null;
   const loginRedirectCookie = cookieStore.get("lemedia_login_redirect")?.value;
   const from = sanitizeFrom(loginRedirectCookie);
   const oidcConfig = await getActiveOidcProvider();
@@ -53,8 +51,11 @@ export default async function LoginPage() {
     && thirdPartyAuthSettings.telegram.clientSecret.trim()
   );
 
-  if (existingSession?.username) {
+  try {
+    await getUser();
     redirect(from || "/");
+  } catch {
+    // Invalid, expired, or revoked sessions should still see the login page.
   }
 
   return (

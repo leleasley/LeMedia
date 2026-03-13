@@ -5,6 +5,7 @@ import { getUserWithHash, isSessionActive, touchUserSession } from "@/db";
 import { withCache } from "@/lib/local-cache";
 import { logger } from "@/lib/logger";
 import { isAdminGroup, normalizeGroupList } from "@/lib/groups";
+import { resolveCookieDomain } from "@/lib/server-utils";
 
 // Warn if debug mode is enabled in production
 if (process.env.NODE_ENV === "production" && process.env.AUTH_DEBUG === "1") {
@@ -103,20 +104,36 @@ export async function requireUser(): Promise<AppUser | NextResponse> {
   } catch {
     const res = NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const secure = process.env.NODE_ENV === "production";
-    res.cookies.set("lemedia_session_reset", "1", {
+    const appBaseUrl = process.env.APP_BASE_URL?.trim();
+    const cookieDomain = appBaseUrl ? resolveCookieDomain(appBaseUrl) : undefined;
+    const cookieBase = {
       path: "/",
-      sameSite: "lax",
+      sameSite: "lax" as const,
       secure,
-      httpOnly: true,
+      ...(cookieDomain ? { domain: cookieDomain } : {}),
+    };
+
+    res.cookies.set("lemedia_session_reset", "1", {
+      ...cookieBase,
+      httpOnly: false,
       maxAge: 300
     });
     res.cookies.set("lemedia_session", "", {
-      path: "/",
-      sameSite: "lax",
-      secure,
+      ...cookieBase,
       httpOnly: true,
       maxAge: 0
     });
+
+    if (cookieDomain) {
+      res.cookies.set("lemedia_session", "", {
+        path: "/",
+        sameSite: "lax",
+        secure,
+        httpOnly: true,
+        maxAge: 0
+      });
+    }
+
     return res;
   }
 }

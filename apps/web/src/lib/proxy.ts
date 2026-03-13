@@ -52,24 +52,22 @@ export function ensureCsrfCookie(req: NextRequest, res: NextResponse, ctx: Reque
 }
 
 export function isSameOriginRequest(req: NextRequest, base: string): boolean {
-  const matchesHost = (candidate: string) => {
+  const normalizeOrigin = (candidate: string) => {
     try {
-      return new URL(candidate).host === new URL(base).host;
+      return new URL(candidate).origin;
     } catch {
-      return false;
+      return null;
     }
   };
+  const expectedOrigin = normalizeOrigin(base);
+  if (!expectedOrigin) return false;
+
   const origin = req.headers.get("origin");
-  if (origin) return origin === base || matchesHost(origin);
+  if (origin) return normalizeOrigin(origin) === expectedOrigin;
 
   const referer = req.headers.get("referer");
   if (!referer) return true;
-  try {
-    const u = new URL(referer);
-    return `${u.protocol}//${u.host}` === base || matchesHost(referer);
-  } catch {
-    return false;
-  }
+  return normalizeOrigin(referer) === expectedOrigin;
 }
 
 export function sanitizeRelativePath(value: string | null | undefined): string {

@@ -81,6 +81,10 @@ function keyBotOutbox() {
   return "lemedia:bot:outbox";
 }
 
+function keyBotOutboxProcessing() {
+  return "lemedia:bot:outbox:processing";
+}
+
 const SESSION_TTL_SECONDS = 60 * 20;
 
 export async function ensureStateReady(): Promise<void> {
@@ -285,24 +289,70 @@ export async function isDigestSentForDate(dateKey: string): Promise<boolean> {
   return value === "1";
 }
 
-export async function dequeueBotOutboxBatch(limit = 25): Promise<BotOutboxMessage[]> {
+export type LeasedBotOutboxMessage = BotOutboxMessage & {
+  raw: string;
+};
+
+function parseBotOutboxMessage(raw: string): LeasedBotOutboxMessage | null {
+  try {
+    const parsed = JSON.parse(raw);
+    const chatId = String(parsed?.chatId ?? "").trim();
+    const text = String(parsed?.text ?? "").trim();
+    const parseMode = parsed?.parseMode === "HTML" || parsed?.parseMode === "MarkdownV2" ? parsed.parseMode : undefined;
+    if (!chatId || !text) return null;
+    return { chatId, text, parseMode, raw };
+  } catch {
+    return null;
+  }
+}
+
+export async function recoverBotOutboxLeases(): Promise<number> {
+  const client = getRedis();
+  let recovered = 0;
+
+  while (true) {
+    const raw = await client.lmove(keyBotOutboxProcessing(), keyBotOutbox(), "RIGHT", "LEFT");
+    if (!raw) break;
+    recovered += 1;
+  }
+
+  return recovered;
+}
+
+export async function leaseBotOutboxBatch(limit = 25): Promise<LeasedBotOutboxMessage[]> {
   const client = getRedis();
   const count = Math.max(1, Math.min(100, Math.floor(limit)));
-  const raw = await client.lpop(keyBotOutbox(), count);
-  const values = Array.isArray(raw) ? raw : raw ? [raw] : [];
+  const values: string[] = [];
 
-  const out: BotOutboxMessage[] = [];
-  for (const item of values) {
-    try {
-      const parsed = JSON.parse(item);
-      const chatId = String(parsed?.chatId ?? "").trim();
-      const text = String(parsed?.text ?? "").trim();
-      const parseMode = parsed?.parseMode === "HTML" || parsed?.parseMode === "MarkdownV2" ? parsed.parseMode : undefined;
-      if (!chatId || !text) continue;
-      out.push({ chatId, text, parseMode });
-    } catch {
+  for (let index = 0; index < count; index += 1) {
+    const raw = await client.lmove(keyBotOutbox(), keyBotOutboxProcessing(), "LEFT", "RIGHT");
+    if (!raw) break;
+    values.push(raw);
+  }
+
+  const out: LeasedBotOutboxMessage[] = [];
+  for (const raw of values) {
+    const parsed = parseBotOutboxMessage(raw);
+    if (parsed) {
+      out.push(parsed);
       continue;
     }
+
+    await client.lrem(keyBotOutboxProcessing(), 1, raw);
   }
+
   return out;
+}
+
+export async function ackBotOutboxMessage(raw: string): Promise<void> {
+  const client = getRedis();
+  await client.lrem(keyBotOutboxProcessing(), 1, raw);
+}
+
+export async function requeueBotOutboxMessage(raw: string): Promise<void> {
+  const client = getRedis();
+  await client.multi()
+    .lrem(keyBotOutboxProcessing(), 1, raw)
+    .rpush(keyBotOutbox(), raw)
+    .exec();
 }

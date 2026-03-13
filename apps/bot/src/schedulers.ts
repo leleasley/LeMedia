@@ -7,7 +7,12 @@ import {
   upsertRequestStatusState,
   withAdvisoryLock,
 } from "./db";
-import { dequeueBotOutboxBatch } from "./state";
+import {
+  ackBotOutboxMessage,
+  leaseBotOutboxBatch,
+  recoverBotOutboxLeases,
+  requeueBotOutboxMessage,
+} from "./state";
 
 const APP_BASE_URL = (process.env.APP_BASE_URL ?? "").replace(/\/$/, "");
 
@@ -108,24 +113,43 @@ async function sendRequestStatusAndWatchAlerts(bot: Bot) {
           parse_mode: "HTML",
           link_preview_options: { is_disabled: true },
         })
-        .catch(() => {});
-
-      await completeWatchAlert(alert.alertId);
+        .then(async () => {
+          await completeWatchAlert(alert.alertId);
+        })
+        .catch((error) => {
+          console.warn("Failed to deliver watch alert", {
+            alertId: alert.alertId,
+            telegramId: alert.telegramId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
     }
   });
 }
 
 async function sendQueuedBotOutboxMessages(bot: Bot) {
-  const messages = await dequeueBotOutboxBatch(50);
+  const recovered = await recoverBotOutboxLeases();
+  if (recovered > 0) {
+    console.warn(`Recovered ${recovered} leased Telegram bot outbox messages`);
+  }
+
+  const messages = await leaseBotOutboxBatch(50);
   if (!messages.length) return;
 
   for (const message of messages) {
-    await bot.api
-      .sendMessage(message.chatId, message.text, {
+    try {
+      await bot.api.sendMessage(message.chatId, message.text, {
         parse_mode: message.parseMode,
         link_preview_options: { is_disabled: true },
-      })
-      .catch(() => {});
+      });
+      await ackBotOutboxMessage(message.raw);
+    } catch (error) {
+      await requeueBotOutboxMessage(message.raw);
+      console.warn("Failed to deliver Telegram bot outbox message", {
+        chatId: message.chatId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 }
 

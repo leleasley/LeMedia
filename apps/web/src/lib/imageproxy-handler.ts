@@ -49,10 +49,13 @@ function resolveContentType(extension: string | null) {
 
 function buildImageResponse(buffer: Buffer, extension: string | null, maxAge: number, etag?: string) {
   const contentType = resolveContentType(extension);
-  const cacheSeconds = Math.max(maxAge, 31536000);
+  const cacheSeconds = Number.isFinite(maxAge) ? Math.max(0, Math.floor(maxAge)) : 0;
+  const cacheControl = cacheSeconds > 0
+    ? `public, max-age=${cacheSeconds}, s-maxage=${cacheSeconds}`
+    : "public, max-age=0, s-maxage=0, must-revalidate";
   const headers: Record<string, string> = {
     "Content-Type": contentType,
-    "Cache-Control": `public, max-age=${cacheSeconds}, s-maxage=${cacheSeconds}, immutable`,
+    "Cache-Control": cacheControl,
     Expires: new Date(Date.now() + cacheSeconds * 1000).toUTCString(),
   };
   if (etag) headers.ETag = etag;
