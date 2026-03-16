@@ -22,6 +22,7 @@ export type AuditAction =
   | "notification_endpoint.updated"
   | "notification_endpoint.deleted"
   | "notification_reliability.test_user"
+  | "notification_reliability.delivery_attempts_cleared"
   | "media_share.created"
   | "media_share.deleted"
   | "calendar.feed_rotated";

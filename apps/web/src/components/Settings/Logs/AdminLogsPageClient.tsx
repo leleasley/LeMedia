@@ -75,6 +75,7 @@ const ACTION_LABELS: Record<string, string> = {
   "media_share.created": "Share link created",
   "media_share.revoked": "Share link revoked",
   "notification_reliability.test_user": "Reliability test sent",
+  "notification_reliability.delivery_attempts_cleared": "Reliability delivery attempts cleared",
 };
 
 function formatActionLabel(action: string) {
@@ -116,6 +117,8 @@ export function AdminLogsPageClient({
   const toast = useToast();
   const [page, setPage] = useState(initialPage);
   const [isClearing, setIsClearing] = useState(false);
+  const [isClearingDeliveries, setIsClearingDeliveries] = useState(false);
+  const [clearOlderThanDays, setClearOlderThanDays] = useState<number>(30);
   const [isTesting, setIsTesting] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<number>(adminUsers[0]?.id ?? 0);
   const [modalConfig, setModalConfig] = useState<{
@@ -204,6 +207,31 @@ export function AdminLogsPageClient({
       toast.error(message);
     } finally {
       setIsTesting(false);
+    }
+  };
+
+  const clearFailedDeliveryAttempts = async (olderThanDays?: number) => {
+    setIsClearingDeliveries(true);
+    try {
+      const res = await csrfFetch("/api/admin/logs/notification-reliability", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          onlyFailed: true,
+          ...(Number.isFinite(olderThanDays) ? { olderThanDays } : {}),
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || "Failed to clear delivery attempts");
+      toast.success(`Deleted ${body.deleted ?? 0} failed delivery attempts.`);
+      await mutate("/api/admin/logs/notification-reliability");
+      await mutate(`/api/admin/logs?page=${page}`);
+    } catch (cleanupError) {
+      const message = cleanupError instanceof Error ? cleanupError.message : "Failed to clear delivery attempts";
+      toast.error(message);
+    } finally {
+      setIsClearingDeliveries(false);
+      setModalConfig((prev) => ({ ...prev, isOpen: false }));
     }
   };
 
@@ -433,6 +461,51 @@ export function AdminLogsPageClient({
 
           <div className="rounded-2xl border border-slate-700/80 bg-slate-950/60 p-4">
             <h4 className="text-sm font-semibold text-white">Recent Delivery Failures</h4>
+            <div className="mt-3 rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+              <div className="text-xs text-slate-300">Cleanup old failed attempts</div>
+              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_auto]">
+                <input
+                  type="number"
+                  min={1}
+                  max={3650}
+                  value={clearOlderThanDays}
+                  onChange={(event) => setClearOlderThanDays(Math.min(Math.max(Number(event.target.value) || 1, 1), 3650))}
+                  className="input h-8 text-xs"
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    setModalConfig({
+                      isOpen: true,
+                      title: "Clear old failed deliveries?",
+                      message: `Delete failed delivery attempts older than ${clearOlderThanDays} days? This cannot be undone.`,
+                      variant: "warning",
+                      onConfirm: () => void clearFailedDeliveryAttempts(clearOlderThanDays),
+                    })
+                  }
+                  disabled={isClearingDeliveries}
+                  className="btn btn-sm btn-outline disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isClearingDeliveries ? "Clearing..." : "Clear Older Failures"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setModalConfig({
+                      isOpen: true,
+                      title: "Clear all failed deliveries?",
+                      message: "Delete all failed delivery attempts from reliability logs? This cannot be undone.",
+                      variant: "danger",
+                      onConfirm: () => void clearFailedDeliveryAttempts(undefined),
+                    })
+                  }
+                  disabled={isClearingDeliveries}
+                  className="btn btn-sm btn-danger disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isClearingDeliveries ? "Clearing..." : "Clear All Failures"}
+                </button>
+              </div>
+            </div>
             <div className="mt-3 space-y-2">
               {failures.length === 0 ? (
                 <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-3 text-xs text-slate-400">

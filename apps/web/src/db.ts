@@ -2447,9 +2447,37 @@ async function ensureUserSchema() {
       CREATE TABLE IF NOT EXISTS user_telegram_preference (
         user_id BIGINT PRIMARY KEY REFERENCES app_user(id) ON DELETE CASCADE,
         followed_media_notifications BOOLEAN NOT NULL DEFAULT FALSE,
+        episode_reminder_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        episode_reminder_primary_minutes INTEGER NOT NULL DEFAULT 1440,
+        episode_reminder_second_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        episode_reminder_second_minutes INTEGER NOT NULL DEFAULT 60,
+        episode_reminder_telegram_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        reminder_timezone TEXT,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
     `);
+    await p.query(`ALTER TABLE user_telegram_preference ADD COLUMN IF NOT EXISTS episode_reminder_enabled BOOLEAN NOT NULL DEFAULT TRUE;`);
+    await p.query(`ALTER TABLE user_telegram_preference ADD COLUMN IF NOT EXISTS episode_reminder_primary_minutes INTEGER NOT NULL DEFAULT 1440;`);
+    await p.query(`ALTER TABLE user_telegram_preference ADD COLUMN IF NOT EXISTS episode_reminder_second_enabled BOOLEAN NOT NULL DEFAULT TRUE;`);
+    await p.query(`ALTER TABLE user_telegram_preference ADD COLUMN IF NOT EXISTS episode_reminder_second_minutes INTEGER NOT NULL DEFAULT 60;`);
+    await p.query(`ALTER TABLE user_telegram_preference ADD COLUMN IF NOT EXISTS episode_reminder_telegram_enabled BOOLEAN NOT NULL DEFAULT TRUE;`);
+    await p.query(`ALTER TABLE user_telegram_preference ADD COLUMN IF NOT EXISTS episode_reminder_24h BOOLEAN NOT NULL DEFAULT TRUE;`);
+    await p.query(`ALTER TABLE user_telegram_preference ADD COLUMN IF NOT EXISTS episode_reminder_1h BOOLEAN NOT NULL DEFAULT TRUE;`);
+    await p.query(`ALTER TABLE user_telegram_preference ADD COLUMN IF NOT EXISTS reminder_timezone TEXT;`);
+    await p.query(`
+      UPDATE user_telegram_preference
+      SET
+        episode_reminder_primary_minutes = CASE
+          WHEN COALESCE(episode_reminder_24h, TRUE) THEN 1440
+          ELSE episode_reminder_primary_minutes
+        END,
+        episode_reminder_second_enabled = COALESCE(episode_reminder_1h, TRUE),
+        episode_reminder_second_minutes = CASE
+          WHEN COALESCE(episode_reminder_1h, TRUE) THEN 60
+          ELSE episode_reminder_second_minutes
+        END
+      WHERE episode_reminder_primary_minutes IS NULL OR episode_reminder_second_minutes IS NULL
+    `).catch(() => {});
 
     await p.query(`
       CREATE TABLE IF NOT EXISTS webauthn_challenge (
@@ -2921,14 +2949,23 @@ export async function listTrackedTvForEpisodeReminders(maxShowsPerUser = 100): P
   const p = getPool();
   const perUserLimit = Math.min(Math.max(maxShowsPerUser, 1), 500);
   const res = await p.query(
-    `WITH dedup AS (
-       SELECT uml.user_id, uml.tmdb_id, MAX(uml.created_at) AS last_added
+    `WITH tracked_sources AS (
+       SELECT uml.user_id, uml.tmdb_id, uml.created_at
        FROM user_media_list uml
-       JOIN app_user u ON u.id = uml.user_id
        WHERE uml.media_type = 'tv'
          AND uml.list_type IN ('favorite', 'watchlist')
-         AND COALESCE(u.banned, FALSE) = FALSE
-       GROUP BY uml.user_id, uml.tmdb_id
+
+       UNION ALL
+
+       SELECT fm.user_id, fm.tmdb_id, fm.created_at
+       FROM followed_media fm
+       WHERE fm.media_type = 'tv'
+     ), dedup AS (
+       SELECT ts.user_id, ts.tmdb_id, MAX(ts.created_at) AS last_added
+       FROM tracked_sources ts
+       JOIN app_user u ON u.id = ts.user_id
+       WHERE COALESCE(u.banned, FALSE) = FALSE
+       GROUP BY ts.user_id, ts.tmdb_id
      ), ranked AS (
        SELECT
          user_id,
@@ -2955,15 +2992,16 @@ export async function markEpisodeAirReminderSent(input: {
   seasonNumber: number;
   episodeNumber: number;
   airDate: string;
+  reminderType: string;
 }): Promise<boolean> {
   const p = getPool();
   const res = await p.query(
     `INSERT INTO episode_air_reminder_sent
-      (user_id, tmdb_id, season_number, episode_number, air_date)
-     VALUES ($1, $2, $3, $4, $5)
-     ON CONFLICT (user_id, tmdb_id, season_number, episode_number, air_date) DO NOTHING
+      (user_id, tmdb_id, season_number, episode_number, air_date, reminder_type)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (user_id, tmdb_id, season_number, episode_number, air_date, reminder_type) DO NOTHING
      RETURNING id`,
-    [input.userId, input.tmdbId, input.seasonNumber, input.episodeNumber, input.airDate]
+    [input.userId, input.tmdbId, input.seasonNumber, input.episodeNumber, input.airDate, input.reminderType]
   );
   return (res.rowCount ?? 0) > 0;
 }
@@ -2979,9 +3017,27 @@ export async function cleanupEpisodeAirReminderSent(olderThanDays = 60): Promise
   return res.rowCount ?? 0;
 }
 
-export async function listEpisodeAirReminderTelegramTargets(userIds: number[]): Promise<Map<number, { telegramId: string | null; telegramFollowOptIn: boolean }>> {
+export async function listEpisodeAirReminderTelegramTargets(userIds: number[]): Promise<Map<number, {
+  telegramId: string | null;
+  telegramFollowOptIn: boolean;
+  episodeReminderEnabled: boolean;
+  episodeReminderPrimaryMinutes: number;
+  episodeReminderSecondEnabled: boolean;
+  episodeReminderSecondMinutes: number;
+  episodeReminderTelegramEnabled: boolean;
+  reminderTimezone: string | null;
+}>> {
   await ensureUserSchema();
-  const out = new Map<number, { telegramId: string | null; telegramFollowOptIn: boolean }>();
+  const out = new Map<number, {
+    telegramId: string | null;
+    telegramFollowOptIn: boolean;
+    episodeReminderEnabled: boolean;
+    episodeReminderPrimaryMinutes: number;
+    episodeReminderSecondEnabled: boolean;
+    episodeReminderSecondMinutes: number;
+    episodeReminderTelegramEnabled: boolean;
+    reminderTimezone: string | null;
+  }>();
   if (!userIds.length) return out;
 
   const ids = Array.from(new Set(userIds.filter((id) => Number.isFinite(id) && id > 0)));
@@ -2992,7 +3048,13 @@ export async function listEpisodeAirReminderTelegramTargets(userIds: number[]): 
     `SELECT
        u.id as "userId",
        tu.telegram_id as "telegramId",
-       COALESCE(utp.followed_media_notifications, FALSE) as "telegramFollowOptIn"
+       COALESCE(utp.followed_media_notifications, FALSE) as "telegramFollowOptIn",
+       COALESCE(utp.episode_reminder_enabled, TRUE) as "episodeReminderEnabled",
+       COALESCE(utp.episode_reminder_primary_minutes, 1440) as "episodeReminderPrimaryMinutes",
+       COALESCE(utp.episode_reminder_second_enabled, TRUE) as "episodeReminderSecondEnabled",
+       COALESCE(utp.episode_reminder_second_minutes, 60) as "episodeReminderSecondMinutes",
+       COALESCE(utp.episode_reminder_telegram_enabled, TRUE) as "episodeReminderTelegramEnabled",
+       utp.reminder_timezone as "reminderTimezone"
      FROM app_user u
      LEFT JOIN telegram_users tu ON tu.user_id = u.id
      LEFT JOIN user_telegram_preference utp ON utp.user_id = u.id
@@ -3004,6 +3066,12 @@ export async function listEpisodeAirReminderTelegramTargets(userIds: number[]): 
     out.set(Number(row.userId), {
       telegramId: row.telegramId ? String(row.telegramId) : null,
       telegramFollowOptIn: !!row.telegramFollowOptIn,
+      episodeReminderEnabled: !!row.episodeReminderEnabled,
+      episodeReminderPrimaryMinutes: Math.max(1, Number(row.episodeReminderPrimaryMinutes ?? 1440) || 1440),
+      episodeReminderSecondEnabled: !!row.episodeReminderSecondEnabled,
+      episodeReminderSecondMinutes: Math.max(1, Number(row.episodeReminderSecondMinutes ?? 60) || 60),
+      episodeReminderTelegramEnabled: !!row.episodeReminderTelegramEnabled,
+      reminderTimezone: row.reminderTimezone ? String(row.reminderTimezone) : null,
     });
   }
 
@@ -3405,6 +3473,7 @@ async function ensureSchema() {
     await p.query(`CREATE INDEX IF NOT EXISTS idx_notification_delivery_attempt_endpoint_id ON notification_delivery_attempt(endpoint_id, created_at DESC);`);
     await p.query(`CREATE INDEX IF NOT EXISTS idx_notification_delivery_attempt_endpoint_type ON notification_delivery_attempt(endpoint_type, created_at DESC);`);
     await p.query(`CREATE INDEX IF NOT EXISTS idx_notification_delivery_attempt_status ON notification_delivery_attempt(status, created_at DESC);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_notification_delivery_attempt_user_event_created ON notification_delivery_attempt(target_user_id, event_type, created_at DESC);`);
     await p.query(`
       CREATE TABLE IF NOT EXISTS media_issue (
         id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -5498,6 +5567,87 @@ export type NotificationReliabilityOverview = {
   recentFailures: NotificationReliabilityFailure[];
 };
 
+export type UserEpisodeReminderDelivery = {
+  id: number;
+  endpointId: number;
+  endpointName: string;
+  channel: string;
+  status: NotificationDeliveryAttemptStatus;
+  attemptNumber: number;
+  errorMessage: string | null;
+  createdAt: string;
+};
+
+export async function listUserEpisodeReminderDeliveries(
+  userId: number,
+  limit = 10
+): Promise<UserEpisodeReminderDelivery[]> {
+  await ensureSchema();
+  const p = getPool();
+  const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 50);
+  const res = await p.query(
+    `
+    SELECT
+      nda.id,
+      nda.endpoint_id,
+      COALESCE(ne.name, CONCAT('Endpoint #', nda.endpoint_id::text)) AS endpoint_name,
+      nda.endpoint_type,
+      nda.status,
+      nda.attempt_number,
+      nda.error_message,
+      nda.created_at
+    FROM notification_delivery_attempt nda
+    LEFT JOIN notification_endpoint ne ON ne.id = nda.endpoint_id
+    WHERE nda.target_user_id = $1
+      AND nda.event_type = 'episode_air_reminder'
+    ORDER BY nda.created_at DESC
+    LIMIT $2
+    `,
+    [userId, safeLimit]
+  );
+
+  return res.rows.map((row) => ({
+    id: Number(row.id),
+    endpointId: Number(row.endpoint_id),
+    endpointName: String(row.endpoint_name),
+    channel: String(row.endpoint_type),
+    status: String(row.status) as NotificationDeliveryAttemptStatus,
+    attemptNumber: Number(row.attempt_number ?? 1),
+    errorMessage: row.error_message ? String(row.error_message) : null,
+    createdAt: String(row.created_at),
+  }));
+}
+
+export async function clearNotificationDeliveryAttempts(input?: {
+  status?: NotificationDeliveryAttemptStatus;
+  olderThanDays?: number;
+}): Promise<number> {
+  await ensureSchema();
+  const p = getPool();
+
+  const params: Array<string | number> = [];
+  const where: string[] = [];
+
+  if (input?.status) {
+    params.push(input.status);
+    where.push(`status = $${params.length}`);
+  }
+
+  if (Number.isFinite(input?.olderThanDays)) {
+    const safeDays = Math.min(Math.max(Math.floor(Number(input?.olderThanDays ?? 0)), 1), 3650);
+    params.push(safeDays);
+    where.push(`created_at < NOW() - ($${params.length}::int * interval '1 day')`);
+  }
+
+  const query = `
+    DELETE FROM notification_delivery_attempt
+    ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+  `;
+
+  const res = await p.query(query, params);
+  return Number(res.rowCount ?? 0);
+}
+
 export async function getNotificationReliabilityOverview(windowDays = 14): Promise<NotificationReliabilityOverview> {
   await ensureSchema();
   const p = getPool();
@@ -7331,6 +7481,104 @@ export async function setUserTelegramFollowedMediaPreference(userId: number, ena
      ON CONFLICT (user_id)
      DO UPDATE SET followed_media_notifications = EXCLUDED.followed_media_notifications, updated_at = NOW()`,
     [userId, enabled]
+  );
+}
+
+export type UserEpisodeReminderPreference = {
+  followedMediaNotifications: boolean;
+  episodeReminderEnabled: boolean;
+  episodeReminderPrimaryMinutes: number;
+  episodeReminderSecondEnabled: boolean;
+  episodeReminderSecondMinutes: number;
+  episodeReminderTelegramEnabled: boolean;
+  reminderTimezone: string | null;
+};
+
+export async function getUserEpisodeReminderPreference(userId: number): Promise<UserEpisodeReminderPreference> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query<{
+    followed_media_notifications: boolean;
+    episode_reminder_enabled: boolean;
+    episode_reminder_primary_minutes: number;
+    episode_reminder_second_enabled: boolean;
+    episode_reminder_second_minutes: number;
+    episode_reminder_telegram_enabled: boolean;
+    reminder_timezone: string | null;
+  }>(
+    `SELECT
+      followed_media_notifications,
+      episode_reminder_enabled,
+      episode_reminder_primary_minutes,
+      episode_reminder_second_enabled,
+      episode_reminder_second_minutes,
+      episode_reminder_telegram_enabled,
+      reminder_timezone
+     FROM user_telegram_preference
+     WHERE user_id = $1
+     LIMIT 1`,
+    [userId]
+  );
+
+  const row = res.rows[0];
+  return {
+    followedMediaNotifications: row ? !!row.followed_media_notifications : false,
+    episodeReminderEnabled: row ? !!row.episode_reminder_enabled : true,
+    episodeReminderPrimaryMinutes: row ? Math.max(1, Number(row.episode_reminder_primary_minutes ?? 1440) || 1440) : 1440,
+    episodeReminderSecondEnabled: row ? !!row.episode_reminder_second_enabled : true,
+    episodeReminderSecondMinutes: row ? Math.max(1, Number(row.episode_reminder_second_minutes ?? 60) || 60) : 60,
+    episodeReminderTelegramEnabled: row ? !!row.episode_reminder_telegram_enabled : true,
+    reminderTimezone: row?.reminder_timezone ? String(row.reminder_timezone) : null,
+  };
+}
+
+export async function setUserEpisodeReminderPreference(
+  userId: number,
+  input: {
+    followedMediaNotifications: boolean;
+    episodeReminderEnabled: boolean;
+    episodeReminderPrimaryMinutes: number;
+    episodeReminderSecondEnabled: boolean;
+    episodeReminderSecondMinutes: number;
+    episodeReminderTelegramEnabled: boolean;
+    reminderTimezone: string | null;
+  }
+): Promise<void> {
+  await ensureUserSchema();
+  const p = getPool();
+  await p.query(
+    `INSERT INTO user_telegram_preference (
+      user_id,
+      followed_media_notifications,
+      episode_reminder_enabled,
+      episode_reminder_primary_minutes,
+      episode_reminder_second_enabled,
+      episode_reminder_second_minutes,
+      episode_reminder_telegram_enabled,
+      reminder_timezone,
+      updated_at
+    )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+     ON CONFLICT (user_id)
+     DO UPDATE SET
+      followed_media_notifications = EXCLUDED.followed_media_notifications,
+      episode_reminder_enabled = EXCLUDED.episode_reminder_enabled,
+      episode_reminder_primary_minutes = EXCLUDED.episode_reminder_primary_minutes,
+      episode_reminder_second_enabled = EXCLUDED.episode_reminder_second_enabled,
+      episode_reminder_second_minutes = EXCLUDED.episode_reminder_second_minutes,
+      episode_reminder_telegram_enabled = EXCLUDED.episode_reminder_telegram_enabled,
+      reminder_timezone = EXCLUDED.reminder_timezone,
+      updated_at = NOW()`,
+    [
+      userId,
+      input.followedMediaNotifications,
+      input.episodeReminderEnabled,
+      Math.min(Math.max(Math.floor(input.episodeReminderPrimaryMinutes), 1), 43200),
+      input.episodeReminderSecondEnabled,
+      Math.min(Math.max(Math.floor(input.episodeReminderSecondMinutes), 1), 43200),
+      input.episodeReminderTelegramEnabled,
+      input.reminderTimezone,
+    ]
   );
 }
 

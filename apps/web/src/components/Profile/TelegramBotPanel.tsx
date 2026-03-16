@@ -5,6 +5,7 @@ import useSWR from "swr";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { csrfFetch } from "@/lib/csrf-client";
 import { ConfirmModal, useConfirm } from "@/components/Common/ConfirmModal";
+import { TelegramBotEpisodeReminderCard } from "@/components/Profile/TelegramBotEpisodeReminderCard";
 
 const fetcher = (url: string) =>
   fetch(url, { credentials: "include", cache: "no-store" }).then(r => r.json());
@@ -226,7 +227,7 @@ export function TelegramBotPanel() {
                 aria-checked={Boolean(data.followedMediaNotifications)}
                 disabled={savingFollowPref}
                 onClick={() => void handleFollowedMediaPrefChange(!Boolean(data.followedMediaNotifications))}
-                className={`ui-switch ui-switch-md transition-colors ${Boolean(data.followedMediaNotifications) ? "bg-[#229ED9]" : "bg-gray-700"} ${savingFollowPref ? "opacity-60" : ""}`}
+                className={`ui-switch ui-switch-md shrink-0 transition-colors ${Boolean(data.followedMediaNotifications) ? "bg-[#229ED9]" : "bg-gray-700"} ${savingFollowPref ? "opacity-60" : ""}`}
               >
                 <span
                   className={`ui-switch-thumb ${Boolean(data.followedMediaNotifications) ? "translate-x-6" : "translate-x-0"}`}
@@ -236,6 +237,8 @@ export function TelegramBotPanel() {
           </div>
         </div>
       )}
+
+      <TelegramBotEpisodeReminderCard />
     </div>
   );
 }

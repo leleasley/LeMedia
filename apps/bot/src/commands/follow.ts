@@ -1,6 +1,7 @@
 import { Context, InlineKeyboard } from "grammy";
 import {
   followMedia,
+  getTvNextEpisodeInfo,
   getMovieReleaseInfo,
   listFollowing,
   searchMedia,
@@ -8,7 +9,7 @@ import {
   type SearchResult,
   unfollowMedia,
 } from "../api";
-import { getLinkedUser } from "../db";
+import { getLinkedUser, getUserEpisodeReminderTimezone } from "../db";
 import { decryptSecret } from "../encryption";
 import {
   clearPendingReleaseSearch,
@@ -45,6 +46,24 @@ function formatDate(date: string | null): string {
   }).format(value);
 }
 
+function formatCountdownToDate(date: string | null): string | null {
+  if (!date) return null;
+  const target = new Date(`${date}T00:00:00Z`).getTime();
+  if (!Number.isFinite(target)) return null;
+
+  const now = Date.now();
+  const deltaMs = target - now;
+  if (deltaMs <= 0) return "already aired or airs today";
+
+  const totalHours = Math.round(deltaMs / (60 * 60 * 1000));
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
+
+  if (days > 0 && hours > 0) return `in about ${days} day${days === 1 ? "" : "s"} and ${hours} hour${hours === 1 ? "" : "s"}`;
+  if (days > 0) return `in about ${days} day${days === 1 ? "" : "s"}`;
+  return `in about ${Math.max(1, totalHours)} hour${Math.max(1, totalHours) === 1 ? "" : "s"}`;
+}
+
 function removeCommandPrefix(text: string, command: string): string {
   return text.replace(new RegExp(`^\\/${command}\\s*`, "i"), "").trim();
 }
@@ -74,6 +93,20 @@ async function resolveReleaseQueryFromCommand(ctx: Context, query: string): Prom
   return last.title;
 }
 
+async function resolveEpisodeQueryFromCommand(ctx: Context, query: string): Promise<string | null> {
+  const chatId = ctx.chat?.id;
+  if (!chatId) return null;
+
+  const trimmed = query.trim();
+  if (trimmed && !/^(this|that|it)$/i.test(trimmed)) {
+    return trimmed;
+  }
+
+  const last = await getLastSelected(chatId);
+  if (!last) return null;
+  return last.title;
+}
+
 function releasePrompt(mode: AwaitingReleaseMode): string {
   return mode === "digital"
     ? "Which movie or TV show would you like the digital release date for?"
@@ -87,6 +120,7 @@ function releasePickerTitle(mode: AwaitingReleaseMode): string {
 async function requireLinked(ctx: Context): Promise<null | {
   apiToken: string;
   telegramId: string;
+  userId: number;
 }> {
   const telegramId = String(ctx.from?.id ?? "");
   const linked = await getLinkedUser(telegramId);
@@ -97,7 +131,26 @@ async function requireLinked(ctx: Context): Promise<null | {
   return {
     apiToken: decryptSecret(linked.apiTokenEncrypted, SERVICES_SECRET_KEY),
     telegramId,
+    userId: linked.userId,
   };
+}
+
+function getEpisodeReminderAnchorTime(): { hour: number; minute: number } {
+  const hour = Number(process.env.EPISODE_AIR_REMINDER_LOCAL_HOUR ?? "23");
+  const minute = Number(process.env.EPISODE_AIR_REMINDER_LOCAL_MINUTE ?? "59");
+  const safeHour = Number.isFinite(hour) ? Math.max(0, Math.min(23, Math.floor(hour))) : 23;
+  const safeMinute = Number.isFinite(minute) ? Math.max(0, Math.min(59, Math.floor(minute))) : 59;
+  return { hour: safeHour, minute: safeMinute };
+}
+
+function formatApproximateAirTimeLine(reminderTimezone: string | null): string {
+  const { hour, minute } = getEpisodeReminderAnchorTime();
+  const hh = String(hour).padStart(2, "0");
+  const mm = String(minute).padStart(2, "0");
+  if (reminderTimezone) {
+    return `Approx time: <b>${hh}:${mm}</b> in <b>${escHtml(reminderTimezone)}</b> (estimated)`;
+  }
+  return `Approx time: <b>${hh}:${mm}</b> in your app timezone (estimated)`;
 }
 
 function renderFollowingLine(item: FollowedMediaItem, index: number): string {
@@ -538,6 +591,113 @@ export async function handleDigitalRelease(ctx: Context) {
   const raw = ctx.message?.text ?? "";
   const query = removeAnyCommandPrefix(raw, ["digitalrelease", "digital"]);
   await runReleaseLookupByQuery(ctx, query, "digital");
+}
+
+async function answerNextEpisodeForResult(
+  ctx: Context,
+  linkedApiToken: string,
+  linkedUserId: number,
+  target: SearchResult,
+  options?: { autopicked?: boolean }
+): Promise<void> {
+  if (target.mediaType !== "tv") {
+    await ctx.reply(
+      `📌 <b>${escHtml(target.title)}</b> is a movie. Try /release or /digitalrelease for movie release dates.`,
+      { parse_mode: "HTML" }
+    );
+    return;
+  }
+
+  let info;
+  try {
+    info = await getTvNextEpisodeInfo(target.id, linkedApiToken);
+  } catch {
+    await ctx.reply("❌ I couldn't fetch next-episode details right now. Please try again.");
+    return;
+  }
+
+  const next = info?.nextEpisodeToAir;
+  const title = info?.name ?? target.title;
+
+  if (!next || !next.airDate) {
+    await ctx.reply(
+      `📺 I couldn't find a confirmed next episode air date yet for <b>${escHtml(title)}</b>.`,
+      { parse_mode: "HTML" }
+    );
+    return;
+  }
+
+  const episodeCode =
+    Number.isFinite(Number(next.seasonNumber)) && Number.isFinite(Number(next.episodeNumber))
+      ? `S${String(next.seasonNumber).padStart(2, "0")}E${String(next.episodeNumber).padStart(2, "0")}`
+      : "Next episode";
+
+  const countdown = formatCountdownToDate(next.airDate);
+  const autopickedNote = options?.autopicked ? "\n<i>I matched the closest TV title.</i>" : "";
+  let reminderTimezone: string | null = null;
+  try {
+    reminderTimezone = await getUserEpisodeReminderTimezone(linkedUserId);
+  } catch {
+    reminderTimezone = null;
+  }
+
+  await ctx.reply(
+    `📺 <b>${escHtml(title)}</b>\n` +
+    `${escHtml(episodeCode)}${next.name ? ` — <b>${escHtml(next.name)}</b>` : ""}\n` +
+    `Air date: <b>${escHtml(formatDate(next.airDate))}</b>\n` +
+    `${formatApproximateAirTimeLine(reminderTimezone)}\n` +
+    `Time note: <i>TMDB usually provides date-only for episodes, so exact airtime may vary by region/network.</i>\n` +
+    `${countdown ? `Countdown: <b>${escHtml(countdown)}</b>` : ""}${autopickedNote}`,
+    { parse_mode: "HTML" }
+  );
+}
+
+async function runNextEpisodeLookupByQuery(ctx: Context, query: string): Promise<boolean> {
+  const linked = await requireLinked(ctx);
+  if (!linked) return true;
+
+  const trimmed = query.trim();
+  const resolved = await resolveEpisodeQueryFromCommand(ctx, trimmed);
+  if (!resolved) {
+    await ctx.reply("Tell me which show, for example: /nextepisode the last of us");
+    return true;
+  }
+
+  let results: SearchResult[];
+  try {
+    results = await searchMedia(resolved, linked.apiToken);
+  } catch {
+    await ctx.reply("❌ Search failed. Please try again.");
+    return true;
+  }
+
+  if (!results.length) {
+    await ctx.reply(`😕 I couldn't find anything for \"<b>${escHtml(resolved)}</b>\".`, { parse_mode: "HTML" });
+    return true;
+  }
+
+  const tvResults = results.filter((r) => r.mediaType === "tv");
+  if (!tvResults.length) {
+    await ctx.reply(`📌 I found results for \"<b>${escHtml(resolved)}</b>\", but none were TV series.`, { parse_mode: "HTML" });
+    return true;
+  }
+
+  const exactTv = tvResults.find((r) => normalizeText(r.title) === normalizeText(resolved));
+  const picked = exactTv ?? tvResults[0];
+  await answerNextEpisodeForResult(ctx, linked.apiToken, linked.userId, picked, {
+    autopicked: !exactTv && tvResults.length > 1,
+  });
+  return true;
+}
+
+export async function answerNextEpisodeQuestion(ctx: Context, query: string): Promise<boolean> {
+  return runNextEpisodeLookupByQuery(ctx, query);
+}
+
+export async function handleNextEpisode(ctx: Context) {
+  const raw = ctx.message?.text ?? "";
+  const query = removeAnyCommandPrefix(raw, ["nextepisode", "nextair"]);
+  await runNextEpisodeLookupByQuery(ctx, query);
 }
 
 export async function handleFollowPickCallback(ctx: Context) {

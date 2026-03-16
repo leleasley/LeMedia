@@ -355,59 +355,64 @@ export function UserNotificationChannelsPanel() {
   }
 
   return (
-    <div className="relative overflow-hidden rounded-[2rem] border border-cyan-400/20 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.14),transparent_28%),radial-gradient(circle_at_bottom_right,rgba(217,70,239,0.18),transparent_32%),linear-gradient(140deg,rgba(2,6,23,0.98),rgba(15,23,42,0.94),rgba(2,6,23,0.98))] p-6 md:p-8">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300/60 to-transparent" />
-      <div className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full bg-cyan-500/10 blur-3xl" />
-      <div className="pointer-events-none absolute -bottom-24 -left-20 h-72 w-72 rounded-full bg-fuchsia-500/10 blur-3xl" />
+    <div className="rounded-2xl md:rounded-3xl border border-white/10 bg-white/[0.02] p-6 md:p-8">
       <ConfirmModal {...modalProps} />
 
-      <div className="relative">
-        <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
-          <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-cyan-300/30 bg-cyan-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-cyan-100">
-            Personal Channels
-          </div>
-          <h3 className="mt-4 text-3xl font-bold text-white md:text-4xl">Design your own alert stack.</h3>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
-            Build personal delivery routes for requests, availability updates, reviews, issues, and episode reminders without waiting for an admin to wire them up.
-          </p>
-          </div>
+      <div className="flex items-center gap-4 mb-6">
+        <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500/20 to-teal-500/20 ring-1 ring-white/10">
+          <span className="text-xl">📡</span>
+        </div>
+        <div className="flex-1">
+          <h3 className="text-xl font-bold text-white">Personal Channels</h3>
+          <p className="text-sm text-gray-400 mt-1">Custom notification routes for requests, availability, reviews, and reminders</p>
+        </div>
+        <button
+          type="button"
+          className="inline-flex items-center rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white hover:bg-white/10 transition-colors"
+          onClick={openCreate}
+        >
+          Add channel
+        </button>
+      </div>
 
-          <div className="flex w-full flex-col gap-3 xl:w-auto xl:items-end">
-            <button
-              type="button"
-              className="inline-flex h-11 items-center justify-center rounded-xl border border-cyan-300/35 bg-cyan-400/15 px-5 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-400/25"
-              onClick={openCreate}
-            >
-              Create new channel
-            </button>
+      <div className="grid gap-3 sm:grid-cols-3 mb-6">
+        <div className="flex items-center gap-3 rounded-xl bg-black/20 border border-white/5 p-4">
+          <div className="flex items-center justify-center w-10 h-10 rounded-full bg-white/10">
+            <span className="text-lg">📬</span>
+          </div>
+          <div>
+            <div className="text-xs text-white/50 uppercase tracking-wider">Channels</div>
+            <div className="font-semibold text-white/90">{endpoints.length}</div>
           </div>
         </div>
-
-        <div className="mt-6 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4 backdrop-blur">
-            <div className="text-[11px] uppercase tracking-[0.2em] text-slate-500">Channels</div>
-            <div className="mt-2 text-2xl font-semibold text-white">{endpoints.length}</div>
+        <div className="flex items-center gap-3 rounded-xl bg-black/20 border border-white/5 p-4">
+          <div className={`flex items-center justify-center w-10 h-10 rounded-full ${activeCount > 0 ? 'bg-emerald-500/20' : 'bg-white/10'}`}>
+            <span className="text-lg">{activeCount > 0 ? '✓' : '○'}</span>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4 backdrop-blur">
-            <div className="text-[11px] uppercase tracking-[0.2em] text-slate-500">Active</div>
-            <div className="mt-2 text-2xl font-semibold text-white">{activeCount}</div>
+          <div>
+            <div className="text-xs text-white/50 uppercase tracking-wider">Active</div>
+            <div className={`font-semibold ${activeCount > 0 ? 'text-emerald-300' : 'text-white/70'}`}>{activeCount}</div>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4 backdrop-blur">
-            <div className="text-[11px] uppercase tracking-[0.2em] text-slate-500">Status</div>
-            <div className="mt-2 text-sm font-semibold text-white">Your configured channels</div>
+        </div>
+        <div className="flex items-center gap-3 rounded-xl bg-black/20 border border-white/5 p-4">
+          <div className="flex items-center justify-center w-10 h-10 rounded-full bg-white/10">
+            <span className="text-lg">⚡</span>
+          </div>
+          <div>
+            <div className="text-xs text-white/50 uppercase tracking-wider">Paused</div>
+            <div className="font-semibold text-white/90">{endpoints.length - activeCount}</div>
           </div>
         </div>
       </div>
 
-      <div className="relative mt-8 grid gap-4 xl:grid-cols-2">
+      <div className="grid gap-4 xl:grid-cols-2">
         {endpoints.map((endpoint) => {
           const meta = providerMeta(endpoint.type);
           const laneCount = endpoint.events.length || defaultEvents.length;
           return (
             <div
               key={endpoint.id}
-              className="group rounded-[1.5rem] border border-white/10 bg-black/20 p-5 shadow-[0_20px_60px_-40px_rgba(0,0,0,0.9)] backdrop-blur transition hover:border-white/20 hover:bg-black/25"
+              className="rounded-xl border border-white/10 bg-black/20 p-5 transition hover:border-white/15"
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
@@ -418,47 +423,45 @@ export function UserNotificationChannelsPanel() {
                     <span className="truncate">{endpoint.name}</span>
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <span className="rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-[10px] uppercase tracking-[0.22em] text-slate-300">
+                    <span className="rounded-full bg-white/5 px-2.5 py-1 text-xs text-gray-400 capitalize">
                       {meta.label}
                     </span>
-                    <span className="text-xs text-slate-400">{laneCount} events</span>
+                    <span className="text-xs text-gray-500">{laneCount} events</span>
                   </div>
                 </div>
                 <span
-                  className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${
+                  className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${
                     endpoint.enabled
-                      ? "border border-emerald-300/25 bg-emerald-500/15 text-emerald-100"
-                      : "border border-white/15 bg-white/5 text-slate-300"
+                      ? "bg-emerald-500/20 text-emerald-200"
+                      : "bg-white/10 text-gray-300"
                   }`}
                 >
-                  {endpoint.enabled ? "Live" : "Paused"}
+                  {endpoint.enabled ? "Active" : "Paused"}
                 </span>
               </div>
 
-              <p className="mt-4 text-xs leading-5 text-slate-400">{meta.description}</p>
-
-              <div className="mt-4 flex flex-wrap gap-2">
+              <div className="mt-4 flex flex-wrap gap-1.5">
                 {(endpoint.events.length ? endpoint.events : defaultEvents).slice(0, 4).map((eventId) => (
                   <span
                     key={eventId}
-                    className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] text-slate-300"
+                    className="rounded-full bg-white/5 px-2.5 py-1 text-[11px] text-gray-400"
                   >
                     {eventLabelById[eventId] ?? eventId}
                   </span>
                 ))}
                 {laneCount > 4 ? (
-                  <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] text-slate-400">
+                  <span className="rounded-full bg-white/5 px-2.5 py-1 text-[11px] text-gray-500">
                     +{laneCount - 4} more
                   </span>
                 ) : null}
               </div>
 
-              <div className="mt-5 flex items-center justify-between gap-4 border-t border-white/10 pt-4">
-                <div className="text-xs text-slate-500">Created {formatDate(endpoint.created_at)}</div>
+              <div className="mt-4 flex items-center justify-between gap-4 border-t border-white/5 pt-4">
+                <div className="text-xs text-gray-500">Created {formatDate(endpoint.created_at)}</div>
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    className="inline-flex h-8 items-center rounded-lg border border-white/15 bg-white/5 px-3 text-xs text-white transition hover:bg-white/10"
+                    className="inline-flex h-8 items-center rounded-lg border border-white/10 bg-white/5 px-3 text-xs text-white transition hover:bg-white/10"
                     onClick={() => handleTest(endpoint)}
                     disabled={testingId === endpoint.id}
                   >
@@ -466,14 +469,14 @@ export function UserNotificationChannelsPanel() {
                   </button>
                   <button
                     type="button"
-                    className="inline-flex h-8 items-center rounded-lg border border-white/15 bg-white/5 px-3 text-xs text-white transition hover:bg-white/10"
+                    className="inline-flex h-8 items-center rounded-lg border border-white/10 bg-white/5 px-3 text-xs text-white transition hover:bg-white/10"
                     onClick={() => openEdit(endpoint)}
                   >
                     Edit
                   </button>
                   <button
                     type="button"
-                    className="inline-flex h-8 items-center rounded-lg border border-red-400/30 bg-red-500/10 px-3 text-xs text-red-200 transition hover:bg-red-500/20"
+                    className="inline-flex h-8 items-center rounded-lg border border-red-400/20 bg-red-500/10 px-3 text-xs text-red-200 transition hover:bg-red-500/20"
                     onClick={() => handleDelete(endpoint)}
                   >
                     Delete
@@ -485,12 +488,11 @@ export function UserNotificationChannelsPanel() {
         })}
 
         {endpoints.length === 0 ? (
-          <div className="xl:col-span-2 rounded-[1.5rem] border border-dashed border-white/15 bg-black/15 px-6 py-12 text-center">
-            <div className="mx-auto max-w-xl">
-              <div className="text-sm uppercase tracking-[0.24em] text-slate-500">Nothing routed yet</div>
-              <div className="mt-3 text-2xl font-semibold text-white">Create the first personal channel.</div>
-              <p className="mt-3 text-sm leading-6 text-slate-400">
-                Pick a provider, choose the events you care about, and keep operational system alerts separate from personal media notifications.
+          <div className="xl:col-span-2 rounded-xl border border-dashed border-white/10 bg-black/10 px-6 py-12 text-center">
+            <div className="mx-auto max-w-md">
+              <p className="text-sm text-gray-400">No channels configured yet</p>
+              <p className="mt-2 text-xs text-gray-500">
+                Add a channel to receive notifications via Telegram, Discord, email, and more.
               </p>
             </div>
           </div>

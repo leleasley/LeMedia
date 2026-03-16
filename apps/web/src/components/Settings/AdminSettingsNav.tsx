@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import type { MouseEvent } from "react";
+import type { ChangeEvent, MouseEvent } from "react";
 import { cn } from "@/lib/utils";
 
 type SettingsRoute = {
@@ -83,9 +83,17 @@ export function AdminSettingsNav() {
     ];
 
     const allRoutes = groups.flatMap(g => g.routes);
+    const activeRouteHref = allRoutes.find(route => pathname?.match(route.match))?.href ?? "";
 
     function navigate(event: MouseEvent<HTMLAnchorElement>, href: string) {
         event.preventDefault();
+        router.push(href);
+        router.refresh();
+    }
+
+    function handleMobileSelect(event: ChangeEvent<HTMLSelectElement>) {
+        const href = event.target.value;
+        if (!href || href === activeRouteHref) return;
         router.push(href);
         router.refresh();
     }
@@ -103,28 +111,28 @@ export function AdminSettingsNav() {
 
             <div className="relative sm:hidden">
                 <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-300/85">Admin sections</p>
-                <nav className="-mx-1 flex snap-x snap-mandatory gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Admin settings mobile">
-                    {allRoutes.map(route => {
-                        const isActive = pathname?.match(route.match);
-                        return (
-                            <Link
-                                key={route.id}
-                                href={route.href}
-                                prefetch={false}
-                                onClick={event => navigate(event, route.href)}
-                                className={cn(
-                                    "snap-start whitespace-nowrap rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors",
-                                    isActive
-                                        ? "border-amber-300/45 bg-amber-400/20 text-amber-100"
-                                        : "border-white/10 bg-white/[0.04] text-slate-200/85 hover:border-white/20 hover:bg-white/[0.08]"
-                                )}
-                                aria-current={isActive ? "page" : undefined}
-                            >
-                                {route.label}
-                            </Link>
-                        );
-                    })}
-                </nav>
+                <div className="px-1 pb-1">
+                    <label htmlFor="admin-settings-mobile-nav" className="sr-only">Select an admin settings section</label>
+                    <div className="overflow-hidden rounded-xl border border-white/10 bg-white/[0.04]">
+                        <select
+                            id="admin-settings-mobile-nav"
+                            value={activeRouteHref}
+                            onChange={handleMobileSelect}
+                            className="w-full appearance-none rounded-xl border-0 bg-transparent px-4 py-3 text-sm font-medium text-slate-100 outline-none"
+                            aria-label="Admin settings mobile"
+                        >
+                            {groups.map(group => (
+                                <optgroup key={group.id} label={group.label}>
+                                    {group.routes.map(route => (
+                                        <option key={route.id} value={route.href}>
+                                            {route.label}
+                                        </option>
+                                    ))}
+                                </optgroup>
+                            ))}
+                        </select>
+                    </div>
+                </div>
             </div>
 
             <nav className="relative hidden sm:grid sm:grid-cols-2 xl:grid-cols-3 gap-2" aria-label="Admin settings">

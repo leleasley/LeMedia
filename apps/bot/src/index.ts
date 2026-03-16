@@ -13,6 +13,7 @@ import {
   handleFollow,
   handleFollowPickCallback,
   handleFollowing,
+  handleNextEpisode,
   handleReleasePickCallback,
   handleRelease,
   handleUnfollow,
@@ -80,6 +81,7 @@ bot.command("help", async ctx => {
     `🧹 /unfollow [title|this] — Stop following a title\n` +
     `🗓 /release [title|this] — Theatrical/premiere + digital dates\n` +
     `💿 /digitalrelease [title|this] — Digital release date\n` +
+    `📺 /nextepisode [title|this] — Next episode air date + countdown\n` +
     `🔔 /watch [title|this] — Alert me when available\n` +
     `🛎 /alerts — View active alerts\n` +
     `🛑 /stopalerts [all|id] — Stop alerts\n` +
@@ -93,6 +95,8 @@ bot.command("help", async ctx => {
     `  • "Can I get Breaking Bad?"\n` +
     `  • "Give me an update on my following"\n` +
     `  • "When is the digital release date for Dune?"\n` +
+    `  • "When does the next episode of The Last of Us air?"\n` +
+    `  • "How long until the next episode of Severance?"\n` +
     `  • "Are my services running?"`,
     { parse_mode: "HTML", reply_markup: mainShortcutKeyboard() }
   );
@@ -112,6 +116,7 @@ bot.command(["following", "myfollowing"], handleFollowing);
 bot.command(["unfollow", "untrack"], handleUnfollow);
 bot.command(["release", "releasedate"], handleRelease);
 bot.command(["digitalrelease", "digital"], handleDigitalRelease);
+bot.command(["nextepisode", "nextair"], handleNextEpisode);
 bot.command("mystuff", handleMyStuff);
 bot.command(["trending", "popular"], handleTrending);
 bot.command(["newstuff", "new", "recent"], handleNewStuff);

@@ -129,6 +129,18 @@ export async function getLinkedUser(
   };
 }
 
+export async function getUserEpisodeReminderTimezone(userId: number): Promise<string | null> {
+  const p = getPool();
+  const res = await p.query<{ reminder_timezone: string | null }>(
+    `SELECT reminder_timezone
+     FROM user_telegram_preference
+     WHERE user_id = $1
+     LIMIT 1`,
+    [userId]
+  );
+  return res.rows[0]?.reminder_timezone ? String(res.rows[0].reminder_timezone) : null;
+}
+
 export async function unlinkTelegramUser(telegramId: string): Promise<void> {
   const p = getPool();
   await p.query("DELETE FROM telegram_users WHERE telegram_id = $1", [telegramId]);

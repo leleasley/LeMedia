@@ -48,6 +48,17 @@ export interface ServiceDetail {
   failedCount?: number;
 }
 
+export interface TvNextEpisodeInfo {
+  id: number;
+  name: string | null;
+  nextEpisodeToAir: {
+    name: string | null;
+    seasonNumber: number | null;
+    episodeNumber: number | null;
+    airDate: string | null;
+  } | null;
+}
+
 async function apiFetch(path: string, apiToken: string, options: RequestInit = {}): Promise<Response> {
   const url = `${BASE_URL}${path}`;
   return fetch(url, {
@@ -219,6 +230,33 @@ export async function getMovieReleaseInfo(
   }
 
   return { theatricalReleaseDate, digitalReleaseDate };
+}
+
+export async function getTvNextEpisodeInfo(
+  tmdbId: number,
+  apiToken: string
+): Promise<TvNextEpisodeInfo | null> {
+  const res = await apiFetch(`/api/v1/tv/${tmdbId}`, apiToken);
+  if (!res.ok) throw new Error(`Failed to fetch TV details: ${res.status}`);
+
+  const body = await res.json().catch(() => ({})) as Record<string, unknown>;
+
+  const nextTop = (body as any)?.nextEpisodeToAir;
+  const nextFromDetails = (body as any)?.details?.tv?.next_episode_to_air;
+  const next = nextTop ?? nextFromDetails ?? null;
+
+  return {
+    id: Number((body as any)?.id ?? tmdbId),
+    name: ((body as any)?.name ?? (body as any)?.details?.tv?.name ?? null) as string | null,
+    nextEpisodeToAir: next
+      ? {
+          name: next.name ?? null,
+          seasonNumber: Number.isFinite(Number(next.season_number)) ? Number(next.season_number) : null,
+          episodeNumber: Number.isFinite(Number(next.episode_number)) ? Number(next.episode_number) : null,
+          airDate: typeof next.air_date === "string" ? next.air_date : null,
+        }
+      : null,
+  };
 }
 
 export async function requestMovie(tmdbId: number, apiToken: string): Promise<{ ok: boolean; message: string }> {

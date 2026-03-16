@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/auth";
 import { requireCsrf } from "@/lib/csrf";
-import { getNotificationReliabilityOverview, listAdminUserOptions, listNotificationEndpointsForUser } from "@/db";
+import {
+  clearNotificationDeliveryAttempts,
+  getNotificationReliabilityOverview,
+  listAdminUserOptions,
+  listNotificationEndpointsForUser,
+} from "@/db";
 import { notifySystemAlertEventWithDelivery } from "@/notifications/system-events";
 import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/rate-limit";
@@ -76,5 +81,50 @@ export async function POST(request: NextRequest) {
     ok: true,
     eligible: result.eligible,
     delivered: result.delivered
+  });
+}
+
+export async function DELETE(request: NextRequest) {
+  const user = await requireAdmin();
+  if (user instanceof NextResponse) return user;
+  const csrf = requireCsrf(request);
+  if (csrf) return csrf;
+
+  let body: { olderThanDays?: number; onlyFailed?: boolean } = {};
+  try {
+    body = await request.json();
+  } catch {
+    body = {};
+  }
+
+  const onlyFailed = body.onlyFailed !== false;
+  const olderThanDaysRaw = Number(body.olderThanDays);
+  const olderThanDays = Number.isFinite(olderThanDaysRaw)
+    ? Math.min(Math.max(Math.floor(olderThanDaysRaw), 1), 3650)
+    : undefined;
+
+  const deleted = await clearNotificationDeliveryAttempts({
+    status: onlyFailed ? "failure" : undefined,
+    olderThanDays,
+  });
+
+  await logAuditEvent({
+    action: "notification_reliability.delivery_attempts_cleared",
+    actor: user.username,
+    metadata: {
+      deleted,
+      onlyFailed,
+      olderThanDays: olderThanDays ?? null,
+    },
+    ip: getClientIp(request),
+  });
+
+  return NextResponse.json({
+    ok: true,
+    deleted,
+    scope: {
+      onlyFailed,
+      olderThanDays: olderThanDays ?? null,
+    },
   });
 }

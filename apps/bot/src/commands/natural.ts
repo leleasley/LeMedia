@@ -2,7 +2,7 @@ import { Context } from "grammy";
 import { getLinkedUser, isUserAdmin } from "../db";
 import { decryptSecret } from "../encryption";
 import { getServiceHealth, type ServiceDetail } from "../api";
-import { answerReleaseDateQuestion, replyFollowingUpdate, runFollowByQuery, runUnfollowByQuery } from "./follow";
+import { answerNextEpisodeQuestion, answerReleaseDateQuestion, replyFollowingUpdate, runFollowByQuery, runUnfollowByQuery } from "./follow";
 import { runSearch } from "./request";
 
 const SERVICES_SECRET_KEY = process.env.SERVICES_SECRET_KEY ?? "";
@@ -54,6 +54,25 @@ const RELEASE_PATTERNS = [
   /has\s+(.+?)\s+been\s+released/i,
   /is\s+(.+?)\s+released/i,
 ];
+
+const NEXT_EPISODE_PATTERNS = [
+  /when\s+does\s+the\s+next\s+episode\s+of\s+(.+?)\s+air\??/i,
+  /when\s+is\s+the\s+next\s+episode\s+of\s+(.+?)\??/i,
+  /how\s+long\s+is\s+it\s+until\s+the\s+next\s+episode\s+of\s+(.+?)\??/i,
+  /what\s+time\s+does\s+the\s+next\s+episode\s+of\s+(.+?)\s+air\??/i,
+  /next\s+episode\s+of\s+(.+?)\??/i,
+  /what\s+time\s+does\s+it\s+air\s+for\s+(.+?)\??/i,
+];
+
+const NEXT_EPISODE_CONTEXT_PATTERNS = [
+  /^what\s+time\s+does\s+it\s+air\??$/i,
+  /^when\s+is\s+the\s+next\s+episode\??$/i,
+  /^how\s+long\s+until\s+the\s+next\s+episode\??$/i,
+];
+
+function isNextEpisodeContextQuery(text: string): boolean {
+  return NEXT_EPISODE_CONTEXT_PATTERNS.some((pattern) => pattern.test(text.trim()));
+}
 
 const FOLLOW_PATTERNS = [
   /(?:please\s+)?(?:follow|track|notify me about)\s+(.+)/i,
@@ -173,6 +192,17 @@ export async function handleNaturalLanguage(ctx: Context): Promise<boolean> {
   const releaseTitle = extractFromPatterns(text, RELEASE_PATTERNS);
   if (releaseTitle) {
     await answerReleaseDateQuestion(ctx, releaseTitle);
+    return true;
+  }
+
+  const nextEpisodeTitle = extractFromPatterns(text, NEXT_EPISODE_PATTERNS);
+  if (nextEpisodeTitle) {
+    await answerNextEpisodeQuestion(ctx, nextEpisodeTitle);
+    return true;
+  }
+
+  if (isNextEpisodeContextQuery(text)) {
+    await answerNextEpisodeQuestion(ctx, "it");
     return true;
   }
 
