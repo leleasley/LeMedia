@@ -25,7 +25,7 @@ export function FlashBanner({ message, type = "success", timeoutMs = 4000 }: { m
         // Clear server side
         const t = setTimeout(() => {
             try {
-                csrfFetch("/api/v1/flash/clear", { method: "POST", credentials: "include" }).catch(() => { });
+                csrfFetch("/api/flash/clear", { method: "POST", credentials: "include" }).catch(() => { });
             } catch { }
         }, 100);
         return () => clearTimeout(t);

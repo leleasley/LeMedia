@@ -20,7 +20,7 @@ export function LoginForm({
     from,
     csrfToken,
     formId,
-    action = "/api/v1/login",
+    action = "/api/login",
     submitLabel = "Sign In",
     onTurnstileTokenChange
 }: LoginFormProps) {
