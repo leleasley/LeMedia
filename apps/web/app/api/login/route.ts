@@ -5,17 +5,13 @@ import { createSessionToken } from "@/lib/session";
 import { ensureCsrfCookie, getCookieBase, getRequestContext, isSameOriginRequest, sanitizeRelativePath } from "@/lib/proxy";
 import { isValidCsrfToken } from "@/lib/csrf";
 import { generateSecret } from "otplib";
-import { checkRateLimit, checkLockout, clearFailures, getClientIp, recordFailure, rateLimitResponse } from "@/lib/rate-limit";
+import { checkRateLimit, checkLockout, clearFailures, getClientIp, recordFailure } from "@/lib/rate-limit";
 import { logAuditEvent } from "@/lib/audit-log";
 import { randomUUID } from "crypto";
 import { summarizeUserAgent } from "@/lib/device-info";
 import { verifyTurnstileToken } from "@/lib/turnstile";
 import { normalizeGroupList } from "@/lib/groups";
-
-function formatRetry(retryAfterSec: number) {
-  const minutes = Math.max(1, Math.ceil(retryAfterSec / 60));
-  return `Too many attempts. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`;
-}
+import { notifySecurityAlertEvent } from "@/notifications/security-events";
 
 export async function POST(req: NextRequest) {
   const formData = await req.formData();
@@ -33,7 +29,21 @@ export async function POST(req: NextRequest) {
 
   const redirectToLogin = (message: string) => {
     const url = new URL("/login", base);
-    url.searchParams.set("error", message);
+    const res = NextResponse.redirect(url, { status: 303 });
+    const cookieBase = getCookieBase(ctx, true);
+    res.cookies.set("lemedia_flash", "", { ...cookieBase, maxAge: 0 });
+    res.cookies.set("lemedia_flash_error", message, { ...cookieBase, maxAge: 60 });
+    res.cookies.set("lemedia_login_redirect", from, { ...cookieBase, maxAge: 60 * 30 });
+    res.cookies.set("lemedia_mfa_token", "", { ...cookieBase, maxAge: 0 });
+    res.cookies.set("lemedia_force_login", "", { ...cookieBase, maxAge: 0 });
+    return ensureCsrfCookie(req, res, ctx).res;
+  };
+
+  const redirectToRateLimited = (retryAfterSec?: number) => {
+    const url = new URL("/too-many-requests", base);
+    if (retryAfterSec && retryAfterSec > 0) {
+      url.searchParams.set("retry", String(retryAfterSec));
+    }
     const res = NextResponse.redirect(url, { status: 303 });
     const cookieBase = getCookieBase(ctx, true);
     res.cookies.set("lemedia_login_redirect", from, { ...cookieBase, maxAge: 60 * 30 });
@@ -43,13 +53,13 @@ export async function POST(req: NextRequest) {
   };
 
   if (!rate.ok) {
-    return rateLimitResponse(rate.retryAfterSec);
+    return redirectToRateLimited(rate.retryAfterSec);
   }
 
   const lockKey = `login:${usernameInput || "unknown"}:${ip}`;
   const lock = await checkLockout(lockKey, { windowMs: 15 * 60 * 1000, max: 5, banMs: 15 * 60 * 1000 });
   if (lock.locked) {
-    return redirectToLogin(formatRetry(lock.retryAfterSec));
+    return redirectToRateLimited(lock.retryAfterSec);
   }
 
   if (!isSameOriginRequest(req, base)) {
@@ -74,8 +84,9 @@ export async function POST(req: NextRequest) {
   if (!user || !(await verifyPassword(password, user.password_hash))) {
     const failure = await recordFailure(lockKey, { windowMs: 15 * 60 * 1000, max: 5, banMs: 15 * 60 * 1000 });
     if (failure.locked) {
-      return redirectToLogin(formatRetry(failure.retryAfterSec));
+      return redirectToRateLimited(failure.retryAfterSec);
     }
+    notifySecurityAlertEvent("security_login_failure", { title: `Login failure for user "${usernameInput}"`, username: usernameInput, ip, details: "Invalid username or password." }).catch(() => {});
     return redirectToLogin("Invalid username or password");
   }
 

@@ -6,6 +6,7 @@ import { requireCsrf } from "@/lib/csrf";
 import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/rate-limit";
 import { logger } from "@/lib/logger";
+import { notifySecurityAlertEvent } from "@/notifications/security-events";
 import { serializeGroups } from "@/lib/groups";
 import { getPasswordPolicyResult } from "@/lib/password-policy";
 
@@ -64,6 +65,13 @@ export async function POST(request: NextRequest) {
             target: username,
             ip: getClientIp(request),
         });
+
+        notifySecurityAlertEvent("security_new_user", {
+            title: `New user account created: ${username}`,
+            username,
+            ip: getClientIp(request),
+            details: `Account created by admin ${currentUser.username}.`,
+        }).catch(() => {});
 
         return NextResponse.json({
             success: true,

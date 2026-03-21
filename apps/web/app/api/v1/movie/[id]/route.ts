@@ -302,6 +302,8 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
       mediaInfo: {
         id: tmdbId,
         tmdbId,
+        jellyfinMediaId: jellyfinItemId,
+        jellyfinMediaId4k: null,
         status: mediaStatus,
         requests: request ? [{ id: uuidToNumericId(request.id), status: mapStatusToOverseerr(request.status) }] : []
       }

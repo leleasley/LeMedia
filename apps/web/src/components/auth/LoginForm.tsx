@@ -118,6 +118,10 @@ export function LoginForm({
             </button>
 
             <div className="mt-4 pt-4 border-t border-white/10 flex justify-center gap-3 text-[10px]">
+                <Link href="/forgot-password" className="text-gray-400 hover:text-gray-300 transition">
+                    Forgot Password?
+                </Link>
+                <span className="text-gray-600">·</span>
                 <Link href="/privacy" className="text-gray-400 hover:text-gray-300 transition">
                     Privacy
                 </Link>

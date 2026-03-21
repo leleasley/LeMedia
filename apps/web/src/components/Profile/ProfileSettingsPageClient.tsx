@@ -16,6 +16,7 @@ import { ConfirmModal, useConfirm } from "@/components/Common/ConfirmModal";
 import { TelegramBotPanel } from "@/components/Profile/TelegramBotPanel";
 import { UserNotificationChannelsPanel } from "@/components/Profile/UserNotificationChannelsPanel";
 import { EpisodeReminderPreferencesCard } from "@/components/Profile/EpisodeReminderPreferencesCard";
+import { GlobalChannelSubscriptionsPanel } from "@/components/Profile/GlobalChannelSubscriptionsPanel";
 
 interface AssignedEndpoint {
   id: number;
@@ -517,38 +518,7 @@ export function ProfileSettingsPageClient({
 
             <UserNotificationChannelsPanel />
             <EpisodeReminderPreferencesCard />
-
-            {showSystemChannelsSection ? (
-              <div className="rounded-2xl md:rounded-3xl border border-white/10 bg-white/[0.02] p-6 md:p-8">
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-slate-500/20 to-zinc-500/20 ring-1 ring-white/10">
-                    <span className="text-xl">📡</span>
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="text-xl font-bold text-white">System Channels</h3>
-                    <p className="text-sm text-gray-400 mt-1">Admin-managed notification channels linked to your account</p>
-                  </div>
-                  <div className="rounded-full px-3 py-1 text-xs font-semibold bg-white/10 text-gray-300">
-                    {assignedEndpoints.length} linked
-                  </div>
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-2">
-                  {assignedEndpoints.map(endpoint => (
-                    <div key={endpoint.id} className="flex items-center justify-between gap-3 rounded-xl bg-black/20 border border-white/5 p-4">
-                      <div className="min-w-0">
-                        <div className="truncate font-semibold text-white">{endpoint.name}</div>
-                        <div className="mt-1 text-xs text-gray-400 capitalize">{endpoint.type}</div>
-                      </div>
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 px-2.5 py-1 text-xs font-semibold text-emerald-200">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
-                        Active
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
+            <GlobalChannelSubscriptionsPanel />
           </div>
         )}
 

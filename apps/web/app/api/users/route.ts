@@ -10,6 +10,7 @@ import { getClientIp } from "@/lib/rate-limit";
 import { normalizeGroupList } from "@/lib/groups";
 import { getPasswordPolicyResult } from "@/lib/password-policy";
 import { logger } from "@/lib/logger";
+import { notifySecurityAlertEvent } from "@/notifications/security-events";
 
 const createSchema = z.object({
   username: z.string().trim().min(1).transform(u => u.toLowerCase()),
@@ -102,6 +103,13 @@ export async function POST(req: NextRequest) {
     metadata: { email: full.email, groups: full.groups },
     ip: getClientIp(req),
   });
+
+  notifySecurityAlertEvent("security_new_user", {
+    title: `New user account created: ${full.username}`,
+    username: full.username,
+    ip: getClientIp(req),
+    details: `Account created by admin ${user.username}.`,
+  }).catch(() => {});
 
   return NextResponse.json({ user: full });
 }
