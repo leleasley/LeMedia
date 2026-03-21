@@ -2,6 +2,7 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { X, CheckCircle, AlertCircle, Info } from "lucide-react";
+import { csrfFetch } from "@/lib/csrf-client";
 
 export type ToastType = "success" | "error" | "info";
 
@@ -95,6 +96,9 @@ export function ToastProvider(props: { children: React.ReactNode; initialToasts?
 
     const timeout = window.setTimeout(() => {
       for (const t of toEnqueue) push(t);
+
+      // Server-provided flash cookies are one-shot; clear them after consuming.
+      csrfFetch("/api/v1/flash/clear", { method: "POST", credentials: "include" }).catch(() => {});
     }, 100); // Small delay to ensure DOM is ready
     return () => window.clearTimeout(timeout);
   }, [props.initialToasts, push]);

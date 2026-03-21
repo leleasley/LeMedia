@@ -8,6 +8,7 @@ import { checkRateLimit, checkLockout, clearFailures, getClientIp, recordFailure
 import { randomUUID } from "crypto";
 import { summarizeUserAgent } from "@/lib/device-info";
 import { normalizeGroupList } from "@/lib/groups";
+import { notifySecurityAlertEvent } from "@/notifications/security-events";
 
 function redirectToLogin(base: string, message: string) {
   const url = new URL("/login", base);
@@ -75,6 +76,7 @@ export async function POST(req: NextRequest) {
     if (failure.locked) {
       return redirectToMfa(base, formatRetry(failure.retryAfterSec));
     }
+    notifySecurityAlertEvent("security_mfa_failure", { title: "MFA code validation failed", username: undefined, ip, details: "Invalid MFA code submitted." }).catch(() => {});
     return redirectToMfa(base, "Invalid authentication code");
   }
 

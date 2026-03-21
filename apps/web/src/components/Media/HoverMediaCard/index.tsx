@@ -144,7 +144,11 @@ export function HoverMediaCard(props: HoverMediaCardProps) {
                         setShowDetail(true);
                     }
                 }}
-                onMouseLeave={() => setShowDetail(false)}
+                onMouseLeave={() => {
+                    if (!isTouch) {
+                        setShowDetail(false);
+                    }
+                }}
                 onClick={() => {
                     if (isTouch && props.touchInteraction === "navigate") {
                         router.push(linkUrl);

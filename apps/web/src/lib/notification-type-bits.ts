@@ -13,6 +13,10 @@ export const NOTIFICATION_TYPE_BIT_SYSTEM_ALERT_HIGH_LATENCY = 2048;
 export const NOTIFICATION_TYPE_BIT_SYSTEM_ALERT_SERVICE_UNREACHABLE = 4096;
 export const NOTIFICATION_TYPE_BIT_SYSTEM_ALERT_INDEXERS_UNAVAILABLE = 8192;
 
+export const NOTIFICATION_TYPE_BIT_SECURITY_LOGIN_FAILURE = 16384;
+export const NOTIFICATION_TYPE_BIT_SECURITY_NEW_USER = 32768;
+export const NOTIFICATION_TYPE_BIT_SECURITY_MFA_FAILURE = 65536;
+
 export function getNotificationTypeMaskForSystemEvent(event: string): number {
   switch (event) {
     case "system_alert_high_latency":

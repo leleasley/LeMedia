@@ -120,6 +120,20 @@ function mapCreditCrew(credit: any) {
   };
 }
 
+function mapSeasonResult(season: any) {
+  return {
+    id: season?.id ?? null,
+    airDate: season?.air_date ?? season?.airDate ?? null,
+    episodeCount: season?.episode_count ?? season?.episodeCount ?? null,
+    name: season?.name ?? null,
+    overview: season?.overview ?? null,
+    posterPath: season?.poster_path
+      ? `https://image.tmdb.org/t/p/w500${season.poster_path}`
+      : (season?.posterPath ?? null),
+    seasonNumber: season?.season_number ?? season?.seasonNumber ?? null
+  };
+}
+
 // Convert UUID to numeric ID for Overseerr compatibility (same as request endpoint)
 function uuidToNumericId(uuid: string): number {
   const hex = uuid.replace(/-/g, '').substring(0, 7);
@@ -266,13 +280,17 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
     .filter((season) => Number.isFinite(season) && season > 0)
     .sort((a, b) => a - b);
 
+  let jellyfinSeriesId: string | null = null;
   let playUrl: string | null = null;
   if (availableInJellyfin === true) {
     try {
       const cachedSeriesId = await getCachedJellyfinSeriesItemId({ tmdbId, tvdbId: tvdbId ?? null }).catch(() => null);
-      const jellyfinItemId = cachedSeriesId ?? await getJellyfinItemId("tv", tmdbId, title || `TMDB ${tmdbId}`, tvdbId ?? null);
-      playUrl = await getJellyfinPlayUrl(jellyfinItemId, "tv");
+      jellyfinSeriesId = cachedSeriesId ?? await getJellyfinItemId("tv", tmdbId, title || `TMDB ${tmdbId}`, tvdbId ?? null);
+      if (jellyfinSeriesId) {
+        playUrl = await getJellyfinPlayUrl(jellyfinSeriesId, "tv");
+      }
     } catch {
+      jellyfinSeriesId = null;
       playUrl = null;
     }
   }
@@ -298,6 +316,38 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
       return counts;
     }
   );
+  const requestSeasonGroups = await withCache(
+    `agg:requests:tv:season-groups:${tmdbId}`,
+    30 * 1000,
+    async () => {
+      const items = await listActiveEpisodeRequestItemsByTmdb(tmdbId).catch(() => []);
+      const grouped = new Map<string, { requestStatus: string; seasons: Set<number> }>();
+
+      for (const item of items) {
+        const seasonNumber = Number(item.season);
+        if (!Number.isFinite(seasonNumber) || seasonNumber <= 0) continue;
+
+        const requestId = String(item.request_id);
+        const requestStatus = String(item.request_status ?? "pending");
+        const existing = grouped.get(requestId);
+        if (!existing) {
+          grouped.set(requestId, {
+            requestStatus,
+            seasons: new Set([seasonNumber])
+          });
+          continue;
+        }
+
+        existing.seasons.add(seasonNumber);
+      }
+
+      return Array.from(grouped.entries()).map(([requestId, value]) => ({
+        requestId,
+        requestStatus: value.requestStatus,
+        seasons: Array.from(value.seasons).sort((a, b) => a - b)
+      }));
+    }
+  );
   const prowlarrEnabled = await withCache(
     "agg:prowlarr:enabled",
     60 * 1000,
@@ -309,6 +359,41 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
     const tv = details.tv;
     const isAvailable = availableInJellyfin || sonarrHasFiles;
     const mediaStatus = mapRequestStatusToMediaStatus(request?.status ?? null, isAvailable);
+    const seasonStatusByNumber = new Map<number, number>();
+
+    for (const season of Array.isArray(tv.seasons) ? tv.seasons : []) {
+      const seasonNumber = Number(season?.season_number ?? season?.seasonNumber ?? 0);
+      if (!Number.isFinite(seasonNumber) || seasonNumber <= 0) continue;
+      seasonStatusByNumber.set(seasonNumber, 1);
+    }
+
+    for (const seasonNumber of availableSeasons) {
+      if (!Number.isFinite(seasonNumber) || seasonNumber <= 0) continue;
+      seasonStatusByNumber.set(seasonNumber, 5);
+    }
+
+    for (const group of requestSeasonGroups) {
+      const requestSeasonStatus = mapRequestStatusToMediaStatus(group.requestStatus, false);
+      for (const seasonNumber of group.seasons) {
+        if (!Number.isFinite(seasonNumber) || seasonNumber <= 0) continue;
+        const existing = seasonStatusByNumber.get(seasonNumber) ?? 1;
+        seasonStatusByNumber.set(seasonNumber, Math.max(existing, requestSeasonStatus));
+      }
+    }
+
+    const requestSummaries = requestSeasonGroups.map((group) => ({
+      id: uuidToNumericId(group.requestId),
+      status: mapStatusToOverseerr(group.requestStatus),
+      is4k: false,
+      requestedBy: request?.id === group.requestId ? request.requestedBy : null,
+      createdAt: request?.id === group.requestId ? request.createdAt : null,
+      seasons: group.seasons.map((seasonNumber) => ({
+        id: seasonNumber,
+        seasonNumber,
+        status: mapRequestStatusToMediaStatus(group.requestStatus, false)
+      }))
+    }));
+
     return cacheableJsonResponseWithETag(req, {
       id: tmdbId,
       tmdbId,
@@ -338,7 +423,7 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
       posterPath: tv.poster_path ? `https://image.tmdb.org/t/p/w500${tv.poster_path}` : null,
       productionCompanies: tv.production_companies ?? [],
       productionCountries: tv.production_countries ?? [],
-      seasons: tv.seasons ?? [],
+      seasons: Array.isArray(tv.seasons) ? tv.seasons.map(mapSeasonResult) : [],
       spokenLanguages: tv.spoken_languages ?? [],
       status: tv.status ?? null,
       tagline: tv.tagline ?? null,
@@ -360,8 +445,18 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
         id: tmdbId,
         tmdbId,
         tvdbId: tvdbId ?? null,
+        jellyfinMediaId: jellyfinSeriesId,
+        jellyfinMediaId4k: null,
         status: mediaStatus,
-        requests: request ? [{ id: uuidToNumericId(request.id), status: mapStatusToOverseerr(request.status) }] : []
+        seasons: Array.from(seasonStatusByNumber.entries())
+          .sort((a, b) => a[0] - b[0])
+          .map(([seasonNumber, status]) => ({
+            id: seasonNumber,
+            seasonNumber,
+            status,
+            status4k: 1
+          })),
+        requests: requestSummaries
       }
     }, { maxAge: 300, sMaxAge: 600 });
   }

@@ -468,11 +468,6 @@ export function LoginPageClient({
           )}
         </div>
 
-        <div className="mt-6 text-center">
-          <Link className="text-xs text-gray-400 hover:text-white transition-colors" href="/support">
-            Forgot your password?
-          </Link>
-        </div>
       </div>
     </main>
   );

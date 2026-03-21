@@ -1,0 +1,22 @@
+import { redirect } from "next/navigation";
+import { getUser } from "@/auth";
+import NotificationsSecurityAlerts from "@/components/Settings/Notifications/NotificationsSecurityAlerts";
+
+export const metadata = {
+  title: "Security Alerts - Admin Settings",
+};
+
+export default async function SecurityAlertsNotificationsPage() {
+  const user = await getUser().catch(() => null);
+  if (!user) redirect("/login");
+  if (!user.isAdmin) {
+    return (
+      <div className="glass-strong rounded-3xl overflow-hidden border border-white/10 shadow-2xl p-8">
+        <div className="text-lg font-bold text-white">Forbidden</div>
+        <div className="mt-2 text-sm text-white/50">You&apos;re not in the admin group.</div>
+      </div>
+    );
+  }
+
+  return <NotificationsSecurityAlerts />;
+}

@@ -181,8 +181,6 @@ export default function NotificationsSystemAlerts() {
   }
 
   const selectableUsers = users.filter((user) => !user.banned);
-  const selectedTargetUserId = form.targetUserIds[0] ?? null;
-  const selectedTargetUser = selectableUsers.find((user) => user.id === selectedTargetUserId) ?? null;
 
   return (
     <div className="space-y-6">
@@ -255,41 +253,47 @@ export default function NotificationsSystemAlerts() {
       {(form.routingMode === "target_users" || form.routingMode === "target_users_and_global") ? (
       <div className="space-y-3">
         <div>
-          <h3 className="text-base font-semibold text-white">Target User</h3>
-          <p className="text-sm text-gray-400">Choose which user receives system alerts via their assigned notification channels.</p>
+          <h3 className="text-base font-semibold text-white">Target Users</h3>
+          <p className="text-sm text-gray-400">Choose which users receive system alerts via their assigned notification channels. Select one or more.</p>
         </div>
-        <div className="max-w-xl space-y-2">
-          <Select
-            value={selectedTargetUserId ? String(selectedTargetUserId) : "none"}
-            onValueChange={(value) => {
-              setForm((prev) => ({
-                ...prev,
-                targetUserIds: value === "none" ? [] : [Number(value)],
-              }));
-            }}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select a user" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">No specific user (global endpoints only)</SelectItem>
-              {selectableUsers.map((user) => {
-                const channelCount = Array.isArray(user.notificationEndpointIds) ? user.notificationEndpointIds.length : 0;
-                const label = user.displayName || user.username;
-                return (
-                  <SelectItem key={user.id} value={String(user.id)}>
-                    {label} (@{user.username}) - {channelCount} channel{channelCount === 1 ? "" : "s"}
-                  </SelectItem>
-                );
-              })}
-            </SelectContent>
-          </Select>
-          {selectedTargetUser ? (
-            <p className="text-xs text-gray-400">
-              Selected user: <span className="text-white">{selectedTargetUser.displayName || selectedTargetUser.username}</span> (@{selectedTargetUser.username})
-            </p>
-          ) : null}
+        <div className="max-w-xl rounded-xl border border-white/10 bg-black/20 divide-y divide-white/5 overflow-hidden">
+          {selectableUsers.length === 0 ? (
+            <p className="px-4 py-3 text-sm text-gray-500">No users with notification channels configured.</p>
+          ) : (
+            selectableUsers.map((u) => {
+              const channelCount = Array.isArray(u.notificationEndpointIds) ? u.notificationEndpointIds.length : 0;
+              const label = u.displayName || u.username;
+              const checked = form.targetUserIds.includes(u.id);
+              return (
+                <label
+                  key={u.id}
+                  className="flex cursor-pointer items-center justify-between gap-4 px-4 py-3 hover:bg-white/[0.03] transition-colors"
+                >
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-white truncate">{label}</div>
+                    <div className="text-xs text-gray-400">@{u.username} &middot; {channelCount} channel{channelCount === 1 ? "" : "s"}</div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => {
+                      setForm((prev) => ({
+                        ...prev,
+                        targetUserIds: checked
+                          ? prev.targetUserIds.filter((id) => id !== u.id)
+                          : [...prev.targetUserIds, u.id],
+                      }));
+                    }}
+                    className="h-4 w-4 rounded border-white/20 bg-white/5 accent-amber-400"
+                  />
+                </label>
+              );
+            })
+          )}
         </div>
+        {form.targetUserIds.length > 0 && (
+          <p className="text-xs text-gray-400">{form.targetUserIds.length} user{form.targetUserIds.length === 1 ? "" : "s"} selected.</p>
+        )}
       </div>
       ) : null}
 

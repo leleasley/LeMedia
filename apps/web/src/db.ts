@@ -1,5 +1,5 @@
 import { Pool } from "pg";
-import { randomUUID } from "crypto";
+import { createHash, randomBytes, randomUUID } from "crypto";
 import { z } from "zod";
 import { withCache } from "@/lib/local-cache";
 import cacheManager from "@/lib/cache-manager";
@@ -1808,6 +1808,73 @@ export async function addUserPasswordHistory(userId: number, passwordHash: strin
   );
 }
 
+export async function createPasswordResetToken(userId: number): Promise<string> {
+  await ensureUserSchema();
+  const p = getPool();
+  const token = randomBytes(32).toString("hex");
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+
+  // Invalidate any existing unused tokens for this user before creating a new one.
+  await p.query(
+    `DELETE FROM password_reset_token WHERE user_id = $1 AND used_at IS NULL`,
+    [userId]
+  );
+
+  await p.query(
+    `
+    INSERT INTO password_reset_token (user_id, token_hash, expires_at)
+    VALUES ($1, $2, NOW() + INTERVAL '15 minutes')
+    `,
+    [userId, tokenHash]
+  );
+
+  return token;
+}
+
+export async function exchangePasswordResetToken(token: string): Promise<string | null> {
+  await ensureUserSchema();
+  const p = getPool();
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+
+  const res = await p.query(
+    `
+    UPDATE password_reset_token t
+    SET viewed_at = NOW()
+    FROM app_user u
+    WHERE t.token_hash = $1
+      AND t.user_id = u.id
+      AND t.used_at IS NULL
+      AND t.viewed_at IS NULL
+      AND t.expires_at > NOW()
+    RETURNING u.username
+    `,
+    [tokenHash]
+  );
+
+  return res.rows.length > 0 ? (res.rows[0].username as string) : null;
+}
+
+export async function consumePasswordResetToken(token: string): Promise<number | null> {
+  await ensureUserSchema();
+  const p = getPool();
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+
+  const res = await p.query(
+    `
+    UPDATE password_reset_token
+    SET used_at = NOW()
+    WHERE token_hash = $1
+      AND used_at IS NULL
+      AND expires_at > NOW()
+    RETURNING user_id
+    `,
+    [tokenHash]
+  );
+
+  if (!res.rows.length) return null;
+  return Number(res.rows[0].user_id);
+}
+
 export async function getUserPasswordHistory(userId: number): Promise<string[]> {
   await ensureUserSchema();
   const p = getPool();
@@ -2406,6 +2473,20 @@ async function ensureUserSchema() {
       );
     `);
     await p.query(`CREATE INDEX IF NOT EXISTS idx_user_password_history_user_id ON user_password_history(user_id);`);
+
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS password_reset_token (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+        token_hash TEXT NOT NULL UNIQUE,
+        expires_at TIMESTAMPTZ NOT NULL,
+        used_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_password_reset_token_hash ON password_reset_token(token_hash);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_password_reset_token_user_id ON password_reset_token(user_id);`);
+    await p.query(`ALTER TABLE password_reset_token ADD COLUMN IF NOT EXISTS viewed_at TIMESTAMPTZ;`);
 
     await p.query(`
       CREATE TABLE IF NOT EXISTS user_trakt_token (
