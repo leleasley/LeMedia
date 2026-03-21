@@ -49,6 +49,7 @@
     "node-pg-migrate": "^8.0.4",
     "nodemailer": "^7.0.12",
     "otplib": "^13.3.0",
+    "path-expression-matcher": "^1.2.0",
     "pg": "^8.11.0",
     "qrcode": "^1.5.4",
     "react": "^19.0.0",
