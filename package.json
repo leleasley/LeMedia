@@ -21,6 +21,7 @@
   },
   "overrides": {
     "minimatch": "10.2.4",
-    "flatted": "3.4.2"
+    "flatted": "3.4.2",
+    "glob": "13.0.6"
   }
 }

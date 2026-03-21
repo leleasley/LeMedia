@@ -23,7 +23,7 @@ jobs:
       matrix:
         include:
           - name: lemedia-web
-            context: ./apps/web
+            context: .
             dockerfile: ./apps/web/Dockerfile
           - name: lemedia-bot
             context: ./apps/bot
