@@ -20,7 +20,6 @@
   },
   "overrides": {
     "minimatch": "10.2.4",
-    "fast-xml-parser": "5.5.8",
     "flatted": "3.4.2"
   }
 }

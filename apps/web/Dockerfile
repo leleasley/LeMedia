@@ -2,8 +2,10 @@ FROM node:22-alpine AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 COPY package.json package-lock.json* ./
+COPY apps/web/package.json ./apps/web/package.json
+COPY apps/bot/package.json ./apps/bot/package.json
 # Install full dependency tree (includes dev deps needed for build tools like Tailwind/PostCSS)
-RUN --mount=type=cache,target=/root/.npm npm install --legacy-peer-deps
+RUN --mount=type=cache,target=/root/.npm npm ci --legacy-peer-deps
 
 FROM node:22-alpine AS build
 RUN apk add --no-cache libc6-compat
@@ -23,8 +25,9 @@ ENV SERVICES_SECRET_KEY=build-placeholder
 ENV VAPID_PUBLIC_KEY=build-placeholder
 ENV VAPID_PRIVATE_KEY=build-placeholder
 ENV VAPID_EMAIL=build@placeholder.local
-COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app ./
 COPY . .
+RUN --mount=type=cache,target=/root/.npm npm ci --legacy-peer-deps
 # Ensure public directory exists even if repo has no assets yet
 RUN mkdir -p public
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -45,9 +48,9 @@ ENV BUILD_SOURCE=${BUILD_SOURCE}
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nextjs -u 1001
 # standalone output
-COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --from=build --chown=nextjs:nodejs /app/public ./public
+COPY --from=build --chown=nextjs:nodejs /app/apps/web/.next/standalone ./
+COPY --from=build --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/web/.next/static
+COPY --from=build --chown=nextjs:nodejs /app/apps/web/public ./apps/web/public
 USER nextjs
 EXPOSE 3010
-CMD ["node", "server.js"]
+CMD ["node", "apps/web/server.js"]

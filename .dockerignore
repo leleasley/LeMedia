@@ -1,0 +1,14 @@
+.git
+.github
+.claude
+node_modules
+**/node_modules
+.next
+**/.next
+backups
+db/data
+redis/data
+.env
+.env.*
+Dockerfile*
+*.log
