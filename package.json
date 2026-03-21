@@ -11,7 +11,8 @@
     "test": "npm --workspace apps/web run test"
   },
   "devDependencies": {
-    "@types/node": "^25.0.3"
+    "@types/node": "^25.0.3",
+    "eslint": "^9.39.4"
   },
   "dependencies": {
     "ajv": "^6.12.4",
