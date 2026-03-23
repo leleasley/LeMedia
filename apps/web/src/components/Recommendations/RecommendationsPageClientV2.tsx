@@ -415,7 +415,6 @@ export function RecommendationsPageClientV2() {
                           rating={item.rating}
                           description={item.description}
                           mediaType={item.type}
-                          touchInteraction="navigate"
                           cardMode="requestable"
                         />
                         {/* Quick Add Buttons */}
@@ -481,7 +480,6 @@ export function RecommendationsPageClientV2() {
                   rating={item.rating}
                   description={item.description}
                   mediaType={item.type}
-                  touchInteraction="navigate"
                   cardMode="requestable"
                 />
                 {/* Quick Add Buttons */}

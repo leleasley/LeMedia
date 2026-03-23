@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Film } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { StarIcon, ArrowDownTrayIcon, HeartIcon } from "@heroicons/react/24/outline";
 import { StarIcon as StarIconSolid, HeartIcon as HeartIconSolid } from "@heroicons/react/24/solid";
 import { csrfFetch } from "@/lib/csrf-client";
@@ -34,7 +34,6 @@ export interface HoverMediaCardProps {
     imagePriority?: boolean;
     imageLoading?: "eager" | "lazy";
     imageFetchPriority?: "high" | "auto" | "low";
-    touchInteraction?: "expand" | "navigate";
     stableHover?: boolean;
     cardMode?: "requestable" | "library" | "libraryPartialRequest";
 }
@@ -58,14 +57,32 @@ export function HoverMediaCard(props: HoverMediaCardProps) {
     const descriptionLines = showRequestAction ? 2 : 3;
     const displayYear = props.year ? props.year.slice(0, 4) : "";
 
+    const cardRef = useRef<HTMLDivElement>(null);
     const [favorite, setFavorite] = useState(false);
     const [watchlist, setWatchlist] = useState(false);
     const [showDetail, setShowDetail] = useState(false);
     const [saving, setSaving] = useState(false);
     const [requestModalOpen, setRequestModalOpen] = useState(false);
+    const [listFetched, setListFetched] = useState(false);
 
+    // Dismiss expanded card when tapping outside on touch devices
     useEffect(() => {
+        if (!isTouch || !showDetail) return;
+        const handleTouchOutside = (e: TouchEvent) => {
+            if (cardRef.current && !cardRef.current.contains(e.target as Node)) {
+                setShowDetail(false);
+            }
+        };
+        document.addEventListener("touchstart", handleTouchOutside, { passive: true });
+        return () => document.removeEventListener("touchstart", handleTouchOutside);
+    }, [isTouch, showDetail]);
+
+    // Defer media-list fetch until the card is interacted with (hover/tap)
+    // to avoid 100+ parallel API calls on page load
+    useEffect(() => {
+        if (!showDetail || listFetched) return;
         let active = true;
+        setListFetched(true);
         const mediaType = props.mediaType ?? "movie";
         fetch(`/api/v1/media-list?tmdbId=${props.id}&mediaType=${mediaType}`, { credentials: "include" })
             .then(res => (res.ok ? res.json() : null))
@@ -78,7 +95,7 @@ export function HoverMediaCard(props: HoverMediaCardProps) {
         return () => {
             active = false;
         };
-    }, [props.id, props.mediaType]);
+    }, [showDetail, listFetched, props.id, props.mediaType]);
 
     const shouldFetchProfiles = requestModalOpen && showRequestAction && props.mediaType;
     const { data: profileData, isLoading: profilesLoading } = useSWR<{
@@ -129,7 +146,7 @@ export function HoverMediaCard(props: HoverMediaCardProps) {
     };
 
     return (
-        <div className={cn("relative group h-full", props.className)}>
+        <div ref={cardRef} className={cn("relative group h-full", props.className)}>
             <div
                 className={`relative h-full cursor-pointer overflow-hidden rounded-lg sm:rounded-2xl bg-gray-900 outline-none ring-1 transition-all duration-300 ${
                     props.stableHover
@@ -150,8 +167,13 @@ export function HoverMediaCard(props: HoverMediaCardProps) {
                     }
                 }}
                 onClick={() => {
-                    if (isTouch && props.touchInteraction === "navigate") {
-                        router.push(linkUrl);
+                    if (isTouch) {
+                        // First tap expands, second tap navigates
+                        if (!showDetail) {
+                            setShowDetail(true);
+                        } else {
+                            router.push(linkUrl);
+                        }
                         return;
                     }
                     setShowDetail(true);

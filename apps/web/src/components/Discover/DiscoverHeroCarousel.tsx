@@ -48,6 +48,36 @@ export function DiscoverHeroCarousel({
   const [progressKey, setProgressKey] = useState(0);
   const autoPlayTimerRef = useRef<NodeJS.Timeout | null>(null);
   const transitionTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Fetch RT ratings client-side so they don't block SSR
+  const [ratingsMap, setRatingsMap] = useState<Record<string, HeroCarouselItem["externalRatings"]>>({});
+  useEffect(() => {
+    if (!items.length) return;
+    let cancelled = false;
+    items.forEach((item) => {
+      if (!item.type || !item.id) return;
+      fetch(`/api/v1/ratings/${item.type}/${item.id}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (cancelled || !data?.ratings) return;
+          const r = data.ratings;
+          if (r.rtCriticsScore == null && r.rtAudienceScore == null) return;
+          setRatingsMap((prev) => ({
+            ...prev,
+            [`${item.type}:${item.id}`]: {
+              title: item.title,
+              url: r.rtUrl ?? "",
+              criticsRating: r.rtCriticsRating ?? undefined,
+              criticsScore: r.rtCriticsScore ?? undefined,
+              audienceRating: r.rtAudienceRating ?? undefined,
+              audienceScore: r.rtAudienceScore ?? undefined,
+            },
+          }));
+        })
+        .catch(() => {});
+    });
+    return () => { cancelled = true; };
+  }, [items]);
   const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(
     null
   );
@@ -238,20 +268,23 @@ export function DiscoverHeroCarousel({
                 )}
               </div>
 
-              {current.externalRatings && (
+              {(() => {
+                const ratings = current.externalRatings ?? ratingsMap[`${current.type}:${current.id}`];
+                if (!ratings) return null;
+                return (
                 <div className="flex items-center gap-3 flex-wrap pt-1">
-                  {typeof current.externalRatings.criticsScore === "number" && (
+                  {typeof ratings.criticsScore === "number" && (
                     <Link
-                      href={current.externalRatings.url}
+                      href={ratings.url}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="media-rating px-1 sm:px-2 py-1.5 sm:py-2 rounded-lg hover:bg-white/5 transition-all"
-                      title={`Rotten Tomatoes Critics: ${current.externalRatings.criticsScore}%`}
+                      title={`Rotten Tomatoes Critics: ${ratings.criticsScore}%`}
                     >
                       <div className="relative h-5 w-5 sm:h-6 sm:w-6">
                         <Image
                           src={
-                            current.externalRatings.criticsScore >= 60
+                            ratings.criticsScore >= 60
                               ? rtFreshLogo
                               : rtRottenLogo
                           }
@@ -261,24 +294,24 @@ export function DiscoverHeroCarousel({
                         />
                       </div>
                       <span className="text-xs sm:text-sm font-bold text-white">
-                        {current.externalRatings.criticsScore}%
+                        {ratings.criticsScore}%
                       </span>
                     </Link>
                   )}
 
-                  {typeof current.externalRatings.audienceScore ===
+                  {typeof ratings.audienceScore ===
                     "number" && (
                     <Link
-                      href={current.externalRatings.url}
+                      href={ratings.url}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="media-rating px-1 sm:px-2 py-1.5 sm:py-2 rounded-lg hover:bg-white/5 transition-all"
-                      title={`Rotten Tomatoes Audience: ${current.externalRatings.audienceScore}%`}
+                      title={`Rotten Tomatoes Audience: ${ratings.audienceScore}%`}
                     >
                       <div className="relative h-5 w-5 sm:h-6 sm:w-6">
                         <Image
                           src={
-                            current.externalRatings.audienceScore >= 60
+                            ratings.audienceScore >= 60
                               ? rtAudFreshLogo
                               : rtAudRottenLogo
                           }
@@ -288,12 +321,13 @@ export function DiscoverHeroCarousel({
                         />
                       </div>
                       <span className="text-xs sm:text-sm font-bold text-white">
-                        {current.externalRatings.audienceScore}%
+                        {ratings.audienceScore}%
                       </span>
                     </Link>
                   )}
                 </div>
-              )}
+                );
+              })()}
             </div>
 
             {current.overview && (

@@ -22,7 +22,6 @@ import DashboardCustomizeClient from "@/components/Dashboard/DashboardCustomizeC
 import DashboardTmdbCustomCarousel from "@/components/Dashboard/DashboardTmdbCustomCarousel";
 import { DashboardSliderType } from "@/lib/dashboard-sliders";
 import { WatchStatsWidget } from "@/components/Stats/WatchStatsWidget";
-import { getMovieRatings, getTVRatings } from "@/lib/rottentomatoes";
 
 type MediaCard = {
   id: number;
@@ -116,23 +115,7 @@ export default async function Page() {
       type: item.media_type as "movie" | "tv"
     }));
   
-  // Fetch ratings server-side for hero carousel items (first 10)
   const heroItems = trending.slice(0, 10);
-  const heroRatings = await Promise.all(
-    heroItems.map(async (item) => {
-      const year = parseInt(item.year) || undefined;
-      if (!item.title || !year) return null;
-      try {
-        if (item.type === "movie") {
-          return await getMovieRatings(item.title, year);
-        } else {
-          return await getTVRatings(item.title, year);
-        }
-      } catch {
-        return null;
-      }
-    })
-  ).catch(() => heroItems.map(() => null));
   const popularMovies = toCards(popularMoviesRaw, "movie", imageProxyEnabled);
   const popularTv = toCards(popularTvRaw, "tv", imageProxyEnabled);
   const topRatedMovies = toCards(topRatedMoviesRaw, "movie", imageProxyEnabled);
@@ -217,6 +200,7 @@ export default async function Page() {
             key={s.id}
             title="Popular Movies"
             viewAllHref="/popular/movie"
+            lazy
             cardMode="requestable"
             items={popularMovies.map(m => ({
               id: m.id,
@@ -236,6 +220,7 @@ export default async function Page() {
             key={s.id}
             title="Popular TV Shows"
             viewAllHref="/popular/tv"
+            lazy
             cardMode="requestable"
             items={popularTv.map(m => ({
               id: m.id,
@@ -369,8 +354,7 @@ export default async function Page() {
               posterUrl: item.poster,
               rating: item.rating,
               year: item.year,
-              type: item.type,
-              externalRatings: heroRatings[index]
+              type: item.type
             }))}
         />
       </div>
