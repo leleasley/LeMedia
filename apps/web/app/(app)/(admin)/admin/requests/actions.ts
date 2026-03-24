@@ -9,6 +9,7 @@ import {
   getRequestNotificationContext,
   getRequestWithItems,
   markRequestStatus,
+  setRequestPriority,
   setRequestItemsProviderId,
   setRequestItemsStatus
 } from "@/db";
@@ -28,6 +29,7 @@ import {
 import { notifyRequestEvent } from "@/notifications/request-events";
 import { syncPendingRequests } from "@/lib/request-sync";
 import { logger } from "@/lib/logger";
+import { logAuditEvent } from "@/lib/audit-log";
 
 async function setFlash(type: "success" | "error", message: string) {
   const store = await cookies();
@@ -43,6 +45,11 @@ async function setFlash(type: "success" | "error", message: string) {
 
 async function refreshRequestsPage() {
   revalidatePath("/admin/requests");
+}
+
+function parseBulkCount(formData: FormData) {
+  const bulkCount = Number(formData.get("bulkCount") ?? 1);
+  return Number.isFinite(bulkCount) && bulkCount > 1 ? Math.trunc(bulkCount) : 1;
 }
 
 async function cleanupProviders(data: Awaited<ReturnType<typeof getRequestWithItems>>) {
@@ -102,6 +109,7 @@ export async function approveRequest(formData: FormData) {
   if (!user.isAdmin) redirect("/");
 
   const requestId = String(formData.get("requestId") ?? "");
+  const bulkCount = parseBulkCount(formData);
   if (!requestId) redirect("/admin/requests");
 
   const data = await getRequestWithItems(requestId);
@@ -133,6 +141,12 @@ export async function approveRequest(formData: FormData) {
       await setRequestItemsProviderId(requestId, radarrMovie?.id ?? null);
       await setRequestItemsStatus(requestId, "submitted");
       await markRequestStatus(requestId, "submitted");
+      await logAuditEvent({
+        action: "request.approved",
+        actor: user.username,
+        target: requestId,
+        metadata: { bulkCount, requestType: data.request.request_type },
+      });
 
       // Send notification (don't let notification errors fail the whole operation)
       try {
@@ -210,6 +224,12 @@ export async function approveRequest(formData: FormData) {
       await setRequestItemsProviderId(requestId, series.id);
       await setRequestItemsStatus(requestId, "submitted");
       await markRequestStatus(requestId, "submitted");
+      await logAuditEvent({
+        action: "request.approved",
+        actor: user.username,
+        target: requestId,
+        metadata: { bulkCount, requestType: data.request.request_type },
+      });
 
       // Send notification (don't let notification errors fail the whole operation)
       try {
@@ -260,6 +280,7 @@ export async function denyRequest(formData: FormData) {
   if (!user.isAdmin) redirect("/");
 
   const requestId = String(formData.get("requestId") ?? "");
+  const bulkCount = parseBulkCount(formData);
   const rawReason = String(formData.get("reason") ?? "").trim();
   const reason = rawReason.length > 0 ? rawReason.slice(0, 500) : null;
   if (!requestId) redirect("/admin/requests");
@@ -279,9 +300,16 @@ export async function denyRequest(formData: FormData) {
       tmdbId: ctx.tmdb_id,
       title: ctx.title,
       username: ctx.username,
-      userId: ctx.user_id
+      userId: ctx.user_id,
+      statusReason: reason,
     });
   }
+  await logAuditEvent({
+    action: "request.denied",
+    actor: user.username,
+    target: requestId,
+    metadata: { bulkCount, reason, requestType: data.request.request_type },
+  });
   await setFlash("success", reason ? `Request denied: ${reason}` : "Request denied");
   await refreshRequestsPage();
   redirect("/admin/requests");
@@ -309,9 +337,16 @@ export async function markRequestAvailable(formData: FormData) {
   if (!user.isAdmin) redirect("/");
 
   const requestId = String(formData.get("requestId") ?? "");
+  const bulkCount = parseBulkCount(formData);
   if (!requestId) redirect("/admin/requests");
 
   await Promise.all([markRequestStatus(requestId, "available"), setRequestItemsStatus(requestId, "available")]);
+  await logAuditEvent({
+    action: "request.marked_available",
+    actor: user.username,
+    target: requestId,
+    metadata: { bulkCount },
+  });
   await setFlash("success", "Request marked as available");
   await refreshRequestsPage();
   redirect("/admin/requests");
@@ -322,6 +357,7 @@ export async function deleteRequest(formData: FormData) {
   if (!user.isAdmin) redirect("/");
 
   const requestId = String(formData.get("requestId") ?? "");
+  const bulkCount = parseBulkCount(formData);
   if (!requestId) redirect("/admin/requests");
 
   const data = await getRequestWithItems(requestId);
@@ -329,7 +365,37 @@ export async function deleteRequest(formData: FormData) {
 
   await cleanupProviders(data).catch(() => { });
   await deleteRequestById(requestId);
+  await logAuditEvent({
+    action: "request.deleted",
+    actor: user.username,
+    target: requestId,
+    metadata: { bulkCount, requestType: data.request.request_type },
+  });
   await setFlash("success", "Request deleted (provider cleanup triggered)");
+  await refreshRequestsPage();
+  redirect("/admin/requests");
+}
+
+export async function setRequestPriorityAction(formData: FormData) {
+  const user = await getUser();
+  if (!user.isAdmin) redirect("/");
+
+  const requestId = String(formData.get("requestId") ?? "");
+  const bulkCount = parseBulkCount(formData);
+  const priority = String(formData.get("priority") ?? "normal") as "low" | "normal" | "high";
+  if (!requestId) redirect("/admin/requests");
+  if (!["low", "normal", "high"].includes(priority)) redirect("/admin/requests");
+
+  const updated = await setRequestPriority(requestId, priority);
+  if (!updated) redirect("/admin/requests");
+
+  await logAuditEvent({
+    action: "request.priority_changed",
+    actor: user.username,
+    target: requestId,
+    metadata: { bulkCount, priority },
+  });
+  await setFlash("success", `Request priority updated to ${priority}`);
   await refreshRequestsPage();
   redirect("/admin/requests");
 }

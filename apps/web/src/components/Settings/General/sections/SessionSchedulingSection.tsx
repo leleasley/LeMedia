@@ -5,8 +5,12 @@ type SessionSchedulingSectionProps = {
   settingsLoading: boolean;
   jobTimezone: string;
   timezoneOptions: string[];
+  autoExpiryEnabled: boolean;
+  autoExpiryDays: number | "";
   onSessionDaysChange: (nextValue: number | "") => void;
   onJobTimezoneChange: (nextValue: string) => void;
+  onAutoExpiryEnabledChange: (nextValue: boolean) => void;
+  onAutoExpiryDaysChange: (nextValue: number | "") => void;
 };
 
 export function SessionSchedulingSection({
@@ -14,8 +18,12 @@ export function SessionSchedulingSection({
   settingsLoading,
   jobTimezone,
   timezoneOptions,
+  autoExpiryEnabled,
+  autoExpiryDays,
   onSessionDaysChange,
   onJobTimezoneChange,
+  onAutoExpiryEnabledChange,
+  onAutoExpiryDaysChange,
 }: SessionSchedulingSectionProps) {
   return (
     <section className="rounded-md border border-white/10 bg-slate-900/60 p-4 space-y-4">
@@ -60,6 +68,43 @@ export function SessionSchedulingSection({
           />
         </div>
         <p className="text-xs text-muted mt-1">Controls cron-based jobs like the weekly digest schedule.</p>
+      </div>
+
+      <div className="rounded-md border border-white/10 bg-white/[0.02] p-3 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <label className="text-sm font-semibold text-white">Auto-expire stale pending requests</label>
+            <p className="text-xs text-muted mt-1">
+              Disabled by default. When enabled, pending requests older than the configured number of days are automatically denied.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={autoExpiryEnabled}
+            disabled={settingsLoading}
+            onClick={() => onAutoExpiryEnabledChange(!autoExpiryEnabled)}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${autoExpiryEnabled ? "bg-emerald-500" : "bg-white/20"} ${settingsLoading ? "opacity-60 cursor-not-allowed" : ""}`}
+          >
+            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${autoExpiryEnabled ? "translate-x-6" : "translate-x-1"}`} />
+          </button>
+        </div>
+
+        <div>
+          <label className="text-sm font-semibold text-white">Auto-expiry threshold (days)</label>
+          <div className="mt-2">
+            <input
+              type="number"
+              min={1}
+              max={365}
+              value={autoExpiryDays}
+              onChange={(e) => onAutoExpiryDaysChange(e.target.value === "" ? "" : Number(e.target.value))}
+              className="w-full sm:w-36 input"
+              disabled={settingsLoading}
+            />
+          </div>
+          <p className="text-xs text-muted mt-1">Only applies when auto-expiry is enabled.</p>
+        </div>
       </div>
     </section>
   );

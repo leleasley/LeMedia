@@ -6,6 +6,7 @@ import { formatDate } from "@/lib/dateFormat";
 import { useRouter } from "next/navigation";
 import {
   Check,
+  CheckSquare,
   X,
   Trash2,
   Search,
@@ -26,10 +27,13 @@ import { getAvatarSrc, getAvatarAlt } from "@/lib/avatar";
 import { csrfFetch } from "@/lib/csrf-client";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { Modal } from "@/components/Common/Modal";
+import { ConfirmationModal } from "@/components/Common/ConfirmationModal";
 import { emitRequestsChanged } from "@/lib/request-refresh";
 import { ReleaseSearchModal } from "@/components/Media/ReleaseSearchModal";
 import { CommentsListForm } from "@/components/Requests/CommentsListForm";
 import { PrefetchLink } from "@/components/Layout/PrefetchLink";
+import { UpvoteButton } from "@/components/Requests/UpvoteButton";
+import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 
 const statusConfig: Record<string, {
   bg: string;
@@ -119,11 +123,47 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+function PriorityBadge({ priority }: { priority?: "low" | "normal" | "high" }) {
+  const value = priority ?? "normal";
+  const classes =
+    value === "high"
+      ? "bg-rose-500/10 text-rose-300 border-rose-500/40"
+      : value === "low"
+        ? "bg-slate-500/10 text-slate-300 border-slate-500/40"
+        : "bg-amber-500/10 text-amber-300 border-amber-500/40";
+  return (
+    <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider", classes)}>
+      {value}
+    </span>
+  );
+}
+
+const priorityOptions = [
+  { value: "high", label: "Priority: High" },
+  { value: "normal", label: "Priority: Normal" },
+  { value: "low", label: "Priority: Low" },
+] as const;
+
+const sortOptions = [
+  { value: "newest", label: "Newest first" },
+  { value: "oldest", label: "Oldest first" },
+  { value: "priority", label: "Priority first" },
+  { value: "votes", label: "Most votes" },
+] as const;
+
+const priorityRank: Record<"low" | "normal" | "high", number> = {
+  low: 1,
+  normal: 2,
+  high: 3,
+};
+
 type Request = {
   id: number | string;
   tmdb_id: number;
   title: string;
   request_type: string;
+  priority?: "low" | "normal" | "high";
+  vote_count?: number;
   status: string;
   status_reason?: string | null;
   created_at: string;
@@ -168,9 +208,82 @@ type RequestDetails = {
 
 type ViewMode = "grid" | "list";
 type FilterStatus = "all" | "pending" | "submitted" | "downloading" | "available" | "partially_available" | "denied" | "failed";
+type PriorityFilter = "all" | "high" | "normal" | "low";
+type SortMode = "newest" | "oldest" | "priority" | "votes";
 
 function formatStatusLabel(status: string) {
   return status.replace(/_/g, " ").replace(/\b\w/g, m => m.toUpperCase());
+}
+
+function getAgeMeta(createdAt: string, status: string) {
+  const created = new Date(createdAt);
+  const diffMs = Date.now() - created.getTime();
+  const diffHours = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60)));
+  const diffDays = Math.floor(diffHours / 24);
+  const isActive = ["pending", "submitted", "downloading", "partially_available"].includes(status);
+
+  if (diffHours < 24) {
+    return {
+      label: diffHours < 1 ? "New" : `${diffHours}h old`,
+      className: "bg-emerald-500/10 text-emerald-300 border-emerald-500/30",
+      sortValue: diffHours,
+      isActive,
+    };
+  }
+
+  if (isActive && diffDays >= 7) {
+    return {
+      label: `${diffDays}d stale`,
+      className: "bg-rose-500/10 text-rose-300 border-rose-500/30",
+      sortValue: diffHours,
+      isActive,
+    };
+  }
+
+  if (isActive && diffDays >= 3) {
+    return {
+      label: `${diffDays}d aging`,
+      className: "bg-amber-500/10 text-amber-300 border-amber-500/30",
+      sortValue: diffHours,
+      isActive,
+    };
+  }
+
+  return {
+    label: `${diffDays}d old`,
+    className: "bg-sky-500/10 text-sky-300 border-sky-500/30",
+    sortValue: diffHours,
+    isActive,
+  };
+}
+
+function AgingBadge({ createdAt, status }: { createdAt: string; status: string }) {
+  const age = getAgeMeta(createdAt, status);
+  return (
+    <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider", age.className)}>
+      {age.label}
+    </span>
+  );
+}
+
+function compareRequests(left: Request, right: Request, mode: SortMode) {
+  const leftPriority = priorityRank[left.priority ?? "normal"];
+  const rightPriority = priorityRank[right.priority ?? "normal"];
+  const leftVotes = Number(left.vote_count ?? 0);
+  const rightVotes = Number(right.vote_count ?? 0);
+  const leftCreated = new Date(left.created_at).getTime();
+  const rightCreated = new Date(right.created_at).getTime();
+
+  if (mode === "priority") {
+    return rightPriority - leftPriority || rightVotes - leftVotes || leftCreated - rightCreated;
+  }
+  if (mode === "votes") {
+    return rightVotes - leftVotes || rightPriority - leftPriority || leftCreated - rightCreated;
+  }
+  if (mode === "oldest") {
+    return leftCreated - rightCreated;
+  }
+  return rightCreated - leftCreated;
 }
 
 function getMediaHref(request: Request) {
@@ -194,17 +307,21 @@ export function AllRequestsClient({
   denyRequest,
   deleteRequest,
   markRequestAvailable,
+  setRequestPriorityAction,
 }: {
   initialRequests: Request[];
   approveRequest: (formData: FormData) => Promise<void>;
   denyRequest: (formData: FormData) => Promise<void>;
   deleteRequest: (formData: FormData) => Promise<void>;
   markRequestAvailable: (formData: FormData) => Promise<void>;
+  setRequestPriorityAction: (formData: FormData) => Promise<void>;
 }) {
   const [optimisticRemovals, setOptimisticRemovals] = useState<Set<string | number>>(new Set());
   const [optimisticStatusUpdates, setOptimisticStatusUpdates] = useState<Record<string | number, string>>({});
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
+  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
+  const [sortMode, setSortMode] = useState<SortMode>("priority");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [isSyncing, setIsSyncing] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -219,14 +336,18 @@ export function AllRequestsClient({
   const [denyReason, setDenyReason] = useState("");
   const [denyTarget, setDenyTarget] = useState<{ requestId: string | number; requestIds?: Array<string | number> } | null>(null);
   const [denySubmitting, setDenySubmitting] = useState(false);
+  const [selectedRequestIds, setSelectedRequestIds] = useState<Set<string>>(new Set());
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ requestId: string | number; requestIds?: Array<string | number>; count: number } | null>(null);
   const router = useRouter();
   const toast = useToast();
 
   const handleAction = async (
-    action: "approve" | "deny" | "delete" | "markAvailable",
+    action: "approve" | "deny" | "delete" | "markAvailable" | "setPriority",
     requestId: string | number,
     requestIds?: Array<string | number>,
-    reason?: string | null
+    reason?: string | null,
+    priority?: "low" | "normal" | "high"
   ) => {
     const targetIds = (requestIds && requestIds.length ? requestIds : [requestId]).map(String);
     const previousRemovals = new Set(optimisticRemovals);
@@ -253,8 +374,14 @@ export function AllRequestsClient({
       for (const id of targetIds) {
         const formData = new FormData();
         formData.append("requestId", String(id));
+        if (targetIds.length > 1) {
+          formData.append("bulkCount", String(targetIds.length));
+        }
         if (action === "deny" && reason) {
           formData.append("reason", reason);
+        }
+        if (action === "setPriority" && priority) {
+          formData.append("priority", priority);
         }
 
         try {
@@ -262,6 +389,7 @@ export function AllRequestsClient({
           else if (action === "deny") await denyRequest(formData);
           else if (action === "delete") await deleteRequest(formData);
           else if (action === "markAvailable") await markRequestAvailable(formData);
+          else if (action === "setPriority") await setRequestPriorityAction(formData);
         } catch (err) {
           if (!isNextRedirectError(err)) throw err;
         }
@@ -269,10 +397,31 @@ export function AllRequestsClient({
 
       router.refresh();
       emitRequestsChanged();
+      setSelectedRequestIds((prev) => {
+        const next = new Set(prev);
+        targetIds.forEach((id) => next.delete(String(id)));
+        return next;
+      });
     } catch (err: any) {
       setOptimisticRemovals(previousRemovals);
       setOptimisticStatusUpdates(previousStatusUpdates);
       toast.error(err?.message ?? "Action failed", { timeoutMs: 4000 });
+    }
+  };
+
+  const openDeleteConfirmation = (requestId: string | number, requestIds?: Array<string | number>) => {
+    const count = requestIds?.length ?? 1;
+    setDeleteTarget({ requestId, requestIds, count });
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget || confirmingDelete) return;
+    setConfirmingDelete(true);
+    try {
+      await handleAction("delete", deleteTarget.requestId, deleteTarget.requestIds);
+      setDeleteTarget(null);
+    } finally {
+      setConfirmingDelete(false);
     }
   };
 
@@ -381,14 +530,62 @@ export function AllRequestsClient({
         return r.status === filterStatus;
       })
       .filter(r => {
+        if (priorityFilter === "all") return true;
+        return (r.priority ?? "normal") === priorityFilter;
+      })
+      .filter(r => {
         if (!searchQuery.trim()) return true;
         const query = searchQuery.toLowerCase();
         return (
           r.title.toLowerCase().includes(query) ||
           r.username.toLowerCase().includes(query)
         );
-      });
-  }, [initialRequests, optimisticRemovals, optimisticStatusUpdates, filterStatus, searchQuery]);
+      })
+      .sort((left, right) => compareRequests(left, right, sortMode));
+  }, [initialRequests, optimisticRemovals, optimisticStatusUpdates, filterStatus, priorityFilter, searchQuery, sortMode]);
+
+  const filteredIdSet = useMemo(() => new Set(filteredRequests.map((r) => String(r.id))), [filteredRequests]);
+
+  const selectedVisibleIds = useMemo(
+    () => Array.from(selectedRequestIds).filter((id) => filteredIdSet.has(id)),
+    [selectedRequestIds, filteredIdSet]
+  );
+
+  const selectedVisibleRequests = useMemo(
+    () => filteredRequests.filter((r) => selectedVisibleIds.includes(String(r.id))),
+    [filteredRequests, selectedVisibleIds]
+  );
+
+  const allVisibleSelected = filteredRequests.length > 0 && selectedVisibleIds.length === filteredRequests.length;
+
+  const toggleSelected = (requestId: string) => {
+    setSelectedRequestIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(requestId)) next.delete(requestId);
+      else next.add(requestId);
+      return next;
+    });
+  };
+
+  const toggleSelectAllVisible = () => {
+    setSelectedRequestIds((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) {
+        filteredRequests.forEach((r) => next.delete(String(r.id)));
+      } else {
+        filteredRequests.forEach((r) => next.add(String(r.id)));
+      }
+      return next;
+    });
+  };
+
+  const getIdsByStatuses = (statuses: string[]) =>
+    selectedVisibleRequests.filter((r) => statuses.includes(r.status)).map((r) => String(r.id));
+
+  const bulkApproveIds = getIdsByStatuses(["pending"]);
+  const bulkDenyIds = getIdsByStatuses(["pending", "submitted", "downloading", "partially_available"]);
+  const bulkDeleteIds = getIdsByStatuses(["available", "denied", "removed"]);
+  const bulkMarkAvailableIds = getIdsByStatuses(["submitted", "downloading", "partially_available"]);
 
   const stats = useMemo(() => {
     const visible = initialRequests
@@ -411,6 +608,22 @@ export function AllRequestsClient({
 
   return (
     <div className="space-y-6">
+      <ConfirmationModal
+        isOpen={Boolean(deleteTarget)}
+        onClose={() => {
+          if (confirmingDelete) return;
+          setDeleteTarget(null);
+        }}
+        onConfirm={confirmDelete}
+        title={deleteTarget?.count && deleteTarget.count > 1 ? "Remove selected requests?" : "Remove request?"}
+        message={deleteTarget?.count && deleteTarget.count > 1
+          ? `This will remove ${deleteTarget.count} requests and trigger provider cleanup where possible.`
+          : "This will remove the request and trigger provider cleanup where possible."}
+        confirmText={deleteTarget?.count && deleteTarget.count > 1 ? `Remove ${deleteTarget.count} requests` : "Remove request"}
+        variant="danger"
+        isLoading={confirmingDelete}
+      />
+
       <Modal
         open={denyModalOpen}
         title="Deny Request"
@@ -540,7 +753,7 @@ export function AllRequestsClient({
                   {["available", "denied", "removed"].includes(detailsData.request.status) ? (
                     <button
                       type="button"
-                      onClick={() => handleAction("delete", detailsBaseRequest.id, detailsBaseRequest.mergedRequestIds)}
+                      onClick={() => openDeleteConfirmation(detailsBaseRequest.id, detailsBaseRequest.mergedRequestIds)}
                       className="btn btn-error btn-sm gap-2"
                     >
                       <Trash2 className="h-4 w-4" />
@@ -704,6 +917,14 @@ export function AllRequestsClient({
             />
           </div>
           <div className="flex gap-2">
+            <AdaptiveSelect
+              value={sortMode}
+              onValueChange={(value) => setSortMode(value as SortMode)}
+              options={[...sortOptions]}
+              aria-label="Sort requests"
+              className="min-w-[170px]"
+              triggerClassName="h-10 rounded-lg border-white/10 bg-white/5 text-sm text-white"
+            />
             <button
               onClick={handleSync}
               disabled={isSyncing}
@@ -738,6 +959,91 @@ export function AllRequestsClient({
             </button>
           ))}
         </div>
+
+        <div className="flex flex-wrap gap-2">
+          {(["all", "high", "normal", "low"] as PriorityFilter[]).map((priority) => (
+            <button
+              key={priority}
+              onClick={() => setPriorityFilter(priority)}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-xs font-medium transition-all",
+                priorityFilter === priority
+                  ? "bg-rose-500 text-white shadow-lg shadow-rose-500/20"
+                  : "bg-white/5 text-white/60 hover:bg-white/10 hover:text-white"
+              )}
+            >
+              {priority === "all" ? "All priorities" : `${priority[0].toUpperCase()}${priority.slice(1)} priority`}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-white/10 bg-slate-900/60 p-3 shadow-lg space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-xs text-white/70">
+            <button
+              type="button"
+              onClick={toggleSelectAllVisible}
+              className="btn btn-outline btn-xs gap-1.5 text-amber-200 border-amber-500/40 hover:bg-amber-500/10"
+            >
+              <CheckSquare className="h-3.5 w-3.5" />
+              {allVisibleSelected ? "Clear visible" : "Select visible"}
+            </button>
+            <span>
+              Selected {selectedVisibleIds.length} of {filteredRequests.length} visible
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className="btn btn-primary btn-xs gap-1 bg-amber-500 text-slate-900 border-amber-500 hover:bg-amber-400"
+              disabled={bulkApproveIds.length === 0}
+              onClick={() => handleAction("approve", bulkApproveIds[0], bulkApproveIds)}
+            >
+              Approve ({bulkApproveIds.length})
+            </button>
+            <button
+              type="button"
+              className="btn btn-outline btn-xs gap-1 text-rose-300 border-rose-500/40 hover:bg-rose-500/10"
+              disabled={bulkDenyIds.length === 0}
+              onClick={() => openDenyModal(bulkDenyIds[0], bulkDenyIds)}
+            >
+              Deny ({bulkDenyIds.length})
+            </button>
+            <button
+              type="button"
+              className="btn btn-outline btn-xs gap-1 text-amber-200 border-amber-500/40 hover:bg-amber-500/10"
+              disabled={bulkMarkAvailableIds.length === 0}
+              onClick={() => handleAction("markAvailable", bulkMarkAvailableIds[0], bulkMarkAvailableIds)}
+            >
+              Mark Available ({bulkMarkAvailableIds.length})
+            </button>
+            <button
+              type="button"
+              className="btn btn-error btn-xs gap-1"
+              disabled={bulkDeleteIds.length === 0}
+              onClick={() => openDeleteConfirmation(bulkDeleteIds[0], bulkDeleteIds)}
+            >
+              Remove ({bulkDeleteIds.length})
+            </button>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 text-xs text-white/60">
+          <span>Set priority for selected:</span>
+          {(["high", "normal", "low"] as const).map((priority) => (
+            <button
+              key={priority}
+              type="button"
+              className="btn btn-outline btn-xs"
+              disabled={selectedVisibleIds.length === 0}
+              onClick={() => handleAction("setPriority", selectedVisibleIds[0], selectedVisibleIds, null, priority)}
+            >
+              {priority}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Results */}
@@ -768,6 +1074,20 @@ export function AllRequestsClient({
               )}
 
               <div className="relative z-10 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="inline-flex items-center gap-2 text-xs text-white/70 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedRequestIds.has(String(r.id))}
+                      onChange={() => toggleSelected(String(r.id))}
+                    />
+                    Select
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <AgingBadge createdAt={r.created_at} status={r.status} />
+                    <PriorityBadge priority={r.priority} />
+                  </div>
+                </div>
                 <div className="flex gap-3">
                   <PrefetchLink
                     href={getMediaHref(r)}
@@ -824,7 +1144,13 @@ export function AllRequestsClient({
                     </div>
                     <span className="truncate">{r.display_name || r.username}</span>
                   </div>
-                  <span className="whitespace-nowrap">{formatDate(r.created_at)}</span>
+                  <div className="flex items-center gap-3">
+                    <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[11px] font-semibold text-white/70">
+                      {Number(r.vote_count ?? 0)} vote{Number(r.vote_count ?? 0) === 1 ? "" : "s"}
+                    </span>
+                    <UpvoteButton requestId={String(r.id)} compact />
+                    <span className="whitespace-nowrap">{formatDate(r.created_at)}</span>
+                  </div>
                 </div>
 
                 <div className="flex flex-wrap gap-2 pt-2 border-t border-white/10">
@@ -855,6 +1181,16 @@ export function AllRequestsClient({
                       </button>
                     </>
                   )}
+
+                  <AdaptiveSelect
+                    value={r.priority ?? "normal"}
+                    onValueChange={(value) => handleAction("setPriority", r.id, r.mergedRequestIds, null, value as "low" | "normal" | "high")}
+                    options={[...priorityOptions]}
+                    aria-label="Request priority"
+                    className="w-[148px]"
+                    triggerClassName="h-7 min-h-7 rounded-md border-white/20 bg-black/30 px-2 text-xs text-white"
+                  />
+
                   {["submitted", "downloading", "partially_available"].includes(r.status) && (
                     <button
                       onClick={() => openDenyModal(r.id, r.mergedRequestIds)}
@@ -866,7 +1202,7 @@ export function AllRequestsClient({
                   )}
                   {["available", "denied", "removed"].includes(r.status) && (
                     <button
-                      onClick={() => handleAction("delete", r.id, r.mergedRequestIds)}
+                      onClick={() => openDeleteConfirmation(r.id, r.mergedRequestIds)}
                       className="btn btn-error btn-xs gap-1.5"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -884,10 +1220,14 @@ export function AllRequestsClient({
             <table className="w-full text-sm">
               <thead className="bg-white/5 border-b border-white/10">
                 <tr>
+                  <th className="p-4 pl-6 text-left font-semibold text-white/80">Select</th>
                   <th className="p-4 pl-6 text-left font-semibold text-white/80">Poster</th>
                   <th className="p-4 text-left font-semibold text-white/80">Title</th>
                   <th className="p-4 text-left font-semibold text-white/80">User</th>
                   <th className="p-4 text-left font-semibold text-white/80">Status</th>
+                  <th className="p-4 text-left font-semibold text-white/80">Priority</th>
+                  <th className="p-4 text-left font-semibold text-white/80">Votes</th>
+                  <th className="p-4 text-left font-semibold text-white/80">Age</th>
                   <th className="p-4 text-left font-semibold text-white/80">Date</th>
                   <th className="p-4 text-left font-semibold text-white/80">Actions</th>
                 </tr>
@@ -895,6 +1235,13 @@ export function AllRequestsClient({
               <tbody className="divide-y divide-white/5">
                 {filteredRequests.map((r) => (
                   <tr key={r.id} className="hover:bg-white/5 transition-colors group">
+                    <td className="p-4 pl-6">
+                      <input
+                        type="checkbox"
+                        checked={selectedRequestIds.has(String(r.id))}
+                        onChange={() => toggleSelected(String(r.id))}
+                      />
+                    </td>
                     <td className="p-3 pl-6">
                       <PrefetchLink
                         href={getMediaHref(r)}
@@ -951,6 +1298,30 @@ export function AllRequestsClient({
                         </div>
                       )}
                     </td>
+                    <td className="p-4 space-y-2">
+                      <PriorityBadge priority={r.priority} />
+                      <AdaptiveSelect
+                        value={r.priority ?? "normal"}
+                        onValueChange={(value) => handleAction("setPriority", r.id, r.mergedRequestIds, null, value as "low" | "normal" | "high")}
+                        options={[
+                          { value: "high", label: "High" },
+                          { value: "normal", label: "Normal" },
+                          { value: "low", label: "Low" },
+                        ]}
+                        aria-label="Request priority"
+                        className="w-[110px]"
+                        triggerClassName="h-7 min-h-7 rounded-md border-white/20 bg-black/30 px-2 text-xs text-white"
+                      />
+                    </td>
+                    <td className="p-4">
+                      <div className="space-y-2">
+                        <div className="text-xs font-semibold text-white/70">{Number(r.vote_count ?? 0)} total</div>
+                        <UpvoteButton requestId={String(r.id)} compact />
+                      </div>
+                    </td>
+                    <td className="p-4">
+                      <AgingBadge createdAt={r.created_at} status={r.status} />
+                    </td>
                     <td className="p-4 text-white/60 whitespace-nowrap">{formatDate(r.created_at)}</td>
                     <td className="p-4">
                       <div className="flex gap-2">
@@ -992,7 +1363,7 @@ export function AllRequestsClient({
                         )}
                         {["available", "denied", "removed"].includes(r.status) && (
                           <button
-                            onClick={() => handleAction("delete", r.id, r.mergedRequestIds)}
+                            onClick={() => openDeleteConfirmation(r.id, r.mergedRequestIds)}
                             className="btn btn-error btn-xs gap-1"
                           >
                             <Trash2 className="h-3 w-3" />

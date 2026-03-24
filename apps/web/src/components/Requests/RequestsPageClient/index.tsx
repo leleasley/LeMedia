@@ -7,11 +7,13 @@ import useSWR from "swr";
 import { MessageSquare, ChevronDown, ChevronUp } from "lucide-react";
 import { formatDate } from "@/lib/dateFormat";
 import { CommentsListForm } from "@/components/Requests/CommentsListForm";
+import { UpvoteButton } from "@/components/Requests/UpvoteButton";
 
 type RequestItem = {
   id: string;
   title: string;
   request_type: string;
+  priority?: "low" | "normal" | "high";
   status: string;
   status_reason?: string | null;
   denied_by_name?: string | null;
@@ -171,6 +173,21 @@ function TypeBadge({ type }: { type: string }) {
   );
 }
 
+function PriorityBadge({ priority }: { priority?: "low" | "normal" | "high" }) {
+  const value = priority ?? "normal";
+  const classes =
+    value === "high"
+      ? "bg-rose-500/20 text-rose-300 border-rose-500/30"
+      : value === "low"
+        ? "bg-slate-500/20 text-slate-300 border-slate-500/30"
+        : "bg-amber-500/20 text-amber-300 border-amber-500/30";
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border ${classes}`}>
+      Priority {value}
+    </span>
+  );
+}
+
 function EmptyState() {
   return (
     <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
@@ -303,7 +320,10 @@ export function RequestsPageClient({
                           <h3 className="font-bold text-base text-white leading-tight line-clamp-2 mb-2 group-hover:text-indigo-100 transition-colors">
                             {r.title}
                           </h3>
-                          <TypeBadge type={r.request_type} />
+                          <div className="flex flex-wrap items-center gap-2">
+                            <TypeBadge type={r.request_type} />
+                            <PriorityBadge priority={r.priority} />
+                          </div>
                         </div>
                         
                         <div className="mt-3 space-y-2">
@@ -325,15 +345,18 @@ export function RequestsPageClient({
                               📅 {formatDate(r.created_at)}
                             </p>
                           )}
-                          <button
-                            type="button"
-                            onClick={() => toggleComments(r.id)}
-                            className="flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 transition-colors mt-1"
-                          >
-                            <MessageSquare className="h-3.5 w-3.5" />
-                            {expandedCommentId === r.id ? "Hide comments" : "Comments"}
-                            {expandedCommentId === r.id ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                          </button>
+                          <div className="flex items-center gap-2 mt-1">
+                            <UpvoteButton requestId={r.id} compact />
+                            <button
+                              type="button"
+                              onClick={() => toggleComments(r.id)}
+                              className="flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+                            >
+                              <MessageSquare className="h-3.5 w-3.5" />
+                              {expandedCommentId === r.id ? "Hide comments" : "Comments"}
+                              {expandedCommentId === r.id ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -361,6 +384,7 @@ export function RequestsPageClient({
                     <th className="p-5 text-left text-xs font-bold text-white/50 uppercase tracking-wider">Type</th>
                     <th className="p-5 text-left text-xs font-bold text-white/50 uppercase tracking-wider">Status</th>
                     <th className="p-5 text-right text-xs font-bold text-white/50 uppercase tracking-wider">Requested</th>
+                    <th className="p-5 text-right text-xs font-bold text-white/50 uppercase tracking-wider">Votes</th>
                     <th className="p-5 pr-6 text-right text-xs font-bold text-white/50 uppercase tracking-wider">Comments</th>
                   </tr>
                 </thead>
@@ -396,7 +420,10 @@ export function RequestsPageClient({
                             </div>
                           </td>
                           <td className="p-4">
-                            <TypeBadge type={r.request_type} />
+                            <div className="flex flex-wrap items-center gap-2">
+                              <TypeBadge type={r.request_type} />
+                              <PriorityBadge priority={r.priority} />
+                            </div>
                           </td>
                           <td className="p-4">
                             <div className="space-y-2">
@@ -420,6 +447,9 @@ export function RequestsPageClient({
                               {formatDate(r.created_at)}
                             </span>
                           </td>
+                          <td className="p-4 text-right">
+                            <UpvoteButton requestId={r.id} compact />
+                          </td>
                           <td className="p-4 pr-6 text-right">
                             <button
                               type="button"
@@ -437,7 +467,7 @@ export function RequestsPageClient({
                         </tr>
                         {isExpanded && (
                           <tr key={`${r.id}-comments`} className="border-b border-white/5">
-                            <td colSpan={6} className="px-6 py-4 bg-white/[0.015]">
+                            <td colSpan={7} className="px-6 py-4 bg-white/[0.015]">
                               <CommentsListForm
                                 requestId={r.id}
                                 currentUsername={currentUsername}

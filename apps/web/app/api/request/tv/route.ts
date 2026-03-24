@@ -24,6 +24,7 @@ import { POST as requestPost } from "../../v1/request/route";
 const Body = z.object({
   tmdbId: z.coerce.number().int(),
   qualityProfileId: z.coerce.number().int().optional(),
+  priority: z.enum(["low", "normal", "high"]).optional(),
   userId: z.coerce.number().int().optional(),
   serviceId: z.coerce.number().int().optional(),
   rootFolder: z.string().min(1).optional(),
@@ -168,6 +169,7 @@ export async function POST(req: NextRequest) {
         tmdbId: body.tmdbId,
         title,
         userId: targetUserId,
+        priority: body.priority,
         requestStatus: "pending",
         items: [{ provider: "sonarr", providerId: null, status: "pending" }],
         posterPath: tv?.poster_path ?? null,
@@ -221,6 +223,7 @@ export async function POST(req: NextRequest) {
         tmdbId: body.tmdbId,
         title,
         userId: targetUserId,
+        priority: body.priority,
         requestStatus: "queued",
         finalStatus: "submitted",
         items: [{ provider: "sonarr", providerId: series?.id ?? null, status: "submitted" }],

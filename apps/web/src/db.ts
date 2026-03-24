@@ -175,6 +175,7 @@ export async function createRequest(input: {
   tmdbId: number;
   title: string;
   userId: number;
+  priority?: "low" | "normal" | "high";
   status?: string;
   statusReason?: string | null;
   posterPath?: string | null;
@@ -189,13 +190,14 @@ export async function createRequest(input: {
       tmdb_id,
       title,
       requested_by,
+      priority,
       status,
       status_reason,
       poster_path,
       backdrop_path,
       release_year
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
     RETURNING id
     `,
     [
@@ -203,6 +205,7 @@ export async function createRequest(input: {
       input.tmdbId,
       input.title,
       input.userId,
+      input.priority ?? "normal",
       input.status ?? "queued",
       input.statusReason ?? null,
       input.posterPath ?? null,
@@ -229,6 +232,7 @@ export async function createRequestWithItemsTransaction(input: {
   tmdbId: number;
   title: string;
   userId: number;
+  priority?: "low" | "normal" | "high";
   requestStatus?: string;
   statusReason?: string | null;
   finalStatus?: string;
@@ -251,13 +255,14 @@ export async function createRequestWithItemsTransaction(input: {
         tmdb_id,
         title,
         requested_by,
+        priority,
         status,
         status_reason,
         poster_path,
         backdrop_path,
         release_year
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING id
       `,
       [
@@ -265,6 +270,7 @@ export async function createRequestWithItemsTransaction(input: {
         input.tmdbId,
         input.title,
         input.userId,
+        input.priority ?? "normal",
         requestStatus,
         input.statusReason ?? null,
         input.posterPath ?? null,
@@ -454,21 +460,33 @@ export async function listRecentRequests(limit = 25, username?: string) {
     const p = getPool();
     const query = username
       ? `
-        SELECT r.id, r.request_type, r.tmdb_id, r.title, r.status, r.status_reason, r.created_at,
+        SELECT r.id, r.request_type, r.tmdb_id, r.title, r.priority, r.status, r.status_reason, r.created_at,
                r.poster_path, r.backdrop_path, r.release_year,
-               u.username, u.display_name, u.avatar_url, u.jellyfin_user_id
+               u.username, u.display_name, u.avatar_url, u.jellyfin_user_id,
+               COALESCE(v.vote_count, 0)::int AS vote_count
         FROM media_request r
         JOIN app_user u ON u.id = r.requested_by
+        LEFT JOIN (
+          SELECT request_id, COUNT(*)::int AS vote_count
+          FROM request_upvote
+          GROUP BY request_id
+        ) v ON v.request_id = r.id
         WHERE u.username = $2
         ORDER BY r.created_at DESC
         LIMIT $1
         `
       : `
-        SELECT r.id, r.request_type, r.tmdb_id, r.title, r.status, r.status_reason, r.created_at,
+        SELECT r.id, r.request_type, r.tmdb_id, r.title, r.priority, r.status, r.status_reason, r.created_at,
                r.poster_path, r.backdrop_path, r.release_year,
-               u.username, u.display_name, u.avatar_url, u.jellyfin_user_id
+               u.username, u.display_name, u.avatar_url, u.jellyfin_user_id,
+               COALESCE(v.vote_count, 0)::int AS vote_count
         FROM media_request r
         JOIN app_user u ON u.id = r.requested_by
+        LEFT JOIN (
+          SELECT request_id, COUNT(*)::int AS vote_count
+          FROM request_upvote
+          GROUP BY request_id
+        ) v ON v.request_id = r.id
         ORDER BY r.created_at DESC
         LIMIT $1
         `;
@@ -480,6 +498,7 @@ export async function listRecentRequests(limit = 25, username?: string) {
       request_type: string;
       tmdb_id: number;
       title: string;
+      priority: "low" | "normal" | "high";
       status: string;
       status_reason: string | null;
       created_at: string;
@@ -490,6 +509,7 @@ export async function listRecentRequests(limit = 25, username?: string) {
       display_name: string | null;
       avatar_url: string | null;
       jellyfin_user_id: string | null;
+      vote_count: number;
     }>;
   });
 }
@@ -500,13 +520,19 @@ export async function listRequestsByUsername(username: string, limit = 100) {
   try {
     res = await p.query(
       `
-      SELECT r.id, r.request_type, r.tmdb_id, r.title, r.status, r.status_reason, r.created_at,
+            SELECT r.id, r.request_type, r.tmdb_id, r.title, r.priority, r.status, r.status_reason, r.created_at,
              r.poster_path, r.backdrop_path, r.release_year,
              u.username,
-             COALESCE(du.display_name, du.username) AS denied_by_name
+              COALESCE(du.display_name, du.username) AS denied_by_name,
+              COALESCE(v.vote_count, 0)::int AS vote_count
       FROM media_request r
       JOIN app_user u ON u.id = r.requested_by
       LEFT JOIN app_user du ON du.id = r.denied_by_user_id
+            LEFT JOIN (
+         SELECT request_id, COUNT(*)::int AS vote_count
+         FROM request_upvote
+         GROUP BY request_id
+            ) v ON v.request_id = r.id
       WHERE u.username = $1
       ORDER BY r.created_at DESC
       LIMIT $2
@@ -518,12 +544,18 @@ export async function listRequestsByUsername(username: string, limit = 100) {
     if (err?.code !== "42703") throw err; // undefined_column
     res = await p.query(
       `
-      SELECT r.id, r.request_type, r.tmdb_id, r.title, r.status, r.status_reason, r.created_at,
+            SELECT r.id, r.request_type, r.tmdb_id, r.title, 'normal'::text AS priority, r.status, r.status_reason, r.created_at,
              r.poster_path, r.backdrop_path, r.release_year,
              u.username,
-             NULL::text AS denied_by_name
+              NULL::text AS denied_by_name,
+              COALESCE(v.vote_count, 0)::int AS vote_count
       FROM media_request r
       JOIN app_user u ON u.id = r.requested_by
+            LEFT JOIN (
+         SELECT request_id, COUNT(*)::int AS vote_count
+         FROM request_upvote
+         GROUP BY request_id
+            ) v ON v.request_id = r.id
       WHERE u.username = $1
       ORDER BY r.created_at DESC
       LIMIT $2
@@ -536,6 +568,7 @@ export async function listRequestsByUsername(username: string, limit = 100) {
     request_type: string;
     tmdb_id: number;
     title: string;
+    priority: "low" | "normal" | "high";
     status: string;
     status_reason: string | null;
     created_at: string;
@@ -544,6 +577,7 @@ export async function listRequestsByUsername(username: string, limit = 100) {
     release_year: number | null;
     username: string;
     denied_by_name: string | null;
+    vote_count: number;
   }>;
 }
 
@@ -600,7 +634,7 @@ export async function listRequestsPaged(input: {
   statuses?: string[];
   requestType?: "movie" | "episode";
   requestedById?: number | null;
-}): Promise<{ total: number; results: Array<{ id: string; request_type: string; tmdb_id: number; title: string; status: string; status_reason: string | null; created_at: string; username: string; user_id: number; poster_path: string | null; backdrop_path: string | null; release_year: number | null }> }> {
+}): Promise<{ total: number; results: Array<{ id: string; request_type: string; tmdb_id: number; title: string; priority: "low" | "normal" | "high"; status: string; status_reason: string | null; created_at: string; username: string; user_id: number; poster_path: string | null; backdrop_path: string | null; release_year: number | null; vote_count: number }> }> {
   const p = getPool();
   const where: string[] = [];
   const values: Array<string | number | string[]> = [];
@@ -639,11 +673,17 @@ export async function listRequestsPaged(input: {
 
   const res = await p.query(
     `
-    SELECT r.id, r.request_type, r.tmdb_id, r.title, r.status, r.status_reason, r.created_at,
+        SELECT r.id, r.request_type, r.tmdb_id, r.title, r.priority, r.status, r.status_reason, r.created_at,
            r.poster_path, r.backdrop_path, r.release_year,
-           u.username, u.id as user_id
+          u.username, u.id as user_id,
+          COALESCE(v.vote_count, 0)::int AS vote_count
     FROM media_request r
     JOIN app_user u ON u.id = r.requested_by
+        LEFT JOIN (
+          SELECT request_id, COUNT(*)::int AS vote_count
+          FROM request_upvote
+          GROUP BY request_id
+        ) v ON v.request_id = r.id
     ${whereClause}
     ORDER BY r.created_at DESC
     LIMIT $${limitIdx}
@@ -659,6 +699,7 @@ export async function listRequestsPaged(input: {
       request_type: r.request_type as string,
       tmdb_id: Number(r.tmdb_id),
       title: r.title as string,
+      priority: (r.priority ?? "normal") as "low" | "normal" | "high",
       status: r.status as string,
       status_reason: (r.status_reason ?? null) as string | null,
       created_at: r.created_at as string,
@@ -666,7 +707,8 @@ export async function listRequestsPaged(input: {
       user_id: Number(r.user_id),
       poster_path: r.poster_path ?? null,
       backdrop_path: r.backdrop_path ?? null,
-      release_year: r.release_year !== null ? Number(r.release_year) : null
+      release_year: r.release_year !== null ? Number(r.release_year) : null,
+      vote_count: Number(r.vote_count ?? 0)
     }))
   };
 }
@@ -694,11 +736,17 @@ export async function getRequestById(requestId: string) {
   const p = getPool();
   const res = await p.query(
     `
-    SELECT r.id, r.request_type, r.tmdb_id, r.title, r.status, r.status_reason, r.created_at,
-           r.poster_path, r.backdrop_path, r.release_year, r.requested_by,
+        SELECT r.id, r.request_type, r.tmdb_id, r.title, r.priority, r.status, r.status_reason, r.created_at,
+          r.poster_path, r.backdrop_path, r.release_year, r.requested_by,
+          COALESCE(v.vote_count, 0)::int AS vote_count,
            u.username
     FROM media_request r
     JOIN app_user u ON u.id = r.requested_by
+        LEFT JOIN (
+          SELECT request_id, COUNT(*)::int AS vote_count
+          FROM request_upvote
+          GROUP BY request_id
+        ) v ON v.request_id = r.id
     WHERE r.id = $1
     LIMIT 1
     `,
@@ -711,6 +759,7 @@ export async function getRequestById(requestId: string) {
     request_type: r.request_type as string,
     tmdb_id: r.tmdb_id as number,
     title: r.title as string,
+    priority: (r.priority ?? "normal") as "low" | "normal" | "high",
     status: r.status as string,
     status_reason: (r.status_reason ?? null) as string | null,
     created_at: r.created_at as string,
@@ -718,7 +767,8 @@ export async function getRequestById(requestId: string) {
     backdrop_path: r.backdrop_path ?? null,
     release_year: r.release_year !== null ? Number(r.release_year) : null,
     user_id: r.requested_by as number,
-    username: r.username as string
+    username: r.username as string,
+    vote_count: Number(r.vote_count ?? 0)
   };
 }
 
@@ -9138,4 +9188,115 @@ export async function markSeasonNotified(requestId: string, season: number): Pro
     `INSERT INTO notified_season (request_id, season) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
     [requestId, season]
   );
+}
+
+export async function setRequestPriority(
+  requestId: string,
+  priority: "low" | "normal" | "high"
+): Promise<boolean> {
+  const p = getPool();
+  const res = await p.query(
+    `UPDATE media_request SET priority = $2 WHERE id = $1`,
+    [requestId, priority]
+  );
+  return Number(res.rowCount ?? 0) > 0;
+}
+
+export async function autoExpirePendingRequests(input: {
+  olderThanDays: number;
+  reason?: string;
+}): Promise<Array<{
+  id: string;
+  request_type: "movie" | "episode";
+  tmdb_id: number;
+  title: string;
+  username: string;
+  user_id: number;
+  status_reason: string;
+}>> {
+  const p = getPool();
+  const reason = input.reason?.trim() || `Automatically expired after ${input.olderThanDays} day(s) without approval`;
+
+  const expired = await p.query(
+    `
+    WITH expired AS (
+      UPDATE media_request
+      SET status = 'denied',
+          status_reason = $2,
+          denied_by_user_id = NULL
+      WHERE status = 'pending'
+        AND created_at < NOW() - make_interval(days => $1)
+      RETURNING id, request_type, tmdb_id, title, requested_by AS user_id
+    )
+    SELECT e.id, e.request_type, e.tmdb_id, e.title, e.user_id, u.username, $2::text AS status_reason
+    FROM expired e
+    JOIN app_user u ON u.id = e.user_id
+    `,
+    [input.olderThanDays, reason]
+  );
+
+  const ids = expired.rows.map((r) => String(r.id));
+  if (!ids.length) return [];
+
+  await p.query(
+    `UPDATE request_item SET status = 'denied' WHERE request_id = ANY($1::uuid[])`,
+    [ids]
+  );
+
+  return expired.rows.map((row) => ({
+    id: String(row.id),
+    request_type: row.request_type as "movie" | "episode",
+    tmdb_id: Number(row.tmdb_id),
+    title: String(row.title),
+    username: String(row.username),
+    user_id: Number(row.user_id),
+    status_reason: String(row.status_reason),
+  }));
+}
+
+// ============================================
+// Request Upvotes
+// ============================================
+
+export async function getRequestUpvote(
+  requestId: string,
+  userId: number
+): Promise<{ count: number; voted: boolean }> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT
+       COUNT(*)::int            AS count,
+       BOOL_OR(user_id = $2)   AS voted
+     FROM request_upvote
+     WHERE request_id = $1`,
+    [requestId, userId]
+  );
+  const row = res.rows[0];
+  return {
+    count: Number(row?.count ?? 0),
+    voted: Boolean(row?.voted),
+  };
+}
+
+export async function toggleRequestUpvote(
+  requestId: string,
+  userId: number
+): Promise<{ count: number; voted: boolean }> {
+  const p = getPool();
+  const existing = await p.query(
+    `SELECT 1 FROM request_upvote WHERE request_id = $1 AND user_id = $2`,
+    [requestId, userId]
+  );
+  if (existing.rows.length > 0) {
+    await p.query(
+      `DELETE FROM request_upvote WHERE request_id = $1 AND user_id = $2`,
+      [requestId, userId]
+    );
+  } else {
+    await p.query(
+      `INSERT INTO request_upvote (request_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [requestId, userId]
+    );
+  }
+  return getRequestUpvote(requestId, userId);
 }

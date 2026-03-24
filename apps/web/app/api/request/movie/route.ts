@@ -15,7 +15,8 @@ import { POST as requestPost } from "../../v1/request/route";
 
 const Body = z.object({
   tmdbId: z.coerce.number().int(),
-  qualityProfileId: z.coerce.number().int().optional()
+  qualityProfileId: z.coerce.number().int().optional(),
+  priority: z.enum(["low", "normal", "high"]).optional()
 });
 
 function extractApiKey(req: NextRequest) {
@@ -100,6 +101,7 @@ export async function POST(req: NextRequest) {
           tmdbId: body.tmdbId,
           title,
           userId: dbUser.id,
+          priority: body.priority,
           requestStatus: "pending",
           items: [{ provider: "radarr", providerId: null, status: "pending" }],
           posterPath: movie?.poster_path ?? null,
@@ -125,6 +127,7 @@ export async function POST(req: NextRequest) {
         tmdbId: body.tmdbId,
         title,
         userId: dbUser.id,
+        priority: body.priority,
         requestStatus: "queued",
         finalStatus: "submitted",
         items: [{ provider: "radarr", providerId: radarrMovie?.id ?? null, status: "submitted" }],

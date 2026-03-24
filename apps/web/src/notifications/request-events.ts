@@ -47,6 +47,7 @@ export type RequestNotificationContext = {
   title: string;
   username: string;
   userId?: number;
+  statusReason?: string | null;
   imageUrl?: string | null;
   rating?: number | null;
   year?: number | null;
@@ -164,6 +165,9 @@ function buildRequestDiscordEmbed(
     { name: "Requested By", value: ctx.username, inline: true },
     { name: "Request Status", value: status, inline: true }
   ];
+  if (ctx.statusReason) {
+    fields.push({ name: "Reason", value: clampText(ctx.statusReason, 1024), inline: false });
+  }
   if (ctx.year) {
     fields.push({ name: "Year", value: String(ctx.year), inline: true });
   }
@@ -254,10 +258,12 @@ export async function notifyRequestEvent(event: RequestNotificationEvent, ctx: R
   const metaLine = metaHeadlines.join(" • ");
   const overviewLine = ctx.overview ? `Overview: ${ctx.overview}` : "";
   const imageLine = ctx.imageUrl ? `![${title}](${ctx.imageUrl})` : "";
+  const reasonLine = ctx.statusReason ? `Reason: ${ctx.statusReason}` : "";
 
   const plain = [
     `${status}: ${title}`,
     metaLine,
+    reasonLine,
     overviewLine,
     imageLine,
     `Requested by: ${ctx.username}`,
@@ -278,6 +284,7 @@ export async function notifyRequestEvent(event: RequestNotificationEvent, ctx: R
       username: ctx.username,
       user_id: ctx.userId
     },
+    status_reason: ctx.statusReason ?? null,
     image_url: ctx.imageUrl,
     rating: ctx.rating,
     year: ctx.year,

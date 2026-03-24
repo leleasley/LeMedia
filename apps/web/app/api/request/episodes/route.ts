@@ -84,6 +84,7 @@ const SingleSeasonBody = z.object({
   seasonNumber: z.coerce.number().int().min(1),
   episodeNumbers: z.array(z.coerce.number().int().min(1)).min(1),
   qualityProfileId: z.coerce.number().int().optional(),
+  priority: z.enum(["low", "normal", "high"]).optional(),
   monitoringOption: MonitoringOptionSchema.optional()
 });
 
@@ -91,6 +92,7 @@ const MultiSeasonBody = z.object({
   tmdbTvId: z.coerce.number().int(),
   seasons: z.array(SeasonSelection).min(1),
   qualityProfileId: z.coerce.number().int().optional(),
+  priority: z.enum(["low", "normal", "high"]).optional(),
   monitoringOption: MonitoringOptionSchema.optional()
 });
 
@@ -100,6 +102,7 @@ type NormalizedRequest = {
   tmdbTvId: number;
   seasons: Array<{ seasonNumber: number; episodeNumbers: number[] }>;
   qualityProfileId?: number;
+  priority?: "low" | "normal" | "high";
   monitoringOption?: z.infer<typeof MonitoringOptionSchema>;
 };
 
@@ -109,6 +112,7 @@ function normalizeRequestBody(body: z.infer<typeof Body>): NormalizedRequest {
       tmdbTvId: body.tmdbTvId,
       seasons: body.seasons,
       qualityProfileId: body.qualityProfileId,
+      priority: body.priority,
       monitoringOption: body.monitoringOption
     };
   }
@@ -116,6 +120,7 @@ function normalizeRequestBody(body: z.infer<typeof Body>): NormalizedRequest {
     tmdbTvId: body.tmdbTvId,
     seasons: [{ seasonNumber: body.seasonNumber, episodeNumbers: body.episodeNumbers }],
     qualityProfileId: body.qualityProfileId,
+    priority: body.priority,
     monitoringOption: body.monitoringOption
   };
 }
@@ -230,6 +235,7 @@ export async function POST(req: NextRequest) {
           tmdbId: body.tmdbTvId,
           title,
           userId: dbUser.id,
+          priority: body.priority,
           requestStatus: "pending",
           items: pendingEpisodes.map(ep => ({
             provider: "sonarr",
@@ -342,6 +348,7 @@ export async function POST(req: NextRequest) {
             tmdbId: body.tmdbTvId,
             title,
             userId: dbUser.id,
+            priority: body.priority,
             requestStatus: "pending",
             statusReason: "No files available in Sonarr yet",
             items: pendingEpisodes.map((ep) => ({
@@ -409,6 +416,7 @@ export async function POST(req: NextRequest) {
           tmdbId: body.tmdbTvId,
           title,
           userId: dbUser.id,
+          priority: body.priority,
           requestStatus: "queued",
           finalStatus: "submitted",
           items: wanted.map(w => ({

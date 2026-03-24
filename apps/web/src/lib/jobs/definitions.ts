@@ -1,7 +1,8 @@
 import { syncNewSeasonsAutoRequests, syncPendingRequests, syncWatchlists } from "@/lib/request-sync";
 import { logger } from "@/lib/logger";
 import { sendWeeklyDigest } from "@/notifications/weekly-digest";
-import { purgeExpiredSessions } from "@/db";
+import { autoExpirePendingRequests, getSetting, getSettingInt, purgeExpiredSessions } from "@/db";
+import { notifyRequestEvent } from "@/notifications/request-events";
 import { syncJellyfinAvailability } from "@/lib/jellyfin-availability-sync";
 import { syncPlexAvailability } from "@/lib/plex-availability-sync";
 import { refreshUpgradeHintsForAll } from "@/lib/upgrade-finder";
@@ -17,8 +18,39 @@ export type JobHandler = () => Promise<string | void>;
 
 export const jobHandlers: Record<string, JobHandler> = {
   "request-sync": async () => {
+    const rawAutoExpiryEnabled = await getSetting("request.auto_expiry_enabled");
+    const autoExpiryEnabled = rawAutoExpiryEnabled === "1" || rawAutoExpiryEnabled === "true";
+    let expiredCount = 0;
+    let expiryDays = 0;
+    if (autoExpiryEnabled) {
+      expiryDays = Math.max(1, await getSettingInt("request.auto_expiry_days", 14));
+      const expiredRequests = await autoExpirePendingRequests({ olderThanDays: expiryDays });
+      expiredCount = expiredRequests.length;
+      await Promise.all(
+        expiredRequests.map((request) =>
+          notifyRequestEvent("request_denied", {
+            requestId: request.id,
+            requestType: request.request_type,
+            tmdbId: request.tmdb_id,
+            title: request.title,
+            username: request.username,
+            userId: request.user_id,
+            statusReason: request.status_reason,
+          }).catch((error) => {
+            logger.warn("[Job] Failed to notify auto-expired request", {
+              requestId: request.id,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          })
+        )
+      );
+    }
+
     const summary = await syncPendingRequests();
-    const msg = `${summary.processed} processed, ${summary.downloading} downloading, ${summary.available} available`;
+    const autoExpirySuffix = autoExpiryEnabled
+      ? `, ${expiredCount} auto-expired (> ${expiryDays}d)`
+      : ", auto-expiry disabled";
+    const msg = `${summary.processed} processed, ${summary.downloading} downloading, ${summary.available} available${autoExpirySuffix}`;
     logger.info(`[Job] request-sync completed: ${msg}`);
     return msg;
   },

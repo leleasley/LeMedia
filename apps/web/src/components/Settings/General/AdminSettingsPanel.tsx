@@ -27,6 +27,8 @@ export function AdminSettingsPanel() {
     const [jobTimezone, setJobTimezone] = useState("");
     const [jobTimezoneDirty, setJobTimezoneDirty] = useState(false);
     const [timezoneOptions, setTimezoneOptions] = useState<string[]>([]);
+    const [autoExpiryEnabled, setAutoExpiryEnabled] = useState(false);
+    const [autoExpiryDays, setAutoExpiryDays] = useState<number | "">(14);
     const [imageProxyEnabled, setImageProxyEnabled] = useState(true);
     const [otpEnabled, setOtpEnabled] = useState(true);
     const [ssoEnabled, setSsoEnabled] = useState(true);
@@ -92,6 +94,12 @@ export function AdminSettingsPanel() {
             }
             if (!jobTimezoneDirty && typeof settings.job_timezone === "string") {
                 setJobTimezone(settings.job_timezone);
+            }
+            if (typeof settings.request_auto_expiry_enabled === "boolean") {
+                setAutoExpiryEnabled(settings.request_auto_expiry_enabled);
+            }
+            if (typeof settings.request_auto_expiry_days === "number" && Number.isFinite(settings.request_auto_expiry_days)) {
+                setAutoExpiryDays(Math.max(1, Math.floor(settings.request_auto_expiry_days)));
             }
         }
     }, [settings, sessionDirty, jobTimezoneDirty]);
@@ -188,6 +196,10 @@ export function AdminSettingsPanel() {
             toast.error("Enter a valid number of days");
             return;
         }
+        if (autoExpiryDays === "" || !Number.isFinite(Number(autoExpiryDays)) || Number(autoExpiryDays) < 1) {
+            toast.error("Enter a valid auto-expiry threshold in days");
+            return;
+        }
         setSaving(true);
         try {
             const seconds = Math.floor(Number(sessionDays) * 24 * 60 * 60);
@@ -196,7 +208,9 @@ export function AdminSettingsPanel() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ 
                     session_max_age: seconds, 
-                    job_timezone: jobTimezone
+                    job_timezone: jobTimezone,
+                    request_auto_expiry_enabled: autoExpiryEnabled,
+                    request_auto_expiry_days: Math.floor(Number(autoExpiryDays))
                 }),
                 credentials: "include"
             });
@@ -355,6 +369,8 @@ export function AdminSettingsPanel() {
                     settingsLoading={settingsLoading}
                     jobTimezone={jobTimezone}
                     timezoneOptions={timezoneOptions}
+                    autoExpiryEnabled={autoExpiryEnabled}
+                    autoExpiryDays={autoExpiryDays}
                     onSessionDaysChange={(nextValue) => {
                         setSessionDirty(true);
                         setSessionDays(nextValue);
@@ -363,6 +379,8 @@ export function AdminSettingsPanel() {
                         setJobTimezoneDirty(true);
                         setJobTimezone(nextValue);
                     }}
+                    onAutoExpiryEnabledChange={setAutoExpiryEnabled}
+                    onAutoExpiryDaysChange={setAutoExpiryDays}
                 />
 
                 <AuthenticationSection
@@ -428,7 +446,7 @@ export function AdminSettingsPanel() {
                 />
 
                 <div className="border-t border-white/10 pt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-xs text-muted">Applies session duration and job scheduling changes.</p>
+                    <p className="text-xs text-muted">Applies session, scheduling, and request lifecycle changes.</p>
                     <button className="btn" type="submit" disabled={saving || settingsLoading}>
                         {saving ? "Saving..." : "Save changes"}
                     </button>

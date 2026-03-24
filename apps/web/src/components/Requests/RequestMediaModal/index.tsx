@@ -16,6 +16,12 @@ import { RequestCommentsSection } from "@/components/Requests/RequestCommentsSec
 
 type QualityProfile = { id: number; name: string };
 
+const requestPriorityOptions = [
+  { value: "high", label: "High priority" },
+  { value: "normal", label: "Normal priority" },
+  { value: "low", label: "Low priority" },
+] as const;
+
 export function RequestMediaModal({
   open,
   onClose,
@@ -56,6 +62,7 @@ export function RequestMediaModal({
   allowRaw?: boolean;
 }) {
   const [selectedQualityProfileId, setSelectedQualityProfileId] = useState<number>(defaultQualityProfileId);
+  const [selectedPriority, setSelectedPriority] = useState<"low" | "normal" | "high">("normal");
   const [overrides, setOverrides] = useState<RequestOverrides>({});
   const [errorModal, setErrorModal] = useState<{ title: string; message: string } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -81,7 +88,8 @@ export function RequestMediaModal({
       const endpoint = mediaType === "movie" ? "/api/v1/request/movie" : "/api/v1/request/tv";
       const body: any = {
         tmdbId,
-        qualityProfileId: selectedQualityProfileId
+        qualityProfileId: selectedQualityProfileId,
+        priority: selectedPriority,
       };
 
       if (mediaType === "tv") {
@@ -154,6 +162,7 @@ export function RequestMediaModal({
   const handleClose = () => {
     if (!isSubmitting) {
       setOverrides({});
+      setSelectedPriority("normal");
       setSubmitState("idle");
       setSubmittedRequestId(null);
       setRawOpen(false);
@@ -255,6 +264,21 @@ export function RequestMediaModal({
                   label: profile.name
                 }))}
                 placeholder="Select quality profile"
+                className="w-full"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-sm font-semibold text-gray-200">
+                <span className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-amber-400 to-rose-400"></span>
+                Request Priority
+              </label>
+              <AdaptiveSelect
+                value={selectedPriority}
+                onValueChange={(value) => setSelectedPriority(value as "low" | "normal" | "high")}
+                disabled={isSubmitting}
+                options={[...requestPriorityOptions]}
+                placeholder="Select request priority"
                 className="w-full"
               />
             </div>

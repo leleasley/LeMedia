@@ -38,6 +38,9 @@ export async function GET(req: NextRequest) {
     const jobTimezone = (rawJobTimezone ?? "").trim() || envJobTimezone.trim();
     const rawAppTimezone = await getSetting("app.timezone");
     const appTimezone = (rawAppTimezone ?? "").trim() || jobTimezone;
+    const rawAutoExpiryEnabled = await getSetting("request.auto_expiry_enabled");
+    const autoExpiryEnabled = rawAutoExpiryEnabled === "1" || rawAutoExpiryEnabled === "true";
+    const autoExpiryDays = Math.max(1, await getSettingInt("request.auto_expiry_days", 14));
 
     return jsonResponseWithETag(req, {
         session_max_age: sessionMaxAge,
@@ -47,7 +50,9 @@ export async function GET(req: NextRequest) {
         enforce_mfa_admin: enforceMfaAdmin,
         enforce_mfa_all: enforceMfaAll,
         job_timezone: jobTimezone,
-        app_timezone: appTimezone
+        app_timezone: appTimezone,
+        request_auto_expiry_enabled: autoExpiryEnabled,
+        request_auto_expiry_days: autoExpiryDays
     });
 }
 
@@ -72,10 +77,14 @@ export async function PUT(req: NextRequest) {
     const hasMfaAll = enforceMfaAll !== undefined;
     const jobTimezone = body?.job_timezone;
     const hasJobTimezone = jobTimezone !== undefined;
+    const autoExpiryEnabled = body?.request_auto_expiry_enabled;
+    const hasAutoExpiryEnabled = autoExpiryEnabled !== undefined;
+    const autoExpiryDaysRaw = body?.request_auto_expiry_days;
+    const hasAutoExpiryDays = autoExpiryDaysRaw !== undefined;
 
     const changedFields: string[] = [];
 
-    if (!hasSession && !hasImageProxy && !hasOtp && !hasSso && !hasMfaAdmin && !hasMfaAll && !hasJobTimezone) {
+    if (!hasSession && !hasImageProxy && !hasOtp && !hasSso && !hasMfaAdmin && !hasMfaAll && !hasJobTimezone && !hasAutoExpiryEnabled && !hasAutoExpiryDays) {
         return NextResponse.json({ error: "No settings provided" }, { status: 400 });
     }
 
@@ -151,6 +160,23 @@ export async function PUT(req: NextRequest) {
         }
         await setSetting("auth.enforce_mfa_all", enforceMfaAll ? "1" : "0");
         changedFields.push("auth.enforce_mfa_all");
+    }
+
+    if (hasAutoExpiryEnabled) {
+        if (typeof autoExpiryEnabled !== "boolean") {
+            return NextResponse.json({ error: "Invalid request_auto_expiry_enabled" }, { status: 400 });
+        }
+        await setSetting("request.auto_expiry_enabled", autoExpiryEnabled ? "1" : "0");
+        changedFields.push("request.auto_expiry_enabled");
+    }
+
+    if (hasAutoExpiryDays) {
+        const days = Number(autoExpiryDaysRaw);
+        if (!Number.isFinite(days) || days < 1 || days > 365) {
+            return NextResponse.json({ error: "Invalid request_auto_expiry_days" }, { status: 400 });
+        }
+        await setSetting("request.auto_expiry_days", String(Math.floor(days)));
+        changedFields.push("request.auto_expiry_days");
     }
 
     if (changedFields.length) {

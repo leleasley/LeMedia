@@ -32,6 +32,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 import { TvSeasonItem } from "./TvSeasonItem";
 import type { Episode, Season, QualityProfile } from "./types";
 
@@ -160,6 +161,12 @@ const monitoringOptions = [
     { value: "unmonitorSpecials", label: "Unmonitor Specials" },
     { value: "none", label: "None" }
 ];
+
+const requestPriorityOptions = [
+    { value: "high", label: "High priority" },
+    { value: "normal", label: "Normal priority" },
+    { value: "low", label: "Low priority" },
+] as const;
 
 const fetcher = async (url: string): Promise<TvAggregateResponse | null> => {
     const res = await fetch(url, { credentials: "include" });
@@ -304,6 +311,7 @@ export function TvDetailClientNew({
     const [checkedEpisodes, setCheckedEpisodes] = useState<Record<number, Set<number>>>({});
     const [selectedQualityProfileId, setSelectedQualityProfileId] = useState<number>(defaultQualityProfileId);
     const [monitoringOption, setMonitoringOption] = useState<string>("all");
+    const [selectedPriority, setSelectedPriority] = useState<"low" | "normal" | "high">("normal");
     const [status, setStatus] = useState<string>("");
     const [submitState, setSubmitState] = useState<"idle" | "loading" | "success" | "error">("idle");
 
@@ -791,6 +799,7 @@ export function TvDetailClientNew({
                     seasonNumber,
                     episodeNumbers,
                     qualityProfileId: selectedQualityProfileId,
+                    priority: selectedPriority,
                     monitoringOption
                 })
             });
@@ -852,7 +861,7 @@ export function TvDetailClientNew({
         } finally {
             setIsSubmitting(false);
         }
-    }, [isSubmitting, requestsBlockedState, hasQualityProfiles, checkedEpisodes, tv.id, selectedQualityProfileId, monitoringOption, toast, router]);
+    }, [isSubmitting, requestsBlockedState, hasQualityProfiles, checkedEpisodes, tv.id, selectedQualityProfileId, selectedPriority, monitoringOption, toast, router]);
 
     const requestFullSeason = useCallback(async (seasonNumber: number) => {
         if (isSubmitting) return;
@@ -886,6 +895,7 @@ export function TvDetailClientNew({
                     seasonNumber,
                     episodeNumbers,
                     qualityProfileId: selectedQualityProfileId,
+                    priority: selectedPriority,
                     monitoringOption
                 })
             });
@@ -925,7 +935,7 @@ export function TvDetailClientNew({
         } finally {
             setIsSubmitting(false);
         }
-    }, [isSubmitting, requestsBlockedState, hasQualityProfiles, seasonEpisodes, loadSeasonEpisodes, tv.id, selectedQualityProfileId, monitoringOption, toast, router]);
+    }, [isSubmitting, requestsBlockedState, hasQualityProfiles, seasonEpisodes, loadSeasonEpisodes, tv.id, selectedQualityProfileId, selectedPriority, monitoringOption, toast, router]);
 
     const getCheckedCount = useCallback((seasonNumber: number) => checkedEpisodes[seasonNumber]?.size || 0, [checkedEpisodes]);
     const formatRating = useCallback((rating: number) => (rating ? rating.toFixed(1) : "N/A"), []);
@@ -1003,6 +1013,18 @@ export function TvDetailClientNew({
                         </Select>
                     </div>
 
+                    <div className="text-sm text-gray-300">
+                        <div className="mb-2 font-semibold">Request Priority</div>
+                        <AdaptiveSelect
+                            value={selectedPriority}
+                            onValueChange={(value) => setSelectedPriority(value as "low" | "normal" | "high")}
+                            disabled={isSubmitting}
+                            options={[...requestPriorityOptions]}
+                            placeholder="Select priority"
+                            className="w-full"
+                        />
+                    </div>
+
                     {status && (
                         <div className="text-sm text-gray-300 p-3 rounded-lg bg-white/5">
                             {status}
@@ -1074,6 +1096,17 @@ export function TvDetailClientNew({
                             </Select>
                         </div>
                     )}
+                    <div className="text-sm text-gray-300">
+                        <div className="mb-2 font-semibold">Request Priority</div>
+                        <AdaptiveSelect
+                            value={selectedPriority}
+                            onValueChange={(value) => setSelectedPriority(value as "low" | "normal" | "high")}
+                            disabled={isSubmitting}
+                            options={[...requestPriorityOptions]}
+                            placeholder="Select priority"
+                            className="w-full"
+                        />
+                    </div>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                         {seasons.map(season => {
                             const isSeasonAvailable = availableSeasonsState.includes(season.season_number);

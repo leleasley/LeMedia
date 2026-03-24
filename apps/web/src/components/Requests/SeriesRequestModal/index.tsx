@@ -63,6 +63,12 @@ const monitoringOptions: Array<{ value: MonitoringOption; label: string }> = [
   { value: "none", label: "None" }
 ];
 
+const requestPriorityOptions = [
+  { value: "high", label: "High priority" },
+  { value: "normal", label: "Normal priority" },
+  { value: "low", label: "Low priority" },
+] as const;
+
 function toMonitoringOption(value: string | null | undefined): MonitoringOption {
   const valid = monitoringOptions.some((option) => option.value === value);
   return valid ? (value as MonitoringOption) : "all";
@@ -107,6 +113,7 @@ export function SeriesRequestModal({
 }) {
   const [selectedQualityProfileId, setSelectedQualityProfileId] = useState<number>(defaultQualityProfileId);
   const [selectedMonitoringOption, setSelectedMonitoringOption] = useState<MonitoringOption>(toMonitoringOption(defaultMonitoringOption));
+  const [selectedPriority, setSelectedPriority] = useState<"low" | "normal" | "high">("normal");
   const [errorModal, setErrorModal] = useState<{ title: string; message: string } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitState, setSubmitState] = useState<"idle" | "loading" | "success" | "error">("idle");
@@ -185,6 +192,7 @@ export function SeriesRequestModal({
   useEffect(() => {
     if (!open) return;
     setSelectedMonitoringOption(toMonitoringOption(defaultMonitoringOption));
+    setSelectedPriority("normal");
   }, [open, defaultMonitoringOption]);
 
   useEffect(() => {
@@ -330,6 +338,7 @@ export function SeriesRequestModal({
         seasons,
         qualityProfileId: selectedQualityProfileId
       };
+      payload.priority = selectedPriority;
       if (isAdmin) {
         payload.monitoringOption = selectedMonitoringOption;
       }
@@ -517,6 +526,21 @@ export function SeriesRequestModal({
                 />
               </div>
             )}
+
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-sm font-semibold text-gray-200">
+                <span className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-amber-400 to-rose-400"></span>
+                Request Priority
+              </label>
+              <AdaptiveSelect
+                value={selectedPriority}
+                onValueChange={(value) => setSelectedPriority(value as "low" | "normal" | "high")}
+                disabled={isSubmitting}
+                options={[...requestPriorityOptions]}
+                placeholder="Select request priority"
+                className="w-full"
+              />
+            </div>
 
             {isAdmin && (
               <div className="space-y-2">

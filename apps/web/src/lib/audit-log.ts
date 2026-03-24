@@ -29,7 +29,12 @@ export type AuditAction =
   | "notification_reliability.delivery_attempts_cleared"
   | "media_share.created"
   | "media_share.deleted"
-  | "calendar.feed_rotated";
+  | "calendar.feed_rotated"
+  | "request.approved"
+  | "request.denied"
+  | "request.deleted"
+  | "request.marked_available"
+  | "request.priority_changed";
 
 export interface AuditLogEntry {
   action: AuditAction;

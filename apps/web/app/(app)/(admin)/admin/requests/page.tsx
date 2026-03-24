@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getUser } from "@/auth";
 import { listRequests, updateRequestMetadata } from "@/db";
 import { getMovie, getTv, tmdbImageUrl } from "@/lib/tmdb";
-import { approveRequest, denyRequest, deleteRequest, markRequestAvailable } from "./actions";
+import { approveRequest, denyRequest, deleteRequest, markRequestAvailable, setRequestPriorityAction } from "./actions";
 import { getImageProxyEnabled } from "@/lib/app-settings";
 import { AllRequestsClient } from "@/components/Admin/AllRequestsClient";
 import { getActiveDownloadTmdbIds, shouldForceDownloading } from "@/lib/download-status";
@@ -88,7 +88,8 @@ export default async function AllRequestsPage() {
           ...r,
           status,
           poster_path,
-          backdrop_path
+          backdrop_path,
+          vote_count: Number((r as { vote_count?: number }).vote_count ?? 0)
         };
       } catch {
         const availabilityStatus = r.request_type === "movie"
@@ -111,7 +112,8 @@ export default async function AllRequestsPage() {
           ...r,
           status,
           poster_path: null,
-          backdrop_path: null
+          backdrop_path: null,
+          vote_count: Number((r as { vote_count?: number }).vote_count ?? 0)
         };
       }
     })
@@ -132,6 +134,12 @@ export default async function AllRequestsPage() {
     const idx = statusPriority.indexOf(status);
     return idx === -1 ? 999 : idx;
   };
+  const priorityRank: Record<string, number> = { high: 3, normal: 2, low: 1 };
+  const higherPriority = (a: string | null | undefined, b: string | null | undefined): "low" | "normal" | "high" => {
+    const left = (a ?? "normal") as "low" | "normal" | "high";
+    const right = (b ?? "normal") as "low" | "normal" | "high";
+    return priorityRank[left] >= priorityRank[right] ? left : right;
+  };
 
   const mergedMap = new Map<string, (typeof detailedRequests)[number] & { mergedRequestIds?: string[] }>();
   for (const row of detailedRequests) {
@@ -150,7 +158,9 @@ export default async function AllRequestsPage() {
     mergedMap.set(key, {
       ...existing,
       id: String(existing.id),
+      priority: higherPriority(existing.priority, row.priority),
       status: betterStatus,
+      vote_count: Number(existing.vote_count ?? 0) + Number(row.vote_count ?? 0),
       status_reason: existing.status_reason ?? row.status_reason ?? null,
       poster_path: existing.poster_path ?? row.poster_path,
       backdrop_path: existing.backdrop_path ?? row.backdrop_path,
@@ -178,6 +188,7 @@ export default async function AllRequestsPage() {
         denyRequest={denyRequest}
         deleteRequest={deleteRequest}
         markRequestAvailable={markRequestAvailable}
+        setRequestPriorityAction={setRequestPriorityAction}
       />
     </section>
   );
