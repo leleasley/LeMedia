@@ -11,6 +11,7 @@ A comprehensive media request management platform for your homelab. LeMedia prov
 - Request movies with custom quality profiles (Radarr integration)
 - Track request status and history
 - Report media issues (quality, subtitles, audio problems)
+- **Request comments** — threaded discussion on individual requests (admin-only notes supported)
 - Favorites and watchlist functionality
 - Recently viewed tracking
 - Calendar view with upcoming releases and iCal feed support
@@ -18,10 +19,13 @@ A comprehensive media request management platform for your homelab. LeMedia prov
 ### Authentication & Security
 - **First-time setup wizard** - Guided admin account creation on fresh installs
 - **Local database authentication** - Username/password login with secure session management
+- **Password reset** - Forgot-password flow with time-limited single-use tokens
 - **Multi-factor authentication (MFA)** - TOTP/authenticator app support
 - **WebAuthn/Passkeys** - Passwordless login with FIDO2 security keys
 - **OIDC/SSO integration** - Connect with your existing identity provider
 - **Jellyfin authentication** - Login with Jellyfin credentials
+- **Google & GitHub OAuth** - Sign in with linked Google or GitHub accounts
+- **Telegram OAuth** - Sign in with Telegram via BotFather Web Login
 - **Header-based auth** - Authelia/Authentik/Caddy forward_auth support
 - **Cloudflare Turnstile** - Bot protection for login forms
 - **Rate limiting** - Protection against brute force attacks
@@ -33,6 +37,7 @@ A comprehensive media request management platform for your homelab. LeMedia prov
 - Per-user request limits with configurable time windows
 - Auto-approval rules engine
 - User permissions and preferences
+- API token management per user
 
 ### Notifications
 Comprehensive notification support for keeping users informed:
@@ -48,29 +53,75 @@ Comprehensive notification support for keeping users informed:
 - Web Push (PWA notifications)
 - **Telegram Bot** — interactive bot for requests, status checks, and admin actions (see [Telegram Bot](#telegram-bot))
 
+Notification events include: request approved/denied, media available, new episodes, **episode air reminders** (24 h and 1 h before air), followed media release dates, weekly digest, and system alerts.
+
+### Social & Community
+LeMedia has a full social layer for multi-user homelabs:
+
+- **User profiles** — bio, banner, display name, and privacy controls (public / friends / private)
+- **Friend system** — send/accept friend requests, view mutual friends, block users
+- **Following** — follow users to see their activity in your feed
+- **Social feed** — activity stream from friends and followed users
+- **Discover people** — find users with similar taste, new members, and trending profiles
+- **Mutual taste** — see shared media, genres, and list overlap with any friend
+- **Public profiles** ( `/u/[username]` ) — browsable stats, reviews, and lists per user
+
+### Custom Lists
+- Create named lists of movies and TV shows
+- Visibility tiers: private, friends-only, or public
+- Share via public URL slug
+- Cover image from TMDB media or custom upload
+- Mood and occasion tags
+- **Reactions** — emoji reactions (like, love, fire, mind-blown, clap)
+- **Comments** — threaded comments with @mentions
+- **Saves & remixes** — save others' lists or create a remixed copy
+- List pinning on your public profile
+
+### Reviews
+- 1–5 star ratings for movies and TV shows
+- Text reviews with spoiler warnings
+- Threaded review comments with @mentions
+- Browse public reviews from the community
+- **Letterboxd sync** — automatically import your Letterboxd reviews and star ratings
+
+### Taste Profile & Recommendations
+- **Taste profile quiz** — rate 18 genres, mood preferences, content preferences, and more
+- **Personalized recommendations** — movie and TV suggestions driven by your profile
+- Retake the quiz at any time to update your recommendations
+
 ### Integrations
-- **Sonarr**: Automatic TV show downloads and monitoring
-- **Radarr**: Automatic movie downloads and monitoring
-- **Jellyfin**: Media library integration and availability tracking
-- **TMDB**: Rich metadata and artwork
-- **OMDB**: Additional metadata support
-- **Prowlarr**: Indexer management (optional)
+- **Sonarr** — automatic TV show downloads and monitoring
+- **Radarr** — automatic movie downloads and monitoring
+- **Jellyfin** — media library integration and availability tracking (see [Jellyfin Availability](#jellyfin-availability))
+- **Plex** — media library integration and availability tracking (see [Plex Availability](#plex-availability))
+- **Trakt** — OAuth account linking and watchlist import
+- **Letterboxd** — automatic review and rating import via RSS
+- **TMDB** — rich metadata and artwork (primary source)
+- **OMDB** — additional metadata (optional)
+- **Rotten Tomatoes** — critic and audience scores displayed on media pages
+- **Prowlarr** — indexer management (optional)
 
 ### Jellyfin Availability
 LeMedia uses a local Jellyfin availability cache so TV seasons/episodes can load fast and accurately.
 
 See `docs/JELLYFIN_AVAILABILITY.md` for setup, how the cache works, and troubleshooting.
 
+### Plex Availability
+LeMedia also maintains a Plex availability cache, scanning your Plex libraries and indexing movies, episodes, and seasons for fast in-app status checks. Plex availability runs alongside Jellyfin — you can use either or both.
+
+Configuration is done in **Admin Settings → Media Servers**.
+
 ### Administration
 - Settings management for all services
 - User and permission management
 - Request approval workflows
 - Activity/audit logs and analytics
-- Job scheduling and monitoring
+- Job scheduling and monitoring (with per-job run history)
 - Share management for collaborative requests
 - Upgrade finder for quality improvements
 - Maintenance mode for planned downtime
 - Dashboard slider customization
+- Device management
 
 ## Requirements
 
@@ -81,7 +132,8 @@ See `docs/JELLYFIN_AVAILABILITY.md` for setup, how the cache works, and troubles
 - OMDB API key (optional, for additional metadata)
 - Sonarr instance with API key
 - Radarr instance with API key
-- Jellyfin server (optional, for library integration)
+- Jellyfin server (optional, for library integration and availability tracking)
+- Plex Media Server (optional, for library integration and availability tracking)
 - Reverse proxy (recommended for production)
 
 ## Quick Start
@@ -292,6 +344,21 @@ To enable Turnstile on login forms:
    TURNSTILE_SECRET_KEY=your-secret-key
    ```
 
+### Trakt Integration
+
+Trakt lets users link their Trakt account to import their watchlist and viewing history.
+
+1. Create a Trakt API app at [trakt.tv/oauth/applications](https://trakt.tv/oauth/applications).
+2. Set the redirect URI to: `https://your-domain.com/api/auth/trakt/callback`
+3. Add credentials in **Admin Settings → 3rd Party** and enable Trakt.
+4. Users link their account from **Settings → Profile → Linked Accounts**.
+
+### Letterboxd Integration
+
+Letterboxd reviews and star ratings can be automatically imported per-user.
+
+Users link their Letterboxd username from **Settings → Profile → Linked Accounts**. Once linked, a background job periodically imports their public reviews (via Letterboxd's RSS feed) into LeMedia as reviews including star ratings.
+
 ### Google & GitHub OAuth (Sign-in + Linked Accounts)
 
 LeMedia supports OAuth for Google and GitHub.
@@ -326,7 +393,7 @@ MFA can be enabled globally in Admin Settings > General. When enabled:
 
 ## Telegram Bot
 
-LeMedia includes an interactive Telegram bot that lets users request media, check their request status, and (for admins) manage services — all from Telegram.
+LeMedia includes an interactive Telegram bot that lets users request media, check their request status, track releases, and (for admins) manage services — all from Telegram.
 
 ### Features
 
@@ -338,6 +405,14 @@ LeMedia includes an interactive Telegram bot that lets users request media, chec
 | `/mystuff` | Everyone | View your recent requests and status |
 | `/trending` | Everyone | Browse what's popular (movies or TV) |
 | `/newstuff` | Everyone | See what was recently added to the library |
+| `/follow [title]` | Everyone | Follow a show or movie for release notifications |
+| `/following` | Everyone | View your followed media |
+| `/release [title]` | Everyone | Theatrical/premiere and digital release dates |
+| `/digitalrelease [title]` | Everyone | Digital release date for a title |
+| `/nextepisode [title]` | Everyone | Next episode air date with countdown |
+| `/watch [title]` | Everyone | Set a watch alert — get notified when media becomes available |
+| `/alerts` | Everyone | View your active watch alerts |
+| `/stopalerts` | Everyone | Remove all watch alerts |
 | `/services` | Admins | Check health of all configured services |
 | `/pending` | Admins | View pending requests with inline approve/deny buttons |
 | `/help` | Everyone | Show all commands |
@@ -403,8 +478,6 @@ Each user links independently — one bot serves all users.
 
 ---
 
-
-
 ### Episode Requests
 
 LeMedia supports requesting specific episodes from TV shows. This works by:
@@ -416,26 +489,35 @@ LeMedia supports requesting specific episodes from TV shows. This works by:
 
 LeMedia supports multiple authentication methods:
 
-1. **Local Auth**: Username/password stored in database with bcrypt hashing
-2. **MFA**: Optional TOTP verification after password
-3. **WebAuthn**: Passwordless login with security keys/passkeys
-4. **Google/GitHub OAuth**: Sign in with linked provider accounts
-5. **OIDC/SSO**: Redirect to external identity provider
-6. **Jellyfin**: Authenticate against your Jellyfin server
-7. **Header-based**: Trust headers from reverse proxy (Authelia/Authentik)
+1. **Local Auth**: Username/password stored in database with scrypt hashing
+2. **Password Reset**: Forgot-password flow with time-limited single-use tokens
+3. **MFA**: Optional TOTP verification after password
+4. **WebAuthn**: Passwordless login with security keys/passkeys
+5. **Google/GitHub OAuth**: Sign in with linked provider accounts
+6. **Telegram OAuth**: Sign in via Telegram BotFather Web Login
+7. **OIDC/SSO**: Redirect to external identity provider
+8. **Jellyfin**: Authenticate against your Jellyfin server
+9. **Header-based**: Trust headers from reverse proxy (Authelia/Authentik)
 
 Session is maintained via secure HTTP-only cookies with configurable expiry.
 
 ### Database
 
 LeMedia uses PostgreSQL for data persistence:
-- User profiles and preferences
-- Request history and status
-- Notification configurations
+- User profiles, preferences, and social graph (friends, follows, blocks)
+- Custom lists with items, reactions, and comments
+- Reviews and review comments
+- Taste profile and quiz data
+- Request history, status, and comments
+- Notification configurations and endpoints
 - Approval workflows
 - Analytics and audit logs
 - Session management
 - MFA secrets and WebAuthn credentials
+- Jellyfin and Plex availability caches
+- Telegram bot state and watch alerts
+- Background job history
+- Password reset tokens
 
 Migrations run automatically on startup.
 
@@ -444,20 +526,25 @@ Migrations run automatically on startup.
 - **Frontend**: Next.js 16 with App Router and React 19
 - **Backend**: Next.js API routes
 - **Database**: PostgreSQL with automatic migrations
-- **Authentication**: Multi-method (local, MFA, WebAuthn, Google/GitHub OAuth, OIDC, Jellyfin, headers)
+- **Cache / Rate Limiting**: Redis
+- **Authentication**: Multi-method (local, password reset, MFA, WebAuthn, Google/GitHub OAuth, Telegram OAuth, OIDC, Jellyfin, headers)
 - **Deployment**: Docker + Docker Compose
-- **Media Services**: Sonarr, Radarr, Jellyfin APIs
+- **Media Services**: Sonarr, Radarr, Jellyfin, Plex
+- **Metadata**: TMDB (primary), OMDB, Rotten Tomatoes
+- **External Integrations**: Trakt, Letterboxd, Prowlarr, Telegram Bot
 
 ## API
 
-LeMedia exposes a REST API at `/api/v1/*` for integration with other services. Authentication is required via session cookie or API token.
+LeMedia exposes a REST API at `/api/v1/*` for integration with other services. Authentication is required via session cookie or API token (passed as `Authorization: Bearer <token>` or the `x-api-key` header).
 
 Key endpoints:
-- `GET /api/v1/requests` - List requests
-- `POST /api/v1/request/movie` - Request a movie
-- `POST /api/v1/request/episode` - Request TV episodes
-- `GET /api/v1/calendar` - Get calendar events
-- `GET /api/health` - Health check endpoint
+- `GET /api/v1/requests` — List requests
+- `POST /api/v1/request/movie` — Request a movie
+- `POST /api/v1/request/episode` — Request TV episodes
+- `GET /api/v1/calendar` — Get calendar events
+- `GET /api/health` — Health check endpoint
+
+API tokens can be generated per-user in **Settings → Profile → API Tokens**.
 
 ## Support
 
