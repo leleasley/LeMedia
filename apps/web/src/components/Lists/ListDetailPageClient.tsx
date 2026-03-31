@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect, useMemo } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
+import { useToast } from "@/components/Providers/ToastProvider";
 import {
   ArrowLeft,
   Share2,
@@ -22,7 +22,8 @@ import {
   Star,
   Film,
   Tv,
-  LayoutGrid
+  LayoutGrid,
+  Users
 } from "lucide-react";
 import { HoverMediaCard } from "@/components/Media/HoverMediaCard";
 import { Modal } from "@/components/Common/Modal";
@@ -46,6 +47,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { csrfFetch } from "@/lib/csrf-client";
 import { MediaStatus } from "@/components/Common/StatusBadgeMini";
+import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 
 interface ListItem {
   id: number;
@@ -68,17 +70,41 @@ interface CustomList {
   name: string;
   description: string | null;
   isPublic: boolean;
+  visibility?: "private" | "friends" | "public";
   shareId: string;
   shareSlug?: string | null;
   mood?: string | null;
   occasion?: string | null;
   itemCount: number;
+  allowComments?: boolean;
+  allowReactions?: boolean;
+  allowRemix?: boolean;
   coverTmdbId?: number | null;
   coverMediaType?: "movie" | "tv" | null;
   customCoverImagePath?: string | null;
   customCoverImageSize?: number | null;
   customCoverImageMimeType?: string | null;
+  ownerUsername?: string;
+  accessRole?: "owner" | "editor" | "viewer";
+  isOwner?: boolean;
+  canEdit?: boolean;
+  collaboratorCount?: number;
   updatedAt?: string | null;
+}
+
+interface ListCollaborator {
+  userId: number;
+  username: string;
+  displayName: string | null;
+  role: "editor" | "viewer";
+  addedAt: string;
+}
+
+function unwrapApiData<T>(payload: any): T | null {
+  if (payload && typeof payload === "object" && "data" in payload) {
+    return payload.data as T;
+  }
+  return (payload ?? null) as T | null;
 }
 
 function SortableItem({
@@ -152,12 +178,15 @@ function SortableItem({
 export function ListDetailPageClient({
   listId,
   initialList,
+  collaborators: initialCollaborators,
   initialItems,
 }: {
   listId: number;
   initialList: CustomList;
+  collaborators: ListCollaborator[];
   initialItems: ListItem[];
 }) {
+  const toast = useToast();
   const router = useRouter();
   const [list, setList] = useState(initialList);
   const [items, setItems] = useState(initialItems);
@@ -177,6 +206,13 @@ export function ListDetailPageClient({
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [collaborators, setCollaborators] = useState(initialCollaborators);
+  const [collaboratorUsername, setCollaboratorUsername] = useState("");
+  const [collaboratorRole, setCollaboratorRole] = useState<"editor" | "viewer">("editor");
+  const [collaboratorError, setCollaboratorError] = useState<string | null>(null);
+  const [savingCollaborator, setSavingCollaborator] = useState(false);
+  const [updatingCollaboratorId, setUpdatingCollaboratorId] = useState<number | null>(null);
+  const [removingCollaboratorId, setRemovingCollaboratorId] = useState<number | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -282,7 +318,7 @@ export function ListDetailPageClient({
     setSaving(true);
     setEditError(null);
     try {
-      const payload: Record<string, unknown> = {
+      const updatePayload: Record<string, unknown> = {
         name: editName.trim(),
         description: editDescription.trim() || undefined,
         mood: editMood.trim() || undefined,
@@ -290,34 +326,32 @@ export function ListDetailPageClient({
         isPublic: editIsPublic,
       };
       if (editShareSlug.trim()) {
-        payload.shareSlug = normalizedShareSlug;
+        updatePayload.shareSlug = normalizedShareSlug;
       } else {
-        payload.shareSlug = null;
+        updatePayload.shareSlug = null;
       }
       
       const res = await csrfFetch(`/api/v1/lists/${listId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify(payload),
+        body: JSON.stringify(updatePayload),
       });
       
       const data = await res.json().catch(() => null);
+      const responsePayload = unwrapApiData<{ list?: CustomList }>(data);
       if (!res.ok) {
         setEditError(data?.error || "Failed to update list");
         return;
       }
       
-      if (data?.list) {
+      const nextList = responsePayload?.list;
+      if (nextList) {
         setList((prev) => ({
           ...prev,
-          name: data.list.name,
-          description: data.list.description,
-          isPublic: data.list.isPublic,
-          shareSlug: data.list.shareSlug ?? prev.shareSlug,
-          mood: data.list.mood ?? prev.mood,
-          occasion: data.list.occasion ?? prev.occasion,
-          updatedAt: data.list.updatedAt ?? prev.updatedAt,
+          ...nextList,
+          shareSlug: nextList.shareSlug ?? prev.shareSlug,
+          updatedAt: nextList.updatedAt ?? prev.updatedAt,
         }));
       }
       setEditOpen(false);
@@ -368,20 +402,18 @@ export function ListDetailPageClient({
       });
 
       const data = await res.json().catch(() => null);
+      const payload = unwrapApiData<{ list?: CustomList }>(data);
       if (!res.ok) {
         toast.error(data?.error || "Failed to upload cover image");
         return;
       }
 
-      if (data?.list) {
+      const nextList = payload?.list;
+      if (nextList) {
         setList((prev) => ({
           ...prev,
-          customCoverImagePath: data.list.customCoverImagePath,
-          customCoverImageSize: data.list.customCoverImageSize,
-          customCoverImageMimeType: data.list.customCoverImageMimeType,
-          coverTmdbId: data.list.coverTmdbId,
-          coverMediaType: data.list.coverMediaType,
-          updatedAt: data.list.updatedAt ?? prev.updatedAt,
+          ...nextList,
+          updatedAt: nextList.updatedAt ?? prev.updatedAt,
         }));
       }
     } catch (error) {
@@ -400,18 +432,18 @@ export function ListDetailPageClient({
       });
 
       const data = await res.json().catch(() => null);
+      const payload = unwrapApiData<{ list?: CustomList }>(data);
       if (!res.ok) {
         toast.error(data?.error || "Failed to remove cover image");
         return;
       }
 
-      if (data?.list) {
+      const nextList = payload?.list;
+      if (nextList) {
         setList((prev) => ({
           ...prev,
-          customCoverImagePath: data.list.customCoverImagePath,
-          customCoverImageSize: data.list.customCoverImageSize,
-          customCoverImageMimeType: data.list.customCoverImageMimeType,
-          updatedAt: data.list.updatedAt ?? prev.updatedAt,
+          ...nextList,
+          updatedAt: nextList.updatedAt ?? prev.updatedAt,
         }));
         toast.success("Cover image removed successfully");
       }
@@ -434,6 +466,7 @@ export function ListDetailPageClient({
         const data = await res.json().catch(() => null);
         throw new Error(data?.error || "Failed to delete list");
       }
+      toast.success("List deleted successfully");
       router.push("/lists");
     } catch {
       setDeleteError("Failed to delete list");
@@ -458,6 +491,102 @@ export function ListDetailPageClient({
   }, [list.customCoverImagePath, list.updatedAt, listId]);
 
   const heroCoverUrl = customCoverUrl || coverItem?.posterUrl || null;
+
+  const handleAddCollaborator = useCallback(async () => {
+    if (!list.isOwner || savingCollaborator || !collaboratorUsername.trim()) return;
+
+    try {
+      setSavingCollaborator(true);
+      setCollaboratorError(null);
+      const res = await csrfFetch(`/api/v1/lists/${listId}/collaborators`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ username: collaboratorUsername.trim(), role: collaboratorRole }),
+      });
+      const data = await res.json().catch(() => null);
+      const payload = unwrapApiData<{ collaborator?: ListCollaborator }>(data);
+      if (!res.ok || !payload?.collaborator) {
+        throw new Error(data?.error || "Failed to add collaborator");
+      }
+
+      setCollaborators((prev) => {
+        const next = prev.filter((entry) => entry.userId !== payload.collaborator!.userId);
+        next.push(payload.collaborator!);
+        return next.sort((left, right) => left.username.localeCompare(right.username));
+      });
+      setList((prev) => ({
+        ...prev,
+        collaboratorCount: collaborators.some((entry) => entry.userId === payload.collaborator!.userId)
+          ? prev.collaboratorCount ?? collaborators.length
+          : (prev.collaboratorCount ?? collaborators.length) + 1,
+      }));
+      setCollaboratorUsername("");
+      setCollaboratorRole("editor");
+      toast.success("Collaborator added");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to add collaborator";
+      setCollaboratorError(message);
+      toast.error(message);
+    } finally {
+      setSavingCollaborator(false);
+    }
+  }, [collaboratorRole, collaboratorUsername, collaborators, list.isOwner, listId, savingCollaborator, toast]);
+
+  const handleUpdateCollaboratorRole = useCallback(async (collaboratorUserId: number, role: "editor" | "viewer") => {
+    if (!list.isOwner || updatingCollaboratorId) return;
+
+    try {
+      setUpdatingCollaboratorId(collaboratorUserId);
+      const res = await csrfFetch(`/api/v1/lists/${listId}/collaborators`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ collaboratorUserId, role }),
+      });
+      const data = await res.json().catch(() => null);
+      const payload = unwrapApiData<{ collaborator?: ListCollaborator }>(data);
+      if (!res.ok || !payload?.collaborator) {
+        throw new Error(data?.error || "Failed to update collaborator");
+      }
+
+      setCollaborators((prev) => prev.map((entry) => entry.userId === collaboratorUserId ? payload.collaborator! : entry));
+      toast.success("Collaborator updated");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to update collaborator");
+    } finally {
+      setUpdatingCollaboratorId(null);
+    }
+  }, [list.isOwner, listId, toast, updatingCollaboratorId]);
+
+  const handleRemoveCollaborator = useCallback(async (collaboratorUserId: number) => {
+    if (!list.isOwner || removingCollaboratorId) return;
+
+    try {
+      setRemovingCollaboratorId(collaboratorUserId);
+      const res = await csrfFetch(`/api/v1/lists/${listId}/collaborators`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ collaboratorUserId }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to remove collaborator");
+      }
+
+      setCollaborators((prev) => prev.filter((entry) => entry.userId !== collaboratorUserId));
+      setList((prev) => ({
+        ...prev,
+        collaboratorCount: Math.max((prev.collaboratorCount ?? collaborators.length) - 1, 0),
+      }));
+      toast.success("Collaborator removed");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to remove collaborator");
+    } finally {
+      setRemovingCollaboratorId(null);
+    }
+  }, [collaborators.length, list.isOwner, listId, removingCollaboratorId, toast]);
 
   return (
     <div className="pb-12">
@@ -501,6 +630,18 @@ export function ListDetailPageClient({
                 )}
                 <span className="text-gray-600 text-xs">•</span>
                 <span className="text-gray-400 text-xs">{items.length} {items.length === 1 ? 'item' : 'items'}</span>
+                {list.ownerUsername && !list.isOwner && (
+                  <>
+                    <span className="text-gray-600 text-xs">•</span>
+                    <span className="text-gray-400 text-xs">Shared by @{list.ownerUsername}</span>
+                  </>
+                )}
+                {(list.collaboratorCount ?? 0) > 0 && (
+                  <>
+                    <span className="text-gray-600 text-xs">•</span>
+                    <span className="text-gray-400 text-xs">{list.collaboratorCount} collaborator{(list.collaboratorCount ?? 0) === 1 ? "" : "s"}</span>
+                  </>
+                )}
                 {list.updatedAt && (
                   <>
                     <span className="text-gray-600 text-xs">•</span>
@@ -533,10 +674,25 @@ export function ListDetailPageClient({
                   )}
                 </div>
               )}
+
+              {!list.isOwner && list.accessRole && (
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-gray-300">
+                  <Users className="h-3.5 w-3.5" />
+                  {list.accessRole === "editor" ? "You can edit this shared list" : "You can view this shared list"}
+                </div>
+              )}
             </div>
 
             {/* Social interactions bar */}
-            {list.isPublic && <ListSocialBar listId={listId} allowComments={true} allowReactions={true} allowRemix={true} isOwner={true} />}
+            {list.isPublic && (
+              <ListSocialBar
+                listId={listId}
+                allowComments={list.allowComments ?? true}
+                allowReactions={list.allowReactions ?? true}
+                allowRemix={list.allowRemix ?? true}
+                isOwner={Boolean(list.isOwner)}
+              />
+            )}
 
             <div className="flex flex-wrap items-start gap-2 lg:pt-7">
               {list.isPublic && (
@@ -548,24 +704,28 @@ export function ListDetailPageClient({
                   {copied ? "Copied" : "Share"}
                 </button>
               )}
-              <button
-                onClick={() => setEditOpen(true)}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white text-sm font-medium transition-colors border border-white/10"
-              >
-                <Settings className="w-4 h-4" />
-                Settings
-              </button>
-              <button
-                onClick={() => setEditMode(!editMode)}
-                className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                  editMode
-                    ? "bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/20"
-                    : "bg-white/5 hover:bg-white/10 border border-white/10 text-white"
-                }`}
-              >
-                {editMode ? <Check className="w-4 h-4" /> : <Edit2 className="w-4 h-4" />}
-                {editMode ? "Done" : "Manage Items"}
-              </button>
+              {list.isOwner && (
+                <button
+                  onClick={() => setEditOpen(true)}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white text-sm font-medium transition-colors border border-white/10"
+                >
+                  <Settings className="w-4 h-4" />
+                  Settings
+                </button>
+              )}
+              {list.canEdit && (
+                <button
+                  onClick={() => setEditMode(!editMode)}
+                  className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                    editMode
+                      ? "bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/20"
+                      : "bg-white/5 hover:bg-white/10 border border-white/10 text-white"
+                  }`}
+                >
+                  {editMode ? <Check className="w-4 h-4" /> : <Edit2 className="w-4 h-4" />}
+                  {editMode ? "Done" : "Manage Items"}
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -592,7 +752,7 @@ export function ListDetailPageClient({
               Browse Content
             </Link>
           </div>
-        ) : (
+        ) : list.canEdit ? (
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
@@ -611,6 +771,28 @@ export function ListDetailPageClient({
               </div>
             </SortableContext>
           </DndContext>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
+            {items.map((item) => (
+              <div
+                key={item.id}
+                className="transition-all duration-300"
+              >
+                <HoverMediaCard
+                  id={item.tmdbId}
+                  title={item.title}
+                  posterUrl={item.posterUrl}
+                  href={`/${item.mediaType}/${item.tmdbId}`}
+                  year={item.year}
+                  rating={item.rating}
+                  description={item.description}
+                  mediaType={item.mediaType}
+                  mediaStatus={item.mediaStatus}
+                  cardMode="requestable"
+                />
+              </div>
+            ))}
+          </div>
         )}
       </div>
 
@@ -720,6 +902,90 @@ export function ListDetailPageClient({
                   )}
                 </div>
               )}
+            </div>
+
+            <div className="pt-4 border-t border-white/10 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-medium text-white">Collaborators</h4>
+                  <p className="text-xs text-gray-400 mt-1">Invite people to co-curate this list or keep them view-only.</p>
+                </div>
+                <div className="text-xs text-gray-500">{collaborators.length} active</div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_140px_auto] gap-3">
+                <input
+                  type="text"
+                  value={collaboratorUsername}
+                  onChange={(e) => setCollaboratorUsername(e.target.value)}
+                  disabled={savingCollaborator}
+                  placeholder="Username"
+                  className="w-full px-4 py-2.5 rounded-lg bg-gray-800 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-colors disabled:opacity-60"
+                />
+                <AdaptiveSelect
+                  value={collaboratorRole}
+                  onValueChange={(value) => setCollaboratorRole(value as "editor" | "viewer")}
+                  disabled={savingCollaborator}
+                  options={[
+                    { value: "editor", label: "Editor" },
+                    { value: "viewer", label: "Viewer" },
+                  ]}
+                  triggerClassName="h-[46px] w-full rounded-lg bg-gray-800 border border-white/10 text-white focus:border-blue-500"
+                  aria-label="Select collaborator role"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddCollaborator}
+                  disabled={savingCollaborator || !collaboratorUsername.trim()}
+                  className="rounded-lg bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white transition-colors disabled:opacity-50"
+                >
+                  {savingCollaborator ? "Inviting..." : "Add"}
+                </button>
+              </div>
+
+              {collaboratorError && (
+                <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+                  {collaboratorError}
+                </div>
+              )}
+
+              <div className="space-y-2">
+                {collaborators.length === 0 ? (
+                  <div className="rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-sm text-gray-400">
+                    No collaborators yet.
+                  </div>
+                ) : (
+                  collaborators.map((collaborator) => (
+                    <div key={collaborator.userId} className="flex flex-col gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <div className="text-sm font-medium text-white">{collaborator.displayName || collaborator.username}</div>
+                        <div className="text-xs text-gray-400">@{collaborator.username} • added {new Date(collaborator.addedAt).toLocaleDateString()}</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <AdaptiveSelect
+                          value={collaborator.role}
+                          onValueChange={(value) => handleUpdateCollaboratorRole(collaborator.userId, value as "editor" | "viewer")}
+                          disabled={updatingCollaboratorId === collaborator.userId || removingCollaboratorId === collaborator.userId}
+                          options={[
+                            { value: "editor", label: "Editor" },
+                            { value: "viewer", label: "Viewer" },
+                          ]}
+                          triggerClassName="h-10 min-w-[110px] rounded-lg bg-gray-800 border border-white/10 px-3 py-2 text-sm text-white"
+                          aria-label={`Update role for ${collaborator.username}`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveCollaborator(collaborator.userId)}
+                          disabled={removingCollaboratorId === collaborator.userId || updatingCollaboratorId === collaborator.userId}
+                          className="rounded-lg bg-red-500/15 px-3 py-2 text-sm font-medium text-red-200 transition-colors hover:bg-red-500/25 disabled:opacity-60"
+                        >
+                          {removingCollaboratorId === collaborator.userId ? "Removing..." : "Remove"}
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
             
             {/* Cover Image Selection */}

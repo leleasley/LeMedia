@@ -9,9 +9,9 @@ import {
   getUserByOidcSub,
   getUserByUsername,
   getUserByUsernameInsensitive,
-  updateUserOidcLink,
-  createUserSession
+  updateUserOidcLink
 } from "@/db";
+import { createUserSession } from "@/db/sessions";
 import { createSessionToken } from "@/lib/session";
 import { ensureCsrfCookie, getCookieBase, getRequestContext, sanitizeRelativePath } from "@/lib/proxy";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
@@ -191,10 +191,12 @@ export async function GET(req: NextRequest) {
   const tokenValue = await createSessionToken({ username: user.username, groups: sessionGroups, maxAgeSeconds: sessionMaxAge, jti });
   const userAgent = req.headers.get("user-agent");
   const deviceLabel = summarizeUserAgent(userAgent);
+  const deviceId = req.cookies.get("lemedia_device_id")?.value || randomUUID();
   await createUserSession(user.id, jti, new Date(Date.now() + sessionMaxAge * 1000), {
     userAgent,
     deviceLabel,
-    ipAddress: ip
+    ipAddress: ip,
+    deviceId
   });
   const redirectTarget = popupRequested
     ? (() => {
@@ -205,6 +207,7 @@ export async function GET(req: NextRequest) {
     : new URL(from, base);
   const res = NextResponse.redirect(redirectTarget);
   res.cookies.set("lemedia_session", tokenValue, { ...cookieBase, maxAge: sessionMaxAge });
+  res.cookies.set("lemedia_device_id", deviceId, { ...cookieBase, maxAge: 60 * 60 * 24 * 365 });
   res.cookies.set("lemedia_flash", "", { ...cookieBase, maxAge: 0 });
   res.cookies.set("lemedia_flash_error", "", { ...cookieBase, maxAge: 0 });
   res.cookies.set("lemedia_flash", "login-success", { ...cookieBase, maxAge: 120 });

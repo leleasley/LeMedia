@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getActiveOidcProvider, getSetting, revokeSessionByJti } from "@/db";
+import { getActiveOidcProvider, getSetting } from "@/db";
+import { revokeSessionByJti } from "@/db/sessions";
 import { getCookieBase, getRequestContext, isSameOriginRequest } from "@/lib/proxy";
 import { isValidCsrfToken } from "@/lib/csrf";
 import { verifySessionToken } from "@/lib/session";

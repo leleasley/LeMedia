@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS notification_endpoint (
   type TEXT NOT NULL CHECK (type IN ('telegram','discord','email','webhook')),
   enabled BOOLEAN NOT NULL DEFAULT TRUE,
   is_global BOOLEAN NOT NULL DEFAULT FALSE,
-  events JSONB NOT NULL DEFAULT '["request_pending","request_submitted","request_denied","request_failed","request_already_exists","issue_reported"]'::jsonb,
+  events JSONB NOT NULL DEFAULT '["request_pending","request_submitted","request_denied","request_failed","request_already_exists","issue_reported","watch_party_invite","watch_party_join_request","watch_party_join_request_approved","watch_party_join_request_denied"]'::jsonb,
   config JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

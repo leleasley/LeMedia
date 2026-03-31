@@ -5,12 +5,12 @@ import { logger } from "@/lib/logger";
 import {
   createCustomList,
   getListsContainingMedia,
-  getUserByUsername,
-  listUserCustomLists,
-  upsertUser,
-} from "@/db";
+  listUserAccessibleLists,
+} from "@/db/lists";
+import { getUserByUsername, upsertUser } from "@/db";
 import { requireCsrf } from "@/lib/csrf";
 import { jsonResponseWithETag } from "@/lib/api-optimization";
+import { apiError, apiSuccess } from "@/lib/api-contract";
 
 const CreateListSchema = z.object({
   name: z.string().min(1).max(100),
@@ -34,7 +34,7 @@ async function resolveUserId() {
 export async function GET(req: NextRequest) {
   try {
     const { id: userId } = await resolveUserId();
-    const lists = await listUserCustomLists(userId);
+    const lists = await listUserAccessibleLists(userId);
     const tmdbIdRaw = req.nextUrl.searchParams.get("tmdbId");
     const mediaTypeRaw = req.nextUrl.searchParams.get("mediaType");
 
@@ -52,9 +52,9 @@ export async function GET(req: NextRequest) {
     return jsonResponseWithETag(req, { lists });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return apiError("Unauthorized", { status: 401 });
     }
-    return NextResponse.json({ error: "Unable to load lists" }, { status: 500 });
+    return apiError("Unable to load lists", { status: 500 });
   }
 }
 
@@ -76,15 +76,15 @@ export async function POST(req: NextRequest) {
       occasion: parsed.occasion,
     });
 
-    return NextResponse.json({ list }, { status: 201 });
+    return apiSuccess({ list }, { status: 201 });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return apiError("Unauthorized", { status: 401 });
     }
     if (err instanceof z.ZodError) {
       logger.warn("[lists] Invalid create list payload", { issues: err.issues });
-      return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+      return apiError("Invalid request", { status: 400 });
     }
-    return NextResponse.json({ error: "Unable to create list" }, { status: 500 });
+    return apiError("Unable to create list", { status: 500 });
   }
 }

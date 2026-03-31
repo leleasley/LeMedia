@@ -3,6 +3,7 @@ import { getPool, getSetting, insertJobHistory, listJobs, recordJobFailure, upda
 import { jobHandlers } from "./definitions";
 import { logger } from "@/lib/logger";
 import cronParser from "cron-parser";
+import { DEFAULT_APP_TIMEZONE } from "@/lib/app-timezone";
 
 let schedulerInterval: NodeJS.Timeout | null = null;
 const SCHEDULER_LOCK_ID = 94810234;
@@ -128,7 +129,11 @@ function normalizeJobTimezone(value?: string | null) {
 }
 
 function getJobTimezone() {
-  return normalizeJobTimezone(process.env.JOBS_TIMEZONE) || normalizeJobTimezone(process.env.TZ) || undefined;
+  return (
+    normalizeJobTimezone(process.env.APP_TIMEZONE) ||
+    normalizeJobTimezone(process.env.JOBS_TIMEZONE) ||
+    DEFAULT_APP_TIMEZONE
+  );
 }
 
 async function primeJobTimezoneFromSettings() {
@@ -238,11 +243,16 @@ function computeSimpleCronNextRun(schedule: string, now: Date): Date | null {
 
 export function computeNextRun(schedule: string, intervalSeconds: number, now = new Date()) {
   let nextRun = new Date(now.getTime() + intervalSeconds * 1000);
+  const tz = getJobTimezone();
   try {
-    const simpleNext = computeSimpleCronNextRun(schedule, now);
-    if (simpleNext) return simpleNext;
+    // Only use the fast simple-cron path when no timezone awareness is needed.
+    // When a timezone is configured (always true since we default to Europe/London),
+    // we must use the cron-parser so DST transitions are handled correctly.
+    if (!tz) {
+      const simpleNext = computeSimpleCronNextRun(schedule, now);
+      if (simpleNext) return simpleNext;
+    }
     const options: any = { currentDate: now };
-    const tz = getJobTimezone();
     if (tz) {
       options.tz = tz;
     }
@@ -416,17 +426,20 @@ async function schedulerTick() {
 export function startJobScheduler() {
   if (schedulerInterval || isBuildPhase || process.env.NODE_ENV === "test") return;
 
-  void primeJobTimezoneFromSettings();
+  void (async () => {
+    await primeJobTimezoneFromSettings();
 
-  logger.info("[Job] Scheduler starting — ticking every 60s, advisory lock ID: " + SCHEDULER_LOCK_ID);
+    logger.info("[Job] Scheduler starting — ticking every 60s, advisory lock ID: " + SCHEDULER_LOCK_ID);
 
-  // Run the first tick immediately so jobs start without delay
-  void schedulerTick();
+    // Run the first tick immediately so jobs start without delay.
+    // Timezone settings are primed first so cron evaluation uses the configured zone.
+    void schedulerTick();
 
-  // Then continue checking every 60 seconds
-  schedulerInterval = setInterval(schedulerTick, 60 * 1000);
+    // Then continue checking every 60 seconds.
+    schedulerInterval = setInterval(schedulerTick, 60 * 1000);
 
-  logger.info("[Job] Scheduler started");
+    logger.info("[Job] Scheduler started");
+  })();
 }
 
 export function stopJobScheduler() {

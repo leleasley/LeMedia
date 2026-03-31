@@ -653,6 +653,8 @@ export function ProfileSettings({
                     <input
                         id="profile-email"
                         type="email"
+                      autoComplete="email"
+                      autoCapitalize="none"
                         value={form.email}
                         onChange={e => updateField("email", e.target.value)}
                         placeholder="your.email@example.com"

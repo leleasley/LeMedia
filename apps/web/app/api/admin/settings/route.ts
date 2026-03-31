@@ -5,6 +5,7 @@ import { requireCsrf } from "@/lib/csrf";
 import { jsonResponseWithETag } from "@/lib/api-optimization";
 import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/rate-limit";
+import { DEFAULT_APP_TIMEZONE } from "@/lib/app-timezone";
 
 export async function GET(req: NextRequest) {
     const user = await requireAdmin();
@@ -34,7 +35,7 @@ export async function GET(req: NextRequest) {
     const enforceMfaAll = rawMfaAll === "1" || rawMfaAll === "true";
 
     const rawJobTimezone = await getSetting("jobs.timezone");
-    const envJobTimezone = process.env.JOBS_TIMEZONE || process.env.TZ || "";
+    const envJobTimezone = process.env.JOBS_TIMEZONE || process.env.APP_TIMEZONE || DEFAULT_APP_TIMEZONE;
     const jobTimezone = (rawJobTimezone ?? "").trim() || envJobTimezone.trim();
     const rawAppTimezone = await getSetting("app.timezone");
     const appTimezone = (rawAppTimezone ?? "").trim() || jobTimezone;

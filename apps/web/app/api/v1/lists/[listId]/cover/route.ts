@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/auth";
 import {
-  getCustomListById,
-  getUserByUsername,
+  getCustomListAccessForUser,
   removeCustomListCoverImage,
   setCustomListCoverImage,
-  upsertUser,
-} from "@/db";
+} from "@/db/lists";
+import { getUserByUsername, upsertUser } from "@/db";
 import { requireCsrf } from "@/lib/csrf";
 import { logger } from "@/lib/logger";
 import {
@@ -17,6 +16,7 @@ import {
   ALLOWED_IMAGE_TYPES,
   MAX_IMAGE_SIZE,
 } from "@/lib/file-upload";
+import { apiError, apiSuccess } from "@/lib/api-contract";
 
 async function resolveUserId() {
   const user = await getUser().catch(() => null);
@@ -46,13 +46,15 @@ export async function POST(
     const listIdNum = parseInt(listId, 10);
 
     if (isNaN(listIdNum)) {
-      return NextResponse.json({ error: "Invalid list ID" }, { status: 400 });
+      return apiError("Invalid list ID", { status: 400 });
     }
 
-    // Verify list exists and belongs to user
-    const list = await getCustomListById(listIdNum);
-    if (!list || Number(list.userId) !== userId) {
-      return NextResponse.json({ error: "List not found" }, { status: 404 });
+    const list = await getCustomListAccessForUser(listIdNum, userId);
+    if (!list) {
+      return apiError("List not found", { status: 404 });
+    }
+    if (!list.canEdit) {
+      return apiError("Forbidden", { status: 403 });
     }
 
     // Parse multipart form data
@@ -60,25 +62,15 @@ export async function POST(
     const file = formData.get("image") as File | null;
 
     if (!file) {
-      return NextResponse.json({ error: "No image provided" }, { status: 400 });
+      return apiError("No image provided", { status: 400 });
     }
 
     if (!file.type || !ALLOWED_IMAGE_TYPES.includes(file.type)) {
-      return NextResponse.json(
-        {
-          error: `Invalid image type. Allowed types: ${ALLOWED_IMAGE_TYPES.join(", ")}`,
-        },
-        { status: 400 }
-      );
+      return apiError(`Invalid image type. Allowed types: ${ALLOWED_IMAGE_TYPES.join(", ")}`, { status: 400 });
     }
 
     if (file.size > MAX_IMAGE_SIZE) {
-      return NextResponse.json(
-        {
-          error: `Image is too large. Maximum size: ${(MAX_IMAGE_SIZE / 1024 / 1024).toFixed(1)}MB`,
-        },
-        { status: 400 }
-      );
+      return apiError(`Image is too large. Maximum size: ${(MAX_IMAGE_SIZE / 1024 / 1024).toFixed(1)}MB`, { status: 400 });
     }
 
     // Read file buffer
@@ -88,7 +80,7 @@ export async function POST(
     // Validate image file
     const validation = validateImageFile(bufferData, file.type, file.size);
     if (!validation.valid) {
-      return NextResponse.json({ error: validation.error }, { status: 400 });
+      return apiError(validation.error || "Invalid image", { status: 400 });
     }
 
     // Ensure upload directory exists
@@ -101,14 +93,16 @@ export async function POST(
     const oldImagePath = list.customCoverImagePath;
 
     // Set the new image
-    await setCustomListCoverImage(
+    const updated = await setCustomListCoverImage(
       listIdNum,
       userId,
       uploadResult.path,
       uploadResult.size,
-      uploadResult.mimeType,
-      oldImagePath
+      uploadResult.mimeType
     );
+    if (!updated) {
+      return apiError("Forbidden", { status: 403 });
+    }
 
     // Delete old image if it exists
     if (oldImagePath) {
@@ -116,18 +110,18 @@ export async function POST(
     }
 
     // Return updated list
-    const updatedList = await getCustomListById(listIdNum);
+    const updatedList = await getCustomListAccessForUser(listIdNum, userId);
 
-    return NextResponse.json({
+    return apiSuccess({
       message: "Cover image uploaded successfully",
       list: updatedList,
     });
   } catch (err) {
     logger.error("[lists/cover POST] Error uploading cover image", err);
     if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return apiError("Unauthorized", { status: 401 });
     }
-    return NextResponse.json({ error: "Failed to upload cover image" }, { status: 500 });
+    return apiError("Failed to upload cover image", { status: 500 });
   }
 }
 
@@ -148,17 +142,22 @@ export async function DELETE(
     const listIdNum = parseInt(listId, 10);
 
     if (isNaN(listIdNum)) {
-      return NextResponse.json({ error: "Invalid list ID" }, { status: 400 });
+      return apiError("Invalid list ID", { status: 400 });
     }
 
-    // Verify list exists and belongs to user
-    const list = await getCustomListById(listIdNum);
-    if (!list || Number(list.userId) !== userId) {
-      return NextResponse.json({ error: "List not found" }, { status: 404 });
+    const list = await getCustomListAccessForUser(listIdNum, userId);
+    if (!list) {
+      return apiError("List not found", { status: 404 });
+    }
+    if (!list.canEdit) {
+      return apiError("Forbidden", { status: 403 });
     }
 
     // Remove the image from database and get the path
-    const { imagePath } = await removeCustomListCoverImage(listIdNum, userId);
+    const { ok, imagePath } = await removeCustomListCoverImage(listIdNum, userId);
+    if (!ok) {
+      return apiError("Forbidden", { status: 403 });
+    }
 
     // Delete the file
     if (imagePath) {
@@ -166,17 +165,17 @@ export async function DELETE(
     }
 
     // Return updated list
-    const updatedList = await getCustomListById(listIdNum);
+    const updatedList = await getCustomListAccessForUser(listIdNum, userId);
 
-    return NextResponse.json({
+    return apiSuccess({
       message: "Cover image removed successfully",
       list: updatedList,
     });
   } catch (err) {
     logger.error("[lists/cover DELETE] Error removing cover image", err);
     if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return apiError("Unauthorized", { status: 401 });
     }
-    return NextResponse.json({ error: "Failed to remove cover image" }, { status: 500 });
+    return apiError("Failed to remove cover image", { status: 500 });
   }
 }

@@ -8,9 +8,9 @@ import {
   getCredentialById,
   updateCredentialCounter,
   getUserById,
-  getSettingInt,
-  createUserSession
+  getSettingInt
 } from "@/db";
+import { createUserSession } from "@/db/sessions";
 import { createSessionToken } from "@/lib/session";
 import { getCookieBase, getRequestContext } from "@/lib/proxy";
 import { logAuditEvent } from "@/lib/audit-log";
@@ -106,15 +106,18 @@ export async function POST(req: NextRequest) {
       const token = await createSessionToken({ username: user.username, groups, maxAgeSeconds: sessionMaxAge, jti });
       const userAgent = req.headers.get("user-agent");
       const deviceLabel = summarizeUserAgent(userAgent);
+      const deviceId = req.cookies.get("lemedia_device_id")?.value || randomUUID();
       await createUserSession(user.id, jti, new Date(Date.now() + sessionMaxAge * 1000), {
         userAgent,
         deviceLabel,
-        ipAddress: ip
+        ipAddress: ip,
+        deviceId
       });
       
       const res = NextResponse.json({ verified: true });
       const cookieOptions = getCookieBase(ctx, true);
       res.cookies.set("lemedia_session", token, { ...cookieOptions, maxAge: sessionMaxAge });
+      res.cookies.set("lemedia_device_id", deviceId, { ...cookieOptions, maxAge: 60 * 60 * 24 * 365 });
       // Clear stale flash and set login success for toast display
       res.cookies.set("lemedia_flash", "", { ...cookieOptions, maxAge: 0 });
       res.cookies.set("lemedia_flash_error", "", { ...cookieOptions, maxAge: 0 });

@@ -17,7 +17,7 @@ import { sendDiscordWebhook } from "@/notifications/discord";
 import { sendEmail } from "@/notifications/email";
 import { sendTelegramMessage } from "@/notifications/telegram";
 import { sendGenericWebhook } from "@/notifications/webhook";
-import { getAppTimezone, isValidTimeZone } from "@/lib/app-timezone";
+import { getAppTimezone, getDateTimePartsInTimeZone, getIsoDateInTimeZone, isValidTimeZone, toUtcMsFromLocalDateTime } from "@/lib/app-timezone";
 import { deliverWithReliability, NotificationDeliverySkipError } from "@/notifications/reliability";
 
 type UpcomingEpisode = {
@@ -75,68 +75,8 @@ function getAirAnchorMinuteLocal() {
   return clampWhole(Number(process.env.EPISODE_AIR_REMINDER_LOCAL_MINUTE ?? "59"), 0, 59, 59);
 }
 
-function getDateTimePartsInTimeZone(utcMs: number, timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(new Date(utcMs));
-
-  const byType = new Map(parts.map((part) => [part.type, part.value]));
-
-  return {
-    year: Number(byType.get("year")),
-    month: Number(byType.get("month")),
-    day: Number(byType.get("day")),
-    hour: Number(byType.get("hour")),
-    minute: Number(byType.get("minute")),
-    second: Number(byType.get("second")),
-  };
-}
-
-function getTimeZoneOffsetMsAtUtc(utcMs: number, timeZone: string) {
-  const parts = getDateTimePartsInTimeZone(utcMs, timeZone);
-  const asUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
-  return asUtc - utcMs;
-}
-
-function toUtcMsFromLocalDateTime(
-  dateIso: string,
-  hourLocal: number,
-  minuteLocal: number,
-  timeZone: string
-): number {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateIso);
-  if (!match) return Number.NaN;
-
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const utcGuess = Date.UTC(year, month - 1, day, hourLocal, minuteLocal, 0);
-
-  const offset1 = getTimeZoneOffsetMsAtUtc(utcGuess, timeZone);
-  if (!Number.isFinite(offset1)) return Number.NaN;
-  let utcMs = utcGuess - offset1;
-
-  const offset2 = getTimeZoneOffsetMsAtUtc(utcMs, timeZone);
-  if (Number.isFinite(offset2) && offset2 !== offset1) {
-    utcMs = utcGuess - offset2;
-  }
-
-  return utcMs;
-}
-
 function toDateStringInTimeZone(utcMs: number, timeZone: string) {
-  const parts = getDateTimePartsInTimeZone(utcMs, timeZone);
-  const year = String(parts.year).padStart(4, "0");
-  const month = String(parts.month).padStart(2, "0");
-  const day = String(parts.day).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return getIsoDateInTimeZone(utcMs, timeZone);
 }
 
 function formatAirMoment(utcMs: number, timeZone: string) {

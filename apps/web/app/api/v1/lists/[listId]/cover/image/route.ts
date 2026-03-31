@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/auth";
 import { getCustomListById, getUserByUsername, upsertUser } from "@/db";
+import { getCustomListAccessForUser } from "@/db/lists";
 import { defaultListCoverDeps, handleListCoverImageRequest } from "@/lib/lists-cover-image";
 import { logger } from "@/lib/logger";
 
@@ -16,6 +17,10 @@ async function resolveOptionalUserId(): Promise<number | null> {
 export const coverImageRouteDeps = {
   getCustomListById,
   resolveOptionalUserId,
+  canViewList: async (listId: number, viewerId: number) => {
+    const access = await getCustomListAccessForUser(listId, viewerId);
+    return !!access;
+  },
   readFile: defaultListCoverDeps.readFile,
 };
 

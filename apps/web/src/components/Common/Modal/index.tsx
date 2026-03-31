@@ -71,7 +71,7 @@ export function Modal(props: {
         {/* Animated gradient border glow */}
         <div className="absolute -inset-[1px] rounded-t-3xl sm:rounded-3xl bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 opacity-60 blur-sm animate-pulse" />
         <div className="absolute -inset-[1px] rounded-t-3xl sm:rounded-3xl bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 opacity-30" />
-        
+
         {/* Main modal container */}
         <div
           ref={contentRef}
@@ -81,20 +81,20 @@ export function Modal(props: {
           {/* Background image ambient effect */}
           {backgroundImage && (
             <div className="absolute inset-0 overflow-hidden pointer-events-none">
-              <div 
+              <div
                 className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-15"
                 style={{ backgroundImage: `url(${backgroundImage})` }}
               />
               <div className="absolute inset-0 bg-gradient-to-b from-gray-900/70 via-gray-900/90 to-gray-900" />
             </div>
           )}
-          
+
           {/* Header with animated gradient */}
           <div className="relative px-5 sm:px-6 pt-5 sm:pt-6 pb-4 sm:pb-5">
             {/* Subtle animated background gradient */}
             <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 via-purple-500/5 to-pink-500/5" />
             <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
-            
+
             <div className="relative flex items-center justify-between gap-4">
               <h2 className="text-lg sm:text-xl font-semibold text-white tracking-tight">{title}</h2>
               <button
@@ -107,7 +107,7 @@ export function Modal(props: {
               </button>
             </div>
           </div>
-          
+
           {/* Content area */}
           <div className="relative px-5 sm:px-6 pb-5 sm:pb-6 overflow-y-auto max-h-[calc(85vh-80px)] sm:max-h-[calc(90vh-80px)]">
             <div className="text-sm text-gray-300">{children}</div>

@@ -495,22 +495,71 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
     [recentAdded, recentAddedPage]
   );
 
+  const heroBackdrop = useMemo(() => {
+    const requestBackdrop = recentRequests.find((item) => item.backdrop)?.backdrop;
+    if (requestBackdrop) return requestBackdrop;
+    const recommendationBackdrop = personalizedRecs.find((item) => item.backdropPath)?.backdropPath;
+    if (recommendationBackdrop) return `https://image.tmdb.org/t/p/w1280${recommendationBackdrop}`;
+    return null;
+  }, [personalizedRecs, recentRequests]);
+
+  const spotlightCard = useMemo(() => {
+    const resumeItem = continueWatching[0];
+    if (resumeItem) {
+      return {
+        eyebrow: "Resume tonight",
+        title: resumeItem.title,
+        description: `${Math.round(resumeItem.progress * 100)}% complete in Jellyfin`,
+        href: resumeItem.playUrl,
+        hrefLabel: "Resume playback",
+        external: true,
+        posterUrl: resumeItem.posterUrl,
+        icon: Play,
+      };
+    }
+
+    const recommendation = personalizedRecs[0];
+    if (recommendation) {
+      const mediaType = recommendation.mediaType ?? (recommendation.type.toLowerCase().includes("tv") ? "tv" : "movie");
+      const tmdbId = recommendation.tmdbId ?? Number.parseInt(recommendation.id, 10);
+      return {
+        eyebrow: "Fresh recommendation",
+        title: recommendation.name,
+        description: recommendation.reasoning ?? "Picked from your history and high-rated overlaps.",
+        href: tmdbId ? `/${mediaType}/${tmdbId}` : "/recommendations",
+        hrefLabel: tmdbId ? "Open title" : "Browse recommendations",
+        external: false,
+        posterUrl: recommendation.posterPath ? `https://image.tmdb.org/t/p/w342${recommendation.posterPath}` : null,
+        icon: Sparkles,
+      };
+    }
+
+    return null;
+  }, [continueWatching, personalizedRecs]);
+
+  const SpotlightIcon = spotlightCard?.icon;
+
   const name = displayName || username;
 
   return (
     <div className="space-y-6">
       {/* ─── Hero ─── */}
-      <section className="relative overflow-hidden rounded-2xl border border-white/[0.08] bg-gradient-to-br from-[#0c1629] via-[#0f1a33] to-[#0b1425] shadow-2xl shadow-black/40">
+      <section className="relative overflow-hidden rounded-[28px] border border-white/[0.08] bg-gradient-to-br from-[#0c1629] via-[#0f1a33] to-[#0b1425] shadow-2xl shadow-black/40">
+        {heroBackdrop && (
+          <div className="absolute inset-0 opacity-30">
+            <Image src={heroBackdrop} alt="Dashboard backdrop" fill className="object-cover" unoptimized priority />
+          </div>
+        )}
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-[#08111d]/92 via-[#0a1324]/86 to-[#0b1425]/94" />
         <div className="pointer-events-none absolute inset-0">
-          <div className="absolute -left-20 -top-20 h-72 w-72 rounded-full bg-sky-500/[0.07] blur-3xl" />
-          <div className="absolute -right-10 -top-10 h-56 w-56 rounded-full bg-indigo-500/[0.07] blur-3xl" />
-          <div className="absolute -bottom-16 left-1/3 h-48 w-48 rounded-full bg-purple-500/[0.05] blur-3xl" />
+          <div className="absolute -left-20 -top-20 h-72 w-72 rounded-full bg-sky-500/[0.10] blur-3xl" />
+          <div className="absolute -right-10 -top-10 h-56 w-56 rounded-full bg-indigo-500/[0.10] blur-3xl" />
+          <div className="absolute -bottom-16 left-1/3 h-48 w-48 rounded-full bg-amber-500/[0.07] blur-3xl" />
         </div>
 
-        <div className="relative p-5 md:p-6">
-          <div className="space-y-4">
-            {/* Top row: date + services + stats */}
-            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <div className="relative grid gap-5 p-5 md:p-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)] xl:items-stretch">
+          <div className="space-y-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
               <div className="flex flex-wrap items-center gap-2">
                 <p className="text-sm font-medium text-slate-400">{nowLine}</p>
                 {services.length > 0 && (
@@ -521,47 +570,66 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
                   </div>
                 )}
               </div>
-              {/* Inline stats */}
-              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-1.5">
-                <div className="flex items-center gap-1.5">
+              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/[0.08] bg-black/20 px-3 py-2 backdrop-blur-sm">
+                <div className="flex items-center gap-1.5 text-[11px] text-slate-300">
                   <Clock className="h-3 w-3 text-sky-400" />
-                  <span className="text-xs font-bold text-sky-200">{requestStats.pending}</span>
-                  <span className="text-[11px] text-slate-500">pending</span>
+                  <span className="font-bold text-sky-200">{requestStats.pending}</span>
+                  pending
                 </div>
                 <div className="h-3 w-px bg-white/[0.08] hidden xs:block" />
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 text-[11px] text-slate-300">
                   <CheckCircle2 className="h-3 w-3 text-emerald-400" />
-                  <span className="text-xs font-bold text-emerald-200">{requestStats.available}</span>
-                  <span className="text-[11px] text-slate-500">ready</span>
+                  <span className="font-bold text-emerald-200">{requestStats.available}</span>
+                  ready
                 </div>
                 <div className="h-3 w-px bg-white/[0.08] hidden xs:block" />
-                <div className="flex items-center gap-1.5">
-                  <CircleDashed className="h-3 w-3 text-purple-400" />
-                  <span className="text-xs font-bold text-purple-200">{requestStats.partial}</span>
-                  <span className="text-[11px] text-slate-500">partial</span>
-                </div>
-                <div className="h-3 w-px bg-white/[0.08] hidden xs:block" />
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 text-[11px] text-slate-300">
                   <Download className="h-3 w-3 text-amber-400" />
-                  <span className="text-xs font-bold text-amber-200">{requestStats.processing}</span>
-                  <span className="text-[11px] text-slate-500">active</span>
+                  <span className="font-bold text-amber-200">{requestStats.processing}</span>
+                  active
                 </div>
               </div>
             </div>
 
-            {/* Greeting */}
             <div>
-              <h1 className="text-2xl font-bold tracking-tight text-white md:text-3xl">
+              <p className="text-xs uppercase tracking-[0.28em] text-slate-500">Home base</p>
+              <h1 className="mt-2 text-3xl font-bold tracking-tight text-white md:text-4xl">
                 {greeting},{" "}
-                <span className="bg-gradient-to-r from-sky-300 to-indigo-300 bg-clip-text text-transparent">{name}</span>
+                <span className="bg-gradient-to-r from-sky-300 via-cyan-200 to-amber-200 bg-clip-text text-transparent">{name}</span>
               </h1>
-              <p className="mt-1.5 max-w-lg text-sm text-slate-400">
-                Keep track of your requests, continue where you left off, and discover something new to watch.
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300/80">
+                One place for tonight&apos;s next watch, the state of your requests, and the signal coming out of your library and friends feed.
               </p>
             </div>
 
-            {/* Quick nav */}
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:max-w-xl">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 backdrop-blur-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs uppercase tracking-[0.2em] text-slate-500">Resume</span>
+                  <Play className="h-4 w-4 text-sky-300/80" />
+                </div>
+                <p className="mt-3 text-3xl font-semibold text-white">{continueWatching.length}</p>
+                <p className="mt-1 text-sm text-slate-400">Titles waiting where you left off.</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 backdrop-blur-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs uppercase tracking-[0.2em] text-slate-500">Library flow</span>
+                  <Library className="h-4 w-4 text-emerald-300/80" />
+                </div>
+                <p className="mt-3 text-3xl font-semibold text-white">{recentAdded.length}</p>
+                <p className="mt-1 text-sm text-slate-400">Fresh additions in the latest sweep.</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 backdrop-blur-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs uppercase tracking-[0.2em] text-slate-500">Friends pulse</span>
+                  <Users className="h-4 w-4 text-indigo-300/80" />
+                </div>
+                <p className="mt-3 text-3xl font-semibold text-white">{friendsActivity.length}</p>
+                <p className="mt-1 text-sm text-slate-400">Recent social signals worth checking.</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:max-w-2xl">
               <HeroShortcut href="/discover" label="Discover" icon={Compass} />
               <HeroShortcut href="/movies" label="Movies" icon={Film} />
               <HeroShortcut href="/tv" label="TV Shows" icon={Tv} />
@@ -575,14 +643,85 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
                 disabled={surprisePicking}
                 className="inline-flex items-center gap-2 rounded-xl border border-amber-300/30 bg-amber-400/10 px-3 py-2 text-sm font-medium text-amber-100 transition-all hover:bg-amber-400/15 disabled:cursor-not-allowed disabled:opacity-70"
               >
-                {surprisePicking ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Sparkles className="h-4 w-4" />
-                )}
+                {surprisePicking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                 Surprise Me
               </button>
             </div>
+          </div>
+
+          <div className="rounded-[24px] border border-white/10 bg-black/25 p-4 backdrop-blur-xl">
+            {spotlightCard ? (
+              <div className="flex h-full flex-col">
+                <div className="flex items-center gap-2 text-xs uppercase tracking-[0.24em] text-slate-500">
+                  {SpotlightIcon ? <SpotlightIcon className="h-3.5 w-3.5" /> : null}
+                  {spotlightCard.eyebrow}
+                </div>
+                <div className="mt-4 flex gap-4">
+                  <div className="relative h-32 w-24 shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+                    {spotlightCard.posterUrl ? (
+                      <Image src={spotlightCard.posterUrl} alt={spotlightCard.title} fill className="object-cover" unoptimized />
+                    ) : (
+                      <div className="absolute inset-0 bg-gradient-to-br from-slate-800 to-slate-950" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h2 className="text-xl font-semibold text-white">{spotlightCard.title}</h2>
+                    <p className="mt-2 text-sm leading-6 text-slate-300/80">{spotlightCard.description}</p>
+                    {spotlightCard.external ? (
+                      <a
+                        href={spotlightCard.href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-4 inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-white/10"
+                      >
+                        {spotlightCard.hrefLabel}
+                        <ArrowUpRight className="h-4 w-4" />
+                      </a>
+                    ) : (
+                      <PrefetchLink
+                        href={spotlightCard.href}
+                        className="mt-4 inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-white/10"
+                      >
+                        {spotlightCard.hrefLabel}
+                        <ArrowUpRight className="h-4 w-4" />
+                      </PrefetchLink>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-5 grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Watch pace</p>
+                    <p className="mt-2 text-2xl font-semibold text-white">{watchStats?.moviesThisWeek ?? 0} / {watchStats?.episodesThisWeek ?? 0}</p>
+                    <p className="mt-1 text-xs text-slate-400">Movies and episodes this week.</p>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Recommendations</p>
+                    <p className="mt-2 text-2xl font-semibold text-white">{personalizedRecs.length}</p>
+                    <p className="mt-1 text-xs text-slate-400">Personal picks currently queued.</p>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Hours watched</p>
+                    <p className="mt-2 text-2xl font-semibold text-white">{watchStats?.totalHoursWatched?.toFixed(0) ?? "0"}</p>
+                    <p className="mt-1 text-xs text-slate-400">Total time tracked in Jellyfin.</p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex h-full flex-col justify-between rounded-[20px] border border-dashed border-white/10 bg-white/[0.03] p-5">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Spotlight</p>
+                  <h2 className="mt-3 text-xl font-semibold text-white">Build your signal</h2>
+                  <p className="mt-2 text-sm leading-6 text-slate-300/80">
+                    Use requests, recommendations, and Jellyfin watch history to turn this card into a live &quot;what next&quot; control panel.
+                  </p>
+                </div>
+                <PrefetchLink href="/discover" className="mt-5 inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-white/10">
+                  Explore the catalog
+                  <ArrowUpRight className="h-4 w-4" />
+                </PrefetchLink>
+              </div>
+            )}
           </div>
         </div>
       </section>

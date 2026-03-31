@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -28,6 +28,8 @@ import {
   SortAsc,
   Sparkles,
   FolderOpen,
+  ListChecks,
+  Users
 } from "lucide-react";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { CreateListModal } from "./CreateListModal";
@@ -50,6 +52,18 @@ interface CustomList {
   customCoverImagePath?: string | null;
   customCoverImageSize?: number | null;
   customCoverImageMimeType?: string | null;
+  ownerUsername?: string;
+  accessRole?: "owner" | "editor" | "viewer";
+  isOwner?: boolean;
+  canEdit?: boolean;
+  collaboratorCount?: number;
+}
+
+function unwrapApiData<T>(payload: any): T | null {
+  if (payload && typeof payload === "object" && "data" in payload) {
+    return payload.data as T;
+  }
+  return (payload ?? null) as T | null;
 }
 
 type SortOption = "updated" | "created" | "name" | "items";
@@ -93,13 +107,29 @@ export function ListsPageClient({ imageProxyEnabled }: { imageProxyEnabled: bool
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortOption>("updated");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
+  const [activeTab, setActiveTab] = useState<"mine" | "collab">("mine");
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
+  const sortMenuRef = useRef<HTMLDivElement | null>(null);
+  const activeMenuRef = useRef<HTMLDivElement | null>(null);
+
+  const openCreateModal = useCallback(() => setCreateModalOpen(true), []);
+
+  const closeCreateModal = useCallback(() => setCreateModalOpen(false), []);
 
   useEffect(() => {
-    const handleOpenCreateModal = () => setCreateModalOpen(true);
-    window.addEventListener("openCreateListModal", handleOpenCreateModal);
-    return () => window.removeEventListener("openCreateListModal", handleOpenCreateModal);
-  }, []);
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (sortMenuOpen && sortMenuRef.current && !sortMenuRef.current.contains(target)) {
+        setSortMenuOpen(false);
+      }
+      if (activeMenu !== null && activeMenuRef.current && !activeMenuRef.current.contains(target)) {
+        setActiveMenu(null);
+      }
+    };
+
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [activeMenu, sortMenuOpen]);
 
   const fetchLists = useCallback(async () => {
     try {
@@ -143,7 +173,13 @@ export function ListsPageClient({ imageProxyEnabled }: { imageProxyEnabled: bool
   }, [fetchLists]);
 
   const filteredAndSorted = useMemo(() => {
-    let result = [...lists];
+    let result = lists.filter((l) => {
+      if (activeTab === "collab") {
+        return l.isOwner === false;
+      }
+      return l.isOwner !== false;
+    });
+
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter(
@@ -167,7 +203,7 @@ export function ListsPageClient({ imageProxyEnabled }: { imageProxyEnabled: bool
       }
     });
     return result;
-  }, [lists, searchQuery, sortBy]);
+  }, [activeTab, lists, searchQuery, sortBy]);
 
   const totalItems = useMemo(() => lists.reduce((s, l) => s + l.itemCount, 0), [lists]);
   const publicCount = useMemo(() => lists.filter((l) => l.isPublic).length, [lists]);
@@ -212,9 +248,10 @@ export function ListsPageClient({ imageProxyEnabled }: { imageProxyEnabled: bool
         const data = await res.json().catch(() => null);
         throw new Error(data?.error || "Failed to update list");
       }
-      const updatedList = await res.json();
+      const raw = await res.json().catch(() => null);
+      const updatedList = unwrapApiData<{ list?: CustomList }>(raw);
       setLists((prev) =>
-        prev.map((l) => (l.id === editTarget.id ? updatedList.list : l))
+        prev.map((l) => (l.id === editTarget.id && updatedList?.list ? updatedList.list : l))
       );
       setEditTarget(null);
       toast.success("List updated successfully");
@@ -241,9 +278,10 @@ export function ListsPageClient({ imageProxyEnabled }: { imageProxyEnabled: bool
         const data = await res.json().catch(() => null);
         throw new Error(data?.error || "Failed to update list");
       }
-      const updatedList = await res.json();
+      const raw = await res.json().catch(() => null);
+      const updatedList = unwrapApiData<{ list?: CustomList }>(raw);
       setLists((prev) =>
-        prev.map((l) => (l.id === list.id ? updatedList.list : l))
+        prev.map((l) => (l.id === list.id && updatedList?.list ? updatedList.list : l))
       );
       setActiveMenu(null);
       toast.success(`List is now ${!list.isPublic ? "public" : "private"}`);
@@ -274,11 +312,12 @@ export function ListsPageClient({ imageProxyEnabled }: { imageProxyEnabled: bool
 
   // ── Context menu dropdown (shared between views) ───────────────────
   const renderContextMenu = (list: CustomList) => (
-    <div className="relative z-30">
+    <div className="relative z-30" ref={activeMenu === list.id ? activeMenuRef : undefined}>
       <button
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
+          setSortMenuOpen(false);
           setActiveMenu(activeMenu === list.id ? null : list.id);
         }}
         className={`p-1.5 rounded-lg transition-all ${
@@ -291,9 +330,7 @@ export function ListsPageClient({ imageProxyEnabled }: { imageProxyEnabled: bool
       </button>
 
       {activeMenu === list.id && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setActiveMenu(null)} />
-          <div className="absolute right-0 top-full mt-1 z-50 w-52 bg-gray-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl shadow-black/40 overflow-hidden">
+          <div className="absolute right-0 top-full mt-1 z-50 w-52 max-h-[70vh] overflow-y-auto bg-gray-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl shadow-black/40">
             <button
               onClick={() => {
                 setEditTarget(list);
@@ -311,17 +348,19 @@ export function ListsPageClient({ imageProxyEnabled }: { imageProxyEnabled: bool
             >
               <ExternalLink className="w-3.5 h-3.5" /> Open
             </button>
-            <button
-              onClick={() => handleTogglePublic(list)}
-              disabled={updatingVisibility === list.id}
-              className="flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-gray-300 hover:bg-white/5 transition-colors w-full text-left border-t border-white/5 disabled:opacity-60"
-            >
-              {list.isPublic ? (
-                <><EyeOff className="w-3.5 h-3.5" /> Make Private</>
-              ) : (
-                <><Eye className="w-3.5 h-3.5" /> Make Public</>
-              )}
-            </button>
+            {list.isOwner && (
+              <button
+                onClick={() => handleTogglePublic(list)}
+                disabled={updatingVisibility === list.id}
+                className="flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-gray-300 hover:bg-white/5 transition-colors w-full text-left border-t border-white/5 disabled:opacity-60"
+              >
+                {list.isPublic ? (
+                  <><EyeOff className="w-3.5 h-3.5" /> Make Private</>
+                ) : (
+                  <><Eye className="w-3.5 h-3.5" /> Make Public</>
+                )}
+              </button>
+            )}
             {list.isPublic && (
               <button
                 onClick={() => copyShareLink(list)}
@@ -334,14 +373,19 @@ export function ListsPageClient({ imageProxyEnabled }: { imageProxyEnabled: bool
                 )}
               </button>
             )}
-            <button
-              onClick={() => { setDeleteTarget(list); setActiveMenu(null); }}
-              className="flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-red-400 hover:bg-red-500/10 transition-colors w-full text-left border-t border-white/5"
-            >
-              <Trash2 className="w-3.5 h-3.5" /> Delete
-            </button>
+            {list.isOwner && (
+              <button
+                onClick={() => {
+                  setDeleteTarget(list);
+                  setSortMenuOpen(false);
+                  setActiveMenu(null);
+                }}
+                className="flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-red-400 hover:bg-red-500/10 transition-colors w-full text-left border-t border-white/5"
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Delete
+              </button>
+            )}
           </div>
-        </>
       )}
     </div>
   );
@@ -357,7 +401,34 @@ export function ListsPageClient({ imageProxyEnabled }: { imageProxyEnabled: bool
     );
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-8 pb-12">
+    <div className="max-w-7xl mx-auto px-4 sm:px-8 pb-12 pt-6">
+      <section className="relative overflow-hidden rounded-2xl bg-[#09111e]/80 border border-[#1e293b]/80 p-6 sm:p-8 mb-6 shadow-sm">
+        <div className="absolute top-0 right-0 p-12 opacity-5 pointer-events-none">
+          <ListChecks className="w-64 h-64 text-blue-400 rotate-12" />
+        </div>
+
+        <div className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+          <div className="flex items-center gap-5">
+            <div className="flex items-center justify-center w-14 h-14 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400">
+              <ListChecks className="w-7 h-7" />
+            </div>
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">Your Lists</h1>
+              <p className="text-sm text-blue-200/60 mt-1 max-w-sm">
+                Organize your favorites, plan watch nights, and share curated collections.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={openCreateModal}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium px-5 py-2.5 transition-colors shadow-sm whitespace-nowrap"
+          >
+            <Plus className="w-4 h-4" />
+            New List
+          </button>
+        </div>
+      </section>
+
       {/* ── Loading ─────────────────────────────────────────────────── */}
       {loading ? (
         <div className="space-y-6 pt-2">
@@ -407,8 +478,8 @@ export function ListsPageClient({ imageProxyEnabled }: { imageProxyEnabled: bool
           </p>
 
           <button
-            onClick={() => setCreateModalOpen(true)}
-            className="group inline-flex items-center gap-2.5 px-7 py-3.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl font-semibold text-sm shadow-xl shadow-indigo-500/20 transition-all hover:shadow-indigo-500/30 active:scale-[0.98]"
+            onClick={openCreateModal}
+            className="group inline-flex items-center gap-2.5 px-7 py-3.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-semibold text-sm shadow-sm transition-all active:scale-[0.98]"
           >
             <Plus className="w-4.5 h-4.5 group-hover:rotate-90 transition-transform duration-300" />
             Create Your First List
@@ -417,20 +488,48 @@ export function ListsPageClient({ imageProxyEnabled }: { imageProxyEnabled: bool
       ) : (
         /* ── Main Content ───────────────────────────────────────────── */
         <div className="space-y-6 pt-1">
-          {/* Stats chips */}
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <span className="px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/[0.06] text-gray-400">
-              {lists.length} {lists.length === 1 ? "list" : "lists"}
-            </span>
-            <span className="px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/[0.06] text-gray-400">
-              {totalItems} {totalItems === 1 ? "item" : "items"}
-            </span>
-            {publicCount > 0 && (
-              <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/15 text-emerald-400">
-                <Globe className="w-3 h-3 inline -mt-0.5 mr-1" />
-                {publicCount} public
+          {/* Tabs & Stats */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-1 bg-white/[0.04] p-1 rounded-lg border border-white/[0.06]">
+              <button
+                onClick={() => setActiveTab("mine")}
+                className={`flex items-center gap-2 px-4 py-2 rounded-md transition-all text-sm font-medium ${
+                  activeTab === "mine"
+                    ? "bg-white/10 text-white shadow-sm"
+                    : "text-gray-400 hover:text-gray-200 hover:bg-white/5"
+                }`}
+              >
+                <List className="w-4 h-4" />
+                My Lists
+              </button>
+              <button
+                onClick={() => setActiveTab("collab")}
+                className={`flex items-center gap-2 px-4 py-2 rounded-md transition-all text-sm font-medium ${
+                  activeTab === "collab"
+                    ? "bg-white/10 text-white shadow-sm"
+                    : "text-gray-400 hover:text-gray-200 hover:bg-white/5"
+                }`}
+              >
+                <Users className="w-4 h-4" />
+                Collaborations
+              </button>
+            </div>
+
+            {/* Stats chips */}
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/[0.06] text-gray-400">
+                {lists.length} {lists.length === 1 ? "list" : "lists"}
               </span>
-            )}
+              <span className="px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/[0.06] text-gray-400">
+                {totalItems} {totalItems === 1 ? "item" : "items"}
+              </span>
+              {publicCount > 0 && (
+                <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/15 text-emerald-400">
+                  <Globe className="w-3 h-3 inline -mt-0.5 mr-1" />
+                  {publicCount} public
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Toolbar */}
@@ -449,18 +548,19 @@ export function ListsPageClient({ imageProxyEnabled }: { imageProxyEnabled: bool
 
             <div className="flex items-center gap-2">
               {/* Sort dropdown */}
-              <div className="relative">
+              <div className="relative" ref={sortMenuRef}>
                 <button
-                  onClick={() => setSortMenuOpen(!sortMenuOpen)}
+                  onClick={() => {
+                    setActiveMenu(null);
+                    setSortMenuOpen(!sortMenuOpen);
+                  }}
                   className="inline-flex items-center gap-2 px-3 py-2 text-sm bg-white/[0.04] border border-white/[0.08] rounded-lg text-gray-400 hover:text-white hover:border-white/15 transition-all"
                 >
                   <ArrowUpDown className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">{sortLabels[sortBy].label}</span>
                 </button>
                 {sortMenuOpen && (
-                  <>
-                    <div className="fixed inset-0 z-10" onClick={() => setSortMenuOpen(false)} />
-                    <div className="absolute right-0 top-full mt-1 z-20 w-48 bg-gray-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden">
+                    <div className="absolute right-0 top-full mt-1 z-20 w-48 max-h-[60vh] overflow-y-auto bg-gray-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl">
                       {(Object.keys(sortLabels) as SortOption[]).map((key) => (
                         <button
                           key={key}
@@ -476,7 +576,6 @@ export function ListsPageClient({ imageProxyEnabled }: { imageProxyEnabled: bool
                         </button>
                       ))}
                     </div>
-                  </>
                 )}
               </div>
 
@@ -623,27 +722,31 @@ export function ListsPageClient({ imageProxyEnabled }: { imageProxyEnabled: bool
       )}
 
       {/* ── Modals ────────────────────────────────────────────────── */}
-      <CreateListModal
-        open={createModalOpen}
-        onClose={() => setCreateModalOpen(false)}
-        onCreated={(list) => {
-          setLists((prev) => [
-            {
-              ...list,
-              description: null,
-              isPublic: list.isPublic ?? false,
-              shareSlug: list.shareSlug ?? null,
-              coverTmdbId: null,
-              coverMediaType: null,
-              itemCount: 0,
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            } as CustomList,
-            ...prev,
-          ]);
-          void fetchLists();
-        }}
-      />
+      {createModalOpen && (
+        <CreateListModal
+          onClose={closeCreateModal}
+          onCreated={(list) => {
+            setSortMenuOpen(false);
+            setActiveMenu(null);
+            closeCreateModal();
+            setLists((prev) => [
+              {
+                ...list,
+                description: null,
+                isPublic: list.isPublic ?? false,
+                shareSlug: list.shareSlug ?? null,
+                coverTmdbId: null,
+                coverMediaType: null,
+                itemCount: 0,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              } as CustomList,
+              ...prev,
+            ]);
+            void fetchLists();
+          }}
+        />
+      )}
 
       {/* Edit Modal */}
       <Modal
@@ -655,7 +758,7 @@ export function ListsPageClient({ imageProxyEnabled }: { imageProxyEnabled: bool
         }}
         title="Edit List"
       >
-        <div className="space-y-4">
+        <div className="space-y-5 p-1">
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">Name</label>
             <input
@@ -663,7 +766,7 @@ export function ListsPageClient({ imageProxyEnabled }: { imageProxyEnabled: bool
               value={editName}
               onChange={(e) => setEditName(e.target.value)}
               disabled={editing}
-              className="w-full px-4 py-2.5 rounded-lg bg-gray-800 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition-colors disabled:opacity-60"
+              className="w-full px-4 py-3 rounded-xl bg-gray-900 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all disabled:opacity-60"
               placeholder="List name"
             />
           </div>
@@ -673,23 +776,23 @@ export function ListsPageClient({ imageProxyEnabled }: { imageProxyEnabled: bool
               value={editDescription}
               onChange={(e) => setEditDescription(e.target.value)}
               disabled={editing}
-              rows={3}
-              className="w-full px-4 py-2.5 rounded-lg bg-gray-800 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition-colors resize-none disabled:opacity-60"
+              rows={4}
+              className="w-full px-4 py-3 rounded-xl bg-gray-900 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all resize-none disabled:opacity-60"
               placeholder="Optional description"
             />
           </div>
           {editError && (
-            <div className="flex gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2">
-              <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
-              <p className="text-xs text-red-200">{editError}</p>
+            <div className="flex gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3">
+              <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
+              <p className="text-sm text-red-200">{editError}</p>
             </div>
           )}
-          <div className="flex items-center justify-end gap-3 pt-2">
+          <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/5">
             <button
               type="button"
               onClick={() => { if (editing) return; setEditTarget(null); setEditError(null); }}
               disabled={editing}
-              className="px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-white text-sm transition-colors disabled:opacity-60"
+              className="px-5 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white text-sm font-medium transition-colors disabled:opacity-60"
             >
               Cancel
             </button>
@@ -697,7 +800,7 @@ export function ListsPageClient({ imageProxyEnabled }: { imageProxyEnabled: bool
               type="button"
               onClick={handleEdit}
               disabled={editing || !editName.trim()}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {editing ? "Saving..." : "Save Changes"}
             </button>
@@ -715,23 +818,23 @@ export function ListsPageClient({ imageProxyEnabled }: { imageProxyEnabled: bool
         }}
         title="Delete list"
       >
-        <div className="space-y-4">
+        <div className="space-y-5 p-1">
           <p className="text-sm text-gray-300">
             Are you sure you want to delete <span className="text-white font-semibold">{deleteTarget?.name}</span>?
             This cannot be undone.
           </p>
           {deleteError && (
-            <div className="flex gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2">
-              <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
-              <p className="text-xs text-red-200">{deleteError}</p>
+            <div className="flex gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3">
+              <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
+              <p className="text-sm text-red-200">{deleteError}</p>
             </div>
           )}
-          <div className="flex items-center justify-end gap-3 pt-2">
+          <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/5">
             <button
               type="button"
               onClick={() => { if (deleting) return; setDeleteTarget(null); setDeleteError(null); }}
               disabled={deleting}
-              className="px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-white text-sm transition-colors disabled:opacity-60"
+              className="px-5 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white text-sm font-medium transition-colors disabled:opacity-60"
             >
               Cancel
             </button>
@@ -739,7 +842,7 @@ export function ListsPageClient({ imageProxyEnabled }: { imageProxyEnabled: bool
               type="button"
               onClick={() => deleteTarget && handleDelete(deleteTarget.id)}
               disabled={deleting}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white text-sm font-medium transition-colors shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {deleting ? "Deleting..." : "Delete"}
             </button>

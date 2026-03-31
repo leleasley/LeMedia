@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/auth";
-import { getUserById, listUserSessions, revokeSessionByJtiForUser, deleteUserSessionByJtiForUser } from "@/db";
+import { getUserById } from "@/db";
+import { deleteUserSessionByJtiForUser, listUserSessions, revokeSessionByJtiForUser } from "@/db/sessions";
 import { requireCsrf } from "@/lib/csrf";
 import { logAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/rate-limit";

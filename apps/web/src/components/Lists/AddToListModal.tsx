@@ -7,6 +7,7 @@ import { CreateListModal } from "./CreateListModal";
 import { csrfFetch } from "@/lib/csrf-client";
 import { mutate as globalMutate } from "swr";
 import { triggerSocialFeedRefresh } from "@/lib/social-feed-refresh";
+import { useToast } from "@/components/Providers/ToastProvider";
 import {
   Select,
   SelectContent,
@@ -19,6 +20,7 @@ interface CustomList {
   id: number;
   name: string;
   itemCount: number;
+  canEdit?: boolean;
   alreadyContains?: boolean;
 }
 
@@ -37,6 +39,7 @@ export function AddToListModal({
   mediaType,
   title,
 }: AddToListModalProps) {
+  const toast = useToast();
   const [lists, setLists] = useState<CustomList[]>([]);
   const [loading, setLoading] = useState(true);
   const [addingTo, setAddingTo] = useState<number | null>(null);
@@ -52,10 +55,12 @@ export function AddToListModal({
       if (res.ok) {
         const data = await res.json();
         const containing = new Set<number>((data.containingListIds ?? []).map((id: number) => Number(id)));
-        const nextLists = (data.lists || []).map((list: CustomList) => ({
-          ...list,
-          alreadyContains: containing.has(Number(list.id)),
-        }));
+        const nextLists = (data.lists || [])
+          .filter((list: CustomList) => list.canEdit !== false)
+          .map((list: CustomList) => ({
+            ...list,
+            alreadyContains: containing.has(Number(list.id)),
+          }));
         setLists(nextLists);
       }
     } catch {
@@ -114,6 +119,7 @@ export function AddToListModal({
             l.id === selectedListId ? { ...l, itemCount: l.itemCount + 1, alreadyContains: true } : l
           )
         );
+        toast.success(`Added to ${selected.name}`);
         triggerSocialFeedRefresh();
         void globalMutate((key) =>
           typeof key === "string" && (key === "/api/v1/lists" || key.startsWith("/api/v1/social/feed"))
@@ -133,6 +139,8 @@ export function AddToListModal({
   const handleListCreated = (list: { id: number; name: string }) => {
     setLists((prev) => [{ ...list, itemCount: 0, alreadyContains: false }, ...prev]);
     setSelectedListId(list.id);
+    setCreateModalOpen(false);
+    toast.success(`List \"${list.name}\" created`);
   };
 
   const selectedList = lists.find((list) => list.id === selectedListId) ?? null;
@@ -218,11 +226,12 @@ export function AddToListModal({
         </div>
       </Modal>
 
-      <CreateListModal
-        open={createModalOpen}
-        onClose={() => setCreateModalOpen(false)}
-        onCreated={handleListCreated}
-      />
+      {createModalOpen && (
+        <CreateListModal
+          onClose={() => setCreateModalOpen(false)}
+          onCreated={handleListCreated}
+        />
+      )}
     </>
   );
 }

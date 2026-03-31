@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 import { Metadata } from "next";
 import { getUser } from "@/auth";
-import { getCustomListById, getUserByUsername, listCustomListItems, upsertUser, findActiveRequestsByTmdbIds } from "@/db";
+import { getUserByUsername, upsertUser, findActiveRequestsByTmdbIds } from "@/db";
+import { getCustomListAccessForUser, listCustomListCollaborators, listCustomListItems } from "@/db/lists";
 import { ListDetailPageClient } from "@/components/Lists";
 import { getMovie, getTv, tmdbImageUrl } from "@/lib/tmdb";
 import { getImageProxyEnabled } from "@/lib/app-settings";
@@ -20,7 +21,14 @@ export async function generateMetadata({
     return { title: "List Not Found - LeMedia" };
   }
 
-  const list = await getCustomListById(listIdNum);
+  const user = await getUser().catch(() => null);
+  if (!user) {
+    return { title: "List Not Found - LeMedia" };
+  }
+
+  const dbUser = await getUserByUsername(user.username);
+  const userId = dbUser?.id ?? (await upsertUser(user.username, user.groups)).id;
+  const list = await getCustomListAccessForUser(listIdNum, userId);
   if (!list) {
     return { title: "List Not Found - LeMedia" };
   }
@@ -53,10 +61,12 @@ export default async function ListDetailPage({
   const userId = dbUser?.id ?? (await upsertUser(user.username, user.groups)).id;
 
   // Get list
-  const list = await getCustomListById(listIdNum);
-  if (!list || Number(list.userId) !== userId) {
+  const list = await getCustomListAccessForUser(listIdNum, userId);
+  if (!list) {
     notFound();
   }
+
+  const collaborators = await listCustomListCollaborators(listIdNum);
 
   // Get items with TMDB data
   const items = await listCustomListItems(listIdNum);
@@ -140,18 +150,28 @@ export default async function ListDetailPage({
           name: list.name,
           description: list.description,
           isPublic: list.isPublic,
+          visibility: list.visibility,
           shareId: list.shareId,
           shareSlug: list.shareSlug ?? null,
           mood: list.mood ?? null,
           occasion: list.occasion ?? null,
           itemCount: Number(list.itemCount),
+          allowComments: list.allowComments,
+          allowReactions: list.allowReactions,
+          allowRemix: list.allowRemix,
           coverTmdbId: list.coverTmdbId ?? null,
           coverMediaType: list.coverMediaType ?? null,
           customCoverImagePath: list.customCoverImagePath ?? null,
           customCoverImageSize: list.customCoverImageSize ?? null,
           customCoverImageMimeType: list.customCoverImageMimeType ?? null,
+          ownerUsername: list.ownerUsername,
+          accessRole: list.accessRole,
+          isOwner: list.isOwner,
+          canEdit: list.canEdit,
+          collaboratorCount: list.collaboratorCount,
           updatedAt: list.updatedAt ?? null,
         }}
+      collaborators={collaborators}
       initialItems={enrichedItems}
     />
   );

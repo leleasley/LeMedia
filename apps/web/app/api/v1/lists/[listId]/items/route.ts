@@ -5,14 +5,14 @@ import { logger } from "@/lib/logger";
 import {
   addCustomListItem,
   customListContainsMedia,
-  getCustomListById,
-  getUserByUsername,
+  getCustomListAccessForUser,
   removeCustomListItem,
   reorderCustomListItems,
   setCustomListCover,
-  upsertUser,
-} from "@/db";
+} from "@/db/lists";
+import { getUserByUsername, upsertUser } from "@/db";
 import { requireCsrf } from "@/lib/csrf";
+import { apiError, apiSuccess } from "@/lib/api-contract";
 
 const AddItemSchema = z.object({
   tmdbId: z.number().int().positive(),
@@ -54,13 +54,15 @@ export async function POST(
     const listIdNum = parseInt(listId, 10);
 
     if (isNaN(listIdNum)) {
-      return NextResponse.json({ error: "Invalid list ID" }, { status: 400 });
+      return apiError("Invalid list ID", { status: 400 });
     }
 
-    // Verify ownership
-    const list = await getCustomListById(listIdNum);
-    if (!list || Number(list.userId) !== userId) {
-      return NextResponse.json({ error: "List not found" }, { status: 404 });
+    const access = await getCustomListAccessForUser(listIdNum, userId);
+    if (!access) {
+      return apiError("List not found", { status: 404 });
+    }
+    if (!access.canEdit) {
+      return apiError("Forbidden", { status: 403 });
     }
 
     const body = await req.json();
@@ -68,7 +70,7 @@ export async function POST(
 
     const alreadyExists = await customListContainsMedia(listIdNum, parsed.tmdbId, parsed.mediaType);
     if (alreadyExists) {
-      return NextResponse.json({ error: "Item already exists in this list" }, { status: 409 });
+      return apiError("Item already exists in this list", { status: 409 });
     }
 
     const item = await addCustomListItem({
@@ -79,20 +81,20 @@ export async function POST(
     });
 
     // Set as cover if requested or if it's the first item
-    if (parsed.setAsCover || Number(list.itemCount) === 0) {
+    if (parsed.setAsCover || Number(access.itemCount) === 0) {
       await setCustomListCover(listIdNum, userId, parsed.tmdbId, parsed.mediaType);
     }
 
-    return NextResponse.json({ item }, { status: 201 });
+    return apiSuccess({ item }, { status: 201 });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return apiError("Unauthorized", { status: 401 });
     }
     if (err instanceof z.ZodError) {
       logger.warn("[lists/items POST] Invalid request payload", { issues: err.issues });
-      return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+      return apiError("Invalid request", { status: 400 });
     }
-    return NextResponse.json({ error: "Unable to add item" }, { status: 500 });
+    return apiError("Unable to add item", { status: 500 });
   }
 }
 
@@ -109,13 +111,15 @@ export async function DELETE(
     const listIdNum = parseInt(listId, 10);
 
     if (isNaN(listIdNum)) {
-      return NextResponse.json({ error: "Invalid list ID" }, { status: 400 });
+      return apiError("Invalid list ID", { status: 400 });
     }
 
-    // Verify ownership
-    const list = await getCustomListById(listIdNum);
-    if (!list || Number(list.userId) !== userId) {
-      return NextResponse.json({ error: "List not found" }, { status: 404 });
+    const access = await getCustomListAccessForUser(listIdNum, userId);
+    if (!access) {
+      return apiError("List not found", { status: 404 });
+    }
+    if (!access.canEdit) {
+      return apiError("Forbidden", { status: 403 });
     }
 
     const body = await req.json();
@@ -123,16 +127,16 @@ export async function DELETE(
 
     await removeCustomListItem(listIdNum, parsed.tmdbId, parsed.mediaType);
 
-    return NextResponse.json({ ok: true });
+    return apiSuccess({ ok: true });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return apiError("Unauthorized", { status: 401 });
     }
     if (err instanceof z.ZodError) {
       logger.warn("[lists/items DELETE] Invalid request payload", { issues: err.issues });
-      return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+      return apiError("Invalid request", { status: 400 });
     }
-    return NextResponse.json({ error: "Unable to remove item" }, { status: 500 });
+    return apiError("Unable to remove item", { status: 500 });
   }
 }
 
@@ -149,13 +153,15 @@ export async function PATCH(
     const listIdNum = parseInt(listId, 10);
 
     if (isNaN(listIdNum)) {
-      return NextResponse.json({ error: "Invalid list ID" }, { status: 400 });
+      return apiError("Invalid list ID", { status: 400 });
     }
 
-    // Verify ownership
-    const list = await getCustomListById(listIdNum);
-    if (!list || Number(list.userId) !== userId) {
-      return NextResponse.json({ error: "List not found" }, { status: 404 });
+    const access = await getCustomListAccessForUser(listIdNum, userId);
+    if (!access) {
+      return apiError("List not found", { status: 404 });
+    }
+    if (!access.canEdit) {
+      return apiError("Forbidden", { status: 403 });
     }
 
     const body = await req.json();
@@ -163,15 +169,15 @@ export async function PATCH(
 
     await reorderCustomListItems(listIdNum, parsed.itemIds);
 
-    return NextResponse.json({ ok: true });
+    return apiSuccess({ ok: true });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return apiError("Unauthorized", { status: 401 });
     }
     if (err instanceof z.ZodError) {
       logger.warn("[lists/items PATCH] Invalid request payload", { issues: err.issues });
-      return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+      return apiError("Invalid request", { status: 400 });
     }
-    return NextResponse.json({ error: "Unable to reorder items" }, { status: 500 });
+    return apiError("Unable to reorder items", { status: 500 });
   }
 }

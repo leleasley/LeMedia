@@ -127,7 +127,7 @@ export function UserPermissionsClient({ userId: userIdProp, editable, variant }:
     if (!user || !permissions) {
         return (
             <div className="flex items-center justify-center p-12">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-amber-500 border-t-transparent"></div>
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
             </div>
         );
     }

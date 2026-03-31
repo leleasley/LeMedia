@@ -11,6 +11,7 @@ type ListCoverRecord = {
 type ListCoverDeps = {
   getCustomListById: (listId: number) => Promise<ListCoverRecord | null>;
   resolveOptionalUserId: () => Promise<number | null>;
+  canViewList?: (listId: number, viewerId: number) => Promise<boolean>;
   readFile: (fullPath: string) => Promise<Buffer>;
   uploadBaseDir?: string;
 };
@@ -34,7 +35,10 @@ export async function handleListCoverImageRequest(
   }
 
   const viewerId = await deps.resolveOptionalUserId();
-  const canView = list.isPublic || (viewerId !== null && Number(list.userId) === viewerId);
+  const canView = list.isPublic || (viewerId !== null && (
+    Number(list.userId) === viewerId ||
+    (deps.canViewList ? await deps.canViewList(listIdNum, viewerId) : false)
+  ));
   if (!canView) {
     return NextResponse.json({ error: "Image not found" }, { status: 404 });
   }

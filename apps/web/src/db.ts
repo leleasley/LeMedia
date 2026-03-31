@@ -1273,6 +1273,7 @@ export type UserSessionSummary = {
   userAgent: string | null;
   deviceLabel: string | null;
   ipAddress: string | null;
+  deviceId: string | null;
 };
 
 export async function listUserSessions(userId: number): Promise<UserSessionSummary[]> {
@@ -1280,7 +1281,8 @@ export async function listUserSessions(userId: number): Promise<UserSessionSumma
   const res = await p.query(
     `
     SELECT id, jti, expires_at as "expiresAt", revoked_at as "revokedAt", last_seen_at as "lastSeenAt",
-           user_agent as "userAgent", device_label as "deviceLabel", ip_address as "ipAddress"
+           user_agent as "userAgent", device_label as "deviceLabel", ip_address as "ipAddress",
+           device_id as "deviceId"
     FROM user_session
     WHERE user_id = $1
     ORDER BY last_seen_at DESC NULLS LAST, expires_at DESC
@@ -1294,14 +1296,14 @@ export async function createUserSession(
   userId: number,
   jti: string,
   expiresAt: Date,
-  meta?: { userAgent?: string | null; deviceLabel?: string | null; ipAddress?: string | null }
+  meta?: { userAgent?: string | null; deviceLabel?: string | null; ipAddress?: string | null; deviceId?: string | null }
 ): Promise<void> {
   await ensureUserSchema();
   const p = getPool();
   await p.query(
     `
-    INSERT INTO user_session (id, user_id, jti, expires_at, user_agent, device_label, ip_address)
-    VALUES ($1, $2, $3, $4, $5, $6, $7)
+    INSERT INTO user_session (id, user_id, jti, expires_at, user_agent, device_label, ip_address, device_id)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
     ON CONFLICT (jti) DO NOTHING
     `,
     [
@@ -1311,23 +1313,30 @@ export async function createUserSession(
       expiresAt.toISOString(),
       meta?.userAgent ?? null,
       meta?.deviceLabel ?? null,
-      meta?.ipAddress ?? null
+      meta?.ipAddress ?? null,
+      meta?.deviceId ?? null
     ]
   );
 }
 
-export async function touchUserSession(jti: string): Promise<boolean> {
+export async function touchUserSession(jti: string, sessionMaxAge?: number): Promise<boolean> {
   const p = getPool();
   const res = await p.query(
-    `
-    UPDATE user_session
-    SET last_seen_at = NOW()
-    WHERE jti = $1
-      AND revoked_at IS NULL
-      AND expires_at > NOW()
-    RETURNING jti
-    `,
-    [jti]
+    sessionMaxAge && sessionMaxAge > 0
+      ? `UPDATE user_session
+         SET last_seen_at = NOW(),
+             expires_at = NOW() + ($2 * INTERVAL '1 second')
+         WHERE jti = $1
+           AND revoked_at IS NULL
+           AND expires_at > NOW()
+         RETURNING jti`
+      : `UPDATE user_session
+         SET last_seen_at = NOW()
+         WHERE jti = $1
+           AND revoked_at IS NULL
+           AND expires_at > NOW()
+         RETURNING jti`,
+    sessionMaxAge && sessionMaxAge > 0 ? [jti, sessionMaxAge] : [jti]
   );
   return Number(res.rowCount ?? 0) > 0;
 }
@@ -5373,7 +5382,11 @@ export async function createNotificationEndpoint(input: {
           "request_available",
           "request_removed",
           "issue_reported",
-          "issue_resolved"
+          "issue_resolved",
+          "watch_party_invite",
+          "watch_party_join_request",
+          "watch_party_join_request_approved",
+          "watch_party_join_request_denied"
         ]
       ),
       JSON.stringify(input.config ?? {})
@@ -6174,6 +6187,60 @@ export async function listUserReviewsForUser(input: {
     tmdbId: r.tmdb_id as number,
     rating: r.rating as number,
     createdAt: r.created_at as string
+  }));
+}
+
+export async function getRecentReviewsByUser(userId: number, limit = 10) {
+  const p = getPool();
+  const safeLimit = Math.min(Math.max(limit, 1), 50);
+  const res = await p.query(
+    `SELECT
+        r.id,
+        r.user_id,
+        r.media_type,
+        r.tmdb_id,
+        r.rating,
+        r.review_text,
+        r.spoiler,
+        r.title,
+        r.poster_path,
+        r.release_year,
+        r.created_at,
+        r.updated_at,
+        u.username,
+        u.display_name,
+        u.avatar_url,
+        u.jellyfin_user_id,
+        u.groups
+     FROM user_review r
+     JOIN app_user u ON r.user_id = u.id
+     WHERE r.user_id = $1
+     ORDER BY r.created_at DESC
+     LIMIT $2`,
+    [userId, safeLimit]
+  );
+
+  return res.rows.map(r => ({
+    id: r.id as number,
+    userId: r.user_id as number,
+    mediaType: r.media_type as "movie" | "tv",
+    tmdbId: r.tmdb_id as number,
+    rating: r.rating as number,
+    reviewText: r.review_text as string | null,
+    spoiler: r.spoiler as boolean,
+    title: r.title as string,
+    posterPath: r.poster_path as string | null,
+    releaseYear: r.release_year as number | null,
+    createdAt: r.created_at as string,
+    updatedAt: r.updated_at as string,
+    user: {
+      id: r.user_id as number,
+      username: r.username as string,
+      displayName: r.display_name as string | null,
+      avatarUrl: r.avatar_url as string | null,
+      jellyfinUserId: r.jellyfin_user_id as string | null,
+      groups: normalizeGroupList(r.groups as string),
+    },
   }));
 }
 

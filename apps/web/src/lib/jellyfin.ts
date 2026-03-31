@@ -309,6 +309,26 @@ export async function getJellyfinItemIdByTvdb(tvdbId: number): Promise<string | 
     return itemId || null;
 }
 
+/**
+ * Fuzzy series name matching that handles alternate titles like
+ * "WWE Raw" matching "WWE Monday Night RAW" by checking whether
+ * all significant words of the shorter name appear in the longer one.
+ */
+function seriesNameMatches(a: string, b: string): boolean {
+    const al = a.toLowerCase().trim();
+    const bl = b.toLowerCase().trim();
+    if (al === bl) return true;
+    if (bl.includes(al) || al.includes(bl)) return true;
+    // Word-set containment: every word of the shorter name must appear in the longer name
+    const tokenize = (s: string) =>
+        s.replace(/[^a-z0-9\s]/g, "").split(/\s+/).filter((w) => w.length > 1);
+    const wa = tokenize(al);
+    const wb = tokenize(bl);
+    if (wa.length === 0 || wb.length === 0) return false;
+    const [shorter, longer] = wa.length <= wb.length ? [wa, wb] : [wb, wa];
+    return shorter.every((w) => longer.includes(w));
+}
+
 export async function getJellyfinItemIdByName(kind: "movie" | "tv", name: string): Promise<string | null> {
     const connection = await getJellyfinConnection();
     if (!connection) return null;
@@ -330,12 +350,14 @@ export async function getJellyfinItemIdByName(kind: "movie" | "tv", name: string
         if (exactMatch) {
             itemId = String(exactMatch.Id ?? "");
         } else {
-            // Fall back to first matching type
-            const typeMatch = searchResults.Items.find((item: JellyfinApiItem) =>
-                String(item?.Type ?? "").toLowerCase() === includeType.toLowerCase()
-            );
-            if (typeMatch) {
-                itemId = String(typeMatch.Id ?? "");
+            // Fall back to fuzzy name match — handles alternate titles like
+            // "WWE Raw" finding "WWE Monday Night RAW" via word-set containment
+            const partialMatch = searchResults.Items.find((item: JellyfinApiItem) => {
+                if (String(item?.Type ?? "").toLowerCase() !== includeType.toLowerCase()) return false;
+                return seriesNameMatches(name, String(item?.Name ?? ""));
+            });
+            if (partialMatch) {
+                itemId = String(partialMatch.Id ?? "");
             }
         }
     }
@@ -421,6 +443,57 @@ function hasPhysicalFile(item: JellyfinApiItem) {
     }
 
     return true;
+}
+
+export type AvailableSeriesEpisode = {
+    itemId: string;
+    seasonNumber: number;
+    episodeNumber: number;
+    title: string;
+};
+
+export async function listAvailableSeriesEpisodes(seriesItemId: string, limit = 800): Promise<AvailableSeriesEpisode[]> {
+    if (!seriesItemId) return [];
+    const episodes = await jellyfinFetch(
+        `/Shows/${seriesItemId}/Episodes?Fields=IndexNumber,ParentIndexNumber,Name,LocationType,IsVirtual,PremiereDate&Limit=${Math.min(
+            Math.max(limit, 50),
+            2000
+        )}`
+    );
+    const items: JellyfinApiItem[] = Array.isArray(episodes?.Items) ? episodes.Items : [];
+
+    // Exclude virtual/unaired placeholder episodes only.
+    // Do NOT filter on episodeNumber > 0 here — date-organised shows like WWE Raw
+    // store episodes without an IndexNumber (episodeNumber would be 0), so we
+    // assign sequential numbers sorted by air date after grouping by season.
+    const real = items
+        .filter((ep) => ep?.IsVirtual !== true && String(ep?.LocationType ?? "").toLowerCase() !== "virtual")
+        .map((ep) => ({
+            itemId: String(ep?.Id ?? ""),
+            seasonNumber: Number(ep?.ParentIndexNumber ?? 0),
+            episodeNumber: Number(ep?.IndexNumber ?? 0),
+            title: String(ep?.Name ?? "Episode"),
+            premiereDate: String(ep?.PremiereDate ?? ""),
+        }))
+        .filter((ep) => ep.itemId && ep.seasonNumber > 0)
+        .sort((a, b) => {
+            if (a.seasonNumber !== b.seasonNumber) return a.seasonNumber - b.seasonNumber;
+            if (a.episodeNumber !== b.episodeNumber) return a.episodeNumber - b.episodeNumber;
+            // For unnumbered episodes fall back to air-date order
+            return a.premiereDate.localeCompare(b.premiereDate);
+        });
+
+    // Fill in sequential episode numbers for episodes without an IndexNumber so
+    // that date-organised shows (e.g. WWE Raw) show up in the selector.
+    const seasonCounters: Record<number, number> = {};
+    for (const ep of real) {
+        if (ep.episodeNumber === 0) {
+            seasonCounters[ep.seasonNumber] = (seasonCounters[ep.seasonNumber] ?? 0) + 1;
+            ep.episodeNumber = seasonCounters[ep.seasonNumber];
+        }
+    }
+
+    return real.map(({ premiereDate: _pd, ...rest }) => rest);
 }
 
 export async function isEpisodeAvailable({
@@ -816,22 +889,35 @@ export async function findAvailableSeriesByIds(
         `/Items?searchTerm=${encoded}&Recursive=true&IncludeItemTypes=Series&Fields=ProviderIds,Type&Limit=10`
     );
     const items: JellyfinApiItem[] = Array.isArray(res?.Items) ? res.Items : [];
-    const seriesMatch = items.find((item: JellyfinApiItem) => {
+    // First try to match by provider IDs (most precise)
+    let seriesMatch = items.find((item: JellyfinApiItem) => {
         const typeMatches = String(item?.Type ?? "").toLowerCase() === "series";
         const tmdbMatches = tmdbId ? Number(item?.ProviderIds?.Tmdb ?? 0) === Number(tmdbId) : false;
         const tvdbMatches = tvdbId ? Number(item?.ProviderIds?.Tvdb ?? 0) === Number(tvdbId) : false;
         return typeMatches && (tmdbMatches || tvdbMatches);
     });
+    // Fall back to name matching — handles shows with no TMDB/TVDB provider tags in Jellyfin
+    // (e.g. WWE Raw stored as "WWE Monday Night RAW", live sports, shows only tagged via TVDB
+    // when tvdbId isn't supplied). Uses word-set containment so "WWE Raw" matches "WWE Monday Night RAW".
+    if (!seriesMatch) {
+        seriesMatch = items.find((item: JellyfinApiItem) => {
+            if (String(item?.Type ?? "").toLowerCase() !== "series") return false;
+            return seriesNameMatches(title, String(item?.Name ?? ""));
+        });
+    }
 
     if (!seriesMatch?.Id) return { available: false };
 
     const episodes = await jellyfinFetch(
-        `/Shows/${seriesMatch.Id}/Episodes?Fields=LocationType,MediaSources,Path,IsVirtual,Type&Limit=5`
+        `/Shows/${seriesMatch.Id}/Episodes?Fields=LocationType,IsVirtual&Limit=5`
     );
     const epItems: JellyfinApiItem[] = Array.isArray(episodes?.Items) ? episodes.Items : [];
-    const hasFile = epItems.some((ep) => hasPhysicalFile(ep));
+    // Consider available if any episode is not a virtual placeholder
+    const hasRealEpisode = epItems.length > 0 && epItems.some(
+        (ep) => ep?.IsVirtual !== true && String(ep?.LocationType ?? "").toLowerCase() !== "virtual"
+    );
 
-    if (!hasFile) return { available: false };
+    if (!hasRealEpisode) return { available: false };
     return { available: true, itemId: String(seriesMatch.Id) };
 }
 

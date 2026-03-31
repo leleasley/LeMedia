@@ -10,6 +10,7 @@ export type SessionData = {
 };
 
 const SessionSecretSchema = z.string().min(32);
+const JWT_CLOCK_TOLERANCE_SECONDS = 60 * 60 * 24 * 30; // 30 days
 
 function getSessionSecret(): Uint8Array {
   const raw = SessionSecretSchema.parse(process.env.SESSION_SECRET);
@@ -30,7 +31,9 @@ export async function verifySessionToken(token: string): Promise<SessionData | n
   try {
     const { payload } = await jwtVerify(token, getSessionSecret(), {
       algorithms: ["HS256"],
-      clockTolerance: 30
+      // We rely on DB expires_at as the source of truth for sliding renewal, but we still
+      // keep a bounded JWT expiry tolerance so tokens cannot drift indefinitely.
+      clockTolerance: JWT_CLOCK_TOLERANCE_SECONDS,
     });
     const username = typeof payload.username === "string" ? payload.username : "";
     const groups = Array.isArray(payload.groups) ? payload.groups.map(String).filter(Boolean) : [];

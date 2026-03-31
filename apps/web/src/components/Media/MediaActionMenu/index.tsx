@@ -4,8 +4,9 @@ import { useState } from "react";
 import { ReportIssueModal } from "@/components/Requests/ReportIssueModal";
 import { ManageMediaModal } from "@/components/Requests/ManageMediaModal";
 import { PlayButton, type PlayButtonLink } from "@/components/Media/PlayButton";
+import { CreateWatchPartyModal } from "@/components/WatchParty/CreateWatchPartyModal";
 import Button from "@/components/Common/Button";
-import { CogIcon, ExclamationTriangleIcon, FilmIcon, PlayIcon } from "@heroicons/react/24/outline";
+import { CogIcon, ExclamationTriangleIcon, FilmIcon, PlayIcon, UserGroupIcon } from "@heroicons/react/24/outline";
 
 export function MediaActionMenu(props: {
   title: string;
@@ -41,8 +42,10 @@ export function MediaActionMenu(props: {
   } = props;
   const [reportOpen, setReportOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
+  const [watchPartyOpen, setWatchPartyOpen] = useState(false);
   const canManage =
     isAdmin && (Number.isFinite(Number(manageItemId ?? NaN)) || Boolean(requestStatus));
+  const canCreateWatchParty = Boolean(playUrl);
 
   const links: PlayButtonLink[] = [];
   if (playUrl) {
@@ -72,6 +75,17 @@ export function MediaActionMenu(props: {
           className="ml-2 first:ml-0"
         >
           <ExclamationTriangleIcon />
+        </Button>
+      ) : null}
+
+      {canCreateWatchParty ? (
+        <Button
+          buttonType="default"
+          onClick={() => setWatchPartyOpen(true)}
+          aria-label="Create watch party"
+          className="ml-2 first:ml-0"
+        >
+          <UserGroupIcon className="!mr-0" />
         </Button>
       ) : null}
 
@@ -107,6 +121,15 @@ export function MediaActionMenu(props: {
         serviceSlug={manageSlug ?? null}
         serviceBaseUrl={manageBaseUrl ?? null}
         prowlarrEnabled={prowlarrEnabled}
+      />
+
+      <CreateWatchPartyModal
+        open={watchPartyOpen}
+        onClose={() => setWatchPartyOpen(false)}
+        title={title}
+        mediaType={mediaType}
+        tmdbId={tmdbId}
+        playUrl={playUrl ?? null}
       />
     </>
   );

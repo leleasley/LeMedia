@@ -2,12 +2,12 @@ import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/auth";
 import {
-  createUserSession,
   getSettingInt,
   getUserByOAuthAccount,
   getUserWithHash,
   upsertUserOAuthAccount
 } from "@/db";
+import { createUserSession } from "@/db/sessions";
 import { logAuditEvent } from "@/lib/audit-log";
 import { summarizeUserAgent } from "@/lib/device-info";
 import {
@@ -155,10 +155,12 @@ export async function GET(
   const token = await createSessionToken({ username: linkedUser.username, groups, maxAgeSeconds: sessionMaxAge, jti });
   const userAgent = req.headers.get("user-agent");
   const deviceLabel = summarizeUserAgent(userAgent);
+  const deviceId = req.cookies.get("lemedia_device_id")?.value || randomUUID();
   await createUserSession(linkedUser.id, jti, new Date(Date.now() + sessionMaxAge * 1000), {
     userAgent,
     deviceLabel,
-    ipAddress: ip
+    ipAddress: ip,
+    deviceId
   });
 
   const from = sanitizeRelativePath(req.cookies.get("lemedia_login_redirect")?.value);
@@ -168,6 +170,7 @@ export async function GET(
     : new URL(from || "/", base);
   const res = NextResponse.redirect(redirectTarget, { status: 303 });
   res.cookies.set("lemedia_session", token, { ...cookieBase, maxAge: sessionMaxAge });
+  res.cookies.set("lemedia_device_id", deviceId, { ...cookieBase, maxAge: 60 * 60 * 24 * 365 });
   res.cookies.set("lemedia_flash", "", { ...cookieBase, maxAge: 0 });
   res.cookies.set("lemedia_flash_error", "", { ...cookieBase, maxAge: 0 });
   res.cookies.set("lemedia_flash", "login-success", { ...cookieBase, maxAge: 120 });

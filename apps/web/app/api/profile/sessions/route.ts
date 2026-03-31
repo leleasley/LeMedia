@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/auth";
-import { listUserSessions, revokeSessionByJtiForUser, deleteUserSessionByJtiForUser } from "@/db";
+import { deleteUserSessionByJtiForUser, listUserSessions, revokeSessionByJtiForUser, updateUserDevicePreferences } from "@/db/sessions";
 import { verifySessionToken } from "@/lib/session";
 import { requireCsrf } from "@/lib/csrf";
 import { logAuditEvent } from "@/lib/audit-log";
@@ -10,6 +10,12 @@ import { logger } from "@/lib/logger";
 
 const RevokeSchema = z.object({
   jti: z.string().trim().min(1)
+});
+
+const UpdateDeviceSchema = z.object({
+  deviceId: z.string().trim().min(1),
+  nickname: z.string().trim().max(80).nullable().optional(),
+  trusted: z.boolean().optional(),
 });
 
 function getCurrentJti(req: NextRequest): Promise<string | null> {
@@ -36,9 +42,51 @@ export async function GET(req: NextRequest) {
       lastSeenAt: session.lastSeenAt,
       userAgent: session.userAgent,
       deviceLabel: session.deviceLabel,
-      ipAddress: session.ipAddress
-    }))
+      ipAddress: session.ipAddress,
+      deviceId: session.deviceId,
+      deviceNickname: session.deviceNickname,
+      trustedAt: session.trustedAt,
+      deviceFirstSeenAt: session.deviceFirstSeenAt,
+      deviceLastSeenAt: session.deviceLastSeenAt,
+      suspiciousNetwork: session.suspiciousNetwork
+    })),
   });
+}
+
+export async function PATCH(req: NextRequest) {
+  const user = await requireUser();
+  if (user instanceof NextResponse) return user;
+  const csrf = requireCsrf(req);
+  if (csrf) return csrf;
+
+  let body: z.infer<typeof UpdateDeviceSchema>;
+  try {
+    body = UpdateDeviceSchema.parse(await req.json());
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      logger.warn("[API] Invalid device update payload", { issues: error.issues });
+    } else {
+      logger.warn("[API] Invalid device update payload", { error });
+    }
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
+
+  const device = await updateUserDevicePreferences(user.id, body.deviceId, {
+    nickname: body.nickname,
+    trusted: body.trusted,
+  });
+  if (!device) {
+    return NextResponse.json({ error: "Device not found" }, { status: 404 });
+  }
+
+  await logAuditEvent({
+    action: "user.device_updated",
+    actor: user.username,
+    metadata: { deviceId: body.deviceId, trusted: body.trusted, nickname: body.nickname ?? null },
+    ip: getClientIp(req),
+  });
+
+  return NextResponse.json({ device });
 }
 
 export async function DELETE(req: NextRequest) {

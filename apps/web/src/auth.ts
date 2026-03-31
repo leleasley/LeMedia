@@ -1,7 +1,8 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { verifySessionToken } from "@/lib/session";
-import { getUserWithHash, isSessionActive, touchUserSession } from "@/db";
+import { getUserWithHash, getSettingInt } from "@/db";
+import { isSessionActive, touchUserSession } from "@/db/sessions";
 import { withCache } from "@/lib/local-cache";
 import { logger } from "@/lib/logger";
 import { isAdminGroup, normalizeGroupList } from "@/lib/groups";
@@ -61,7 +62,13 @@ export async function getUser(): Promise<AppUser> {
   if (!session || !session.jti || !(await isSessionActive(session.jti))) {
     throw new Error("Unauthorized");
   }
-  await touchUserSession(session.jti);
+  // Extend expires_at on every touch (sliding window). Cache the setting for 60s to avoid
+  // an extra DB round-trip on every request.
+  const defaultMaxAge = Number(process.env.SESSION_MAX_AGE) || 60 * 60 * 24 * 30;
+  const sessionMaxAge = await withCache("setting:session_max_age", 60 * 1000, () =>
+    getSettingInt("session_max_age", defaultMaxAge)
+  );
+  await touchUserSession(session.jti, sessionMaxAge);
 
   // Verify user against DB and refresh groups (cached for 1 min)
   const dbUser = await withCache(`user_check:${username}`, 60 * 1000, async () => {

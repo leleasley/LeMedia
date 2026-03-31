@@ -27,7 +27,6 @@ ENV VAPID_PRIVATE_KEY=build-placeholder
 ENV VAPID_EMAIL=build@placeholder.local
 COPY --from=deps /app ./
 COPY . .
-RUN --mount=type=cache,target=/root/.npm npm ci --legacy-peer-deps
 # Ensure public directory exists even if repo has no assets yet
 RUN mkdir -p public
 ENV NEXT_TELEMETRY_DISABLED=1

@@ -14,6 +14,7 @@ export type AuditAction =
   | "user.permissions_changed"
   | "user.jellyfin_unlinked"
   | "user.sessions_revoked"
+  | "user.device_updated"
   | "user.updated"
   | "user.login"
   | "admin.settings_changed"

@@ -85,6 +85,62 @@ function formatToParts(date: Date, timeZone: string) {
   };
 }
 
+export function getDateTimePartsInTimeZone(dateInput: Date | number, timeZone: string) {
+  const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+
+  const map = new Map(parts.map((part) => [part.type, part.value]));
+  return {
+    year: Number(map.get("year")),
+    month: Number(map.get("month")),
+    day: Number(map.get("day")),
+    hour: Number(map.get("hour")),
+    minute: Number(map.get("minute")),
+    second: Number(map.get("second")),
+  };
+}
+
+export function getTimeZoneOffsetMsAtUtc(utcMs: number, timeZone: string) {
+  const parts = getDateTimePartsInTimeZone(utcMs, timeZone);
+  const asUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+  return asUtc - utcMs;
+}
+
+export function toUtcMsFromLocalDateTime(
+  dateIso: string,
+  hourLocal: number,
+  minuteLocal: number,
+  timeZone: string
+): number {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateIso);
+  if (!match) return Number.NaN;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const utcGuess = Date.UTC(year, month - 1, day, hourLocal, minuteLocal, 0);
+
+  const offset1 = getTimeZoneOffsetMsAtUtc(utcGuess, timeZone);
+  if (!Number.isFinite(offset1)) return Number.NaN;
+  let utcMs = utcGuess - offset1;
+
+  const offset2 = getTimeZoneOffsetMsAtUtc(utcMs, timeZone);
+  if (Number.isFinite(offset2) && offset2 !== offset1) {
+    utcMs = utcGuess - offset2;
+  }
+
+  return utcMs;
+}
+
 export function getIsoDateInTimeZone(dateInput: Date | number, timeZone: string): string {
   const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
   const parts = formatToParts(date, timeZone);

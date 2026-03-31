@@ -1,6 +1,5 @@
 import { Metadata } from "next";
 import { ListsPageClient } from "@/components/Lists";
-import { ListsPageHero } from "@/components/Lists/ListsPageHero";
 import { getImageProxyEnabled } from "@/lib/app-settings";
 
 export const metadata: Metadata = {
@@ -11,12 +10,5 @@ export const metadata: Metadata = {
 export default async function ListsPage() {
   const imageProxyEnabled = await getImageProxyEnabled();
 
-  return (
-    <>
-      <ListsPageHero />
-      <div className="mt-6">
-        <ListsPageClient imageProxyEnabled={imageProxyEnabled} />
-      </div>
-    </>
-  );
+  return <ListsPageClient imageProxyEnabled={imageProxyEnabled} />;
 }

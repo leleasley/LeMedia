@@ -82,6 +82,10 @@ const EVENT_OPTIONS: Array<{ id: string; label: string }> = [
   { id: "review_mention", label: "Review mentions" },
   { id: "review_comment", label: "Review comments" },
   { id: "episode_air_reminder", label: "Episode air reminders" },
+  { id: "watch_party_invite", label: "Watch party invite" },
+  { id: "watch_party_join_request", label: "Watch party join request" },
+  { id: "watch_party_join_request_approved", label: "Watch party approved" },
+  { id: "watch_party_join_request_denied", label: "Watch party denied" },
 ];
 
 const defaultEvents = [
@@ -100,6 +104,10 @@ const defaultEvents = [
   "review_mention",
   "review_comment",
   "episode_air_reminder",
+  "watch_party_invite",
+  "watch_party_join_request",
+  "watch_party_join_request_approved",
+  "watch_party_join_request_denied",
 ];
 
 const initialForm: FormState = {

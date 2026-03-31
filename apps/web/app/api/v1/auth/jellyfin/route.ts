@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/auth";
-import { createUserSession, getJellyfinConfig, getSettingInt, getUserByEmailOrUsername, getUserByJellyfinUserId, getUserRequestStats, linkUserToJellyfin, setJellyfinConfig } from "@/db";
+import { getJellyfinConfig, getSettingInt, getUserByEmailOrUsername, getUserByJellyfinUserId, getUserRequestStats, linkUserToJellyfin, setJellyfinConfig } from "@/db";
+import { createUserSession } from "@/db/sessions";
 import { encryptSecret } from "@/lib/encryption";
 import {
   jellyfinAuthenticate,
@@ -304,6 +305,7 @@ async function handleStreamyfinJellyseerrLogin(req: NextRequest, body: unknown) 
 
   const defaultSession = Number(process.env.SESSION_MAX_AGE) || 60 * 60 * 24 * 30;
   const sessionMaxAge = await getSettingInt("session_max_age", defaultSession);
+  const deviceId = req.cookies.get("lemedia_device_id")?.value || randomUUID();
   const jti = randomUUID();
   const token = await createSessionToken({
     username: user.username,
@@ -315,6 +317,7 @@ async function handleStreamyfinJellyseerrLogin(req: NextRequest, body: unknown) 
     userAgent: req.headers.get("user-agent"),
     deviceLabel: "Streamyfin",
     ipAddress: ip,
+    deviceId,
   });
 
   await logAuditEvent({
@@ -337,6 +340,7 @@ async function handleStreamyfinJellyseerrLogin(req: NextRequest, body: unknown) 
   });
   const freshResponse = NextResponse.json(userPayload, { status: 200 });
   freshResponse.cookies.set("lemedia_session", token, { ...cookieBase, maxAge: sessionMaxAge });
+  freshResponse.cookies.set("lemedia_device_id", deviceId, { ...cookieBase, maxAge: 60 * 60 * 24 * 365 });
   return freshResponse;
 }
 

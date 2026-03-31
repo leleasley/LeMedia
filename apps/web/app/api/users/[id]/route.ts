@@ -10,9 +10,9 @@ import {
   addUserPasswordHistory,
   setUserNotificationEndpointIds,
   updateUserPasswordById,
-  updateUserProfile,
-  createUserSession
+  updateUserProfile
 } from "@/db";
+import { createUserSession } from "@/db/sessions";
 import { createSessionToken } from "@/lib/session";
 import { getCookieBase, getRequestContext } from "@/lib/proxy";
 import { NextRequest, NextResponse } from "next/server";

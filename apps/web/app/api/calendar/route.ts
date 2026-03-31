@@ -8,6 +8,7 @@ import { findAvailableMovieByName, findAvailableMovieByTmdb, findAvailableSeries
 import { getCachedEpisodeAvailability } from "@/lib/jellyfin-availability-sync";
 import { deduplicateFetch } from "@/lib/request-cache";
 import { logger } from "@/lib/logger";
+import { getAppTimezone, getDateTimePartsInTimeZone, getIsoDateInTimeZone, normalizeDateOnly } from "@/lib/app-timezone";
 
 export interface CalendarEvent {
   id: string;
@@ -123,6 +124,28 @@ async function fetchMovieMetadata(tmdbIds: Set<number>) {
   return metadataMap;
 }
 
+function toCalendarDate(value: unknown, timeZone: string): string | null {
+  if (!value) return null;
+  const normalized = normalizeDateOnly(String(value));
+  if (normalized && String(value).trim().length <= 10) {
+    return normalized;
+  }
+
+  const parsed = new Date(String(value));
+  if (Number.isNaN(parsed.getTime())) {
+    return normalized;
+  }
+  return getIsoDateInTimeZone(parsed, timeZone);
+}
+
+function formatIsoDate(year: number, month: number, day: number) {
+  return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function getDaysInMonth(year: number, month: number) {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
 /**
  * Get TMDB releases (movies and TV premieres) in date range
  */
@@ -203,7 +226,7 @@ async function getTmdbReleasesInRange(start: string, end: string): Promise<Calen
 /**
  * Get Sonarr calendar events (monitored TV episodes)
  */
-async function getSonarrCalendarEvents(start: string, end: string): Promise<CalendarEvent[]> {
+async function getSonarrCalendarEvents(start: string, end: string, timeZone: string): Promise<CalendarEvent[]> {
   const events: CalendarEvent[] = [];
   const tmdbIds = new Set<number>();
   const tvdbIds = new Set<number>();
@@ -219,7 +242,8 @@ async function getSonarrCalendarEvents(start: string, end: string): Promise<Cale
       sonarrEpisodes.forEach((episode: any) => {
         if (!episode.airDateUtc) return;
 
-        const airDate = episode.airDateUtc.split('T')[0]; // Extract date portion
+        const airDate = toCalendarDate(episode.airDateUtc, timeZone);
+        if (!airDate) return;
         const series = episode.series || {};
         const tmdbId = series.tmdbId || episode.tmdbId || undefined;
         const tvdbId = series.tvdbId || episode.tvdbId || undefined;
@@ -309,7 +333,7 @@ async function getSonarrCalendarEvents(start: string, end: string): Promise<Cale
 /**
  * Get Radarr calendar events (monitored movies)
  */
-async function getRadarrCalendarEvents(start: string, end: string): Promise<CalendarEvent[]> {
+async function getRadarrCalendarEvents(start: string, end: string, timeZone: string): Promise<CalendarEvent[]> {
   const events: CalendarEvent[] = [];
   const tmdbIds = new Set<number>();
 
@@ -329,7 +353,8 @@ async function getRadarrCalendarEvents(start: string, end: string): Promise<Cale
         const dateSource = addedDate || releaseDate;
         if (!dateSource) return;
 
-        const date = String(dateSource).split('T')[0]; // Extract date portion
+        const date = toCalendarDate(dateSource, timeZone);
+        if (!date) return;
         if (movie.tmdbId) tmdbIds.add(movie.tmdbId);
 
         events.push({
@@ -462,7 +487,7 @@ async function getSeasonPremieres(userId: number, start: string, end: string): P
 /**
  * Get user's requests with actual release dates (not just created_at)
  */
-async function getRequestsWithReleaseDate(userId: number): Promise<CalendarEvent[]> {
+async function getRequestsWithReleaseDate(userId: number, timeZone: string): Promise<CalendarEvent[]> {
   const pool = getPool();
   const events: CalendarEvent[] = [];
 
@@ -495,10 +520,8 @@ async function getRequestsWithReleaseDate(userId: number): Promise<CalendarEvent
 
     result.rows.forEach((row: any) => {
       // Use created_at as the display date
-      const createdAt = row.created_at instanceof Date 
-        ? row.created_at.toISOString() 
-        : String(row.created_at);
-      const displayDate = createdAt.split('T')[0];
+      const createdAt = row.created_at instanceof Date ? row.created_at : new Date(String(row.created_at));
+      const displayDate = getIsoDateInTimeZone(createdAt, timeZone);
 
       events.push({
         id: `request-${row.id}`,
@@ -745,9 +768,10 @@ export async function GET(req: NextRequest) {
     }
 
     // Date range parameters
-    const now = new Date();
-    const start = searchParams.get("start") || new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-    const end = searchParams.get("end") || new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+    const timeZone = await getAppTimezone();
+    const todayParts = getDateTimePartsInTimeZone(Date.now(), timeZone);
+    const start = searchParams.get("start") || formatIsoDate(todayParts.year, todayParts.month, 1);
+    const end = searchParams.get("end") || formatIsoDate(todayParts.year, todayParts.month, getDaysInMonth(todayParts.year, todayParts.month));
 
     // Optional query parameters
     const includeJellyfinAvailability = searchParams.get("jellyfin") !== "false"; // Default true
@@ -764,10 +788,10 @@ export async function GET(req: NextRequest) {
       requestEvents
     ] = await Promise.allSettled([
       getTmdbReleasesInRange(start, end),
-      includeSonarr ? getSonarrCalendarEvents(start, end) : Promise.resolve([]),
-      includeRadarr ? getRadarrCalendarEvents(start, end) : Promise.resolve([]),
+      includeSonarr ? getSonarrCalendarEvents(start, end, timeZone) : Promise.resolve([]),
+      includeRadarr ? getRadarrCalendarEvents(start, end, timeZone) : Promise.resolve([]),
       includeSeasonPremieres ? getSeasonPremieres(user.id, start, end) : Promise.resolve([]),
-      getRequestsWithReleaseDate(user.id)
+      getRequestsWithReleaseDate(user.id, timeZone)
     ]);
 
     // Collect all successful events

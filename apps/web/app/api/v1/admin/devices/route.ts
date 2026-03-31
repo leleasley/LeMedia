@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/auth";
-import { listAllUserSessions, deleteUserSessionByJti } from "@/db";
+import { deleteUserSessionByJti, listAllUserSessions } from "@/db/sessions";
 import { requireCsrf } from "@/lib/csrf";
 import { z } from "zod";
 import { logger } from "@/lib/logger";

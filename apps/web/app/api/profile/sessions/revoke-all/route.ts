@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/auth";
-import { revokeOtherSessionsForUser } from "@/db";
+import { revokeOtherSessionsForUser } from "@/db/sessions";
 import { verifySessionToken } from "@/lib/session";
 import { requireCsrf } from "@/lib/csrf";
 import { logAuditEvent } from "@/lib/audit-log";
