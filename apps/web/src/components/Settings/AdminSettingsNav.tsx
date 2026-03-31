@@ -78,6 +78,7 @@ export function AdminSettingsNav() {
             routes: [
                 { id: "downloads", label: "Downloads", href: "/admin/settings/downloads", match: /^\/admin\/settings\/downloads/ },
                 { id: "storage", label: "Storage", href: "/admin/settings/storage", match: /^\/admin\/settings\/storage/ },
+                { id: "watch-parties", label: "Watch Parties", href: "/admin/settings/watch-parties", match: /^\/admin\/settings\/watch-parties/ },
             ]
         },
     ];
@@ -99,7 +100,7 @@ export function AdminSettingsNav() {
     }
 
     return (
-        <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-slate-950/65 p-2.5 backdrop-blur-sm sm:p-3">
+        <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-slate-950/65 p-4 backdrop-blur-sm sm:p-5">
             <div
                 className="pointer-events-none absolute inset-0 opacity-90"
                 aria-hidden="true"
@@ -110,15 +111,15 @@ export function AdminSettingsNav() {
             />
 
             <div className="relative sm:hidden">
-                <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-300/85">Admin sections</p>
+                <p className="mb-3 px-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-300/85">Admin sections</p>
                 <div className="px-1 pb-1">
                     <label htmlFor="admin-settings-mobile-nav" className="sr-only">Select an admin settings section</label>
-                    <div className="overflow-hidden rounded-xl border border-white/10 bg-white/[0.04]">
+                    <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04]">
                         <select
                             id="admin-settings-mobile-nav"
                             value={activeRouteHref}
                             onChange={handleMobileSelect}
-                            className="w-full appearance-none rounded-xl border-0 bg-transparent px-4 py-3 text-sm font-medium text-slate-100 outline-none"
+                            className="w-full appearance-none rounded-2xl border-0 bg-transparent px-4 py-3.5 text-sm font-medium text-slate-100 outline-none"
                             aria-label="Admin settings mobile"
                         >
                             {groups.map(group => (
@@ -135,11 +136,11 @@ export function AdminSettingsNav() {
                 </div>
             </div>
 
-            <nav className="relative hidden sm:grid sm:grid-cols-2 xl:grid-cols-3 gap-2" aria-label="Admin settings">
+            <nav className="relative hidden gap-3 sm:grid sm:grid-cols-2 xl:grid-cols-3" aria-label="Admin settings">
                 {groups.map(group => (
-                    <section key={group.id} className="rounded-xl border border-white/10 bg-black/25 p-2">
-                        <p className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-300/80">{group.label}</p>
-                        <div className="flex flex-wrap gap-1.5">
+                    <section key={group.id} className="rounded-2xl border border-white/10 bg-black/25 p-3">
+                        <p className="px-1 pb-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-300/80">{group.label}</p>
+                        <div className="flex flex-wrap gap-2">
                             {group.routes.map(route => {
                                 const isActive = pathname?.match(route.match);
                                 return (
@@ -149,7 +150,7 @@ export function AdminSettingsNav() {
                                         prefetch={false}
                                         onClick={event => navigate(event, route.href)}
                                         className={cn(
-                                            "whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors",
+                                            "whitespace-nowrap rounded-xl border px-3 py-2 text-xs font-medium transition-colors",
                                             isActive
                                                 ? "border-amber-300/50 bg-gradient-to-r from-amber-400/25 to-orange-400/15 text-amber-100"
                                                 : "border-white/10 bg-white/[0.03] text-slate-200/80 hover:border-white/20 hover:bg-white/[0.07] hover:text-slate-100"

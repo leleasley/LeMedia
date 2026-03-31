@@ -344,7 +344,7 @@ export function AdminSettingsPanel() {
     }
 
     return (
-        <div className="glass-strong rounded-3xl overflow-hidden border border-white/10 shadow-2xl p-6 space-y-4">
+        <div className="glass-strong rounded-3xl overflow-hidden border border-white/10 shadow-2xl p-7 md:p-8 space-y-6">
             <div className="flex items-center justify-between">
                 <div>
                     <p className="text-xs uppercase tracking-[0.2em] text-muted">General</p>
@@ -353,7 +353,7 @@ export function AdminSettingsPanel() {
                 </div>
             </div>
 
-            <form onSubmit={handleSave} className="space-y-4">
+            <form onSubmit={handleSave} className="space-y-5 md:space-y-6">
                 <MaintenanceSection
                     maintenanceEnabled={maintenanceEnabled}
                     maintenanceMessage={maintenanceMessage}
@@ -445,7 +445,7 @@ export function AdminSettingsPanel() {
                     onRotateServiceSecrets={handleRotateServiceSecrets}
                 />
 
-                <div className="border-t border-white/10 pt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="border-t border-white/10 pt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <p className="text-xs text-muted">Applies session, scheduling, and request lifecycle changes.</p>
                     <button className="btn" type="submit" disabled={saving || settingsLoading}>
                         {saving ? "Saving..." : "Save changes"}
