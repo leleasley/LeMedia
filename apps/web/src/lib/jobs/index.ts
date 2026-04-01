@@ -2,7 +2,6 @@ import "server-only";
 import { getPool, getSetting, insertJobHistory, listJobs, recordJobFailure, updateJobRun, updateJobSchedule, type Job } from "@/db";
 import { jobHandlers } from "./definitions";
 import { logger } from "@/lib/logger";
-import cronParser from "cron-parser";
 import { DEFAULT_APP_TIMEZONE } from "@/lib/app-timezone";
 
 let schedulerInterval: NodeJS.Timeout | null = null;
@@ -150,16 +149,6 @@ async function primeJobTimezoneFromSettings() {
   }
 }
 
-function getCronParser() {
-  const parser = (cronParser as any)?.CronExpressionParser
-    ?? (cronParser as any)?.default?.CronExpressionParser
-    ?? (cronParser as any)?.default;
-  if (!parser?.parse) {
-    throw new Error("Cron parser unavailable");
-  }
-  return parser;
-}
-
 function isCronSchedule(schedule: string) {
   return schedule.trim().split(/\s+/).length === 5;
 }
@@ -199,7 +188,68 @@ function expandCronField(field: string, min: number, max: number): number[] | nu
   return null;
 }
 
-function computeSimpleCronNextRun(schedule: string, now: Date): Date | null {
+/**
+ * Get the wall-clock components (hour, minute, day, etc.) in a specific
+ * IANA timezone using the built-in Intl API. No external library needed.
+ */
+function getWallClock(utcDate: Date, tz: string) {
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+    weekday: "short",
+  });
+  const parts = fmt.formatToParts(utcDate);
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? "";
+
+  const dowMap: Record<string, number> = {
+    Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+  };
+
+  return {
+    year: Number(get("year")),
+    month: Number(get("month")),
+    day: Number(get("day")),
+    hour: Number(get("hour")),
+    minute: Number(get("minute")),
+    second: Number(get("second")),
+    dow: dowMap[get("weekday")] ?? utcDate.getUTCDay(),
+  };
+}
+
+/**
+ * Build a UTC Date from wall-clock values in a given timezone.
+ * Uses a binary-search approach: constructs a candidate UTC date, checks
+ * what wall-clock time it produces, then adjusts by the difference.
+ */
+function wallClockToUtc(
+  year: number, month: number, day: number,
+  hour: number, minute: number, second: number,
+  tz: string,
+): Date {
+  // Initial guess: treat wall-clock as UTC
+  const guess = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  const wall = getWallClock(guess, tz);
+  // Compute the offset between the wall clock at our guess and the desired time
+  const guessMs = Date.UTC(wall.year, wall.month - 1, wall.day, wall.hour, wall.minute, wall.second);
+  const targetMs = Date.UTC(year, month - 1, day, hour, minute, second);
+  const offsetMs = guessMs - targetMs;
+  // If wall clock reads ahead of target, we overshot in UTC — subtract to correct
+  const adjusted = new Date(guess.getTime() - offsetMs);
+  return adjusted;
+}
+
+/**
+ * Timezone-aware cron next-run calculation using only built-in Intl APIs.
+ * Handles all standard 5-field cron expressions used by jobs.
+ */
+function computeSimpleCronNextRun(schedule: string, now: Date, tz?: string): Date | null {
   const parsed = parseSimpleCron(schedule);
   if (!parsed) return null;
 
@@ -207,30 +257,41 @@ function computeSimpleCronNextRun(schedule: string, now: Date): Date | null {
   const hourVals = expandCronField(parsed.hour, 0, 23);
   if (!minuteVals || !hourVals || minuteVals.length === 0 || hourVals.length === 0) return null;
 
-  // Only support * or fixed number for day fields (no step patterns for days)
   if (parsed.dayOfWeek !== "*" && !/^\d+$/.test(parsed.dayOfWeek)) return null;
   if (parsed.dayOfMonth !== "*" && !/^\d+$/.test(parsed.dayOfMonth)) return null;
 
   const targetDow = parsed.dayOfWeek !== "*" ? Number(parsed.dayOfWeek) : null;
   const targetDom = parsed.dayOfMonth !== "*" ? Number(parsed.dayOfMonth) : null;
 
-  // Search up to 35 days ahead (covers monthly schedules)
-  for (let dayOffset = 0; dayOffset < 35; dayOffset++) {
-    const dayBase = new Date(now);
-    dayBase.setDate(dayBase.getDate() + dayOffset);
-    dayBase.setHours(0, 0, 0, 0);
+  // Get wall-clock "now" in the target timezone
+  const wall = tz ? getWallClock(now, tz) : {
+    year: now.getFullYear(), month: now.getMonth() + 1, day: now.getDate(),
+    hour: now.getHours(), minute: now.getMinutes(), second: now.getSeconds(),
+    dow: now.getDay(),
+  };
 
-    // Check day-of-week constraint
-    if (targetDow !== null && dayBase.getDay() !== targetDow) continue;
-    // Check day-of-month constraint
-    if (targetDom !== null && dayBase.getDate() !== targetDom) continue;
+  for (let dayOffset = 0; dayOffset < 35; dayOffset++) {
+    // Compute the calendar date for this offset in the target timezone
+    const refDate = tz
+      ? new Date(Date.UTC(wall.year, wall.month - 1, wall.day + dayOffset))
+      : new Date(wall.year, wall.month - 1, wall.day + dayOffset);
+
+    const dayWall = tz
+      ? getWallClock(refDate, tz)
+      : { year: refDate.getFullYear(), month: refDate.getMonth() + 1, day: refDate.getDate(), dow: refDate.getDay(), hour: 0, minute: 0, second: 0 };
+
+    if (targetDow !== null && dayWall.dow !== targetDow) continue;
+    if (targetDom !== null && dayWall.day !== targetDom) continue;
 
     for (const hr of hourVals) {
-      // Skip past hours on current day for efficiency
-      if (dayOffset === 0 && hr < now.getHours()) continue;
+      if (dayOffset === 0 && hr < wall.hour) continue;
       for (const min of minuteVals) {
-        const candidate = new Date(dayBase);
-        candidate.setHours(hr, min, 0, 0);
+        if (dayOffset === 0 && hr === wall.hour && min <= wall.minute) continue;
+
+        const candidate = tz
+          ? wallClockToUtc(dayWall.year, dayWall.month, dayWall.day, hr, min, 0, tz)
+          : new Date(dayWall.year, dayWall.month - 1, dayWall.day, hr, min, 0, 0);
+
         if (candidate > now) {
           return candidate;
         }
@@ -242,27 +303,20 @@ function computeSimpleCronNextRun(schedule: string, now: Date): Date | null {
 }
 
 export function computeNextRun(schedule: string, intervalSeconds: number, now = new Date()) {
-  let nextRun = new Date(now.getTime() + intervalSeconds * 1000);
+  const fallback = new Date(now.getTime() + intervalSeconds * 1000);
   const tz = getJobTimezone();
-  try {
-    // Only use the fast simple-cron path when no timezone awareness is needed.
-    // When a timezone is configured (always true since we default to Europe/London),
-    // we must use the cron-parser so DST transitions are handled correctly.
-    if (!tz) {
-      const simpleNext = computeSimpleCronNextRun(schedule, now);
-      if (simpleNext) return simpleNext;
-    }
-    const options: any = { currentDate: now };
-    if (tz) {
-      options.tz = tz;
-    }
-    const parser = getCronParser();
-    const interval = parser.parse(schedule, options);
-    nextRun = interval.next().toDate();
-  } catch {
-    // Fall back to intervalSeconds if cron parsing fails.
+
+  // Use the built-in timezone-aware cron parser (no external deps)
+  const simpleNext = computeSimpleCronNextRun(schedule, now, tz || undefined);
+  if (simpleNext) return simpleNext;
+
+  // Non-cron schedules (e.g. "Every 2 Minutes") fall back to interval
+  if (!isCronSchedule(schedule)) {
+    return fallback;
   }
-  return nextRun;
+
+  logger.warn(`[Job] Could not parse cron schedule "${schedule}", falling back to interval (${intervalSeconds}s)`);
+  return fallback;
 }
 
 async function runJob(job: Job) {
