@@ -123,7 +123,7 @@ export function MovieActionButtons({
   prefetched?: MovieAggregate;
   posterUrl?: string | null;
   year?: string | number | null;
-  initialListStatus?: { favorite: boolean; watchlist: boolean } | null;
+  initialListStatus?: { favorite: boolean; watchlist: boolean; watched?: boolean } | null;
 }) {
   const { data, isLoading } = useMovieAggregate(tmdbId, title, prefetched);
   const aggregateLoaded = data !== undefined;
@@ -166,6 +166,7 @@ export function MovieActionButtons({
         mediaType="movie"
         initialFavorite={initialListStatus?.favorite ?? null}
         initialWatchlist={initialListStatus?.watchlist ?? null}
+        initialWatched={initialListStatus?.watched ?? null}
       />
       <ShareButton
         mediaType="movie"

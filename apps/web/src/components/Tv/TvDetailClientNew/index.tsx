@@ -20,6 +20,7 @@ import { ArrowDownTrayIcon } from "@heroicons/react/24/outline";
 import { useTrackView } from "@/hooks/useTrackView";
 import { ShareButton } from "@/components/Media/ShareButton";
 import { MediaSocialPanel } from "@/components/Media/MediaSocialPanel";
+import { MediaReactionsPanel } from "@/components/Media/MediaReactionsPanel";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { logger } from "@/lib/logger";
 import CachedImage from "@/components/Common/CachedImage";
@@ -246,7 +247,7 @@ export function TvDetailClientNew({
     tvdbId?: number | null;
     externalRatingsSlot?: React.ReactNode;
     keywordsSlot?: React.ReactNode;
-    initialListStatus?: { favorite: boolean; watchlist: boolean } | null;
+    initialListStatus?: { favorite: boolean; watchlist: boolean; watched?: boolean } | null;
     prefetchedAggregate?: unknown;
     requestedBy?: RequestedBy | null;
     children?: React.ReactNode;
@@ -1263,6 +1264,12 @@ export function TvDetailClientNew({
                         initialWatchlist={initialListStatus?.watchlist ?? null}
                     />
 
+                    <MediaReactionsPanel
+                        tmdbId={tv.id}
+                        mediaType="tv"
+                        mediaTitle={tv.name ?? tv.title ?? "TV Show"}
+                    />
+
                     {/* Attributes */}
                     <span className="media-attributes">
                         {Number(tv.number_of_seasons ?? 0) > 0 && (
@@ -1282,6 +1289,7 @@ export function TvDetailClientNew({
                             mediaType="tv"
                             initialFavorite={initialListStatus?.favorite ?? null}
                             initialWatchlist={initialListStatus?.watchlist ?? null}
+                            initialWatched={initialListStatus?.watched ?? null}
                         />
                         <ShareButton
                             mediaType="tv"

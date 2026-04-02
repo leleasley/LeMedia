@@ -5,7 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import {
   ListChecks, Heart, MessageCircle, Bookmark, Users, Star,
-  TrendingUp, Award, Plus, RefreshCw, ChevronDown
+  TrendingUp, Award, Plus, RefreshCw, ChevronDown, Clapperboard
 } from "lucide-react";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { formatDistanceToNow } from "date-fns";
@@ -288,6 +288,20 @@ function getEventDisplay(event: SocialEvent): { icon: React.ReactNode; text: Rea
         link: null,
         accent: "bg-pink-500/10 text-pink-400",
       };
+    case "reacted_media": {
+      const mediaType = String(event.metadata?.mediaType ?? "movie") === "tv" ? "tv" : "movie";
+      const tmdbId = Number(event.metadata?.tmdbId ?? event.targetId ?? 0);
+      const mediaTitle = String(event.metadata?.mediaTitle ?? "a title");
+      const emoji = String(event.metadata?.emoji ?? "🔥");
+      const worthWatching = Boolean(event.metadata?.worthWatching ?? true);
+      const mediaHref = tmdbId > 0 ? `/${mediaType}/${tmdbId}` : null;
+      return {
+        icon: <Clapperboard className="w-3.5 h-3.5" />,
+        text: <>reacted {emoji} to {mediaHref ? <Link href={mediaHref} className="text-pink-400 hover:text-pink-300">{mediaTitle}</Link> : mediaTitle} {worthWatching ? "(worth watching)" : "(skip for now)"}</>,
+        link: mediaHref,
+        accent: "bg-indigo-500/10 text-indigo-300",
+      };
+    }
     default:
       return {
         icon: <Star className="w-3.5 h-3.5" />,

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { getPool } from "@/db";
+import { getPool } from "./core";
 
 export type CustomListAccessRole = "owner" | "editor" | "viewer";
 export type CustomListCollaboratorRole = "editor" | "viewer";

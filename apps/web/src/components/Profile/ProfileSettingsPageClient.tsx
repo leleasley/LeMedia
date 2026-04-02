@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { UserPermissionsClient } from "@/components/Settings/Users/UserPermissionsClient";
 import { NotificationsSettingsPage } from "@/components/Settings/NotificationsPage";
@@ -14,6 +14,7 @@ import { csrfFetch } from "@/lib/csrf-client";
 import { Modal } from "@/components/Common/Modal";
 import { ConfirmModal, useConfirm } from "@/components/Common/ConfirmModal";
 import { TelegramBotPanel } from "@/components/Profile/TelegramBotPanel";
+import { ProfilePrivacySettings } from "@/components/Profile/ProfilePrivacySettings";
 import { UserNotificationChannelsPanel } from "@/components/Profile/UserNotificationChannelsPanel";
 import { EpisodeReminderPreferencesCard } from "@/components/Profile/EpisodeReminderPreferencesCard";
 import { GlobalChannelSubscriptionsPanel } from "@/components/Profile/GlobalChannelSubscriptionsPanel";
@@ -43,7 +44,7 @@ interface ProfileSettingsPageClientProps {
   activeTab?: SettingsTabKey;
 }
 
-type SettingsTabKey = "general" | "security" | "linked" | "notifications" | "permissions" | "bot";
+type SettingsTabKey = "general" | "security" | "linked" | "notifications" | "permissions" | "privacy" | "bot";
 
 type Credential = {
   id: string;
@@ -71,12 +72,21 @@ type PushPreference = {
   enabled: boolean;
 };
 
+type CalendarAssistantPreference = {
+  enabled: boolean;
+  channels: Array<"in_app" | "telegram" | "endpoints">;
+  dayOfWeek: number;
+  hourOfDay: number;
+  lastSentDate: string | null;
+};
+
 const tabOrder: Array<{ key: SettingsTabKey; label: string }> = [
   { key: "general", label: "General" },
   { key: "security", label: "Security" },
   { key: "linked", label: "Linked Accounts" },
   { key: "notifications", label: "Notifications" },
   { key: "permissions", label: "Permissions" },
+  { key: "privacy", label: "Privacy" },
   { key: "bot", label: "Telegram Bot" }
 ];
 
@@ -108,7 +118,9 @@ export function ProfileSettingsPageClient({
 
   // Notifications data
   const { data: pushData } = useSWR<PushPreference>("/api/push/preference", securityFetcher);
+  const { data: calendarAssistantData } = useSWR<CalendarAssistantPreference>("/api/profile/calendar-assistant", securityFetcher);
   const pushEnabled = pushData?.enabled ?? null;
+  const calendarAssistantEnabled = calendarAssistantData?.enabled ?? false;
   const showSystemChannelsSection = assignedEndpoints.length > 0;
 
   const apiToken = apiTokenData?.token ?? null;
@@ -469,7 +481,7 @@ export function ProfileSettingsPageClient({
                 </div>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <div className="flex items-center gap-3 rounded-xl bg-black/20 border border-white/5 p-4">
                   <div className={`flex items-center justify-center w-10 h-10 rounded-full ${pushEnabled ? 'bg-emerald-500/20' : 'bg-white/10'}`}>
                     <span className="text-lg">{pushEnabled ? '✓' : '○'}</span>
@@ -505,15 +517,28 @@ export function ProfileSettingsPageClient({
                     </div>
                   </div>
                 </div>
+
+                <div className="flex items-center gap-3 rounded-xl bg-black/20 border border-white/5 p-4">
+                  <div className={`flex items-center justify-center w-10 h-10 rounded-full ${calendarAssistantEnabled ? 'bg-emerald-500/20' : 'bg-white/10'}`}>
+                    <span className="text-lg">🗓</span>
+                  </div>
+                  <div>
+                    <div className="text-xs text-white/50 uppercase tracking-wider">Calendar</div>
+                    <div className={`font-semibold ${calendarAssistantEnabled ? 'text-emerald-300' : 'text-white/70'}`}>
+                      {calendarAssistantEnabled ? 'Scheduled' : 'Off'}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div className="grid gap-6 2xl:grid-cols-2">
+            <div className="grid gap-6 2xl:grid-cols-3">
               <NotificationsSettingsPage initialEnabled={pushEnabled} />
               <WeeklyDigestSettings
                 initialEnabled={!!user.weeklyDigestOptIn}
                 email={user.email ?? null}
               />
+              <CalendarAssistantSettings initialData={calendarAssistantData ?? null} />
             </div>
 
             <UserNotificationChannelsPanel />
@@ -524,6 +549,10 @@ export function ProfileSettingsPageClient({
 
         {activeTab === "permissions" && (
           <UserPermissionsClient userId={user.userId} editable={false} variant="plain" />
+        )}
+
+        {activeTab === "privacy" && (
+          <ProfilePrivacySettings />
         )}
 
         {activeTab === "bot" && (
@@ -672,6 +701,162 @@ function WeeklyDigestSettings({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function CalendarAssistantSettings({
+  initialData,
+}: {
+  initialData: CalendarAssistantPreference | null;
+}) {
+  const toast = useToast();
+  const [enabled, setEnabled] = useState<boolean>(initialData?.enabled ?? false);
+  const [dayOfWeek, setDayOfWeek] = useState<number>(initialData?.dayOfWeek ?? 1);
+  const [hourOfDay, setHourOfDay] = useState<number>(initialData?.hourOfDay ?? 9);
+  const [channels, setChannels] = useState<Array<"in_app" | "telegram" | "endpoints">>(initialData?.channels ?? ["in_app"]);
+  const [saving, setSaving] = useState(false);
+
+  const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+  useEffect(() => {
+    if (!initialData) return;
+    setEnabled(initialData.enabled);
+    setDayOfWeek(initialData.dayOfWeek);
+    setHourOfDay(initialData.hourOfDay);
+    setChannels(initialData.channels);
+  }, [initialData]);
+
+  function toggleChannel(channel: "in_app" | "telegram" | "endpoints") {
+    setChannels((prev) => {
+      if (prev.includes(channel)) {
+        const next = prev.filter((entry) => entry !== channel);
+        return next.length ? next : ["in_app"];
+      }
+      return [...prev, channel];
+    });
+  }
+
+  async function save() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const csrfRes = await fetch("/api/csrf");
+      const { token } = await csrfRes.json();
+
+      const res = await fetch("/api/profile/calendar-assistant", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": token,
+        },
+        body: JSON.stringify({
+          enabled,
+          channels,
+          dayOfWeek,
+          hourOfDay,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to save calendar assistant settings");
+      }
+
+      toast.success(enabled ? "Calendar Assistant enabled" : "Calendar Assistant disabled");
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to save calendar assistant settings");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="rounded-2xl md:rounded-3xl border border-white/10 bg-white/[0.02] p-6 md:p-8 space-y-5">
+      <div className="flex items-center gap-4">
+        <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 ring-1 ring-white/10">
+          <span className="text-xl">🗓</span>
+        </div>
+        <div className="flex-1">
+          <h3 className="text-xl font-bold text-white">Calendar Assistant</h3>
+          <p className="text-sm text-gray-400 mt-1">Scheduled release radar with spoiler-free summaries</p>
+        </div>
+      </div>
+
+      <label className="flex items-start justify-between gap-4 rounded-xl border border-white/10 bg-black/25 p-4">
+        <div>
+          <p className="text-sm font-medium text-white">Enable Calendar Assistant</p>
+          <p className="text-xs text-gray-400 mt-1">Send a personal release brief on your chosen day and hour.</p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={enabled}
+          onClick={() => setEnabled((prev) => !prev)}
+          className={`ui-switch ui-switch-md shrink-0 transition-colors ${enabled ? "bg-[#229ED9]" : "bg-gray-700"}`}
+        >
+          <span className={`ui-switch-thumb ${enabled ? "translate-x-6" : "translate-x-0"}`} />
+        </button>
+      </label>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="space-y-2">
+          <span className="text-xs font-medium uppercase tracking-[0.18em] text-gray-500">Day</span>
+          <select
+            value={dayOfWeek}
+            onChange={(event) => setDayOfWeek(Number(event.target.value))}
+            className="w-full rounded-lg border border-white/15 bg-slate-900/70 px-3 py-2 text-sm text-white outline-none transition focus:border-[#229ED9]"
+          >
+            {days.map((day, index) => (
+              <option key={day} value={index}>{day}</option>
+            ))}
+          </select>
+        </label>
+        <label className="space-y-2">
+          <span className="text-xs font-medium uppercase tracking-[0.18em] text-gray-500">Hour</span>
+          <select
+            value={hourOfDay}
+            onChange={(event) => setHourOfDay(Number(event.target.value))}
+            className="w-full rounded-lg border border-white/15 bg-slate-900/70 px-3 py-2 text-sm text-white outline-none transition focus:border-[#229ED9]"
+          >
+            {Array.from({ length: 24 }, (_, hour) => (
+              <option key={hour} value={hour}>{`${String(hour).padStart(2, "0")}:00`}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div className="rounded-xl border border-white/10 bg-black/25 p-4 space-y-2">
+        <p className="text-sm font-medium text-white">Delivery channels</p>
+        <div className="flex flex-wrap gap-2">
+          {([
+            ["in_app", "In-app"],
+            ["telegram", "Telegram"],
+            ["endpoints", "Linked endpoints"],
+          ] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => toggleChannel(value)}
+              className={`rounded-lg border px-3 py-1.5 text-sm transition ${channels.includes(value)
+                ? "border-sky-300/50 bg-sky-500/20 text-sky-100"
+                : "border-white/10 bg-white/5 text-white/70"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => void save()}
+        disabled={saving}
+        className="rounded-lg bg-[#229ED9] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#1a8bc4] disabled:opacity-60"
+      >
+        {saving ? "Saving..." : "Save calendar settings"}
+      </button>
     </div>
   );
 }

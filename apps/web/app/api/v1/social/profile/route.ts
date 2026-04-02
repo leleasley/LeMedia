@@ -4,7 +4,7 @@ import { getUser } from "@/auth";
 import { logger } from "@/lib/logger";
 import { requireCsrf } from "@/lib/csrf";
 import { getUserByUsername, upsertUser } from "@/db";
-import { updateUserProfile } from "@/db-social";
+import { getUserProfileById, updateUserProfile } from "@/db-social";
 
 async function resolveUserId() {
   const user = await getUser().catch(() => null);
@@ -24,7 +24,27 @@ const UpdateProfileSchema = z.object({
   allowFriendRequests: z.boolean().optional(),
   showStats: z.boolean().optional(),
   showLists: z.boolean().optional(),
+  showWatched: z.boolean().optional(),
 });
+
+export async function GET() {
+  try {
+    const { id: userId } = await resolveUserId();
+    const profile = await getUserProfileById(userId);
+    if (!profile) return NextResponse.json({ error: "Profile not found" }, { status: 404 });
+    return NextResponse.json({
+      profileVisibility: profile.profileVisibility,
+      showActivity: profile.showActivity,
+      showStats: profile.showStats,
+      showLists: profile.showLists,
+      showWatched: profile.showWatched,
+    });
+  } catch (err) {
+    if (err instanceof Error && err.message === "Unauthorized")
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Unable to load profile" }, { status: 500 });
+  }
+}
 
 export async function PATCH(req: NextRequest) {
   try {

@@ -7,7 +7,7 @@ import { getImageProxyEnabled } from "@/lib/app-settings";
 import { cacheableJsonResponseWithETag, jsonResponseWithETag } from "@/lib/api-optimization";
 import { requireCsrf } from "@/lib/csrf";
 
-const ListTypeSchema = z.enum(["favorite", "watchlist"]);
+const ListTypeSchema = z.enum(["favorite", "watchlist", "watched"]);
 const MediaTypeSchema = z.enum(["movie", "tv"]);
 
 const BodySchema = z.object({
@@ -27,7 +27,7 @@ async function resolveUserId() {
   return created.id;
 }
 
-export async function handleMediaListGet(req: NextRequest, listTypeOverride?: "favorite" | "watchlist") {
+export async function handleMediaListGet(req: NextRequest, listTypeOverride?: "favorite" | "watchlist" | "watched") {
   try {
     const userId = await resolveUserId();
     const searchParams = req.nextUrl.searchParams;
@@ -81,7 +81,7 @@ export async function handleMediaListGet(req: NextRequest, listTypeOverride?: "f
   }
 }
 
-export async function handleMediaListPost(req: NextRequest, listTypeOverride?: "favorite" | "watchlist") {
+export async function handleMediaListPost(req: NextRequest, listTypeOverride?: "favorite" | "watchlist" | "watched") {
   try {
     const userId = await resolveUserId();
     const csrf = requireCsrf(req);
@@ -109,7 +109,7 @@ export async function handleMediaListPost(req: NextRequest, listTypeOverride?: "
   }
 }
 
-export async function handleMediaListDelete(req: NextRequest, listTypeOverride?: "favorite" | "watchlist") {
+export async function handleMediaListDelete(req: NextRequest, listTypeOverride?: "favorite" | "watchlist" | "watched") {
   try {
     const userId = await resolveUserId();
     const csrf = requireCsrf(req);

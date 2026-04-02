@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/auth";
-import { getUserByUsername, upsertUser } from "@/db";
+import { getUserByUsername, listUserMediaList, upsertUser } from "@/db";
 import { getUserProfile, getUserSocialStats, getFriendStatus, getPublicListsForUser, getMutualTasteInsights } from "@/db-social";
+import { getMovie, getTv, tmdbImageUrl } from "@/lib/tmdb";
+import { getImageProxyEnabled } from "@/lib/app-settings";
 
 async function resolveUserId() {
   const user = await getUser().catch(() => null);
@@ -71,10 +73,30 @@ export async function GET(
     }
 
     // Full profile view
-    const [stats, lists] = await Promise.all([
+    const imageProxyEnabled = await getImageProxyEnabled();
+    const [stats, lists, rawWatched] = await Promise.all([
       profile.showStats ? getUserSocialStats(profile.id) : null,
       profile.showLists ? getPublicListsForUser(profile.id, viewerUserId, { sort: "pinned", limit: 20 }) : [],
+      profile.showWatched ? listUserMediaList({ userId: profile.id, listType: "watched", limit: 50 }) : [],
     ]);
+
+    // Enrich watched items with TMDB data
+    const watchedItems = (await Promise.all(
+      rawWatched.map(async (item: any) => {
+        const details = item.media_type === "movie"
+          ? await getMovie(item.tmdb_id).catch(() => null)
+          : await getTv(item.tmdb_id).catch(() => null);
+        if (!details) return null;
+        const title = item.media_type === "movie" ? details.title ?? "Untitled" : details.name ?? "Untitled";
+        return {
+          tmdbId: item.tmdb_id,
+          mediaType: item.media_type,
+          title,
+          posterUrl: tmdbImageUrl(details.poster_path, "w342", imageProxyEnabled),
+          createdAt: item.created_at,
+        };
+      })
+    )).filter(Boolean);
 
     // Mutual taste only for friends
     if (viewerUserId && isFriend) {
@@ -96,10 +118,12 @@ export async function GET(
         showActivity: profile.showActivity,
         showStats: profile.showStats,
         showLists: profile.showLists,
+        showWatched: profile.showWatched,
         createdAt: profile.createdAt,
       },
       stats,
       lists,
+      watchedItems,
       friendStatus,
       mutualInsights,
     });

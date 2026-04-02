@@ -16,7 +16,7 @@ type MediaItem = {
   type: "movie" | "tv";
 };
 
-export function MediaListClient({ listType }: { listType: "favorite" | "watchlist" }) {
+export function MediaListClient({ listType }: { listType: "favorite" | "watchlist" | "watched" }) {
   const [items, setItems] = useState<MediaItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -119,11 +119,13 @@ export function MediaListClient({ listType }: { listType: "favorite" | "watchlis
           )}
         </div>
         <h3 className="text-xl font-semibold text-white mb-2">
-          {listType === "favorite" ? "No favorites yet" : "No watchlist items"}
+          {listType === "favorite" ? "No favorites yet" : listType === "watched" ? "No watched items" : "No watchlist items"}
         </h3>
         <p className="text-sm text-gray-400 mb-6">
           {listType === "favorite"
             ? "Start adding your favorite movies and TV shows"
+            : listType === "watched"
+            ? "Mark movies and TV shows as watched to track them here"
             : "Add movies and TV shows you want to watch"}
         </p>
         <Link

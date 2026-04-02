@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { PrefetchLink } from "@/components/Layout/PrefetchLink";
 import { Modal } from "@/components/Common/Modal";
+import CachedImage from "@/components/Common/CachedImage";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { cn } from "@/lib/utils";
 import { MediaStatus, statusToMediaStatus } from "@/lib/media-status";
@@ -116,6 +117,18 @@ type PersonalizedRecommendation = {
   year?: number;
   source: "jellyfin" | "tmdb";
   reasoning?: string; // Why this was recommended
+};
+
+type TonightQueueItem = {
+  id: string;
+  mediaType: "movie" | "tv";
+  tmdbId: number;
+  title: string;
+  posterPath: string | null;
+  reason: string;
+  score: number;
+  source: "continue" | "discover";
+  progress?: number | null;
 };
 
 type FriendActivity = {
@@ -264,6 +277,11 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
   const { data: personalizedRecsData } = useSWR<{ items: PersonalizedRecommendation[] }>(
     "/api/v1/my-activity/recommendations",
     { refreshInterval: 3600000, revalidateOnFocus: false }
+  );
+
+  const { data: tonightQueueData } = useSWR<{ items: TonightQueueItem[] }>(
+    "/api/v1/my-activity/tonight-queue",
+    { refreshInterval: 300000, revalidateOnFocus: true }
   );
 
   const { data: friendsActivityData } = useSWR<{ events: FriendActivity[] }>(
@@ -457,6 +475,11 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
     const events = friendsActivityData?.events;
     return Array.isArray(events) ? events : [];
   }, [friendsActivityData]);
+
+  const tonightQueue = useMemo(() => {
+    const items = tonightQueueData?.items;
+    return Array.isArray(items) ? items : [];
+  }, [tonightQueueData]);
 
   // Derived stats
   const requestStats = recentRequests.reduce(
@@ -876,6 +899,57 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
           )}
         </div>
       </Modal>
+
+      <section className="rounded-2xl border border-white/[0.08] bg-gradient-to-br from-[#0f1528] to-[#10192f] p-5">
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <div>
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Smart Tonight Queue</p>
+            <h2 className="mt-1 text-lg font-semibold text-white">Your best next watches</h2>
+          </div>
+          <span className="rounded-full border border-sky-400/30 bg-sky-500/10 px-2.5 py-1 text-xs text-sky-200">
+            {tonightQueue.length} picks
+          </span>
+        </div>
+
+        {tonightQueue.length > 0 ? (
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {tonightQueue.slice(0, 4).map((item) => (
+              <PrefetchLink
+                key={item.id}
+                href={`/${item.mediaType}/${item.tmdbId}`}
+                className="group rounded-xl border border-white/10 bg-white/[0.04] p-3 transition hover:bg-white/[0.08]"
+              >
+                <div className="flex gap-3">
+                  <div className="relative h-20 w-14 shrink-0 overflow-hidden rounded-lg border border-white/10 bg-white/5">
+                    {item.posterPath ? (
+                      <CachedImage
+                        type="tmdb"
+                        src={item.posterPath}
+                        alt={item.title}
+                        fill
+                        className="object-cover"
+                        sizes="56px"
+                        loading="eager"
+                      />
+                    ) : null}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-white">{item.title}</p>
+                    <p className="mt-1 text-xs text-slate-400 line-clamp-2">{item.reason}</p>
+                    {item.progress !== null && item.progress !== undefined ? (
+                      <p className="mt-2 text-[11px] text-sky-300">{Math.round(item.progress)}% watched</p>
+                    ) : (
+                      <p className="mt-2 text-[11px] text-indigo-300">Score {item.score.toFixed(0)}</p>
+                    )}
+                  </div>
+                </div>
+              </PrefetchLink>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-slate-400">Link Jellyfin and build watch history to get a nightly queue.</p>
+        )}
+      </section>
 
       {/* ─── Personal Stats Grid ─── */}
       <div className="grid gap-4 md:grid-cols-2">

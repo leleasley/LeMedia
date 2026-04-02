@@ -1,6 +1,6 @@
 import "server-only";
 
-import { getPool } from "@/db";
+import { getPool } from "./core";
 
 export type WatchPartyMediaType = "movie" | "tv";
 export type WatchPartyStatus = "active" | "ended" | "cancelled";
@@ -413,6 +413,24 @@ export async function endWatchParty(partyId: string, hostUserId: number): Promis
   const ended = Number(res.rowCount ?? 0) > 0;
   if (ended) {
     // Revoke pending invites — they are only valid for active parties
+    await p.query(
+      `DELETE FROM watch_party_invite WHERE party_id = $1 AND status = 'pending'`,
+      [partyId]
+    ).catch(() => {});
+  }
+  return ended;
+}
+
+export async function endWatchPartyAsAdmin(partyId: string): Promise<boolean> {
+  const p = getPool();
+  const res = await p.query(
+    `UPDATE watch_party
+     SET status = 'ended', ended_at = NOW()
+     WHERE id = $1 AND status = 'active'`,
+    [partyId]
+  );
+  const ended = Number(res.rowCount ?? 0) > 0;
+  if (ended) {
     await p.query(
       `DELETE FROM watch_party_invite WHERE party_id = $1 AND status = 'pending'`,
       [partyId]
@@ -1129,4 +1147,14 @@ export async function listAdminWatchParties(limit = 100): Promise<AdminWatchPart
     [cappedLimit]
   );
   return res.rows;
+}
+
+export async function deleteWatchPartyById(partyId: string): Promise<boolean> {
+  const p = getPool();
+  const res = await p.query(
+    `DELETE FROM watch_party
+     WHERE id = $1`,
+    [partyId]
+  );
+  return Number(res.rowCount ?? 0) > 0;
 }

@@ -16,6 +16,7 @@ import { MediaReviews } from "@/components/Reviews/MediaReviews";
 import { MediaCastScroller } from "@/components/Media/MediaCastScroller";
 import { MediaGalleryStrip } from "@/components/Media/MediaGalleryStrip";
 import { MediaSocialPanel } from "@/components/Media/MediaSocialPanel";
+import { MediaReactionsPanel } from "@/components/Media/MediaReactionsPanel";
 import tmdbLogo from "@/assets/tmdb_logo.svg";
 import { getUser } from "@/auth";
 import { findActiveRequestByTmdb, getReviewStatsForMedia, getReviewsForMedia, getUserByUsername, getUserMediaListStatus, getUserReviewForMedia, upsertUser } from "@/db";
@@ -253,6 +254,12 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
             mediaType="movie"
             requestedBy={activeRequest?.requestedBy ?? null}
             initialWatchlist={listStatus?.watchlist ?? null}
+          />
+
+          <MediaReactionsPanel
+            tmdbId={movie.id}
+            mediaType="movie"
+            mediaTitle={movie.title || "Movie"}
           />
 
           {/* Attributes */}

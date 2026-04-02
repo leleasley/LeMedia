@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { HeartIcon, StarIcon, ListBulletIcon, BellIcon } from "@heroicons/react/24/outline";
-import { HeartIcon as HeartIconSolid, StarIcon as StarIconSolid, BellIcon as BellIconSolid } from "@heroicons/react/24/solid";
+import { HeartIcon, StarIcon, ListBulletIcon, BellIcon, EyeIcon } from "@heroicons/react/24/outline";
+import { HeartIcon as HeartIconSolid, StarIcon as StarIconSolid, BellIcon as BellIconSolid, EyeIcon as EyeIconSolid } from "@heroicons/react/24/solid";
 import { cn } from "@/lib/utils";
 import { csrfFetch } from "@/lib/csrf-client";
 import { useToast } from "@/components/Providers/ToastProvider";
@@ -17,6 +17,7 @@ export function MediaListButtons({
   className,
   initialFavorite,
   initialWatchlist,
+  initialWatched,
   title,
 }: {
   tmdbId: number;
@@ -24,18 +25,20 @@ export function MediaListButtons({
   className?: string;
   initialFavorite?: boolean | null;
   initialWatchlist?: boolean | null;
+  initialWatched?: boolean | null;
   title?: string;
 }) {
   const [favorite, setFavorite] = useState(Boolean(initialFavorite));
   const [watchlist, setWatchlist] = useState(Boolean(initialWatchlist));
+  const [watched, setWatched] = useState(Boolean(initialWatched));
   const [followed, setFollowed] = useState(false);
-  const [loading, setLoading] = useState(initialFavorite == null || initialWatchlist == null);
+  const [loading, setLoading] = useState(initialFavorite == null || initialWatchlist == null || initialWatched == null);
   const [saving, setSaving] = useState(false);
   const [listModalOpen, setListModalOpen] = useState(false);
   const toast = useToast();
 
   useEffect(() => {
-    if (initialFavorite != null && initialWatchlist != null) {
+    if (initialFavorite != null && initialWatchlist != null && initialWatched != null) {
       setLoading(false);
       return;
     }
@@ -47,6 +50,7 @@ export function MediaListButtons({
         if (!active || !data) return;
         setFavorite(Boolean(data.favorite));
         setWatchlist(Boolean(data.watchlist));
+        setWatched(Boolean(data.watched));
       })
       .catch(() => {})
       .finally(() => {
@@ -64,7 +68,7 @@ export function MediaListButtons({
     return () => {
       active = false;
     };
-  }, [tmdbId, mediaType, initialFavorite, initialWatchlist]);
+  }, [tmdbId, mediaType, initialFavorite, initialWatchlist, initialWatched]);
 
   const toggleFollow = async () => {
     if (saving) return;
@@ -93,10 +97,10 @@ export function MediaListButtons({
     }
   };
 
-  const toggle = async (listType: "favorite" | "watchlist") => {
+  const toggle = async (listType: "favorite" | "watchlist" | "watched") => {
     if (saving) return;
     setSaving(true);
-    const isActive = listType === "favorite" ? favorite : watchlist;
+    const isActive = listType === "favorite" ? favorite : (listType === "watchlist" ? watchlist : watched);
     const method = isActive ? "DELETE" : "POST";
     try {
       const res = await csrfFetch("/api/v1/media-list", {
@@ -117,6 +121,13 @@ export function MediaListButtons({
         setWatchlist(!isActive);
         toast.success(
           !isActive ? "Added to your watchlist" : "Removed from your watchlist",
+          { timeoutMs: 3000 }
+        );
+      }
+      if (listType === "watched") {
+        setWatched(!isActive);
+        toast.success(
+          !isActive ? "Marked as watched" : "Marked as unwatched",
           { timeoutMs: 3000 }
         );
       }
@@ -158,6 +169,21 @@ export function MediaListButtons({
             <StarIconSolid className="h-4 w-4 text-yellow-500" />
           ) : (
             <StarIcon className="h-4 w-4 text-yellow-500" />
+          )}
+        </Button>
+        <Button
+          buttonType="ghost"
+          buttonSize="md"
+          onClick={() => toggle("watched")}
+          disabled={loading || saving}
+          className="z-40"
+          aria-label={watched ? "Mark as unwatched" : "Mark as watched"}
+          aria-pressed={watched}
+        >
+          {watched ? (
+            <EyeIconSolid className="h-4 w-4 text-emerald-400" />
+          ) : (
+            <EyeIcon className="h-4 w-4 text-emerald-400" />
           )}
         </Button>
         <Button

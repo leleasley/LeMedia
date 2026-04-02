@@ -24,6 +24,7 @@ export interface UserProfile {
   allowFriendRequests: boolean;
   showStats: boolean;
   showLists: boolean;
+  showWatched: boolean;
   createdAt: string;
   lastSeenAt: string;
 }
@@ -165,6 +166,36 @@ export interface MutualTasteInsight {
   sharedMediaCount: number;
 }
 
+export interface MediaReaction {
+  id: number;
+  userId: number;
+  mediaType: "movie" | "tv";
+  tmdbId: number;
+  emoji: string;
+  worthWatching: boolean;
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
+  username: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+}
+
+export interface MediaReactionSummary {
+  emoji: string;
+  count: number;
+}
+
+export interface MediaReactionAggregate {
+  me: MediaReaction | null;
+  reactions: MediaReaction[];
+  summary: MediaReactionSummary[];
+  worthWatching: {
+    yes: number;
+    no: number;
+  };
+}
+
 // ============================================================
 // USER PROFILE
 // ============================================================
@@ -179,6 +210,7 @@ export async function getUserProfile(username: string): Promise<UserProfile | nu
             profile_visibility as "profileVisibility",
             show_activity as "showActivity", allow_friend_requests as "allowFriendRequests",
             show_stats as "showStats", show_lists as "showLists",
+            COALESCE(show_watched, true) as "showWatched",
             created_at as "createdAt", last_seen_at as "lastSeenAt"
      FROM app_user WHERE lower(username) = lower($1) AND (banned IS NULL OR banned = false)`,
     [username]
@@ -196,6 +228,7 @@ export async function getUserProfileById(userId: number): Promise<UserProfile | 
             profile_visibility as "profileVisibility",
             show_activity as "showActivity", allow_friend_requests as "allowFriendRequests",
             show_stats as "showStats", show_lists as "showLists",
+            COALESCE(show_watched, true) as "showWatched",
             created_at as "createdAt", last_seen_at as "lastSeenAt"
      FROM app_user WHERE id = $1 AND (banned IS NULL OR banned = false)`,
     [userId]
@@ -214,6 +247,7 @@ export async function updateUserProfile(
     allowFriendRequests?: boolean;
     showStats?: boolean;
     showLists?: boolean;
+    showWatched?: boolean;
   }
 ): Promise<UserProfile | null> {
   const p = getPool();
@@ -229,6 +263,7 @@ export async function updateUserProfile(
   if (updates.allowFriendRequests !== undefined) { sets.push(`allow_friend_requests = $${idx++}`); vals.push(updates.allowFriendRequests); }
   if (updates.showStats !== undefined) { sets.push(`show_stats = $${idx++}`); vals.push(updates.showStats); }
   if (updates.showLists !== undefined) { sets.push(`show_lists = $${idx++}`); vals.push(updates.showLists); }
+  if (updates.showWatched !== undefined) { sets.push(`show_watched = $${idx++}`); vals.push(updates.showWatched); }
 
   if (sets.length === 0) return getUserProfileById(userId);
 
@@ -545,6 +580,113 @@ export async function getListReactionUsers(listId: number, reaction: string, lim
     [listId, reaction, limit]
   );
   return res.rows;
+}
+
+export async function upsertMediaReaction(input: {
+  userId: number;
+  mediaType: "movie" | "tv";
+  tmdbId: number;
+  emoji: string;
+  worthWatching: boolean;
+  note?: string | null;
+}): Promise<MediaReaction> {
+  const p = getPool();
+  const normalizedEmoji = String(input.emoji || "🔥").trim().slice(0, 16) || "🔥";
+  const normalizedNote = String(input.note ?? "").trim().slice(0, 180);
+  const res = await p.query(
+    `INSERT INTO media_reaction (user_id, media_type, tmdb_id, emoji, worth_watching, note)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (user_id, media_type, tmdb_id)
+     DO UPDATE SET
+       emoji = EXCLUDED.emoji,
+       worth_watching = EXCLUDED.worth_watching,
+       note = EXCLUDED.note,
+       updated_at = NOW()
+     RETURNING id, user_id as "userId", media_type as "mediaType", tmdb_id as "tmdbId", emoji,
+               worth_watching as "worthWatching", note, created_at as "createdAt", updated_at as "updatedAt"`,
+    [input.userId, input.mediaType, input.tmdbId, normalizedEmoji, input.worthWatching, normalizedNote || null]
+  );
+
+  const row = res.rows[0];
+  const userRes = await p.query(
+    `SELECT username, display_name as "displayName", avatar_url as "avatarUrl"
+     FROM app_user WHERE id = $1`,
+    [input.userId]
+  );
+
+  return {
+    ...row,
+    username: String(userRes.rows[0]?.username ?? "user"),
+    displayName: userRes.rows[0]?.displayName ?? null,
+    avatarUrl: userRes.rows[0]?.avatarUrl ?? null,
+  };
+}
+
+export async function deleteMediaReaction(userId: number, mediaType: "movie" | "tv", tmdbId: number): Promise<void> {
+  const p = getPool();
+  await p.query(
+    `DELETE FROM media_reaction
+     WHERE user_id = $1 AND media_type = $2 AND tmdb_id = $3`,
+    [userId, mediaType, tmdbId]
+  );
+}
+
+export async function getMediaReactionAggregate(
+  viewerUserId: number,
+  mediaType: "movie" | "tv",
+  tmdbId: number
+): Promise<MediaReactionAggregate> {
+  const p = getPool();
+  const reactionsRes = await p.query(
+    `SELECT
+       mr.id,
+       mr.user_id as "userId",
+       mr.media_type as "mediaType",
+       mr.tmdb_id as "tmdbId",
+       mr.emoji,
+       mr.worth_watching as "worthWatching",
+       mr.note,
+       mr.created_at as "createdAt",
+       mr.updated_at as "updatedAt",
+       u.username,
+       u.display_name as "displayName",
+       u.avatar_url as "avatarUrl"
+     FROM media_reaction mr
+     JOIN app_user u ON u.id = mr.user_id
+     WHERE mr.media_type = $1
+       AND mr.tmdb_id = $2
+       AND (
+         mr.user_id = $3
+         OR mr.user_id IN (SELECT friend_id FROM friend_edge WHERE user_id = $3)
+       )
+       AND COALESCE(u.banned, FALSE) = FALSE
+     ORDER BY mr.updated_at DESC
+     LIMIT 60`,
+    [mediaType, tmdbId, viewerUserId]
+  );
+
+  const reactions = reactionsRes.rows as MediaReaction[];
+  const me = reactions.find((item) => item.userId === viewerUserId) ?? null;
+
+  const summaryMap = new Map<string, number>();
+  let yes = 0;
+  let no = 0;
+  for (const item of reactions) {
+    summaryMap.set(item.emoji, (summaryMap.get(item.emoji) ?? 0) + 1);
+    if (item.worthWatching) yes += 1;
+    else no += 1;
+  }
+
+  const summary = Array.from(summaryMap.entries())
+    .map(([emoji, count]) => ({ emoji, count }))
+    .sort((a, b) => b.count - a.count);
+
+  return {
+    me,
+    reactions: reactions.filter((item) => item.userId !== viewerUserId),
+    summary,
+    worthWatching: { yes, no },
+  };
 }
 
 // ============================================================

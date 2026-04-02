@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { getPool } from "@/db";
+import { getPool } from "./core";
 
 export type UserSessionSummary = {
   id: string;

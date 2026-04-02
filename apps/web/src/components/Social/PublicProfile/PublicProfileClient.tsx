@@ -28,6 +28,7 @@ interface Profile {
   showActivity: boolean;
   showStats: boolean;
   showLists: boolean;
+  showWatched: boolean;
   createdAt: string;
 }
 
@@ -60,6 +61,14 @@ interface ListItem {
   shareId: string;
 }
 
+interface WatchedItem {
+  tmdbId: number;
+  mediaType: string;
+  title: string;
+  posterUrl: string | null;
+  createdAt: string;
+}
+
 interface MutualInsight {
   overlapPercentage: number;
   sharedMediaCount: number;
@@ -71,6 +80,7 @@ interface ProfileData {
   profile: Profile;
   stats: Stats | null;
   lists: ListItem[];
+  watchedItems: WatchedItem[];
   friendStatus: string;
   mutualInsights: MutualInsight | null;
   isPrivate?: boolean;
@@ -209,7 +219,7 @@ export function PublicProfileClient({
     );
   }
 
-  const { profile, stats, lists, friendStatus, mutualInsights, isPrivate, isFriendsOnly } = data;
+  const { profile, stats, lists, watchedItems, friendStatus, mutualInsights, isPrivate, isFriendsOnly } = data;
 
   // Private / Friends-only profile gates
   if (isPrivate) {
@@ -455,6 +465,57 @@ export function PublicProfileClient({
         <div className="px-4 sm:px-8 py-12 text-center">
           <ListChecks className="w-12 h-12 text-gray-600 mx-auto mb-3" />
           <p className="text-gray-400 text-sm">No public lists yet</p>
+        </div>
+      )}
+
+      {/* Watched History Section */}
+      {profile.showWatched && watchedItems && watchedItems.length > 0 && (
+        <div className="px-4 sm:px-8 py-6">
+          <div className="flex items-center justify-between mb-5">
+            <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+              <Eye className="w-5 h-5 text-emerald-400" />
+              Watched
+            </h2>
+            <span className="text-xs text-gray-500">{watchedItems.length} items</span>
+          </div>
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3">
+            {watchedItems.slice(0, 18).map((item) => (
+              <Link
+                key={`${item.mediaType}-${item.tmdbId}`}
+                href={`/${item.mediaType === "movie" ? "movie" : "tv"}/${item.tmdbId}`}
+                className="group relative aspect-[2/3] rounded-lg overflow-hidden bg-white/5 border border-white/5 hover:border-pink-500/30 transition-all"
+              >
+                {item.posterUrl ? (
+                  <Image
+                    src={item.posterUrl}
+                    alt={item.title}
+                    fill
+                    className="object-cover group-hover:scale-105 transition-transform duration-300"
+                    sizes="(max-width: 640px) 33vw, (max-width: 768px) 25vw, (max-width: 1024px) 20vw, 16vw"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    {item.mediaType === "movie" ? (
+                      <Film className="w-8 h-8 text-gray-600" />
+                    ) : (
+                      <Tv className="w-8 h-8 text-gray-600" />
+                    )}
+                  </div>
+                )}
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <p className="text-xs text-white font-medium truncate">{item.title}</p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Empty State for Watched */}
+      {profile.showWatched && (!watchedItems || watchedItems.length === 0) && (
+        <div className="px-4 sm:px-8 py-12 text-center">
+          <Eye className="w-12 h-12 text-gray-600 mx-auto mb-3" />
+          <p className="text-gray-400 text-sm">No watched history yet</p>
         </div>
       )}
 

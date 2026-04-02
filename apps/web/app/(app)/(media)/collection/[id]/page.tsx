@@ -4,8 +4,11 @@ import { z } from "zod";
 import { getCollection, tmdbImageUrl } from "@/lib/tmdb";
 import { listRadarrQualityProfiles } from "@/lib/radarr";
 import { CollectionRequestButton } from "@/components/Requests/CollectionRequestButton";
-import { Film, Layers, Star, Clock } from "lucide-react";
+import { Film, Layers, Star, CheckCircle2 } from "lucide-react";
 import { getImageProxyEnabled } from "@/lib/app-settings";
+import { getUser } from "@/auth";
+import { getUserByUsername, listUserMediaList, upsertUser } from "@/db";
+import { CollectionWatchedBulkActions } from "@/components/Collection/CollectionWatchedBulkActions";
 
 const Params = z.object({ id: z.coerce.number().int() });
 type ParamsInput = { id: string } | Promise<{ id: string }>;
@@ -79,6 +82,32 @@ export default async function CollectionPage({ params }: { params: ParamsInput }
 
   const defaultQualityProfileId = Number(process.env.RADARR_QUALITY_PROFILE_ID ?? qualityProfiles[0]?.id ?? 0);
 
+  // Franchise completion: use only explicit watched-list entries so bulk mark/unmark works correctly.
+  let watchedMovieIds = new Set<number>();
+  try {
+    const user = await getUser().catch(() => null);
+    if (user?.username) {
+      const dbUser = await getUserByUsername(user.username).catch(() => null)
+        ?? await upsertUser(user.username, user.groups).catch(() => null);
+      if (dbUser?.id) {
+        const explicitWatched = await listUserMediaList({ userId: dbUser.id, listType: "watched", limit: 5000 }).catch(() => []);
+
+        const explicitWatchedIds = explicitWatched
+          .filter((item) => item.media_type === "movie")
+          .map((item) => Number(item.tmdb_id));
+
+        watchedMovieIds = new Set(explicitWatchedIds.filter((value) => Number.isFinite(value) && value > 0));
+      }
+    }
+  } catch {
+    watchedMovieIds = new Set<number>();
+  }
+
+  const watchedCount = parts.filter((movie: any) => watchedMovieIds.has(Number(movie.id))).length;
+  const totalCount = parts.length;
+  const completionPercent = totalCount > 0 ? Math.round((watchedCount / totalCount) * 100) : 0;
+  const remainingCount = Math.max(totalCount - watchedCount, 0);
+
   // Calculate collection statistics
   const validRatings = parts.filter((m: any) => m.vote_average && m.vote_average > 0);
   const averageRating = validRatings.length > 0
@@ -141,6 +170,28 @@ export default async function CollectionPage({ params }: { params: ParamsInput }
               </span>
             )}
           </span>
+
+          <div className="mt-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-semibold text-emerald-100">
+                Franchise completion: {watchedCount}/{totalCount}
+              </p>
+              <p className="text-xs font-medium text-emerald-200">
+                {completionPercent}% complete
+              </p>
+            </div>
+            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-black/30">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-teal-300"
+                style={{ width: `${completionPercent}%` }}
+              />
+            </div>
+            <p className="mt-2 text-xs text-emerald-100/80">
+              {remainingCount === 0 ? "Collection complete. Nice." : `${remainingCount} title${remainingCount === 1 ? "" : "s"} left to finish this franchise.`}
+            </p>
+            <CollectionWatchedBulkActions movieIds={parts.map((movie: any) => Number(movie.id)).filter((idValue: number) => Number.isFinite(idValue) && idValue > 0)} />
+          </div>
+
           <div className="media-actions">
             {radarrError ? (
               <div className="w-full rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-red-200 text-sm">
@@ -171,6 +222,7 @@ export default async function CollectionPage({ params }: { params: ParamsInput }
         <div className="grid gap-3 sm:gap-4 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
           {partsSorted.map((movie: any) => {
             const posterPath = tmdbImageUrl(movie.poster_path, "w300", imageProxyEnabled);
+            const isWatched = watchedMovieIds.has(Number(movie.id));
             return (
               <PrefetchLink
                 key={movie.id}
@@ -197,6 +249,12 @@ export default async function CollectionPage({ params }: { params: ParamsInput }
                     <div className="absolute top-2 right-2 bg-black/75 backdrop-blur-sm rounded-full px-2 py-1 flex items-center gap-1">
                       <Star className="h-3 w-3 fill-yellow-500 text-yellow-500" />
                       <span className="text-xs font-bold text-white">{movie.vote_average.toFixed(1)}</span>
+                    </div>
+                  )}
+                  {isWatched && (
+                    <div className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-full border border-emerald-400/50 bg-emerald-500/80 px-2 py-1 text-[10px] font-semibold text-white shadow">
+                      <CheckCircle2 className="h-3 w-3" />
+                      Watched
                     </div>
                   )}
                 </div>
