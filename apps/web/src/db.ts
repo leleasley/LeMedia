@@ -1,0 +1,9369 @@
+import { Pool } from "pg";
+import { createHash, randomBytes, randomUUID } from "crypto";
+import { z } from "zod";
+import { withCache } from "@/lib/local-cache";
+import cacheManager from "@/lib/cache-manager";
+import { defaultDashboardSliders, type DashboardSlider } from "@/lib/dashboard-sliders";
+import { logger } from "@/lib/logger";
+import { validateEnv } from "@/lib/env-validation";
+import { normalizeGroupList } from "@/lib/groups";
+import { decryptSecret, encryptSecret } from "@/lib/encryption";
+import { hashUserApiToken } from "@/lib/api-tokens";
+
+function decryptOptionalSecret(value?: string | null): string | null {
+  if (!value) return null;
+  try {
+    return decryptSecret(value);
+  } catch {
+    return value;
+  }
+}
+
+function encryptOptionalSecret(value?: string | null): string | null {
+  if (!value) return null;
+  return encryptSecret(value);
+}
+
+const DatabaseUrlSchema = z.string().min(1);
+let cachedDatabaseUrl: string | null = null;
+
+const dashboardSliderCache = cacheManager.getCache("dashboard-sliders", {
+  stdTTL: 60,
+  checkperiod: 120,
+});
+
+let pool: Pool | null = null;
+export function getPool(): Pool {
+  if (!pool) {
+    validateEnv();
+    if (!cachedDatabaseUrl) {
+      cachedDatabaseUrl = DatabaseUrlSchema.parse(process.env.DATABASE_URL);
+    }
+    pool = new Pool({
+      connectionString: cachedDatabaseUrl,
+      // Optimized connection pool settings (based on Seerr best practices)
+      max: Number(process.env.DB_POOL_MAX ?? "50"), // Maximum pool size (default: 10 is too low)
+      min: Number(process.env.DB_POOL_MIN ?? "2"), // Minimum idle connections
+      idleTimeoutMillis: Number(process.env.DB_POOL_IDLE_TIMEOUT ?? "30000"), // Close idle connections after 30s
+      connectionTimeoutMillis: Number(process.env.DB_POOL_CONNECTION_TIMEOUT ?? "10000"), // Wait max 10s for connection
+      // Prevent connection leaks and improve reliability
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 10000,
+      // Query timeout (prevents hung queries)
+      statement_timeout: Number(process.env.DB_STATEMENT_TIMEOUT ?? "30000"), // 30 seconds
+      query_timeout: Number(process.env.DB_QUERY_TIMEOUT ?? "30000"),
+    });
+
+    // Handle pool errors gracefully
+    pool.on("error", (err) => {
+      logger.error("[DB] Unexpected database pool error", err);
+    });
+  }
+  return pool;
+}
+
+export const ACTIVE_REQUEST_STATUSES = ["queued", "pending", "submitted"] as const;
+export type ActiveRequestStatus = (typeof ACTIVE_REQUEST_STATUSES)[number];
+
+export class ActiveRequestExistsError extends Error {
+  requestId?: string;
+  constructor(message: string, requestId?: string) {
+    super(message);
+    this.name = "ActiveRequestExistsError";
+    this.requestId = requestId;
+  }
+}
+
+export async function checkDatabaseHealth(): Promise<boolean> {
+  try {
+    const p = getPool();
+    await p.query("SELECT 1");
+    return true;
+  } catch (err) {
+    logger.error("[DB] Health check failed", err);
+    return false;
+  }
+}
+
+export async function upsertUser(username: string, groups: string[]): Promise<{ id: number }> {
+  const lastSeenMinutes = Math.max(1, Number(process.env.USER_LAST_SEEN_INTERVAL_MINUTES ?? "5") || 5);
+  const p = getPool();
+  const res = await p.query(
+    `
+    INSERT INTO app_user (username, groups, last_seen_at)
+    VALUES ($1, $2, NOW())
+    ON CONFLICT (username)
+    DO UPDATE SET
+      groups = EXCLUDED.groups,
+      last_seen_at = CASE
+        WHEN app_user.last_seen_at < NOW() - make_interval(mins => $3)
+        THEN NOW()
+        ELSE app_user.last_seen_at
+      END
+    RETURNING id
+    `,
+    [username, groups.join(","), lastSeenMinutes]
+  );
+  if (!res.rows.length) {
+    throw new Error(`Failed to upsert user: ${username}`);
+  }
+  return { id: res.rows[0].id as number };
+}
+
+export async function getPendingRequestCount(): Promise<number> {
+  const p = getPool();
+  const res = await p.query(`SELECT COUNT(*) as count FROM media_request WHERE status IN ('pending', 'queued')`);
+  if (!res.rows.length) return 0;
+  return parseInt(res.rows[0].count, 10);
+}
+
+export async function getRequestCounts(): Promise<{
+  total: number;
+  movie: number;
+  episode: number;
+  pending: number;
+  submitted: number;
+  available: number;
+  failed: number;
+}> {
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT
+      COUNT(*)::int AS total,
+      COUNT(CASE WHEN request_type = 'movie' THEN 1 END)::int AS movie,
+      COUNT(CASE WHEN request_type = 'episode' THEN 1 END)::int AS episode,
+      COUNT(CASE WHEN status IN ('pending', 'queued') THEN 1 END)::int AS pending,
+      COUNT(CASE WHEN status = 'submitted' THEN 1 END)::int AS submitted,
+      COUNT(CASE WHEN status = 'available' THEN 1 END)::int AS available,
+      COUNT(CASE WHEN status IN ('failed', 'denied') THEN 1 END)::int AS failed
+    FROM media_request
+    `
+  );
+  if (!res.rows.length) {
+    return { total: 0, movie: 0, episode: 0, pending: 0, submitted: 0, available: 0, failed: 0 };
+  }
+  const row = res.rows[0];
+  return {
+    total: Number(row.total ?? 0),
+    movie: Number(row.movie ?? 0),
+    episode: Number(row.episode ?? 0),
+    pending: Number(row.pending ?? 0),
+    submitted: Number(row.submitted ?? 0),
+    available: Number(row.available ?? 0),
+    failed: Number(row.failed ?? 0),
+  };
+}
+
+export type UpgradeFinderHint = {
+  mediaType: "movie" | "tv";
+  mediaId: number;
+  status: "available" | "none" | "error";
+  hintText: string | null;
+  checkedAt: string | null;
+};
+
+export type UpgradeFinderOverride = {
+  mediaType: "movie" | "tv";
+  mediaId: number;
+  ignore4k: boolean;
+  updatedAt: string | null;
+};
+
+export async function createRequest(input: {
+  requestType: "movie" | "episode";
+  tmdbId: number;
+  title: string;
+  userId: number;
+  priority?: "low" | "normal" | "high";
+  status?: string;
+  statusReason?: string | null;
+  posterPath?: string | null;
+  backdropPath?: string | null;
+  releaseYear?: number | null;
+}): Promise<{ id: string }> {
+  const p = getPool();
+  const res = await p.query(
+    `
+    INSERT INTO media_request (
+      request_type,
+      tmdb_id,
+      title,
+      requested_by,
+      priority,
+      status,
+      status_reason,
+      poster_path,
+      backdrop_path,
+      release_year
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    RETURNING id
+    `,
+    [
+      input.requestType,
+      input.tmdbId,
+      input.title,
+      input.userId,
+      input.priority ?? "normal",
+      input.status ?? "queued",
+      input.statusReason ?? null,
+      input.posterPath ?? null,
+      input.backdropPath ?? null,
+      input.releaseYear ?? null
+    ]
+  );
+  if (!res.rows.length) {
+    throw new Error(`Failed to create media request for tmdbId ${input.tmdbId}`);
+  }
+  return { id: res.rows[0].id as string };
+}
+
+export type RequestItemInput = {
+  provider: "sonarr" | "radarr";
+  providerId?: number | null;
+  season?: number | null;
+  episode?: number | null;
+  status?: string;
+};
+
+export async function createRequestWithItemsTransaction(input: {
+  requestType: "movie" | "episode";
+  tmdbId: number;
+  title: string;
+  userId: number;
+  priority?: "low" | "normal" | "high";
+  requestStatus?: string;
+  statusReason?: string | null;
+  finalStatus?: string;
+  posterPath?: string | null;
+  backdropPath?: string | null;
+  releaseYear?: number | null;
+  items: RequestItemInput[];
+}): Promise<{ id: string }> {
+  const requestStatus = input.requestStatus ?? "queued";
+  const client = await getPool().connect();
+  let clientReleased = false;
+
+  try {
+    await client.query("BEGIN");
+
+    const res = await client.query(
+      `
+      INSERT INTO media_request (
+        request_type,
+        tmdb_id,
+        title,
+        requested_by,
+        priority,
+        status,
+        status_reason,
+        poster_path,
+        backdrop_path,
+        release_year
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      RETURNING id
+      `,
+      [
+        input.requestType,
+        input.tmdbId,
+        input.title,
+        input.userId,
+        input.priority ?? "normal",
+        requestStatus,
+        input.statusReason ?? null,
+        input.posterPath ?? null,
+        input.backdropPath ?? null,
+        input.releaseYear ?? null
+      ]
+    );
+
+    const requestId = res.rows[0]?.id as string | undefined;
+    if (!requestId) {
+      throw new Error("Failed to create request");
+    }
+
+    for (const item of input.items) {
+      await client.query(
+        `
+        INSERT INTO request_item (request_id, provider, provider_id, season, episode, status)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        `,
+        [
+          requestId,
+          item.provider,
+          item.providerId ?? null,
+          item.season ?? null,
+          item.episode ?? null,
+          item.status ?? requestStatus
+        ]
+      );
+    }
+
+    if (input.finalStatus && input.finalStatus !== requestStatus) {
+      await client.query(`UPDATE media_request SET status = $2, status_reason = NULL WHERE id = $1`, [requestId, input.finalStatus]);
+    }
+
+    await client.query("COMMIT");
+    return { id: requestId };
+  } catch (err: any) {
+    // Rollback transaction on any error
+    try {
+      await client.query("ROLLBACK");
+    } catch (rollbackErr) {
+      logger.error("[DB] Transaction rollback failed", rollbackErr);
+    }
+
+    // Handle duplicate key error (unique constraint violation)
+    if (err?.code === "23505") {
+      // Release client before using pool for new query
+      client.release();
+      clientReleased = true;
+
+      try {
+        const pool = getPool();
+        const existingRes = await pool.query(
+          `
+          SELECT id
+          FROM media_request
+          WHERE request_type = $1
+            AND tmdb_id = $2
+            AND status = ANY($3::text[])
+          ORDER BY created_at DESC
+          LIMIT 1
+          `,
+          [input.requestType, input.tmdbId, ACTIVE_REQUEST_STATUSES]
+        );
+        const existingId = existingRes.rows[0]?.id as string | undefined;
+        throw new ActiveRequestExistsError("Active request already exists", existingId);
+      } catch (queryErr) {
+        // If query for existing request fails, still throw the duplicate error
+        logger.error("[DB] Failed to query existing request after duplicate error", queryErr);
+        throw new ActiveRequestExistsError("Active request already exists", undefined);
+      }
+    }
+
+    // Re-throw original error
+    throw err;
+  } finally {
+    // Ensure client is always released
+    if (!clientReleased) {
+      client.release();
+    }
+  }
+}
+
+export async function findActiveRequestByTmdb(input: { requestType: "movie" | "episode"; tmdbId: number }) {
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT mr.id, mr.status, mr.created_at, mr.requested_by,
+           u.username, u.display_name, u.avatar_url, u.jellyfin_user_id
+    FROM media_request mr
+    LEFT JOIN app_user u ON u.id = mr.requested_by
+    WHERE mr.request_type = $1
+      AND mr.tmdb_id = $2
+      AND mr.status IN ('queued','pending','submitted','downloading','partially_available','available','already_exists')
+    ORDER BY mr.created_at DESC
+    LIMIT 1
+    `,
+    [input.requestType, input.tmdbId]
+  );
+  if (!res.rows.length) return null;
+  return {
+    id: res.rows[0].id as string,
+    status: res.rows[0].status as string,
+    createdAt: res.rows[0].created_at as string,
+    requestedBy: {
+      id: res.rows[0].requested_by as number,
+      username: res.rows[0].username as string,
+      displayName: res.rows[0].display_name as string | null,
+      avatarUrl: res.rows[0].avatar_url as string | null,
+      jellyfinUserId: res.rows[0].jellyfin_user_id as string | null
+    }
+  };
+}
+
+export async function findActiveRequestsByTmdbIds(input: { requestType: "movie" | "episode"; tmdbIds: number[] }) {
+  if (!input.tmdbIds.length) return [];
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT tmdb_id, id, status
+    FROM media_request
+    WHERE request_type = $1
+      AND tmdb_id = ANY($2::int[])
+      AND status IN ('queued','pending','submitted','downloading','partially_available','available','already_exists')
+    `,
+    [input.requestType, input.tmdbIds]
+  );
+  return res.rows as Array<{ tmdb_id: number; id: string; status: string }>;
+}
+
+export async function findActiveEpisodeRequestItems(input: { tmdbTvId: number; season: number; episodeNumbers: number[] }) {
+  if (!input.episodeNumbers.length) return [];
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT i.season, i.episode, r.id as request_id, r.status as request_status
+    FROM request_item i
+    JOIN media_request r ON r.id = i.request_id
+    WHERE r.request_type = 'episode'
+      AND r.tmdb_id = $1
+      AND i.season = $2
+      AND i.episode = ANY($3::int[])
+      AND r.status IN ('queued','pending','submitted','downloading','partially_available','available')
+    `,
+    [input.tmdbTvId, input.season, input.episodeNumbers]
+  );
+  return res.rows as Array<{ season: number; episode: number; request_id: string; request_status: string }>;
+}
+
+export async function listActiveEpisodeRequestItemsByTmdb(tmdbTvId: number) {
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT i.season, i.episode, r.id as request_id, r.status as request_status
+    FROM request_item i
+    JOIN media_request r ON r.id = i.request_id
+    WHERE r.request_type = 'episode'
+      AND r.tmdb_id = $1
+      AND r.status IN ('queued','pending','submitted','downloading','partially_available','available')
+    ORDER BY i.season ASC, i.episode ASC
+    `,
+    [tmdbTvId]
+  );
+  return res.rows as Array<{ season: number; episode: number; request_id: string; request_status: string }>;
+}
+
+export async function addRequestItem(input: {
+  requestId: string;
+  provider: "sonarr" | "radarr";
+  providerId?: number | null;
+  season?: number | null;
+  episode?: number | null;
+  status?: string;
+}) {
+  const p = getPool();
+  await p.query(
+    `
+    INSERT INTO request_item (request_id, provider, provider_id, season, episode, status)
+    VALUES ($1, $2, $3, $4, $5, $6)
+    `,
+    [input.requestId, input.provider, input.providerId ?? null, input.season ?? null, input.episode ?? null, input.status ?? "queued"]
+  );
+}
+
+export async function listRecentRequests(limit = 25, username?: string) {
+  return withCache(`recent_requests:${limit}:${username ?? 'all'}`, 60 * 1000, async () => {
+    const p = getPool();
+    const query = username
+      ? `
+        SELECT r.id, r.request_type, r.tmdb_id, r.title, r.priority, r.status, r.status_reason, r.created_at,
+               r.poster_path, r.backdrop_path, r.release_year,
+               u.username, u.display_name, u.avatar_url, u.jellyfin_user_id,
+               COALESCE(v.vote_count, 0)::int AS vote_count
+        FROM media_request r
+        JOIN app_user u ON u.id = r.requested_by
+        LEFT JOIN (
+          SELECT request_id, COUNT(*)::int AS vote_count
+          FROM request_upvote
+          GROUP BY request_id
+        ) v ON v.request_id = r.id
+        WHERE u.username = $2
+        ORDER BY r.created_at DESC
+        LIMIT $1
+        `
+      : `
+        SELECT r.id, r.request_type, r.tmdb_id, r.title, r.priority, r.status, r.status_reason, r.created_at,
+               r.poster_path, r.backdrop_path, r.release_year,
+               u.username, u.display_name, u.avatar_url, u.jellyfin_user_id,
+               COALESCE(v.vote_count, 0)::int AS vote_count
+        FROM media_request r
+        JOIN app_user u ON u.id = r.requested_by
+        LEFT JOIN (
+          SELECT request_id, COUNT(*)::int AS vote_count
+          FROM request_upvote
+          GROUP BY request_id
+        ) v ON v.request_id = r.id
+        ORDER BY r.created_at DESC
+        LIMIT $1
+        `;
+    const res = username
+      ? await p.query(query, [limit, username])
+      : await p.query(query, [limit]);
+    return res.rows as Array<{
+      id: string;
+      request_type: string;
+      tmdb_id: number;
+      title: string;
+      priority: "low" | "normal" | "high";
+      status: string;
+      status_reason: string | null;
+      created_at: string;
+      poster_path: string | null;
+      backdrop_path: string | null;
+      release_year: number | null;
+      username: string;
+      display_name: string | null;
+      avatar_url: string | null;
+      jellyfin_user_id: string | null;
+      vote_count: number;
+    }>;
+  });
+}
+
+export async function listRequestsByUsername(username: string, limit = 100) {
+  const p = getPool();
+  let res;
+  try {
+    res = await p.query(
+      `
+            SELECT r.id, r.request_type, r.tmdb_id, r.title, r.priority, r.status, r.status_reason, r.created_at,
+             r.poster_path, r.backdrop_path, r.release_year,
+             u.username,
+              COALESCE(du.display_name, du.username) AS denied_by_name,
+              COALESCE(v.vote_count, 0)::int AS vote_count
+      FROM media_request r
+      JOIN app_user u ON u.id = r.requested_by
+      LEFT JOIN app_user du ON du.id = r.denied_by_user_id
+            LEFT JOIN (
+         SELECT request_id, COUNT(*)::int AS vote_count
+         FROM request_upvote
+         GROUP BY request_id
+            ) v ON v.request_id = r.id
+      WHERE u.username = $1
+      ORDER BY r.created_at DESC
+      LIMIT $2
+      `,
+      [username, limit]
+    );
+  } catch (err: any) {
+    // Backward compatibility: instances that have not run migration 017 yet.
+    if (err?.code !== "42703") throw err; // undefined_column
+    res = await p.query(
+      `
+            SELECT r.id, r.request_type, r.tmdb_id, r.title, 'normal'::text AS priority, r.status, r.status_reason, r.created_at,
+             r.poster_path, r.backdrop_path, r.release_year,
+             u.username,
+              NULL::text AS denied_by_name,
+              COALESCE(v.vote_count, 0)::int AS vote_count
+      FROM media_request r
+      JOIN app_user u ON u.id = r.requested_by
+            LEFT JOIN (
+         SELECT request_id, COUNT(*)::int AS vote_count
+         FROM request_upvote
+         GROUP BY request_id
+            ) v ON v.request_id = r.id
+      WHERE u.username = $1
+      ORDER BY r.created_at DESC
+      LIMIT $2
+      `,
+      [username, limit]
+    );
+  }
+  return res.rows as Array<{
+    id: string;
+    request_type: string;
+    tmdb_id: number;
+    title: string;
+    priority: "low" | "normal" | "high";
+    status: string;
+    status_reason: string | null;
+    created_at: string;
+    poster_path: string | null;
+    backdrop_path: string | null;
+    release_year: number | null;
+    username: string;
+    denied_by_name: string | null;
+    vote_count: number;
+  }>;
+}
+
+export async function getUserRequestStats(username: string): Promise<{
+  total: number;
+  movie: number;
+  episode: number;
+  pending: number;
+  available: number;
+  failed: number;
+}> {
+  const p = getPool();
+  const res = await p.query(
+    `
+    WITH target_user AS (
+      SELECT id
+      FROM app_user
+      WHERE username = $1
+      LIMIT 1
+    )
+    SELECT
+      COUNT(*)::int AS total,
+      COUNT(CASE WHEN r.request_type = 'movie' THEN 1 END)::int AS movie,
+      COUNT(CASE WHEN r.request_type = 'episode' THEN 1 END)::int AS episode,
+      COUNT(CASE WHEN r.status IN ('pending', 'queued', 'submitted') THEN 1 END)::int AS pending,
+      COUNT(CASE WHEN r.status = 'available' THEN 1 END)::int AS available,
+      COUNT(CASE WHEN r.status IN ('failed', 'denied') THEN 1 END)::int AS failed
+    FROM media_request r
+    JOIN target_user u ON u.id = r.requested_by
+    `,
+    [username]
+  );
+  if (!res.rows.length) {
+    return { total: 0, movie: 0, episode: 0, pending: 0, available: 0, failed: 0 };
+  }
+  const row = res.rows[0];
+  return {
+    total: Number(row.total ?? 0),
+    movie: Number(row.movie ?? 0),
+    episode: Number(row.episode ?? 0),
+    pending: Number(row.pending ?? 0),
+    available: Number(row.available ?? 0),
+    failed: Number(row.failed ?? 0),
+  };
+}
+
+export async function listRequests(limit = 100) {
+  return listRecentRequests(limit);
+}
+
+export async function listRequestsPaged(input: {
+  limit: number;
+  offset: number;
+  statuses?: string[];
+  requestType?: "movie" | "episode";
+  requestedById?: number | null;
+}): Promise<{ total: number; results: Array<{ id: string; request_type: string; tmdb_id: number; title: string; priority: "low" | "normal" | "high"; status: string; status_reason: string | null; created_at: string; username: string; user_id: number; poster_path: string | null; backdrop_path: string | null; release_year: number | null; vote_count: number }> }> {
+  const p = getPool();
+  const where: string[] = [];
+  const values: Array<string | number | string[]> = [];
+  let idx = 1;
+
+  if (input.statuses && input.statuses.length) {
+    where.push(`r.status = ANY($${idx++}::text[])`);
+    values.push(input.statuses);
+  }
+  if (input.requestType) {
+    where.push(`r.request_type = $${idx++}`);
+    values.push(input.requestType);
+  }
+  if (Number.isFinite(input.requestedById ?? NaN)) {
+    where.push(`u.id = $${idx++}`);
+    values.push(Number(input.requestedById));
+  }
+
+  const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+  const countRes = await p.query(
+    `
+    SELECT COUNT(*) as count
+    FROM media_request r
+    JOIN app_user u ON u.id = r.requested_by
+    ${whereClause}
+    `,
+    values
+  );
+  const total = parseInt(countRes.rows[0]?.count ?? "0", 10);
+
+  values.push(input.limit);
+  const limitIdx = idx++;
+  values.push(input.offset);
+  const offsetIdx = idx++;
+
+  const res = await p.query(
+    `
+        SELECT r.id, r.request_type, r.tmdb_id, r.title, r.priority, r.status, r.status_reason, r.created_at,
+           r.poster_path, r.backdrop_path, r.release_year,
+          u.username, u.id as user_id,
+          COALESCE(v.vote_count, 0)::int AS vote_count
+    FROM media_request r
+    JOIN app_user u ON u.id = r.requested_by
+        LEFT JOIN (
+          SELECT request_id, COUNT(*)::int AS vote_count
+          FROM request_upvote
+          GROUP BY request_id
+        ) v ON v.request_id = r.id
+    ${whereClause}
+    ORDER BY r.created_at DESC
+    LIMIT $${limitIdx}
+    OFFSET $${offsetIdx}
+    `,
+    values
+  );
+
+  return {
+    total,
+    results: res.rows.map(r => ({
+      id: r.id as string,
+      request_type: r.request_type as string,
+      tmdb_id: Number(r.tmdb_id),
+      title: r.title as string,
+      priority: (r.priority ?? "normal") as "low" | "normal" | "high",
+      status: r.status as string,
+      status_reason: (r.status_reason ?? null) as string | null,
+      created_at: r.created_at as string,
+      username: r.username as string,
+      user_id: Number(r.user_id),
+      poster_path: r.poster_path ?? null,
+      backdrop_path: r.backdrop_path ?? null,
+      release_year: r.release_year !== null ? Number(r.release_year) : null,
+      vote_count: Number(r.vote_count ?? 0)
+    }))
+  };
+}
+
+export async function searchUsersByJellyfinUsername(username: string): Promise<Array<{ id: number; username: string; jellyfin_username: string | null }>> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT id, username, jellyfin_username
+    FROM app_user
+    WHERE LOWER(jellyfin_username) = LOWER($1)
+       OR LOWER(username) = LOWER($1)
+    `,
+    [username]
+  );
+  return res.rows.map(row => ({
+    id: Number(row.id),
+    username: row.username as string,
+    jellyfin_username: row.jellyfin_username ?? null
+  }));
+}
+
+export async function getRequestById(requestId: string) {
+  const p = getPool();
+  const res = await p.query(
+    `
+        SELECT r.id, r.request_type, r.tmdb_id, r.title, r.priority, r.status, r.status_reason, r.created_at,
+          r.poster_path, r.backdrop_path, r.release_year, r.requested_by,
+          COALESCE(v.vote_count, 0)::int AS vote_count,
+           u.username
+    FROM media_request r
+    JOIN app_user u ON u.id = r.requested_by
+        LEFT JOIN (
+          SELECT request_id, COUNT(*)::int AS vote_count
+          FROM request_upvote
+          GROUP BY request_id
+        ) v ON v.request_id = r.id
+    WHERE r.id = $1
+    LIMIT 1
+    `,
+    [requestId]
+  );
+  if (!res.rows.length) return null;
+  const r = res.rows[0];
+  return {
+    id: r.id as string,
+    request_type: r.request_type as string,
+    tmdb_id: r.tmdb_id as number,
+    title: r.title as string,
+    priority: (r.priority ?? "normal") as "low" | "normal" | "high",
+    status: r.status as string,
+    status_reason: (r.status_reason ?? null) as string | null,
+    created_at: r.created_at as string,
+    poster_path: r.poster_path ?? null,
+    backdrop_path: r.backdrop_path ?? null,
+    release_year: r.release_year !== null ? Number(r.release_year) : null,
+    user_id: r.requested_by as number,
+    username: r.username as string,
+    vote_count: Number(r.vote_count ?? 0)
+  };
+}
+
+export async function listRequestItems(requestId: string) {
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT id, provider, provider_id, season, episode, status, created_at
+    FROM request_item
+    WHERE request_id = $1
+    ORDER BY id ASC
+    `,
+    [requestId]
+  );
+  return res.rows as Array<{
+    id: number;
+    provider: "sonarr" | "radarr";
+    provider_id: number | null;
+    season: number | null;
+    episode: number | null;
+    status: string;
+    created_at: string;
+  }>;
+}
+
+export async function setRequestItemsStatus(requestId: string, status: string) {
+  const p = getPool();
+  await p.query(`UPDATE request_item SET status=$2 WHERE request_id=$1`, [requestId, status]);
+}
+
+export async function setRequestItemsProviderId(requestId: string, providerId: number | null) {
+  const p = getPool();
+  await p.query(`UPDATE request_item SET provider_id=$2 WHERE request_id=$1`, [requestId, providerId]);
+}
+
+export async function setEpisodeRequestItemsStatuses(
+  requestId: string,
+  statuses: Array<{ season: number; episode: number; status: string }>
+) {
+  if (!statuses.length) return;
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    for (const row of statuses) {
+      await client.query(
+        `
+        UPDATE request_item
+        SET status = $4
+        WHERE request_id = $1
+          AND provider = 'sonarr'
+          AND season = $2
+          AND episode = $3
+        `,
+        [requestId, row.season, row.episode, row.status]
+      );
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+const EPISODE_REQUEST_STATUS_PRIORITY = [
+  "available",
+  "partially_available",
+  "downloading",
+  "submitted",
+  "pending",
+  "queued",
+  "already_exists",
+  "denied",
+  "failed",
+  "removed"
+] as const;
+
+function pickBetterStatus(current: string, incoming: string) {
+  const a = EPISODE_REQUEST_STATUS_PRIORITY.indexOf(current as any);
+  const b = EPISODE_REQUEST_STATUS_PRIORITY.indexOf(incoming as any);
+  if (a === -1) return incoming;
+  if (b === -1) return current;
+  return b < a ? incoming : current;
+}
+
+export async function mergeDuplicateEpisodeRequests(): Promise<{ groupsMerged: number; requestsRemoved: number; itemsMerged: number }> {
+  const client = await getPool().connect();
+  let groupsMerged = 0;
+  let requestsRemoved = 0;
+  let itemsMerged = 0;
+
+  try {
+    await client.query("BEGIN");
+
+    const duplicatesRes = await client.query(
+      `
+      SELECT
+        tmdb_id,
+        requested_by,
+        array_agg(id ORDER BY created_at ASC) AS request_ids
+      FROM media_request
+      WHERE request_type = 'episode'
+        AND status IN ('queued','pending','submitted','downloading','partially_available','available')
+      GROUP BY tmdb_id, requested_by
+      HAVING COUNT(*) > 1
+      `
+    );
+
+    for (const row of duplicatesRes.rows) {
+      const ids = Array.isArray(row.request_ids) ? row.request_ids.map((id: any) => String(id)) : [];
+      if (ids.length < 2) continue;
+      const canonicalId = ids[0];
+      const duplicateIds = ids.slice(1);
+
+      const requestRows = await client.query(
+        `
+        SELECT id, status, status_reason
+        FROM media_request
+        WHERE id = ANY($1::uuid[])
+        `,
+        [ids]
+      );
+
+      let mergedStatus = requestRows.rows.find((r: any) => String(r.id) === canonicalId)?.status ?? "submitted";
+      let mergedReason = requestRows.rows.find((r: any) => String(r.id) === canonicalId)?.status_reason ?? null;
+      for (const req of requestRows.rows) {
+        mergedStatus = pickBetterStatus(mergedStatus, String(req.status));
+        if (!mergedReason && req.status_reason) mergedReason = String(req.status_reason);
+      }
+
+      const canonicalItemsRes = await client.query(
+        `
+        SELECT id, provider, provider_id, season, episode, status
+        FROM request_item
+        WHERE request_id = $1
+        `,
+        [canonicalId]
+      );
+
+      const existingByKey = new Map<string, {
+        id: number;
+        provider: "sonarr" | "radarr";
+        provider_id: number | null;
+        season: number | null;
+        episode: number | null;
+        status: string;
+      }>();
+
+      for (const item of canonicalItemsRes.rows) {
+        const key = `${item.provider}:${item.season ?? "n"}:${item.episode ?? "n"}`;
+        existingByKey.set(key, {
+          id: Number(item.id),
+          provider: item.provider,
+          provider_id: item.provider_id != null ? Number(item.provider_id) : null,
+          season: item.season != null ? Number(item.season) : null,
+          episode: item.episode != null ? Number(item.episode) : null,
+          status: String(item.status)
+        });
+      }
+
+      const duplicateItemsRes = await client.query(
+        `
+        SELECT provider, provider_id, season, episode, status
+        FROM request_item
+        WHERE request_id = ANY($1::uuid[])
+        ORDER BY id ASC
+        `,
+        [duplicateIds]
+      );
+
+      for (const item of duplicateItemsRes.rows) {
+        const provider = item.provider as "sonarr" | "radarr";
+        const providerId = item.provider_id != null ? Number(item.provider_id) : null;
+        const season = item.season != null ? Number(item.season) : null;
+        const episode = item.episode != null ? Number(item.episode) : null;
+        const status = String(item.status);
+        const key = `${provider}:${season ?? "n"}:${episode ?? "n"}`;
+        const existing = existingByKey.get(key);
+
+        if (!existing) {
+          await client.query(
+            `
+            INSERT INTO request_item (request_id, provider, provider_id, season, episode, status)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            `,
+            [canonicalId, provider, providerId, season, episode, status]
+          );
+          existingByKey.set(key, {
+            id: 0,
+            provider,
+            provider_id: providerId,
+            season,
+            episode,
+            status
+          });
+          itemsMerged += 1;
+        } else {
+          const better = pickBetterStatus(existing.status, status);
+          const betterProviderId = existing.provider_id ?? providerId;
+          if (better !== existing.status || betterProviderId !== existing.provider_id) {
+            if (existing.id > 0) {
+              await client.query(
+                `UPDATE request_item SET status = $2, provider_id = $3 WHERE id = $1`,
+                [existing.id, better, betterProviderId]
+              );
+            }
+            existing.status = better;
+            existing.provider_id = betterProviderId;
+          }
+        }
+      }
+
+      await client.query(
+        `
+        UPDATE media_request
+        SET status = $2,
+            status_reason = $3
+        WHERE id = $1
+        `,
+        [canonicalId, mergedStatus, mergedReason]
+      );
+
+      await client.query(`DELETE FROM media_request WHERE id = ANY($1::uuid[])`, [duplicateIds]);
+      groupsMerged += 1;
+      requestsRemoved += duplicateIds.length;
+    }
+
+    await client.query("COMMIT");
+    return { groupsMerged, requestsRemoved, itemsMerged };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export type RequestSyncItem = {
+  id: number;
+  provider: "sonarr" | "radarr";
+  provider_id: number | null;
+  season: number | null;
+  episode: number | null;
+  status: string;
+};
+
+export type RequestForSync = {
+  id: string;
+  request_type: "movie" | "episode";
+  tmdb_id: number;
+  title: string;
+  status: string;
+  created_at: string;
+  requested_by: number;
+  username: string;
+  items: RequestSyncItem[];
+};
+
+export async function listRequestsForSync(limit = 100): Promise<RequestForSync[]> {
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT
+      r.id,
+      r.request_type,
+      r.tmdb_id,
+      r.title,
+      r.status,
+      r.created_at,
+      r.requested_by,
+      u.username AS requested_by_username,
+      COALESCE(
+        jsonb_agg(
+          jsonb_build_object(
+            'id', i.id,
+            'provider', i.provider,
+            'provider_id', i.provider_id,
+            'season', i.season,
+            'episode', i.episode,
+            'status', i.status
+          )
+          ORDER BY i.id
+        ) FILTER (WHERE i.id IS NOT NULL),
+        '[]'::jsonb
+      ) AS items
+    FROM media_request r
+    JOIN request_item i ON i.request_id = r.id
+    JOIN app_user u ON u.id = r.requested_by
+    WHERE r.status IN ('submitted', 'downloading', 'available', 'partially_available', 'removed')
+    GROUP BY r.id, u.username
+    ORDER BY r.created_at ASC
+    LIMIT $1
+    `,
+    [limit]
+  );
+  return res.rows.map(row => ({
+    id: row.id,
+    request_type: row.request_type,
+    tmdb_id: row.tmdb_id,
+    title: row.title,
+    status: row.status,
+    created_at: row.created_at,
+    requested_by: row.requested_by,
+    username: row.requested_by_username ?? "",
+    items: Array.isArray(row.items)
+      ? row.items.map((item: any) => ({
+        id: Number(item.id),
+        provider: item.provider,
+        provider_id: item.provider_id !== null ? Number(item.provider_id) : null,
+        season: item.season !== null ? Number(item.season) : null,
+        episode: item.episode !== null ? Number(item.episode) : null,
+        status: item.status
+      }))
+      : []
+  }));
+}
+
+export async function getRequestForSync(requestId: string): Promise<RequestForSync | null> {
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT
+      r.id,
+      r.request_type,
+      r.tmdb_id,
+      r.title,
+      r.status,
+      r.created_at,
+      r.requested_by,
+      u.username AS requested_by_username,
+      COALESCE(
+        jsonb_agg(
+          jsonb_build_object(
+            'id', i.id,
+            'provider', i.provider,
+            'provider_id', i.provider_id,
+            'season', i.season,
+            'episode', i.episode,
+            'status', i.status
+          )
+          ORDER BY i.id
+        ) FILTER (WHERE i.id IS NOT NULL),
+        '[]'::jsonb
+      ) AS items
+    FROM media_request r
+    JOIN request_item i ON i.request_id = r.id
+    JOIN app_user u ON u.id = r.requested_by
+    WHERE r.id = $1
+      AND r.status IN ('submitted', 'downloading', 'available', 'partially_available', 'removed')
+    GROUP BY r.id, u.username
+    LIMIT 1
+    `,
+    [requestId]
+  );
+  if (!res.rows.length) return null;
+  const row = res.rows[0];
+  return {
+    id: row.id,
+    request_type: row.request_type,
+    tmdb_id: row.tmdb_id,
+    title: row.title,
+    status: row.status,
+    created_at: row.created_at,
+    requested_by: row.requested_by,
+    username: row.requested_by_username ?? "",
+    items: Array.isArray(row.items)
+      ? row.items.map((item: any) => ({
+        id: Number(item.id),
+        provider: item.provider,
+        provider_id: item.provider_id !== null ? Number(item.provider_id) : null,
+        season: item.season !== null ? Number(item.season) : null,
+        episode: item.episode !== null ? Number(item.episode) : null,
+        status: item.status
+      }))
+      : []
+  };
+}
+
+export async function getRequestWithItems(requestId: string) {
+  const r = await getRequestById(requestId);
+  if (!r) return null;
+  const items = await listRequestItems(requestId);
+  return { request: r, items };
+}
+
+export async function findRequestIdByNumericId(numericId: number): Promise<string | null> {
+  if (!Number.isFinite(numericId) || numericId <= 0) return null;
+  const hex = Math.floor(numericId).toString(16).padStart(7, "0").slice(0, 7);
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT id
+    FROM media_request
+    WHERE substring(replace(id::text, '-', '') from 1 for 7) = $1
+    ORDER BY created_at DESC
+    LIMIT 1
+    `,
+    [hex]
+  );
+  return (res.rows[0]?.id as string | undefined) ?? null;
+}
+
+export async function markRequestStatus(
+  requestId: string,
+  status: string,
+  statusReason?: string | null,
+  deniedByUserId?: number | null
+) {
+  const p = getPool();
+  await p.query(
+    `
+    UPDATE media_request
+    SET
+      status = $2,
+      status_reason = $3,
+      denied_by_user_id = CASE WHEN $2 = 'denied' THEN $4::bigint ELSE NULL::bigint END
+    WHERE id = $1
+    `,
+    [requestId, status, statusReason ?? null, deniedByUserId ?? null]
+  );
+}
+
+export async function deleteRequestById(requestId: string) {
+  const p = getPool();
+  await p.query(`DELETE FROM media_request WHERE id=$1`, [requestId]);
+}
+
+export async function updateRequestMetadata(input: {
+  requestId: string;
+  posterPath?: string | null;
+  backdropPath?: string | null;
+  releaseYear?: number | null;
+}) {
+  if (!input.posterPath && !input.backdropPath && !Number.isFinite(input.releaseYear ?? NaN)) {
+    return;
+  }
+  const p = getPool();
+  await p.query(
+    `
+    UPDATE media_request
+    SET
+      poster_path = COALESCE(poster_path, $2),
+      backdrop_path = COALESCE(backdrop_path, $3),
+      release_year = COALESCE(release_year, $4)
+    WHERE id = $1
+    `,
+    [
+      input.requestId,
+      input.posterPath ?? null,
+      input.backdropPath ?? null,
+      Number.isFinite(input.releaseYear ?? NaN) ? input.releaseYear : null
+    ]
+  );
+}
+
+export type DbUserWithHash = {
+  id: number;
+  username: string;
+  display_name: string | null;
+  groups: string[];
+  password_hash: string | null;
+  email: string | null;
+  oidc_sub: string | null;
+  jellyfin_user_id: string | null;
+  jellyfin_username: string | null;
+  jellyfin_device_id: string | null;
+  jellyfin_auth_token: string | null;
+  letterboxd_username: string | null;
+  discord_user_id: string | null;
+  trakt_username: string | null;
+  avatar_url: string | null;
+  avatar_version: number | null;
+  created_at: string;
+  last_seen_at: string;
+  mfa_secret: string | null;
+  discover_region: string | null;
+  original_language: string | null;
+  watchlist_sync_movies: boolean;
+  watchlist_sync_tv: boolean;
+  request_limit_movie: number | null;
+  request_limit_movie_days: number | null;
+  request_limit_series: number | null;
+  request_limit_series_days: number | null;
+  banned: boolean;
+  weekly_digest_opt_in: boolean;
+};
+
+export type UserSessionRecord = {
+  jti: string;
+  user_id: number;
+  expires_at: string;
+  revoked_at: string | null;
+};
+
+export type UserSessionSummary = {
+  id: string;
+  jti: string;
+  expiresAt: string;
+  revokedAt: string | null;
+  lastSeenAt: string | null;
+  userAgent: string | null;
+  deviceLabel: string | null;
+  ipAddress: string | null;
+  deviceId: string | null;
+};
+
+export async function listUserSessions(userId: number): Promise<UserSessionSummary[]> {
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT id, jti, expires_at as "expiresAt", revoked_at as "revokedAt", last_seen_at as "lastSeenAt",
+           user_agent as "userAgent", device_label as "deviceLabel", ip_address as "ipAddress",
+           device_id as "deviceId"
+    FROM user_session
+    WHERE user_id = $1
+    ORDER BY last_seen_at DESC NULLS LAST, expires_at DESC
+    `,
+    [userId]
+  );
+  return res.rows;
+}
+
+export async function createUserSession(
+  userId: number,
+  jti: string,
+  expiresAt: Date,
+  meta?: { userAgent?: string | null; deviceLabel?: string | null; ipAddress?: string | null; deviceId?: string | null }
+): Promise<void> {
+  await ensureUserSchema();
+  const p = getPool();
+  await p.query(
+    `
+    INSERT INTO user_session (id, user_id, jti, expires_at, user_agent, device_label, ip_address, device_id)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    ON CONFLICT (jti) DO NOTHING
+    `,
+    [
+      randomUUID(),
+      userId,
+      jti,
+      expiresAt.toISOString(),
+      meta?.userAgent ?? null,
+      meta?.deviceLabel ?? null,
+      meta?.ipAddress ?? null,
+      meta?.deviceId ?? null
+    ]
+  );
+}
+
+export async function touchUserSession(jti: string, sessionMaxAge?: number): Promise<boolean> {
+  const p = getPool();
+  const res = await p.query(
+    sessionMaxAge && sessionMaxAge > 0
+      ? `UPDATE user_session
+         SET last_seen_at = NOW(),
+             expires_at = NOW() + ($2 * INTERVAL '1 second')
+         WHERE jti = $1
+           AND revoked_at IS NULL
+           AND expires_at > NOW()
+         RETURNING jti`
+      : `UPDATE user_session
+         SET last_seen_at = NOW()
+         WHERE jti = $1
+           AND revoked_at IS NULL
+           AND expires_at > NOW()
+         RETURNING jti`,
+    sessionMaxAge && sessionMaxAge > 0 ? [jti, sessionMaxAge] : [jti]
+  );
+  return Number(res.rowCount ?? 0) > 0;
+}
+
+export async function revokeSessionByJti(jti: string): Promise<void> {
+  const p = getPool();
+  await p.query(`UPDATE user_session SET revoked_at = NOW() WHERE jti = $1`, [jti]);
+}
+
+export async function revokeSessionByJtiForUser(userId: number, jti: string): Promise<boolean> {
+  const p = getPool();
+  const res = await p.query(
+    `UPDATE user_session
+     SET revoked_at = NOW()
+     WHERE user_id = $1 AND jti = $2`,
+    [userId, jti]
+  );
+  return Number(res.rowCount ?? 0) > 0;
+}
+
+export async function revokeOtherSessionsForUser(userId: number, currentJti: string): Promise<number> {
+  const p = getPool();
+  const res = await p.query(
+    `UPDATE user_session
+     SET revoked_at = NOW()
+     WHERE user_id = $1 AND jti <> $2`,
+    [userId, currentJti]
+  );
+  return Number(res.rowCount ?? 0);
+}
+
+export type AdminSessionSummary = {
+  userId: number;
+  username: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  jellyfinUserId: string | null;
+  jti: string;
+  expiresAt: string;
+  revokedAt: string | null;
+  lastSeenAt: string | null;
+  userAgent: string | null;
+  deviceLabel: string | null;
+  ipAddress: string | null;
+};
+
+export async function listAllUserSessions(limit = 500): Promise<AdminSessionSummary[]> {
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT us.user_id as "userId",
+           u.username as "username",
+           u.display_name as "displayName",
+           u.avatar_url as "avatarUrl",
+           u.jellyfin_user_id as "jellyfinUserId",
+           us.jti as "jti",
+           us.expires_at as "expiresAt",
+           us.revoked_at as "revokedAt",
+           us.last_seen_at as "lastSeenAt",
+           us.user_agent as "userAgent",
+           us.device_label as "deviceLabel",
+           us.ip_address as "ipAddress"
+    FROM user_session us
+    JOIN app_user u ON us.user_id = u.id
+    ORDER BY us.last_seen_at DESC NULLS LAST, us.expires_at DESC
+    LIMIT $1
+    `,
+    [limit]
+  );
+  return res.rows;
+}
+
+export async function deleteUserSessionByJtiForUser(userId: number, jti: string): Promise<boolean> {
+  const p = getPool();
+  const res = await p.query(
+    `DELETE FROM user_session WHERE user_id = $1 AND jti = $2`,
+    [userId, jti]
+  );
+  return Number(res.rowCount ?? 0) > 0;
+}
+
+export async function deleteUserSessionByJti(jti: string): Promise<boolean> {
+  const p = getPool();
+  const res = await p.query(`DELETE FROM user_session WHERE jti = $1`, [jti]);
+  return Number(res.rowCount ?? 0) > 0;
+}
+
+export async function revokeAllSessionsForUser(userId: number): Promise<void> {
+  const p = getPool();
+  await p.query(`UPDATE user_session SET revoked_at = NOW() WHERE user_id = $1`, [userId]);
+}
+
+export async function purgeExpiredSessions(): Promise<number> {
+  const p = getPool();
+  const res = await p.query(
+    `
+    DELETE FROM user_session
+    WHERE revoked_at IS NOT NULL
+       OR expires_at <= NOW()
+    `
+  );
+  return Number(res.rowCount ?? 0);
+}
+
+export async function isSessionActive(jti: string): Promise<boolean> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT 1 FROM user_session WHERE jti = $1 AND revoked_at IS NULL AND expires_at > NOW() LIMIT 1`,
+    [jti]
+  );
+  return Number(res.rowCount ?? 0) > 0;
+}
+
+export async function getUserWithHash(username: string): Promise<DbUserWithHash | null> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+  SELECT id, username, display_name, groups, password_hash, email, oidc_sub, jellyfin_user_id, jellyfin_username, jellyfin_device_id, jellyfin_auth_token, letterboxd_username, discord_user_id, trakt_username, avatar_url, avatar_version, created_at, last_seen_at, mfa_secret, discover_region, original_language, watchlist_sync_movies, watchlist_sync_tv, request_limit_movie, request_limit_movie_days, request_limit_series, request_limit_series_days, banned, weekly_digest_opt_in
+  FROM app_user
+  WHERE username = $1
+  LIMIT 1
+  `,
+    [username]
+  );
+  if (!res.rows.length) return null;
+  const row = res.rows[0];
+  return {
+    id: Number(row.id),
+    username: row.username,
+    display_name: row.display_name ?? null,
+    groups: normalizeGroupList(row.groups as string),
+    password_hash: row.password_hash,
+    email: row.email ?? null,
+    oidc_sub: row.oidc_sub ?? null,
+    jellyfin_user_id: row.jellyfin_user_id ?? null,
+    jellyfin_username: row.jellyfin_username ?? null,
+    jellyfin_device_id: row.jellyfin_device_id ?? null,
+    jellyfin_auth_token: decryptOptionalSecret(row.jellyfin_auth_token),
+    letterboxd_username: row.letterboxd_username ?? null,
+    discord_user_id: row.discord_user_id ?? null,
+    trakt_username: row.trakt_username ?? null,
+    avatar_url: row.avatar_url ?? null,
+    avatar_version: row.avatar_version ?? null,
+    created_at: row.created_at,
+    last_seen_at: row.last_seen_at,
+    mfa_secret: decryptOptionalSecret(row.mfa_secret),
+    discover_region: row.discover_region ?? null,
+    original_language: row.original_language ?? null,
+    watchlist_sync_movies: !!row.watchlist_sync_movies,
+    watchlist_sync_tv: !!row.watchlist_sync_tv,
+    request_limit_movie: row.request_limit_movie ?? null,
+    request_limit_movie_days: row.request_limit_movie_days ?? null,
+    request_limit_series: row.request_limit_series ?? null,
+    request_limit_series_days: row.request_limit_series_days ?? null,
+    banned: !!row.banned,
+    weekly_digest_opt_in: !!row.weekly_digest_opt_in,
+  };
+}
+
+export async function getUserById(id: number) {
+  await ensureUserSchema();
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT
+      u.id,
+      u.username,
+      u.display_name,
+      u.email,
+      u.discord_user_id,
+      u.letterboxd_username,
+      
+      u.groups,
+      u.created_at,
+      u.last_seen_at,
+      u.mfa_secret,
+      u.discover_region,
+      u.original_language,
+      u.watchlist_sync_movies,
+      u.watchlist_sync_tv,
+      u.request_limit_movie,
+      u.request_limit_movie_days,
+      u.request_limit_series,
+      u.request_limit_series_days,
+      u.banned,
+      u.weekly_digest_opt_in,
+      COALESCE(array_remove(array_agg(une.endpoint_id ORDER BY une.endpoint_id), NULL), '{}') AS notification_endpoint_ids
+    FROM app_user u
+    LEFT JOIN user_notification_endpoint une ON une.user_id = u.id
+    WHERE u.id = $1
+    GROUP BY u.id
+    LIMIT 1
+    `,
+    [id]
+  );
+  if (!res.rows.length) return null;
+  const row = res.rows[0];
+  return {
+    id: Number(row.id),
+    username: row.username,
+    displayName: row.display_name ?? null,
+    email: row.email,
+    discordUserId: row.discord_user_id ?? null,
+    letterboxdUsername: row.letterboxd_username ?? null,
+    groups: normalizeGroupList(row.groups as string),
+    created_at: row.created_at,
+    last_seen_at: row.last_seen_at,
+    mfa_enabled: !!row.mfa_secret,
+    discoverRegion: row.discover_region ?? null,
+    originalLanguage: row.original_language ?? null,
+    watchlistSyncMovies: !!row.watchlist_sync_movies,
+    watchlistSyncTv: !!row.watchlist_sync_tv,
+    requestLimitMovie: row.request_limit_movie ?? null,
+    requestLimitMovieDays: row.request_limit_movie_days ?? null,
+    requestLimitSeries: row.request_limit_series ?? null,
+    requestLimitSeriesDays: row.request_limit_series_days ?? null,
+    banned: !!row.banned,
+    weeklyDigestOptIn: !!row.weekly_digest_opt_in,
+    notificationEndpointIds: Array.isArray(row.notification_endpoint_ids)
+      ? row.notification_endpoint_ids.map((endpointId: any) => Number(endpointId)).filter((n: number) => Number.isFinite(n))
+      : []
+  };
+}
+
+export type UserApiTokenRecord = {
+  id: number;
+  name: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export async function listUserApiTokens(userId: number): Promise<UserApiTokenRecord[]> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, name, created_at, updated_at
+     FROM user_api_token_v2
+     WHERE user_id = $1
+     ORDER BY created_at DESC`,
+    [userId]
+  );
+  return res.rows.map(row => ({
+    id: Number(row.id),
+    name: row.name as string,
+    createdAt: row.created_at ?? null,
+    updatedAt: row.updated_at ?? null
+  }));
+}
+
+export async function getUserApiToken(userId: number): Promise<{ token: string; createdAt: string | null; updatedAt: string | null } | null> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `SELECT token_encrypted, created_at, updated_at
+     FROM user_api_token_v2
+     WHERE user_id = $1
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [userId]
+  );
+  if (!res.rows.length) return null;
+  const row = res.rows[0];
+  const raw = row.token_encrypted as string;
+  let token = raw;
+  try {
+    token = decryptSecret(raw);
+  } catch {
+    // stored as plain text
+  }
+  return {
+    token,
+    createdAt: row.created_at ?? null,
+    updatedAt: row.updated_at ?? null
+  };
+}
+
+export async function createUserApiToken(userId: number, name: string, token: string): Promise<{ id: number; name: string; token: string; createdAt: string | null; updatedAt: string | null }> {
+  await ensureUserSchema();
+  const p = getPool();
+  const tokenHash = hashUserApiToken(token);
+  const tokenEncrypted = encryptSecret(token);
+  const res = await p.query(
+    `
+    INSERT INTO user_api_token_v2 (user_id, name, token_hash, token_encrypted, created_at, updated_at)
+    VALUES ($1, $2, $3, $4, NOW(), NOW())
+    RETURNING id, created_at, updated_at
+    `,
+    [userId, name, tokenHash, tokenEncrypted]
+  );
+  const row = res.rows[0];
+  return {
+    id: Number(row.id),
+    name,
+    token,
+    createdAt: row?.created_at ?? null,
+    updatedAt: row?.updated_at ?? null
+  };
+}
+
+export async function revokeUserApiToken(userId: number): Promise<boolean> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(`DELETE FROM user_api_token_v2 WHERE user_id = $1`, [userId]);
+  return Number(res.rowCount ?? 0) > 0;
+}
+
+export async function revokeUserApiTokenById(userId: number, tokenId: number): Promise<boolean> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(`DELETE FROM user_api_token_v2 WHERE id = $1 AND user_id = $2`, [tokenId, userId]);
+  return Number(res.rowCount ?? 0) > 0;
+}
+
+export async function findUserIdByApiToken(token: string): Promise<number | null> {
+  await ensureUserSchema();
+  const p = getPool();
+  const tokenHash = hashUserApiToken(token);
+  const res = await p.query(`SELECT user_id FROM user_api_token_v2 WHERE token_hash = $1 LIMIT 1`, [tokenHash]);
+  if (res.rows.length) return Number(res.rows[0].user_id);
+
+  const legacy = await p.query(`SELECT user_id FROM user_api_token WHERE token_hash = $1 LIMIT 1`, [tokenHash]);
+  if (!legacy.rows.length) return null;
+  return Number(legacy.rows[0].user_id);
+}
+
+export async function getUserTraktTokenStatus(userId: number): Promise<{ linked: boolean; expiresAt: string | null }> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `SELECT expires_at FROM user_trakt_token WHERE user_id = $1 LIMIT 1`,
+    [userId]
+  );
+  if (!res.rows[0]) return { linked: false, expiresAt: null };
+  return { linked: true, expiresAt: res.rows[0].expires_at as string | null };
+}
+
+export async function getUserTraktToken(userId: number): Promise<{
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: string | null;
+  scope: string | null;
+} | null> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `SELECT access_token_encrypted, refresh_token_encrypted, expires_at, scope
+     FROM user_trakt_token
+     WHERE user_id = $1
+     LIMIT 1`,
+    [userId]
+  );
+  if (!res.rows[0]) return null;
+  const row = res.rows[0];
+  let accessToken = row.access_token_encrypted as string;
+  let refreshToken = row.refresh_token_encrypted as string;
+  try {
+    accessToken = decryptSecret(accessToken);
+  } catch {
+    // ignore
+  }
+  try {
+    refreshToken = decryptSecret(refreshToken);
+  } catch {
+    // ignore
+  }
+  return {
+    accessToken,
+    refreshToken,
+    expiresAt: row.expires_at as string | null,
+    scope: row.scope as string | null
+  };
+}
+
+export async function upsertUserTraktToken(input: {
+  userId: number;
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: string | null;
+  scope?: string | null;
+}): Promise<void> {
+  await ensureUserSchema();
+  const p = getPool();
+  const accessEncrypted = encryptSecret(input.accessToken);
+  const refreshEncrypted = encryptSecret(input.refreshToken);
+  await p.query(
+    `INSERT INTO user_trakt_token (
+        user_id,
+        access_token_encrypted,
+        refresh_token_encrypted,
+        expires_at,
+        scope
+     )
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (user_id)
+     DO UPDATE SET
+        access_token_encrypted = EXCLUDED.access_token_encrypted,
+        refresh_token_encrypted = EXCLUDED.refresh_token_encrypted,
+        expires_at = EXCLUDED.expires_at,
+        scope = EXCLUDED.scope,
+        updated_at = NOW()`,
+    [input.userId, accessEncrypted, refreshEncrypted, input.expiresAt, input.scope ?? null]
+  );
+}
+
+export async function deleteUserTraktToken(userId: number): Promise<void> {
+  await ensureUserSchema();
+  const p = getPool();
+  await p.query(`DELETE FROM user_trakt_token WHERE user_id = $1`, [userId]);
+}
+
+export async function setUserPassword(username: string, groups: string[], passwordHash: string, email?: string | null): Promise<DbUserWithHash> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    INSERT INTO app_user (username, groups, password_hash, email, last_seen_at)
+    VALUES ($1, $2, $3, $4, NOW())
+    ON CONFLICT (username)
+    DO UPDATE SET groups = EXCLUDED.groups, password_hash = EXCLUDED.password_hash, email = COALESCE(EXCLUDED.email, app_user.email), last_seen_at = NOW()
+    RETURNING id, username, display_name, groups, password_hash, email, oidc_sub, jellyfin_user_id, jellyfin_username, jellyfin_device_id, jellyfin_auth_token, letterboxd_username, discord_user_id, trakt_username, avatar_url, avatar_version, created_at, last_seen_at, mfa_secret, discover_region, original_language, watchlist_sync_movies, watchlist_sync_tv, request_limit_movie, request_limit_movie_days, request_limit_series, request_limit_series_days, banned, weekly_digest_opt_in
+    `,
+    [username, groups.join(","), passwordHash, email ?? null]
+  );
+  const row = res.rows[0];
+  return {
+    id: Number(row.id),
+    username: row.username,
+    display_name: row.display_name ?? null,
+    groups: normalizeGroupList(row.groups as string),
+    password_hash: row.password_hash,
+    email: row.email ?? null,
+    oidc_sub: row.oidc_sub ?? null,
+    jellyfin_user_id: row.jellyfin_user_id ?? null,
+    jellyfin_username: row.jellyfin_username ?? null,
+    jellyfin_device_id: row.jellyfin_device_id ?? null,
+    jellyfin_auth_token: decryptOptionalSecret(row.jellyfin_auth_token),
+    letterboxd_username: row.letterboxd_username ?? null,
+    discord_user_id: row.discord_user_id ?? null,
+    trakt_username: row.trakt_username ?? null,
+    avatar_url: row.avatar_url ?? null,
+    avatar_version: row.avatar_version ?? null,
+    created_at: row.created_at,
+    last_seen_at: row.last_seen_at,
+    mfa_secret: decryptOptionalSecret(row.mfa_secret),
+    discover_region: row.discover_region ?? null,
+    original_language: row.original_language ?? null,
+    watchlist_sync_movies: !!row.watchlist_sync_movies,
+    watchlist_sync_tv: !!row.watchlist_sync_tv,
+    request_limit_movie: row.request_limit_movie ?? null,
+    request_limit_movie_days: row.request_limit_movie_days ?? null,
+    request_limit_series: row.request_limit_series ?? null,
+    request_limit_series_days: row.request_limit_series_days ?? null,
+    banned: !!row.banned,
+    weekly_digest_opt_in: !!row.weekly_digest_opt_in,
+  };
+}
+
+export async function updateUserPasswordById(id: number, passwordHash: string) {
+  const p = getPool();
+  await p.query(
+    `
+    UPDATE app_user
+    SET password_hash = $1, last_seen_at = NOW()
+    WHERE id = $2
+    `,
+    [passwordHash, id]
+  );
+}
+
+export async function getUserWithHashById(id: number): Promise<DbUserWithHash | null> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT id, username, display_name, groups, password_hash, email, oidc_sub, jellyfin_user_id, jellyfin_username, jellyfin_device_id, jellyfin_auth_token, letterboxd_username, discord_user_id, trakt_username, avatar_url, avatar_version, created_at, last_seen_at, mfa_secret, discover_region, original_language, watchlist_sync_movies, watchlist_sync_tv, request_limit_movie, request_limit_movie_days, request_limit_series, request_limit_series_days, banned, weekly_digest_opt_in
+    FROM app_user
+    WHERE id = $1
+    LIMIT 1
+    `,
+    [id]
+  );
+  if (!res.rows.length) return null;
+  const row = res.rows[0];
+  return {
+    id: Number(row.id),
+    username: row.username,
+    display_name: row.display_name ?? null,
+    groups: normalizeGroupList(row.groups as string),
+    password_hash: row.password_hash,
+    email: row.email ?? null,
+    oidc_sub: row.oidc_sub ?? null,
+    jellyfin_user_id: row.jellyfin_user_id ?? null,
+    jellyfin_username: row.jellyfin_username ?? null,
+    jellyfin_device_id: row.jellyfin_device_id ?? null,
+    jellyfin_auth_token: decryptOptionalSecret(row.jellyfin_auth_token),
+    letterboxd_username: row.letterboxd_username ?? null,
+    discord_user_id: row.discord_user_id ?? null,
+    trakt_username: row.trakt_username ?? null,
+    avatar_url: row.avatar_url ?? null,
+    avatar_version: row.avatar_version ?? null,
+    created_at: row.created_at,
+    last_seen_at: row.last_seen_at,
+    mfa_secret: decryptOptionalSecret(row.mfa_secret),
+    discover_region: row.discover_region ?? null,
+    original_language: row.original_language ?? null,
+    watchlist_sync_movies: !!row.watchlist_sync_movies,
+    watchlist_sync_tv: !!row.watchlist_sync_tv,
+    request_limit_movie: row.request_limit_movie ?? null,
+    request_limit_movie_days: row.request_limit_movie_days ?? null,
+    request_limit_series: row.request_limit_series ?? null,
+    request_limit_series_days: row.request_limit_series_days ?? null,
+    banned: !!row.banned,
+    weekly_digest_opt_in: !!row.weekly_digest_opt_in,
+  };
+}
+
+export async function addUserPasswordHistory(userId: number, passwordHash: string): Promise<void> {
+  await ensureUserSchema();
+  const p = getPool();
+  await p.query(
+    `
+    INSERT INTO user_password_history (user_id, password_hash, created_at)
+    VALUES ($1, $2, NOW())
+    `,
+    [userId, passwordHash]
+  );
+}
+
+export async function createPasswordResetToken(userId: number): Promise<string> {
+  await ensureUserSchema();
+  const p = getPool();
+  const token = randomBytes(32).toString("hex");
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+
+  // Invalidate any existing unused tokens for this user before creating a new one.
+  await p.query(
+    `DELETE FROM password_reset_token WHERE user_id = $1 AND used_at IS NULL`,
+    [userId]
+  );
+
+  await p.query(
+    `
+    INSERT INTO password_reset_token (user_id, token_hash, expires_at)
+    VALUES ($1, $2, NOW() + INTERVAL '15 minutes')
+    `,
+    [userId, tokenHash]
+  );
+
+  return token;
+}
+
+export async function exchangePasswordResetToken(token: string): Promise<string | null> {
+  await ensureUserSchema();
+  const p = getPool();
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+
+  const res = await p.query(
+    `
+    UPDATE password_reset_token t
+    SET viewed_at = NOW()
+    FROM app_user u
+    WHERE t.token_hash = $1
+      AND t.user_id = u.id
+      AND t.used_at IS NULL
+      AND t.viewed_at IS NULL
+      AND t.expires_at > NOW()
+    RETURNING u.username
+    `,
+    [tokenHash]
+  );
+
+  return res.rows.length > 0 ? (res.rows[0].username as string) : null;
+}
+
+export async function consumePasswordResetToken(token: string): Promise<number | null> {
+  await ensureUserSchema();
+  const p = getPool();
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+
+  const res = await p.query(
+    `
+    UPDATE password_reset_token
+    SET used_at = NOW()
+    WHERE token_hash = $1
+      AND used_at IS NULL
+      AND expires_at > NOW()
+    RETURNING user_id
+    `,
+    [tokenHash]
+  );
+
+  if (!res.rows.length) return null;
+  return Number(res.rows[0].user_id);
+}
+
+export async function getUserPasswordHistory(userId: number): Promise<string[]> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT password_hash
+    FROM user_password_history
+    WHERE user_id = $1
+    ORDER BY created_at DESC
+    `,
+    [userId]
+  );
+  return res.rows.map(row => row.password_hash as string);
+}
+
+export async function deleteUserById(id: number) {
+  await ensureUserSchema();
+  const p = getPool();
+  await p.query(`DELETE FROM app_user WHERE id = $1`, [id]);
+}
+
+export type DbUser = {
+  id: number;
+  username: string;
+  displayName?: string | null;
+  jellyfinUserId?: string | null;
+  jellyfinUsername?: string | null;
+  discordUserId?: string | null;
+  email: string | null;
+  groups: string[];
+  avatarUrl?: string | null;
+  avatarVersion?: number | null;
+  created_at: string;
+  last_seen_at: string;
+  mfa_enabled: boolean;
+  notificationEndpointIds: number[];
+  discoverRegion?: string | null;
+  originalLanguage?: string | null;
+  watchlistSyncMovies: boolean;
+  watchlistSyncTv: boolean;
+  requestLimitMovie: number | null;
+  requestLimitMovieDays: number | null;
+  requestLimitSeries: number | null;
+  requestLimitSeriesDays: number | null;
+  banned: boolean;
+  weeklyDigestOptIn: boolean;
+};
+
+export async function listUsers(): Promise<DbUser[]> {
+  await ensureUserSchema();
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+  SELECT
+    u.id,
+    u.username,
+    u.display_name,
+    u.jellyfin_user_id,
+    u.jellyfin_username,
+    u.discord_user_id,
+    
+    u.avatar_url,
+    u.avatar_version,
+    u.email,
+    u.groups,
+    u.mfa_secret,
+    u.created_at,
+    u.last_seen_at,
+    u.discover_region,
+    u.original_language,
+    u.watchlist_sync_movies,
+    u.watchlist_sync_tv,
+    u.request_limit_movie,
+    u.request_limit_movie_days,
+    u.request_limit_series,
+    u.request_limit_series_days,
+    u.banned,
+    u.weekly_digest_opt_in,
+      COALESCE(array_remove(array_agg(une.endpoint_id ORDER BY une.endpoint_id), NULL), '{}') AS notification_endpoint_ids
+    FROM app_user u
+    LEFT JOIN user_notification_endpoint une ON une.user_id = u.id
+    GROUP BY u.id
+    ORDER BY u.created_at DESC
+    `
+  );
+  return res.rows.map(row => ({
+    id: row.id,
+    username: row.username,
+    displayName: row.display_name ?? null,
+    jellyfinUserId: row.jellyfin_user_id ?? null,
+    jellyfinUsername: row.jellyfin_username ?? null,
+    discordUserId: row.discord_user_id ?? null,
+    avatarUrl: row.avatar_url ?? null,
+    avatarVersion: row.avatar_version ?? null,
+    email: row.email,
+    groups: normalizeGroupList(row.groups as string),
+    created_at: row.created_at,
+    last_seen_at: row.last_seen_at,
+    mfa_enabled: !!row.mfa_secret,
+    discoverRegion: row.discover_region ?? null,
+    originalLanguage: row.original_language ?? null,
+    watchlistSyncMovies: !!row.watchlist_sync_movies,
+    watchlistSyncTv: !!row.watchlist_sync_tv,
+    requestLimitMovie: row.request_limit_movie ?? null,
+    requestLimitMovieDays: row.request_limit_movie_days ?? null,
+    requestLimitSeries: row.request_limit_series ?? null,
+    requestLimitSeriesDays: row.request_limit_series_days ?? null,
+    banned: !!row.banned,
+    weeklyDigestOptIn: !!row.weekly_digest_opt_in,
+    notificationEndpointIds: Array.isArray(row.notification_endpoint_ids)
+      ? row.notification_endpoint_ids.map((id: any) => Number(id)).filter((n: number) => Number.isFinite(n))
+      : []
+  }));
+}
+
+export type AdminUserOption = {
+  id: number;
+  username: string;
+  displayName: string | null;
+};
+
+export async function listAdminUserOptions(): Promise<AdminUserOption[]> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT id, username, display_name
+    FROM app_user
+    ORDER BY username ASC
+    `
+  );
+  return res.rows.map((row) => ({
+    id: Number(row.id),
+    username: String(row.username),
+    displayName: row.display_name ? String(row.display_name) : null,
+  }));
+}
+
+export async function updateUserProfile(id: number, input: { username?: string; email?: string | null; displayName?: string | null; groups?: string[]; discordUserId?: string | null; letterboxdUsername?: string | null; traktUsername?: string | null; discoverRegion?: string | null; originalLanguage?: string | null; watchlistSyncMovies?: boolean; watchlistSyncTv?: boolean }) {
+  await ensureUserSchema();
+  const p = getPool();
+  const clauses: string[] = [];
+  const values: any[] = [];
+  let idx = 1;
+
+  if (input.username) {
+    clauses.push(`username = $${idx++}`);
+    values.push(input.username);
+  }
+  if (input.email !== undefined) {
+    clauses.push(`email = $${idx++}`);
+    values.push(input.email);
+  }
+  if (input.displayName !== undefined) {
+    clauses.push(`display_name = $${idx++}`);
+    values.push(input.displayName);
+  }
+  if (input.groups) {
+    clauses.push(`groups = $${idx++}`);
+    values.push(input.groups.join(","));
+  }
+  if (input.discordUserId !== undefined) {
+    clauses.push(`discord_user_id = $${idx++}`);
+    values.push(input.discordUserId);
+  }
+  if (input.letterboxdUsername !== undefined) {
+    clauses.push(`letterboxd_username = $${idx++}`);
+    values.push(input.letterboxdUsername);
+  }
+  if (input.traktUsername !== undefined) {
+    clauses.push(`trakt_username = $${idx++}`);
+    values.push(input.traktUsername);
+  }
+  if (input.discoverRegion !== undefined) {
+    clauses.push(`discover_region = $${idx++}`);
+    values.push(input.discoverRegion);
+  }
+  if (input.originalLanguage !== undefined) {
+    clauses.push(`original_language = $${idx++}`);
+    values.push(input.originalLanguage);
+  }
+  if (input.watchlistSyncMovies !== undefined) {
+    clauses.push(`watchlist_sync_movies = $${idx++}`);
+    values.push(input.watchlistSyncMovies);
+  }
+  if (input.watchlistSyncTv !== undefined) {
+    clauses.push(`watchlist_sync_tv = $${idx++}`);
+    values.push(input.watchlistSyncTv);
+  }
+  if (!clauses.length) return null;
+
+  values.push(id);
+  const res = await p.query(
+    `
+    UPDATE app_user
+    SET ${clauses.join(", ")}, last_seen_at = NOW()
+    WHERE id = $${idx}
+    RETURNING id
+    `,
+    values
+  );
+  if (!res.rows.length) return null;
+  const updated = await getUserById(res.rows[0].id);
+  return updated;
+}
+
+export async function listLetterboxdUsernames(limit = 50): Promise<string[]> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT DISTINCT letterboxd_username
+    FROM app_user
+    WHERE letterboxd_username IS NOT NULL AND letterboxd_username <> ''
+    ORDER BY letterboxd_username ASC
+    LIMIT $1
+    `,
+    [limit]
+  );
+  return res.rows
+    .map(r => String(r.letterboxd_username).trim())
+    .filter(Boolean);
+}
+
+export async function getUserByJellyfinUserId(jellyfinUserId: string): Promise<DbUserWithHash | null> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT id, username, display_name, groups, password_hash, email, oidc_sub, jellyfin_user_id, jellyfin_username, jellyfin_device_id, jellyfin_auth_token, letterboxd_username, discord_user_id, trakt_username, avatar_url, avatar_version, created_at, last_seen_at, mfa_secret, discover_region, original_language, watchlist_sync_movies, watchlist_sync_tv, request_limit_movie, request_limit_movie_days, request_limit_series, request_limit_series_days, banned, weekly_digest_opt_in
+    FROM app_user
+    WHERE jellyfin_user_id = $1
+    LIMIT 1
+    `,
+    [jellyfinUserId]
+  );
+  if (!res.rows.length) return null;
+  const row = res.rows[0];
+  return {
+    id: Number(row.id),
+    username: row.username,
+    display_name: row.display_name ?? null,
+    groups: normalizeGroupList(row.groups as string),
+    password_hash: row.password_hash,
+    email: row.email ?? null,
+    oidc_sub: row.oidc_sub ?? null,
+    jellyfin_user_id: row.jellyfin_user_id ?? null,
+    jellyfin_username: row.jellyfin_username ?? null,
+    jellyfin_device_id: row.jellyfin_device_id ?? null,
+    jellyfin_auth_token: decryptOptionalSecret(row.jellyfin_auth_token),
+    letterboxd_username: row.letterboxd_username ?? null,
+    discord_user_id: row.discord_user_id ?? null,
+    trakt_username: row.trakt_username ?? null,
+    avatar_url: row.avatar_url ?? null,
+    avatar_version: row.avatar_version ?? null,
+    created_at: row.created_at,
+    last_seen_at: row.last_seen_at,
+    mfa_secret: decryptOptionalSecret(row.mfa_secret),
+    discover_region: row.discover_region ?? null,
+    original_language: row.original_language ?? null,
+    watchlist_sync_movies: !!row.watchlist_sync_movies,
+    watchlist_sync_tv: !!row.watchlist_sync_tv,
+    request_limit_movie: row.request_limit_movie ?? null,
+    request_limit_movie_days: row.request_limit_movie_days ?? null,
+    request_limit_series: row.request_limit_series ?? null,
+    request_limit_series_days: row.request_limit_series_days ?? null,
+    banned: !!row.banned,
+    weekly_digest_opt_in: !!row.weekly_digest_opt_in,
+  };
+}
+
+export async function getUserByEmailOrUsername(email: string | null, username: string | null): Promise<DbUserWithHash | null> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT id, username, display_name, groups, password_hash, email, oidc_sub, jellyfin_user_id, jellyfin_username, jellyfin_device_id, jellyfin_auth_token, letterboxd_username, discord_user_id, trakt_username, avatar_url, avatar_version, created_at, last_seen_at, mfa_secret, discover_region, original_language, watchlist_sync_movies, watchlist_sync_tv, request_limit_movie, request_limit_movie_days, request_limit_series, request_limit_series_days, banned, weekly_digest_opt_in
+    FROM app_user
+    WHERE (LOWER(email) = LOWER($1) AND $1 <> '') OR (LOWER(username) = LOWER($2) AND $2 <> '')
+    LIMIT 1
+    `,
+    [email ?? "", username ?? ""]
+  );
+  if (!res.rows.length) return null;
+  const row = res.rows[0];
+  return {
+    id: Number(row.id),
+    username: row.username,
+    display_name: row.display_name ?? null,
+    groups: normalizeGroupList(row.groups as string),
+    password_hash: row.password_hash,
+    email: row.email ?? null,
+    oidc_sub: row.oidc_sub ?? null,
+    jellyfin_user_id: row.jellyfin_user_id ?? null,
+    jellyfin_username: row.jellyfin_username ?? null,
+    jellyfin_device_id: row.jellyfin_device_id ?? null,
+    jellyfin_auth_token: decryptOptionalSecret(row.jellyfin_auth_token),
+    letterboxd_username: row.letterboxd_username ?? null,
+    discord_user_id: row.discord_user_id ?? null,
+    trakt_username: row.trakt_username ?? null,
+    avatar_url: row.avatar_url ?? null,
+    avatar_version: row.avatar_version ?? null,
+    created_at: row.created_at,
+    last_seen_at: row.last_seen_at,
+    mfa_secret: decryptOptionalSecret(row.mfa_secret),
+    discover_region: row.discover_region ?? null,
+    original_language: row.original_language ?? null,
+    watchlist_sync_movies: !!row.watchlist_sync_movies,
+    watchlist_sync_tv: !!row.watchlist_sync_tv,
+    request_limit_movie: row.request_limit_movie ?? null,
+    request_limit_movie_days: row.request_limit_movie_days ?? null,
+    request_limit_series: row.request_limit_series ?? null,
+    request_limit_series_days: row.request_limit_series_days ?? null,
+    banned: !!row.banned,
+    weekly_digest_opt_in: !!row.weekly_digest_opt_in,
+  };
+}
+
+export async function linkUserToJellyfin(input: {
+  userId: number;
+  jellyfinUserId: string;
+  jellyfinUsername: string;
+  jellyfinDeviceId: string;
+  jellyfinAuthToken?: string | null;
+  avatarUrl?: string | null;
+}) {
+  await ensureUserSchema();
+  const p = getPool();
+  const tokenEncrypted = encryptOptionalSecret(input.jellyfinAuthToken);
+  await p.query(
+    `
+    UPDATE app_user
+    SET jellyfin_user_id = $1,
+        jellyfin_username = $2,
+        jellyfin_device_id = $3,
+        jellyfin_auth_token = $4,
+        avatar_url = $5,
+        avatar_version = avatar_version + 1,
+        last_seen_at = NOW()
+    WHERE id = $6
+    `,
+    [
+      input.jellyfinUserId,
+      input.jellyfinUsername,
+      input.jellyfinDeviceId,
+      tokenEncrypted,
+      input.avatarUrl ?? null,
+      input.userId
+    ]
+  );
+}
+
+export async function unlinkUserFromJellyfin(userId: number) {
+  await ensureUserSchema();
+  const p = getPool();
+  await p.query(
+    `
+    UPDATE app_user
+    SET jellyfin_user_id = NULL,
+        jellyfin_username = NULL,
+        jellyfin_device_id = NULL,
+        jellyfin_auth_token = NULL,
+        avatar_url = NULL,
+        avatar_version = avatar_version + 1,
+        last_seen_at = NOW()
+    WHERE id = $1
+    `,
+    [userId]
+  );
+}
+
+export async function updateUserAvatar(input: { userId: number; avatarUrl: string | null }) {
+  await ensureUserSchema();
+  const p = getPool();
+  await p.query(
+    `
+    UPDATE app_user
+    SET avatar_url = $1,
+        avatar_version = avatar_version + 1,
+        last_seen_at = NOW()
+    WHERE id = $2
+    `,
+    [input.avatarUrl ?? null, input.userId]
+  );
+}
+
+export async function createJellyfinUser(input: {
+  username: string;
+  email?: string | null;
+  groups: string[];
+  jellyfinUserId: string;
+  jellyfinUsername: string;
+  jellyfinDeviceId: string;
+  avatarUrl?: string | null;
+}): Promise<DbUserWithHash> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    INSERT INTO app_user (username, groups, email, jellyfin_user_id, jellyfin_username, jellyfin_device_id, avatar_url, last_seen_at)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+    RETURNING id, username, display_name, groups, password_hash, email, oidc_sub, jellyfin_user_id, jellyfin_username, jellyfin_device_id, jellyfin_auth_token, letterboxd_username, discord_user_id, trakt_username, avatar_url, avatar_version, created_at, last_seen_at, mfa_secret, discover_region, original_language, watchlist_sync_movies, watchlist_sync_tv, request_limit_movie, request_limit_movie_days, request_limit_series, request_limit_series_days, banned, weekly_digest_opt_in
+    `,
+    [
+      input.username,
+      input.groups.join(","),
+      input.email ?? null,
+      input.jellyfinUserId,
+      input.jellyfinUsername,
+      input.jellyfinDeviceId,
+      input.avatarUrl ?? null
+    ]
+  );
+  const row = res.rows[0];
+  return {
+    id: Number(row.id),
+    username: row.username,
+    display_name: row.display_name ?? null,
+    groups: normalizeGroupList(row.groups as string),
+    password_hash: row.password_hash,
+    email: row.email ?? null,
+    oidc_sub: row.oidc_sub ?? null,
+    jellyfin_user_id: row.jellyfin_user_id ?? null,
+    jellyfin_username: row.jellyfin_username ?? null,
+    jellyfin_device_id: row.jellyfin_device_id ?? null,
+    jellyfin_auth_token: decryptOptionalSecret(row.jellyfin_auth_token),
+    letterboxd_username: row.letterboxd_username ?? null,
+    discord_user_id: row.discord_user_id ?? null,
+    trakt_username: row.trakt_username ?? null,
+    avatar_url: row.avatar_url ?? null,
+    avatar_version: row.avatar_version ?? null,
+    created_at: row.created_at,
+    last_seen_at: row.last_seen_at,
+    mfa_secret: decryptOptionalSecret(row.mfa_secret),
+    discover_region: row.discover_region ?? null,
+    original_language: row.original_language ?? null,
+    watchlist_sync_movies: !!row.watchlist_sync_movies,
+    watchlist_sync_tv: !!row.watchlist_sync_tv,
+    request_limit_movie: row.request_limit_movie ?? null,
+    request_limit_movie_days: row.request_limit_movie_days ?? null,
+    request_limit_series: row.request_limit_series ?? null,
+    request_limit_series_days: row.request_limit_series_days ?? null,
+    banned: !!row.banned,
+    weekly_digest_opt_in: !!row.weekly_digest_opt_in,
+  };
+}
+
+export type MfaSessionType = "verify" | "setup";
+export type OAuthProvider = "google" | "github" | "telegram";
+
+export type UserOAuthAccount = {
+  provider: OAuthProvider;
+  providerUserId: string;
+  providerEmail: string | null;
+  providerLogin: string | null;
+  linkedAt: string;
+  updatedAt: string;
+};
+
+export type MfaSessionRecord = {
+  id: string;
+  user_id: number;
+  type: MfaSessionType;
+  secret: string | null;
+  expires_at: string;
+};
+
+let ensureUserSchemaPromise: Promise<void> | null = null;
+async function ensureUserSchema() {
+  if (ensureUserSchemaPromise) return ensureUserSchemaPromise;
+  ensureUserSchemaPromise = (async () => {
+    const p = getPool();
+    await p.query(`ALTER TABLE app_user ADD COLUMN IF NOT EXISTS mfa_secret TEXT;`);
+    await p.query(`ALTER TABLE app_user ADD COLUMN IF NOT EXISTS oidc_sub TEXT;`);
+    await p.query(`ALTER TABLE app_user ADD COLUMN IF NOT EXISTS jellyfin_user_id TEXT;`);
+    await p.query(`ALTER TABLE app_user ADD COLUMN IF NOT EXISTS jellyfin_username TEXT;`);
+    await p.query(`ALTER TABLE app_user ADD COLUMN IF NOT EXISTS jellyfin_device_id TEXT;`);
+    await p.query(`ALTER TABLE app_user ADD COLUMN IF NOT EXISTS jellyfin_auth_token TEXT;`);
+    await p.query(`ALTER TABLE app_user ADD COLUMN IF NOT EXISTS letterboxd_username TEXT;`);
+    await p.query(`ALTER TABLE app_user ADD COLUMN IF NOT EXISTS discord_user_id TEXT;`);
+    await p.query(`ALTER TABLE app_user ADD COLUMN IF NOT EXISTS display_name TEXT;`);
+    await p.query(`ALTER TABLE app_user ADD COLUMN IF NOT EXISTS avatar_url TEXT;`);
+    await p.query(`ALTER TABLE app_user ADD COLUMN IF NOT EXISTS avatar_version INTEGER NOT NULL DEFAULT 0;`);
+    await p.query(`ALTER TABLE app_user ADD COLUMN IF NOT EXISTS request_limit_movie INTEGER;`);
+    await p.query(`ALTER TABLE app_user ADD COLUMN IF NOT EXISTS request_limit_movie_days INTEGER;`);
+    await p.query(`ALTER TABLE app_user ADD COLUMN IF NOT EXISTS request_limit_series INTEGER;`);
+    await p.query(`ALTER TABLE app_user ADD COLUMN IF NOT EXISTS request_limit_series_days INTEGER;`);
+    await p.query(`ALTER TABLE app_user ADD COLUMN IF NOT EXISTS discover_region TEXT;`);
+    await p.query(`ALTER TABLE app_user ADD COLUMN IF NOT EXISTS original_language TEXT;`);
+    await p.query(`ALTER TABLE app_user ADD COLUMN IF NOT EXISTS watchlist_sync_movies BOOLEAN DEFAULT FALSE;`);
+    await p.query(`ALTER TABLE app_user ADD COLUMN IF NOT EXISTS watchlist_sync_tv BOOLEAN DEFAULT FALSE;`);
+    await p.query(`ALTER TABLE app_user ADD COLUMN IF NOT EXISTS banned BOOLEAN NOT NULL DEFAULT FALSE;`);
+    await p.query(`ALTER TABLE app_user ADD COLUMN IF NOT EXISTS weekly_digest_opt_in BOOLEAN DEFAULT FALSE;`);
+    await p.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_app_user_oidc_sub ON app_user(oidc_sub);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_app_user_jellyfin_user_id ON app_user(jellyfin_user_id);`);
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS mfa_session (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        user_id BIGINT NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+        type TEXT NOT NULL CHECK (type IN ('verify','setup')),
+        secret TEXT,
+        expires_at TIMESTAMPTZ NOT NULL
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_mfa_session_user_id ON mfa_session(user_id);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_mfa_session_expires_at ON mfa_session(expires_at);`);
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS user_oauth_account (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+        provider TEXT NOT NULL CHECK (provider IN ('google','github','telegram')),
+        provider_user_id TEXT NOT NULL,
+        provider_email TEXT,
+        provider_login TEXT,
+        linked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (provider, provider_user_id),
+        UNIQUE (user_id, provider)
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_user_oauth_account_user_id ON user_oauth_account(user_id);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_user_oauth_account_provider ON user_oauth_account(provider);`);
+    await p.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1
+          FROM pg_constraint
+          WHERE conname = 'user_oauth_account_provider_check'
+            AND conrelid = 'user_oauth_account'::regclass
+        ) THEN
+          ALTER TABLE user_oauth_account
+          ADD CONSTRAINT user_oauth_account_provider_check
+          CHECK (provider IN ('google','github','telegram')) NOT VALID;
+        END IF;
+      END $$;
+    `);
+    await p.query(`ALTER TABLE user_oauth_account VALIDATE CONSTRAINT user_oauth_account_provider_check;`);
+
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS user_credential (
+        id TEXT PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+        name TEXT,
+        public_key BYTEA NOT NULL,
+        counter BIGINT NOT NULL DEFAULT 0,
+        device_type TEXT NOT NULL,
+        backed_up BOOLEAN NOT NULL,
+        transports TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await p.query(`ALTER TABLE user_credential ADD COLUMN IF NOT EXISTS name TEXT;`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_user_credential_user_id ON user_credential(user_id);`);
+
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS user_api_token (
+        user_id BIGINT PRIMARY KEY REFERENCES app_user(id) ON DELETE CASCADE,
+        token_hash TEXT UNIQUE NOT NULL,
+        token_encrypted TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_user_api_token_hash ON user_api_token(token_hash);`);
+
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS user_api_token_v2 (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        token_hash TEXT UNIQUE NOT NULL,
+        token_encrypted TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_user_api_token_v2_user_id ON user_api_token_v2(user_id);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_user_api_token_v2_hash ON user_api_token_v2(token_hash);`);
+    await p.query(`
+      INSERT INTO user_api_token_v2 (user_id, name, token_hash, token_encrypted, created_at, updated_at)
+      SELECT user_id, 'Default', token_hash, token_encrypted, created_at, updated_at
+      FROM user_api_token
+      WHERE NOT EXISTS (
+        SELECT 1 FROM user_api_token_v2 v2 WHERE v2.token_hash = user_api_token.token_hash
+      )
+    `);
+
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS user_password_history (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+        password_hash TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_user_password_history_user_id ON user_password_history(user_id);`);
+
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS password_reset_token (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+        token_hash TEXT NOT NULL UNIQUE,
+        expires_at TIMESTAMPTZ NOT NULL,
+        used_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_password_reset_token_hash ON password_reset_token(token_hash);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_password_reset_token_user_id ON password_reset_token(user_id);`);
+    await p.query(`ALTER TABLE password_reset_token ADD COLUMN IF NOT EXISTS viewed_at TIMESTAMPTZ;`);
+
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS user_trakt_token (
+        user_id BIGINT PRIMARY KEY REFERENCES app_user(id) ON DELETE CASCADE,
+        access_token_encrypted TEXT NOT NULL,
+        refresh_token_encrypted TEXT NOT NULL,
+        expires_at TIMESTAMPTZ,
+        scope TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_user_trakt_token_expires_at ON user_trakt_token(expires_at);`);
+
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS followed_media (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        user_id BIGINT NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+        media_type TEXT NOT NULL CHECK (media_type IN ('movie','tv')),
+        tmdb_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        poster_path TEXT,
+        theatrical_release_date DATE,
+        digital_release_date DATE,
+        notify_on_theatrical BOOLEAN NOT NULL DEFAULT TRUE,
+        notify_on_digital BOOLEAN NOT NULL DEFAULT TRUE,
+        notified_theatrical_at TIMESTAMPTZ,
+        notified_digital_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (user_id, media_type, tmdb_id)
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_followed_media_user_created ON followed_media(user_id, created_at DESC);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_followed_media_due_theatrical ON followed_media(notify_on_theatrical, theatrical_release_date, notified_theatrical_at);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_followed_media_due_digital ON followed_media(notify_on_digital, digital_release_date, notified_digital_at);`);
+
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS user_telegram_preference (
+        user_id BIGINT PRIMARY KEY REFERENCES app_user(id) ON DELETE CASCADE,
+        followed_media_notifications BOOLEAN NOT NULL DEFAULT FALSE,
+        episode_reminder_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        episode_reminder_primary_minutes INTEGER NOT NULL DEFAULT 1440,
+        episode_reminder_second_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        episode_reminder_second_minutes INTEGER NOT NULL DEFAULT 60,
+        episode_reminder_telegram_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        reminder_timezone TEXT,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await p.query(`ALTER TABLE user_telegram_preference ADD COLUMN IF NOT EXISTS episode_reminder_enabled BOOLEAN NOT NULL DEFAULT TRUE;`);
+    await p.query(`ALTER TABLE user_telegram_preference ADD COLUMN IF NOT EXISTS episode_reminder_primary_minutes INTEGER NOT NULL DEFAULT 1440;`);
+    await p.query(`ALTER TABLE user_telegram_preference ADD COLUMN IF NOT EXISTS episode_reminder_second_enabled BOOLEAN NOT NULL DEFAULT TRUE;`);
+    await p.query(`ALTER TABLE user_telegram_preference ADD COLUMN IF NOT EXISTS episode_reminder_second_minutes INTEGER NOT NULL DEFAULT 60;`);
+    await p.query(`ALTER TABLE user_telegram_preference ADD COLUMN IF NOT EXISTS episode_reminder_telegram_enabled BOOLEAN NOT NULL DEFAULT TRUE;`);
+    await p.query(`ALTER TABLE user_telegram_preference ADD COLUMN IF NOT EXISTS episode_reminder_24h BOOLEAN NOT NULL DEFAULT TRUE;`);
+    await p.query(`ALTER TABLE user_telegram_preference ADD COLUMN IF NOT EXISTS episode_reminder_1h BOOLEAN NOT NULL DEFAULT TRUE;`);
+    await p.query(`ALTER TABLE user_telegram_preference ADD COLUMN IF NOT EXISTS reminder_timezone TEXT;`);
+    await p.query(`
+      UPDATE user_telegram_preference
+      SET
+        episode_reminder_primary_minutes = CASE
+          WHEN COALESCE(episode_reminder_24h, TRUE) THEN 1440
+          ELSE episode_reminder_primary_minutes
+        END,
+        episode_reminder_second_enabled = COALESCE(episode_reminder_1h, TRUE),
+        episode_reminder_second_minutes = CASE
+          WHEN COALESCE(episode_reminder_1h, TRUE) THEN 60
+          ELSE episode_reminder_second_minutes
+        END
+      WHERE episode_reminder_primary_minutes IS NULL OR episode_reminder_second_minutes IS NULL
+    `).catch(() => {});
+
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS webauthn_challenge (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        user_id BIGINT REFERENCES app_user(id) ON DELETE CASCADE,
+        challenge TEXT NOT NULL,
+        expires_at TIMESTAMPTZ NOT NULL
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_webauthn_challenge_expires_at ON webauthn_challenge(expires_at);`);
+
+    await p.query(`ALTER TABLE user_session ADD COLUMN IF NOT EXISTS user_agent TEXT;`);
+    await p.query(`ALTER TABLE user_session ADD COLUMN IF NOT EXISTS device_label TEXT;`);
+    await p.query(`ALTER TABLE user_session ADD COLUMN IF NOT EXISTS ip_address TEXT;`);
+  })();
+  return ensureUserSchemaPromise;
+}
+
+export async function createWebAuthnChallenge(userId: number | null, challenge: string, expiresInSeconds = 300): Promise<string> {
+  await ensureUserSchema();
+  const p = getPool();
+  const expiresAt = new Date(Date.now() + expiresInSeconds * 1000);
+  const res = await p.query(
+    `INSERT INTO webauthn_challenge (user_id, challenge, expires_at) VALUES ($1, $2, $3) RETURNING id`,
+    [userId, challenge, expiresAt]
+  );
+  return res.rows[0].id;
+}
+
+export async function getWebAuthnChallenge(id: string): Promise<{ challenge: string; user_id: number | null } | null> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `SELECT challenge, user_id FROM webauthn_challenge WHERE id = $1 AND expires_at > NOW()`,
+    [id]
+  );
+  if (!res.rows.length) return null;
+  return { challenge: res.rows[0].challenge, user_id: res.rows[0].user_id ? Number(res.rows[0].user_id) : null };
+}
+
+export async function deleteWebAuthnChallenge(id: string) {
+  await ensureUserSchema();
+  const p = getPool();
+  await p.query(`DELETE FROM webauthn_challenge WHERE id = $1`, [id]);
+}
+
+export async function addUserCredential(input: {
+  id: string;
+  userId: number;
+  publicKey: Buffer;
+  counter: number;
+  deviceType: string;
+  backedUp: boolean;
+  transports?: string[];
+}) {
+  await ensureUserSchema();
+  const p = getPool();
+  await p.query(
+    `INSERT INTO user_credential (id, user_id, public_key, counter, device_type, backed_up, transports)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [input.id, input.userId, input.publicKey, input.counter, input.deviceType, input.backedUp, input.transports?.join(",")]
+  );
+}
+
+export async function listUserCredentials(userId: number) {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, name, public_key, counter, device_type, backed_up, transports, created_at FROM user_credential WHERE user_id = $1 ORDER BY created_at DESC`,
+    [userId]
+  );
+  return res.rows.map(r => ({
+    id: r.id,
+    name: r.name ?? null,
+    publicKey: r.public_key,
+    counter: Number(r.counter),
+    deviceType: r.device_type,
+    backedUp: !!r.backed_up,
+    transports: r.transports ? r.transports.split(",") : [],
+    created_at: r.created_at
+  }));
+}
+
+export async function getCredentialById(id: string) {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, user_id, name, public_key, counter, device_type, backed_up, transports, created_at FROM user_credential WHERE id = $1`,
+    [id]
+  );
+  if (!res.rows.length) return null;
+  const r = res.rows[0];
+  return {
+    id: r.id,
+    userId: Number(r.user_id),
+    name: r.name ?? null,
+    publicKey: r.public_key,
+    counter: Number(r.counter),
+    deviceType: r.device_type,
+    backedUp: !!r.backed_up,
+    transports: r.transports ? r.transports.split(",") : [],
+    created_at: r.created_at
+  };
+}
+
+export async function updateCredentialCounter(id: string, counter: number) {
+  await ensureUserSchema();
+  const p = getPool();
+  await p.query(`UPDATE user_credential SET counter = $1 WHERE id = $2`, [counter, id]);
+}
+
+export async function updateUserCredentialName(id: string, userId: number, name: string) {
+  await ensureUserSchema();
+  const p = getPool();
+  await p.query(`UPDATE user_credential SET name = $1 WHERE id = $2 AND user_id = $3`, [name, id, userId]);
+}
+
+export async function deleteUserCredential(id: string, userId: number) {
+  await ensureUserSchema();
+  const p = getPool();
+  await p.query(`DELETE FROM user_credential WHERE id = $1 AND user_id = $2`, [id, userId]);
+}
+
+export async function deleteAllUserCredentials(userId: number) {
+  await ensureUserSchema();
+  const p = getPool();
+  await p.query(`DELETE FROM user_credential WHERE user_id = $1`, [userId]);
+}
+
+export async function unlinkUserOidc(userId: number) {
+  await ensureUserSchema();
+  const p = getPool();
+  await p.query(`UPDATE app_user SET oidc_sub = NULL, last_seen_at = NOW() WHERE id = $1`, [userId]);
+}
+
+let ensureMediaListSchemaPromise: Promise<void> | null = null;
+async function ensureMediaListSchema() {
+  if (ensureMediaListSchemaPromise) return ensureMediaListSchemaPromise;
+  ensureMediaListSchemaPromise = (async () => {
+    const p = getPool();
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS user_media_list (
+        user_id BIGINT NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+        list_type TEXT NOT NULL CHECK (list_type IN ('favorite','watchlist')),
+        media_type TEXT NOT NULL CHECK (media_type IN ('movie','tv')),
+        tmdb_id INTEGER NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (user_id, list_type, media_type, tmdb_id)
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_user_media_list_user ON user_media_list(user_id, list_type, created_at DESC);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_user_media_list_tmdb ON user_media_list(media_type, tmdb_id);`);
+  })();
+  return ensureMediaListSchemaPromise;
+}
+
+export async function getUserByOidcSub(oidcSub: string): Promise<DbUserWithHash | null> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT id, username, display_name, groups, password_hash, email, oidc_sub, jellyfin_user_id, jellyfin_username, jellyfin_device_id, jellyfin_auth_token, letterboxd_username, discord_user_id, trakt_username, avatar_url, avatar_version, created_at, last_seen_at, mfa_secret, discover_region, original_language, watchlist_sync_movies, watchlist_sync_tv, request_limit_movie, request_limit_movie_days, request_limit_series, request_limit_series_days, banned, weekly_digest_opt_in
+    FROM app_user
+    WHERE oidc_sub = $1
+    LIMIT 1
+    `,
+    [oidcSub]
+  );
+  if (!res.rows.length) return null;
+  const row = res.rows[0];
+  return {
+    id: Number(row.id),
+    username: row.username,
+    display_name: row.display_name ?? null,
+    groups: normalizeGroupList(row.groups as string),
+    password_hash: row.password_hash,
+    email: row.email ?? null,
+    oidc_sub: row.oidc_sub ?? null,
+    jellyfin_user_id: row.jellyfin_user_id ?? null,
+    jellyfin_username: row.jellyfin_username ?? null,
+    jellyfin_device_id: row.jellyfin_device_id ?? null,
+    jellyfin_auth_token: decryptOptionalSecret(row.jellyfin_auth_token),
+    letterboxd_username: row.letterboxd_username ?? null,
+    discord_user_id: row.discord_user_id ?? null,
+    trakt_username: row.trakt_username ?? null,
+    avatar_url: row.avatar_url ?? null,
+    avatar_version: row.avatar_version ?? null,
+    created_at: row.created_at,
+    last_seen_at: row.last_seen_at,
+    mfa_secret: decryptOptionalSecret(row.mfa_secret),
+    discover_region: row.discover_region ?? null,
+    original_language: row.original_language ?? null,
+    watchlist_sync_movies: !!row.watchlist_sync_movies,
+    watchlist_sync_tv: !!row.watchlist_sync_tv,
+    request_limit_movie: row.request_limit_movie ?? null,
+    request_limit_movie_days: row.request_limit_movie_days ?? null,
+    request_limit_series: row.request_limit_series ?? null,
+    request_limit_series_days: row.request_limit_series_days ?? null,
+    banned: !!row.banned,
+    weekly_digest_opt_in: !!row.weekly_digest_opt_in,
+  };
+}
+
+export async function getUserByEmail(email: string): Promise<DbUserWithHash | null> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT id, username, display_name, groups, password_hash, email, oidc_sub, jellyfin_user_id, jellyfin_username, jellyfin_device_id, jellyfin_auth_token, letterboxd_username, discord_user_id, trakt_username, avatar_url, avatar_version, created_at, last_seen_at, mfa_secret, discover_region, original_language, watchlist_sync_movies, watchlist_sync_tv, request_limit_movie, request_limit_movie_days, request_limit_series, request_limit_series_days, banned, weekly_digest_opt_in
+    FROM app_user
+    WHERE LOWER(email) = LOWER($1)
+    LIMIT 1
+    `,
+    [email]
+  );
+  if (!res.rows.length) return null;
+  const row = res.rows[0];
+  return {
+    id: Number(row.id),
+    username: row.username,
+    display_name: row.display_name ?? null,
+    groups: normalizeGroupList(row.groups as string),
+    password_hash: row.password_hash,
+    email: row.email ?? null,
+    oidc_sub: row.oidc_sub ?? null,
+    jellyfin_user_id: row.jellyfin_user_id ?? null,
+    jellyfin_username: row.jellyfin_username ?? null,
+    jellyfin_device_id: row.jellyfin_device_id ?? null,
+    jellyfin_auth_token: decryptOptionalSecret(row.jellyfin_auth_token),
+    letterboxd_username: row.letterboxd_username ?? null,
+    discord_user_id: row.discord_user_id ?? null,
+    trakt_username: row.trakt_username ?? null,
+    avatar_url: row.avatar_url ?? null,
+    avatar_version: row.avatar_version ?? null,
+    created_at: row.created_at,
+    last_seen_at: row.last_seen_at,
+    mfa_secret: decryptOptionalSecret(row.mfa_secret),
+    discover_region: row.discover_region ?? null,
+    original_language: row.original_language ?? null,
+    watchlist_sync_movies: !!row.watchlist_sync_movies,
+    watchlist_sync_tv: !!row.watchlist_sync_tv,
+    request_limit_movie: row.request_limit_movie ?? null,
+    request_limit_movie_days: row.request_limit_movie_days ?? null,
+    request_limit_series: row.request_limit_series ?? null,
+    request_limit_series_days: row.request_limit_series_days ?? null,
+    banned: !!row.banned,
+    weekly_digest_opt_in: !!row.weekly_digest_opt_in,
+  };
+}
+
+export async function getUserByUsername(username: string): Promise<DbUserWithHash | null> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT id, username, display_name, groups, password_hash, email, oidc_sub, jellyfin_user_id, jellyfin_username, jellyfin_device_id, jellyfin_auth_token, letterboxd_username, discord_user_id, trakt_username, avatar_url, avatar_version, created_at, last_seen_at, mfa_secret, discover_region, original_language, watchlist_sync_movies, watchlist_sync_tv, request_limit_movie, request_limit_movie_days, request_limit_series, request_limit_series_days, banned, weekly_digest_opt_in
+    FROM app_user
+    WHERE username = $1
+    LIMIT 1
+    `,
+    [username]
+  );
+  if (!res.rows.length) return null;
+  const row = res.rows[0];
+  return {
+    id: Number(row.id),
+    username: row.username,
+    display_name: row.display_name ?? null,
+    groups: normalizeGroupList(row.groups as string),
+    password_hash: row.password_hash,
+    email: row.email ?? null,
+    oidc_sub: row.oidc_sub ?? null,
+    jellyfin_user_id: row.jellyfin_user_id ?? null,
+    jellyfin_username: row.jellyfin_username ?? null,
+    jellyfin_device_id: row.jellyfin_device_id ?? null,
+    jellyfin_auth_token: decryptOptionalSecret(row.jellyfin_auth_token),
+    letterboxd_username: row.letterboxd_username ?? null,
+    discord_user_id: row.discord_user_id ?? null,
+    trakt_username: row.trakt_username ?? null,
+    avatar_url: row.avatar_url ?? null,
+    avatar_version: row.avatar_version ?? null,
+    created_at: row.created_at,
+    last_seen_at: row.last_seen_at,
+    mfa_secret: decryptOptionalSecret(row.mfa_secret),
+    discover_region: row.discover_region ?? null,
+    original_language: row.original_language ?? null,
+    watchlist_sync_movies: !!row.watchlist_sync_movies,
+    watchlist_sync_tv: !!row.watchlist_sync_tv,
+    request_limit_movie: row.request_limit_movie ?? null,
+    request_limit_movie_days: row.request_limit_movie_days ?? null,
+    request_limit_series: row.request_limit_series ?? null,
+    request_limit_series_days: row.request_limit_series_days ?? null,
+    banned: !!row.banned,
+    weekly_digest_opt_in: !!row.weekly_digest_opt_in,
+  };
+}
+
+export async function listUsersByUsernames(usernames: string[]): Promise<Array<{ id: number; username: string; displayName: string | null }>> {
+  await ensureUserSchema();
+  const normalized = Array.from(new Set(usernames.map((name) => name.trim().toLowerCase()).filter(Boolean)));
+  if (normalized.length === 0) return [];
+
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, username, display_name as "displayName"
+     FROM app_user
+     WHERE lower(username) = ANY($1::text[])
+       AND COALESCE(banned, FALSE) = FALSE`,
+    [normalized]
+  );
+
+  return res.rows.map((row) => ({
+    id: Number(row.id),
+    username: String(row.username),
+    displayName: (row.displayName as string | null) ?? null,
+  }));
+}
+
+export type UserMediaListType = "favorite" | "watchlist";
+
+export type UserMediaListItem = {
+  user_id: number;
+  list_type: UserMediaListType;
+  media_type: "movie" | "tv";
+  tmdb_id: number;
+  created_at: string;
+};
+
+export async function addUserMediaListItem(input: {
+  userId: number;
+  listType: UserMediaListType;
+  mediaType: "movie" | "tv";
+  tmdbId: number;
+}) {
+  await ensureMediaListSchema();
+  const p = getPool();
+  await p.query(
+    `
+    INSERT INTO user_media_list (user_id, list_type, media_type, tmdb_id)
+    VALUES ($1, $2, $3, $4)
+    ON CONFLICT DO NOTHING
+    `,
+    [input.userId, input.listType, input.mediaType, input.tmdbId]
+  );
+}
+
+export async function removeUserMediaListItem(input: {
+  userId: number;
+  listType: UserMediaListType;
+  mediaType: "movie" | "tv";
+  tmdbId: number;
+}) {
+  await ensureMediaListSchema();
+  const p = getPool();
+  await p.query(
+    `
+    DELETE FROM user_media_list
+    WHERE user_id = $1 AND list_type = $2 AND media_type = $3 AND tmdb_id = $4
+    `,
+    [input.userId, input.listType, input.mediaType, input.tmdbId]
+  );
+}
+
+export async function listUserMediaList(input: {
+  userId: number;
+  listType: UserMediaListType;
+  limit?: number;
+}) {
+  await ensureMediaListSchema();
+  const p = getPool();
+  const limit = Math.min(Math.max(input.limit ?? 50, 1), 200);
+  const res = await p.query(
+    `
+    SELECT user_id, list_type, media_type, tmdb_id, created_at
+    FROM user_media_list
+    WHERE user_id = $1 AND list_type = $2
+    ORDER BY created_at DESC
+    LIMIT $3
+    `,
+    [input.userId, input.listType, limit]
+  );
+  return res.rows as UserMediaListItem[];
+}
+
+export async function getUserMediaListStatus(input: {
+  userId: number;
+  mediaType: "movie" | "tv";
+  tmdbId: number;
+}) {
+  await ensureMediaListSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT list_type
+    FROM user_media_list
+    WHERE user_id = $1 AND media_type = $2 AND tmdb_id = $3
+    `,
+    [input.userId, input.mediaType, input.tmdbId]
+  );
+  const types = new Set(res.rows.map(row => row.list_type as UserMediaListType));
+  return {
+    favorite: types.has("favorite"),
+    watchlist: types.has("watchlist")
+  };
+}
+
+export async function getUserMediaListStatusBulk(input: {
+  userId: number;
+  items: Array<{ mediaType: "movie" | "tv"; tmdbId: number }>;
+}) {
+  await ensureMediaListSchema();
+  if (!input.items.length) return new Map<string, { favorite: boolean; watchlist: boolean }>();
+  const p = getPool();
+  const values: any[] = [input.userId];
+  const tuples = input.items.map((item, index) => {
+    const base = index * 2 + 2;
+    values.push(item.mediaType, item.tmdbId);
+    return `($${base}, $${base + 1})`;
+  });
+  const res = await p.query(
+    `
+    SELECT media_type, tmdb_id, array_agg(list_type) as list_types
+    FROM user_media_list
+    WHERE user_id = $1
+      AND (media_type, tmdb_id) IN (${tuples.join(", ")})
+    GROUP BY media_type, tmdb_id
+    `,
+    values
+  );
+  const map = new Map<string, { favorite: boolean; watchlist: boolean }>();
+  for (const row of res.rows) {
+    const types = new Set((row.list_types as string[] | null) ?? []);
+    const key = `${row.media_type}:${row.tmdb_id}`;
+    map.set(key, {
+      favorite: types.has("favorite"),
+      watchlist: types.has("watchlist")
+    });
+  }
+  return map;
+}
+
+export async function hasUserMediaListEntry(input: {
+  userId: number;
+  mediaType: "movie" | "tv";
+  tmdbId: number;
+  listTypes?: UserMediaListType[];
+}): Promise<boolean> {
+  await ensureMediaListSchema();
+  const p = getPool();
+  const listTypes = Array.from(new Set((input.listTypes ?? ["favorite", "watchlist"]).filter(Boolean)));
+  if (!listTypes.length) return false;
+
+  const res = await p.query(
+    `SELECT 1
+     FROM user_media_list
+     WHERE user_id = $1
+       AND media_type = $2
+       AND tmdb_id = $3
+       AND list_type = ANY($4::text[])
+     LIMIT 1`,
+    [input.userId, input.mediaType, input.tmdbId, listTypes]
+  );
+  return res.rows.length > 0;
+}
+
+export async function listTrackedTvForEpisodeReminders(maxShowsPerUser = 100): Promise<Array<{ userId: number; tmdbId: number }>> {
+  await ensureMediaListSchema();
+  await ensureUserSchema();
+  const p = getPool();
+  const perUserLimit = Math.min(Math.max(maxShowsPerUser, 1), 500);
+  const res = await p.query(
+    `WITH tracked_sources AS (
+       SELECT uml.user_id, uml.tmdb_id, uml.created_at
+       FROM user_media_list uml
+       WHERE uml.media_type = 'tv'
+         AND uml.list_type IN ('favorite', 'watchlist')
+
+       UNION ALL
+
+       SELECT fm.user_id, fm.tmdb_id, fm.created_at
+       FROM followed_media fm
+       WHERE fm.media_type = 'tv'
+     ), dedup AS (
+       SELECT ts.user_id, ts.tmdb_id, MAX(ts.created_at) AS last_added
+       FROM tracked_sources ts
+       JOIN app_user u ON u.id = ts.user_id
+       WHERE COALESCE(u.banned, FALSE) = FALSE
+       GROUP BY ts.user_id, ts.tmdb_id
+     ), ranked AS (
+       SELECT
+         user_id,
+         tmdb_id,
+         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY last_added DESC, tmdb_id DESC) AS rn
+       FROM dedup
+     )
+     SELECT user_id as "userId", tmdb_id as "tmdbId"
+     FROM ranked
+     WHERE rn <= $1
+     ORDER BY user_id ASC, tmdb_id ASC`,
+    [perUserLimit]
+  );
+
+  return res.rows.map((row) => ({
+    userId: Number(row.userId),
+    tmdbId: Number(row.tmdbId),
+  }));
+}
+
+export async function markEpisodeAirReminderSent(input: {
+  userId: number;
+  tmdbId: number;
+  seasonNumber: number;
+  episodeNumber: number;
+  airDate: string;
+  reminderType: string;
+}): Promise<boolean> {
+  const p = getPool();
+  const res = await p.query(
+    `INSERT INTO episode_air_reminder_sent
+      (user_id, tmdb_id, season_number, episode_number, air_date, reminder_type)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (user_id, tmdb_id, season_number, episode_number, air_date, reminder_type) DO NOTHING
+     RETURNING id`,
+    [input.userId, input.tmdbId, input.seasonNumber, input.episodeNumber, input.airDate, input.reminderType]
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
+export async function cleanupEpisodeAirReminderSent(olderThanDays = 60): Promise<number> {
+  const p = getPool();
+  const days = Math.min(Math.max(olderThanDays, 1), 365);
+  const res = await p.query(
+    `DELETE FROM episode_air_reminder_sent
+     WHERE created_at < NOW() - ($1::text || ' days')::interval`,
+    [days]
+  );
+  return res.rowCount ?? 0;
+}
+
+export async function listEpisodeAirReminderTelegramTargets(userIds: number[]): Promise<Map<number, {
+  telegramId: string | null;
+  telegramFollowOptIn: boolean;
+  episodeReminderEnabled: boolean;
+  episodeReminderPrimaryMinutes: number;
+  episodeReminderSecondEnabled: boolean;
+  episodeReminderSecondMinutes: number;
+  episodeReminderTelegramEnabled: boolean;
+  reminderTimezone: string | null;
+}>> {
+  await ensureUserSchema();
+  const out = new Map<number, {
+    telegramId: string | null;
+    telegramFollowOptIn: boolean;
+    episodeReminderEnabled: boolean;
+    episodeReminderPrimaryMinutes: number;
+    episodeReminderSecondEnabled: boolean;
+    episodeReminderSecondMinutes: number;
+    episodeReminderTelegramEnabled: boolean;
+    reminderTimezone: string | null;
+  }>();
+  if (!userIds.length) return out;
+
+  const ids = Array.from(new Set(userIds.filter((id) => Number.isFinite(id) && id > 0)));
+  if (!ids.length) return out;
+
+  const p = getPool();
+  const res = await p.query(
+    `SELECT
+       u.id as "userId",
+       tu.telegram_id as "telegramId",
+       COALESCE(utp.followed_media_notifications, FALSE) as "telegramFollowOptIn",
+       COALESCE(utp.episode_reminder_enabled, TRUE) as "episodeReminderEnabled",
+       COALESCE(utp.episode_reminder_primary_minutes, 1440) as "episodeReminderPrimaryMinutes",
+       COALESCE(utp.episode_reminder_second_enabled, TRUE) as "episodeReminderSecondEnabled",
+       COALESCE(utp.episode_reminder_second_minutes, 60) as "episodeReminderSecondMinutes",
+       COALESCE(utp.episode_reminder_telegram_enabled, TRUE) as "episodeReminderTelegramEnabled",
+       utp.reminder_timezone as "reminderTimezone"
+     FROM app_user u
+     LEFT JOIN telegram_users tu ON tu.user_id = u.id
+     LEFT JOIN user_telegram_preference utp ON utp.user_id = u.id
+     WHERE u.id = ANY($1::bigint[])`,
+    [ids]
+  );
+
+  for (const row of res.rows) {
+    out.set(Number(row.userId), {
+      telegramId: row.telegramId ? String(row.telegramId) : null,
+      telegramFollowOptIn: !!row.telegramFollowOptIn,
+      episodeReminderEnabled: !!row.episodeReminderEnabled,
+      episodeReminderPrimaryMinutes: Math.max(1, Number(row.episodeReminderPrimaryMinutes ?? 1440) || 1440),
+      episodeReminderSecondEnabled: !!row.episodeReminderSecondEnabled,
+      episodeReminderSecondMinutes: Math.max(1, Number(row.episodeReminderSecondMinutes ?? 60) || 60),
+      episodeReminderTelegramEnabled: !!row.episodeReminderTelegramEnabled,
+      reminderTimezone: row.reminderTimezone ? String(row.reminderTimezone) : null,
+    });
+  }
+
+  return out;
+}
+
+export async function listUsersWithWatchlistSync(userId?: number) {
+  await ensureUserSchema();
+  const p = getPool();
+  const whereClauses = [
+    "(jellyfin_user_id IS NOT NULL OR EXISTS (SELECT 1 FROM user_trakt_token utt WHERE utt.user_id = app_user.id))",
+    "(watchlist_sync_movies = TRUE OR watchlist_sync_tv = TRUE)"
+  ];
+  const values: Array<number> = [];
+  if (typeof userId === "number") {
+    values.push(userId);
+    whereClauses.push(`id = $${values.length}`);
+  }
+  const res = await p.query(
+    `
+    SELECT id, username, jellyfin_user_id, watchlist_sync_movies, watchlist_sync_tv, groups,
+      EXISTS (SELECT 1 FROM user_trakt_token utt WHERE utt.user_id = app_user.id) AS has_trakt
+    FROM app_user
+    WHERE ${whereClauses.join(" AND ")}
+    `,
+    values
+  );
+  return res.rows.map(row => ({
+    id: Number(row.id),
+    username: row.username as string,
+    jellyfinUserId: row.jellyfin_user_id as string,
+    hasTrakt: !!row.has_trakt,
+    syncMovies: !!row.watchlist_sync_movies,
+    syncTv: !!row.watchlist_sync_tv,
+    isAdmin: normalizeGroupList(row.groups as string).includes("administrators")
+  }));
+}
+
+export async function listUsersWithLetterboxd() {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT id, username, letterboxd_username
+    FROM app_user
+    WHERE letterboxd_username IS NOT NULL AND letterboxd_username <> ''
+    ORDER BY letterboxd_username ASC
+    `
+  );
+  return res.rows.map(row => ({
+    id: Number(row.id),
+    username: row.username as string,
+    letterboxdUsername: row.letterboxd_username as string
+  }));
+}
+
+export async function createOidcUser(input: {
+  username: string;
+  email?: string | null;
+  groups: string[];
+  oidcSub: string;
+}): Promise<DbUserWithHash> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    INSERT INTO app_user (username, groups, email, oidc_sub, last_seen_at)
+    VALUES ($1, $2, $3, $4, NOW())
+    RETURNING id, username, display_name, groups, password_hash, email, oidc_sub, jellyfin_user_id, jellyfin_username, jellyfin_device_id, jellyfin_auth_token, letterboxd_username, discord_user_id, trakt_username, avatar_url, avatar_version, created_at, last_seen_at, mfa_secret, discover_region, original_language, watchlist_sync_movies, watchlist_sync_tv, request_limit_movie, request_limit_movie_days, request_limit_series, request_limit_series_days, banned, weekly_digest_opt_in
+    `,
+    [input.username, input.groups.join(","), input.email ?? null, input.oidcSub]
+  );
+  const row = res.rows[0];
+  return {
+    id: Number(row.id),
+    username: row.username,
+    display_name: row.display_name ?? null,
+    groups: normalizeGroupList(row.groups as string),
+    password_hash: row.password_hash,
+    email: row.email ?? null,
+    oidc_sub: row.oidc_sub ?? null,
+    jellyfin_user_id: row.jellyfin_user_id ?? null,
+    jellyfin_username: row.jellyfin_username ?? null,
+    jellyfin_device_id: row.jellyfin_device_id ?? null,
+    jellyfin_auth_token: decryptOptionalSecret(row.jellyfin_auth_token),
+    letterboxd_username: row.letterboxd_username ?? null,
+    discord_user_id: row.discord_user_id ?? null,
+    trakt_username: row.trakt_username ?? null,
+    avatar_url: row.avatar_url ?? null,
+    avatar_version: row.avatar_version ?? null,
+    created_at: row.created_at,
+    last_seen_at: row.last_seen_at,
+    mfa_secret: decryptOptionalSecret(row.mfa_secret),
+    discover_region: row.discover_region ?? null,
+    original_language: row.original_language ?? null,
+    watchlist_sync_movies: !!row.watchlist_sync_movies,
+    watchlist_sync_tv: !!row.watchlist_sync_tv,
+    request_limit_movie: row.request_limit_movie ?? null,
+    request_limit_movie_days: row.request_limit_movie_days ?? null,
+    request_limit_series: row.request_limit_series ?? null,
+    request_limit_series_days: row.request_limit_series_days ?? null,
+    banned: !!row.banned,
+    weekly_digest_opt_in: !!row.weekly_digest_opt_in,
+  };
+}
+
+export async function updateUserOidcLink(input: { userId: number; oidcSub: string; email?: string | null; groups?: string[] }) {
+  await ensureUserSchema();
+  const p = getPool();
+  const clauses: string[] = [];
+  const values: any[] = [];
+  let idx = 1;
+
+  clauses.push(`oidc_sub = $${idx++}`);
+  values.push(input.oidcSub);
+
+  if (input.email !== undefined) {
+    clauses.push(`email = $${idx++}`);
+    values.push(input.email);
+  }
+  if (input.groups) {
+    clauses.push(`groups = $${idx++}`);
+    values.push(input.groups.join(","));
+  }
+
+  values.push(input.userId);
+
+  await p.query(
+    `
+    UPDATE app_user
+    SET ${clauses.join(", ")}, last_seen_at = NOW()
+    WHERE id = $${idx}
+    `,
+    values
+  );
+}
+
+export async function createMfaSession(input: {
+  userId: number;
+  type: MfaSessionType;
+  expiresInSeconds: number;
+  secret?: string | null;
+}): Promise<MfaSessionRecord> {
+  await ensureUserSchema();
+  const expiresAt = new Date(Date.now() + input.expiresInSeconds * 1000);
+  const p = getPool();
+  const res = await p.query(
+    `
+    INSERT INTO mfa_session (user_id, type, secret, expires_at)
+    VALUES ($1, $2, $3, $4)
+    RETURNING id, user_id, type, secret, expires_at
+    `,
+    [input.userId, input.type, input.secret ?? null, expiresAt]
+  );
+  const row = res.rows[0];
+  return {
+    id: row.id,
+    user_id: row.user_id,
+    type: row.type,
+    secret: row.secret,
+    expires_at: row.expires_at
+  };
+}
+
+export async function listUserOAuthAccounts(userId: number): Promise<UserOAuthAccount[]> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT provider, provider_user_id, provider_email, provider_login, linked_at, updated_at
+    FROM user_oauth_account
+    WHERE user_id = $1
+    ORDER BY linked_at DESC
+    `,
+    [userId]
+  );
+  return res.rows.map((row) => ({
+    provider: row.provider as OAuthProvider,
+    providerUserId: row.provider_user_id,
+    providerEmail: row.provider_email ?? null,
+    providerLogin: row.provider_login ?? null,
+    linkedAt: row.linked_at,
+    updatedAt: row.updated_at
+  }));
+}
+
+export async function getUserOAuthAccount(userId: number, provider: OAuthProvider): Promise<UserOAuthAccount | null> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT provider, provider_user_id, provider_email, provider_login, linked_at, updated_at
+    FROM user_oauth_account
+    WHERE user_id = $1 AND provider = $2
+    LIMIT 1
+    `,
+    [userId, provider]
+  );
+  if (!res.rows.length) return null;
+  const row = res.rows[0];
+  return {
+    provider: row.provider as OAuthProvider,
+    providerUserId: row.provider_user_id,
+    providerEmail: row.provider_email ?? null,
+    providerLogin: row.provider_login ?? null,
+    linkedAt: row.linked_at,
+    updatedAt: row.updated_at
+  };
+}
+
+export async function getUserByOAuthAccount(provider: OAuthProvider, providerUserId: string): Promise<DbUserWithHash | null> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT user_id
+    FROM user_oauth_account
+    WHERE provider = $1 AND provider_user_id = $2
+    LIMIT 1
+    `,
+    [provider, providerUserId]
+  );
+  if (!res.rows.length) return null;
+  return getUserWithHashById(Number(res.rows[0].user_id));
+}
+
+export async function upsertUserOAuthAccount(input: {
+  userId: number;
+  provider: OAuthProvider;
+  providerUserId: string;
+  providerEmail?: string | null;
+  providerLogin?: string | null;
+}) {
+  await ensureUserSchema();
+  const p = getPool();
+  await p.query(
+    `
+    INSERT INTO user_oauth_account (user_id, provider, provider_user_id, provider_email, provider_login, linked_at, updated_at)
+    VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+    ON CONFLICT (user_id, provider)
+    DO UPDATE
+      SET provider_user_id = EXCLUDED.provider_user_id,
+          provider_email = EXCLUDED.provider_email,
+          provider_login = EXCLUDED.provider_login,
+          updated_at = NOW()
+    `,
+    [input.userId, input.provider, input.providerUserId, input.providerEmail ?? null, input.providerLogin ?? null]
+  );
+}
+
+export async function unlinkUserOAuthAccount(userId: number, provider: OAuthProvider) {
+  await ensureUserSchema();
+  const p = getPool();
+  await p.query(
+    `
+    DELETE FROM user_oauth_account
+    WHERE user_id = $1 AND provider = $2
+    `,
+    [userId, provider]
+  );
+}
+
+export async function getMfaSessionById(id: string): Promise<MfaSessionRecord | null> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT id, user_id, type, secret, expires_at
+    FROM mfa_session
+    WHERE id = $1
+      AND expires_at > NOW()
+    LIMIT 1
+    `,
+    [id]
+  );
+  if (!res.rows.length) return null;
+  const row = res.rows[0];
+  return {
+    id: row.id,
+    user_id: row.user_id,
+    type: row.type,
+    secret: row.secret,
+    expires_at: row.expires_at
+  };
+}
+
+export async function deleteMfaSessionById(id: string) {
+  await ensureUserSchema();
+  const p = getPool();
+  await p.query(`DELETE FROM mfa_session WHERE id = $1`, [id]);
+}
+
+export async function deleteMfaSessionsForUser(userId: number) {
+  await ensureUserSchema();
+  const p = getPool();
+  await p.query(`DELETE FROM mfa_session WHERE user_id = $1`, [userId]);
+}
+
+export async function getUserMfaSecretById(userId: number): Promise<string | null> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(`SELECT mfa_secret FROM app_user WHERE id = $1 LIMIT 1`, [userId]);
+  if (!res.rows.length) return null;
+  return decryptOptionalSecret(res.rows[0].mfa_secret ?? null);
+}
+
+export async function setUserMfaSecretById(userId: number, secret: string) {
+  await ensureUserSchema();
+  const p = getPool();
+  const encrypted = encryptOptionalSecret(secret);
+  await p.query(`UPDATE app_user SET mfa_secret = $1, last_seen_at = NOW() WHERE id = $2`, [encrypted, userId]);
+}
+
+export async function resetUserMfaById(userId: number) {
+  await ensureUserSchema();
+  const p = getPool();
+  await p.query(`UPDATE app_user SET mfa_secret = NULL, last_seen_at = NOW() WHERE id = $1`, [userId]);
+  await deleteMfaSessionsForUser(userId);
+}
+
+let ensureSchemaPromise: Promise<void> | null = null;
+async function ensureSchema() {
+  if (ensureSchemaPromise) return ensureSchemaPromise;
+  ensureSchemaPromise = (async () => {
+    const p = getPool();
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS notification_endpoint (
+        id BIGSERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL CHECK (type IN ('telegram','discord','email','webhook','webpush','gotify','ntfy','pushbullet','pushover','slack')),
+        enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        is_global BOOLEAN NOT NULL DEFAULT FALSE,
+        owner_user_id BIGINT REFERENCES app_user(id) ON DELETE CASCADE,
+        events JSONB NOT NULL DEFAULT '["request_pending","request_submitted","request_denied","request_failed","request_already_exists","request_partially_available","request_downloading","request_available","request_removed","issue_reported","issue_resolved"]'::jsonb,
+        config JSONB NOT NULL DEFAULT '{}'::jsonb,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await p.query(`ALTER TABLE notification_endpoint ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE;`);
+    await p.query(`ALTER TABLE notification_endpoint ADD COLUMN IF NOT EXISTS is_global BOOLEAN NOT NULL DEFAULT FALSE;`);
+    await p.query(`ALTER TABLE notification_endpoint ADD COLUMN IF NOT EXISTS owner_user_id BIGINT REFERENCES app_user(id) ON DELETE CASCADE;`);
+    await p.query(`
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1
+          FROM pg_constraint
+          WHERE conname = 'notification_endpoint_type_check'
+            AND conrelid = 'notification_endpoint'::regclass
+        ) THEN
+          ALTER TABLE notification_endpoint DROP CONSTRAINT notification_endpoint_type_check;
+        END IF;
+        ALTER TABLE notification_endpoint
+          ADD CONSTRAINT notification_endpoint_type_check
+          CHECK (type IN ('telegram','discord','email','webhook','webpush','gotify','ntfy','pushbullet','pushover','slack'));
+      EXCEPTION
+        WHEN duplicate_object THEN NULL;
+      END $$;
+    `);
+    await p.query(
+      `ALTER TABLE notification_endpoint ADD COLUMN IF NOT EXISTS events JSONB NOT NULL DEFAULT '["request_pending","request_submitted","request_denied","request_failed","request_already_exists","request_partially_available","request_downloading","request_available","request_removed","issue_reported","issue_resolved"]'::jsonb;`
+    );
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_notification_endpoint_type ON notification_endpoint(type);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_notification_endpoint_enabled ON notification_endpoint(enabled);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_notification_endpoint_is_global ON notification_endpoint(is_global);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_notification_endpoint_owner_user_id ON notification_endpoint(owner_user_id);`);
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS app_setting (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS user_notification_endpoint (
+        user_id BIGINT NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+        endpoint_id BIGINT NOT NULL REFERENCES notification_endpoint(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (user_id, endpoint_id)
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_user_notification_endpoint_user_id ON user_notification_endpoint(user_id);`);
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS notification_delivery_attempt (
+        id BIGSERIAL PRIMARY KEY,
+        endpoint_id BIGINT NOT NULL REFERENCES notification_endpoint(id) ON DELETE CASCADE,
+        endpoint_type TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('success','failure','skipped')),
+        attempt_number INTEGER NOT NULL DEFAULT 1,
+        duration_ms INTEGER,
+        error_message TEXT,
+        target_user_id BIGINT REFERENCES app_user(id) ON DELETE SET NULL,
+        metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_notification_delivery_attempt_created_at ON notification_delivery_attempt(created_at DESC);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_notification_delivery_attempt_endpoint_id ON notification_delivery_attempt(endpoint_id, created_at DESC);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_notification_delivery_attempt_endpoint_type ON notification_delivery_attempt(endpoint_type, created_at DESC);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_notification_delivery_attempt_status ON notification_delivery_attempt(status, created_at DESC);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_notification_delivery_attempt_user_event_created ON notification_delivery_attempt(target_user_id, event_type, created_at DESC);`);
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS media_issue (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        media_type TEXT NOT NULL CHECK (media_type IN ('movie','tv')),
+        tmdb_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        category TEXT NOT NULL,
+        description TEXT NOT NULL,
+        reporter_id BIGINT NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+        status TEXT NOT NULL DEFAULT 'open',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_media_issue_created_at ON media_issue(created_at DESC);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_media_issue_tmdb ON media_issue(media_type, tmdb_id);`);
+
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS user_dashboard_slider (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+        type INTEGER NOT NULL,
+        title TEXT,
+        data TEXT,
+        enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        order_index INTEGER NOT NULL DEFAULT 0,
+        is_builtin BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_user_dashboard_slider_user_order ON user_dashboard_slider(user_id, order_index ASC);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_user_dashboard_slider_user_enabled ON user_dashboard_slider(user_id, enabled);`);
+
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS recently_viewed (
+        user_id INTEGER NOT NULL,
+        media_type VARCHAR(10) NOT NULL CHECK (media_type IN ('movie', 'tv')),
+        tmdb_id INTEGER NOT NULL,
+        title VARCHAR(500) NOT NULL,
+        poster_path VARCHAR(500),
+        last_viewed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (user_id, media_type, tmdb_id)
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_recently_viewed_user_time ON recently_viewed(user_id, last_viewed_at DESC);`);
+
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS media_share (
+        id SERIAL PRIMARY KEY,
+        token VARCHAR(64) NOT NULL UNIQUE,
+        media_type VARCHAR(10) NOT NULL CHECK (media_type IN ('movie', 'tv')),
+        tmdb_id INTEGER NOT NULL,
+        created_by INTEGER NOT NULL,
+        expires_at TIMESTAMPTZ,
+        view_count INTEGER DEFAULT 0,
+        max_views INTEGER,
+        password_hash TEXT,
+        last_viewed_at TIMESTAMPTZ,
+        last_viewed_ip TEXT,
+        last_viewed_referrer TEXT,
+        last_viewed_country TEXT,
+        last_viewed_ua_hash TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await p.query(`ALTER TABLE media_share ADD COLUMN IF NOT EXISTS password_hash TEXT;`);
+    await p.query(`ALTER TABLE media_share ADD COLUMN IF NOT EXISTS last_viewed_at TIMESTAMPTZ;`);
+    await p.query(`ALTER TABLE media_share ADD COLUMN IF NOT EXISTS last_viewed_ip TEXT;`);
+    await p.query(`ALTER TABLE media_share ADD COLUMN IF NOT EXISTS last_viewed_referrer TEXT;`);
+    await p.query(`ALTER TABLE media_share ADD COLUMN IF NOT EXISTS last_viewed_country TEXT;`);
+    await p.query(`ALTER TABLE media_share ADD COLUMN IF NOT EXISTS last_viewed_ua_hash TEXT;`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_media_share_token ON media_share(token);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_media_share_created_by ON media_share(created_by);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_media_share_expires ON media_share(expires_at);`);
+
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS upgrade_finder_hint (
+        media_type TEXT NOT NULL CHECK (media_type IN ('movie','tv')),
+        media_id INTEGER NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('available','none','error')),
+        hint_text TEXT,
+        checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (media_type, media_id)
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_upgrade_finder_hint_checked_at ON upgrade_finder_hint(checked_at DESC);`);
+
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS upgrade_finder_override (
+        media_type TEXT NOT NULL CHECK (media_type IN ('movie','tv')),
+        media_id INTEGER NOT NULL,
+        ignore_4k BOOLEAN NOT NULL DEFAULT FALSE,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (media_type, media_id)
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_upgrade_finder_override_updated_at ON upgrade_finder_override(updated_at DESC);`);
+
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS notified_season (
+        request_id UUID NOT NULL REFERENCES media_request(id) ON DELETE CASCADE,
+        season INTEGER NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (request_id, season)
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_notified_season_request_id ON notified_season(request_id);`);
+
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS jobs (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL UNIQUE,
+        schedule VARCHAR(50) NOT NULL DEFAULT '0 * * * *',
+        interval_seconds INTEGER DEFAULT 3600,
+        type VARCHAR(50) NOT NULL DEFAULT 'system',
+        enabled BOOLEAN DEFAULT TRUE,
+        last_run TIMESTAMPTZ,
+        next_run TIMESTAMPTZ,
+        run_on_start BOOLEAN DEFAULT FALSE,
+        failure_count INTEGER DEFAULT 0,
+        last_error TEXT,
+        disabled_reason TEXT
+      );
+    `);
+    await p.query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS failure_count INTEGER DEFAULT 0;`);
+    await p.query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS last_error TEXT;`);
+    await p.query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS disabled_reason TEXT;`);
+    await p.query(`
+      INSERT INTO jobs (name, schedule, interval_seconds, type, run_on_start)
+      VALUES
+          ('request-sync', '*/5 * * * *', 300, 'system', TRUE),
+          ('new-season-notifications', '*/15 * * * *', 900, 'system', TRUE),
+          ('watchlist-sync', '0 * * * *', 3600, 'system', FALSE),
+          ('letterboxd-import', '0 4 * * *', 86400, 'system', FALSE),
+          ('weekly-digest', '0 9 * * 1', 604800, 'system', FALSE),
+          ('telegram-admin-digest', '0 9 * * *', 86400, 'system', FALSE),
+          ('session-cleanup', '0 * * * *', 3600, 'system', TRUE),
+          ('jellyfin-availability-sync', '0 */4 * * *', 14400, 'system', FALSE),
+          ('upgrade-finder-4k', '0 3 * * *', 86400, 'system', FALSE),
+          ('prowlarr-indexer-sync', '*/5 * * * *', 300, 'system', TRUE),
+          ('plex-availability-sync', '0 */4 * * *', 14400, 'system', FALSE),
+          ('system-alerts', '*/5 * * * *', 300, 'system', TRUE),
+          ('episode-air-reminders', '*/30 * * * *', 1800, 'system', TRUE),
+          ('followed-media-release-notifications', '0 * * * *', 3600, 'system', TRUE),
+          ('backup-snapshot', '30 2 * * *', 86400, 'system', FALSE)
+      ON CONFLICT (name) DO NOTHING;
+    `);
+    await p.query(`DELETE FROM jobs WHERE name = 'calendar-notifications';`);
+  })();
+  return ensureSchemaPromise;
+}
+
+/**
+ * Eagerly initialize the database schema and seed data (jobs, tables, etc.).
+ * Call this at server startup to ensure all schema and seed rows exist
+ * before the job scheduler or any requests need them.
+ */
+export async function initializeDatabase() {
+  await ensureSchema();
+}
+
+async function bootstrapDashboardSlidersForUser(userId: number) {
+  const p = getPool();
+  const countRes = await p.query(`SELECT COUNT(*)::int AS count FROM user_dashboard_slider WHERE user_id = $1`, [userId]);
+  const count = Number(countRes.rows[0]?.count ?? 0);
+  if (count > 0) return;
+
+  await p.query("BEGIN");
+  try {
+    const countRes2 = await p.query(`SELECT COUNT(*)::int AS count FROM user_dashboard_slider WHERE user_id = $1`, [userId]);
+    const count2 = Number(countRes2.rows[0]?.count ?? 0);
+    if (count2 === 0) {
+      for (const s of defaultDashboardSliders) {
+        await p.query(
+          `
+          INSERT INTO user_dashboard_slider (user_id, type, title, data, enabled, order_index, is_builtin)
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
+          `,
+          [userId, Number(s.type), s.title ?? null, s.data ?? null, !!s.enabled, s.order, !!s.isBuiltIn]
+        );
+      }
+    }
+    await p.query("COMMIT");
+  } catch (e) {
+    await p.query("ROLLBACK");
+    throw e;
+  }
+}
+
+interface DashboardSliderRow {
+  id: number | string;
+  type: number | string;
+  title: string | null;
+  data: string | null;
+  enabled: boolean;
+  order_index: number | string;
+  is_builtin: boolean;
+}
+
+function getDashboardSliderCacheKey(userId: number) {
+  return `user:${userId}`;
+}
+
+function getCachedDashboardSliders(userId: number): DashboardSlider[] | null {
+  const cached = dashboardSliderCache.get<DashboardSlider[]>(getDashboardSliderCacheKey(userId));
+  return cached ?? null;
+}
+
+function setCachedDashboardSliders(userId: number, sliders: DashboardSlider[]) {
+  dashboardSliderCache.set(getDashboardSliderCacheKey(userId), sliders);
+}
+
+function invalidateDashboardSliderCache(userId: number) {
+  dashboardSliderCache.del(getDashboardSliderCacheKey(userId));
+}
+
+function mapDashboardSliderRow(r: DashboardSliderRow): DashboardSlider {
+  return {
+    id: Number(r.id),
+    type: Number(r.type),
+    title: r.title ?? null,
+    data: r.data ?? null,
+    enabled: !!r.enabled,
+    order: Number(r.order_index ?? 0),
+    isBuiltIn: !!r.is_builtin,
+  };
+}
+
+export async function listDashboardSlidersForUser(userId: number): Promise<DashboardSlider[]> {
+  await ensureSchema();
+  const cached = getCachedDashboardSliders(userId);
+  if (cached) return cached;
+  await bootstrapDashboardSlidersForUser(userId);
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT id, type, title, data, enabled, order_index, is_builtin
+    FROM user_dashboard_slider
+    WHERE user_id = $1
+    ORDER BY order_index ASC, id ASC
+    `,
+    [userId]
+  );
+  const sliders = res.rows.map(mapDashboardSliderRow);
+  setCachedDashboardSliders(userId, sliders);
+  return sliders;
+}
+
+export async function resetDashboardSlidersForUser(userId: number): Promise<void> {
+  await ensureSchema();
+  const p = getPool();
+  await p.query("BEGIN");
+  try {
+    await p.query(`DELETE FROM user_dashboard_slider WHERE user_id = $1`, [userId]);
+    for (const s of defaultDashboardSliders) {
+      await p.query(
+        `
+        INSERT INTO user_dashboard_slider (user_id, type, title, data, enabled, order_index, is_builtin)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `,
+        [userId, Number(s.type), s.title ?? null, s.data ?? null, !!s.enabled, s.order, !!s.isBuiltIn]
+      );
+    }
+    await p.query("COMMIT");
+    invalidateDashboardSliderCache(userId);
+  } catch (e) {
+    await p.query("ROLLBACK");
+    throw e;
+  }
+}
+
+export async function updateDashboardSlidersForUser(userId: number, sliders: DashboardSlider[]): Promise<void> {
+  await ensureSchema();
+  const p = getPool();
+  const existingRes = await p.query(
+    `SELECT id, is_builtin FROM user_dashboard_slider WHERE user_id = $1`,
+    [userId]
+  );
+  const existing = new Map<number, { isBuiltIn: boolean }>();
+  for (const r of existingRes.rows) {
+    existing.set(Number(r.id), { isBuiltIn: !!r.is_builtin });
+  }
+
+  await p.query("BEGIN");
+  try {
+    for (let index = 0; index < sliders.length; index++) {
+      const s = sliders[index];
+      const sliderId = Number(s.id);
+      if (Number.isFinite(sliderId) && existing.has(sliderId)) {
+        const isBuiltIn = existing.get(sliderId)!.isBuiltIn;
+        if (isBuiltIn) {
+          await p.query(
+            `
+            UPDATE user_dashboard_slider
+            SET enabled = $3, order_index = $4, updated_at = NOW()
+            WHERE user_id = $1 AND id = $2
+            `,
+            [userId, sliderId, !!s.enabled, index]
+          );
+        } else {
+          await p.query(
+            `
+            UPDATE user_dashboard_slider
+            SET enabled = $3, order_index = $4, type = $5, title = $6, data = $7, updated_at = NOW()
+            WHERE user_id = $1 AND id = $2
+            `,
+            [userId, sliderId, !!s.enabled, index, Number(s.type), s.title ?? null, s.data ?? null]
+          );
+        }
+      } else {
+        await p.query(
+          `
+          INSERT INTO user_dashboard_slider (user_id, type, title, data, enabled, order_index, is_builtin)
+          VALUES ($1, $2, $3, $4, $5, $6, false)
+          `,
+          [userId, Number(s.type), s.title ?? null, s.data ?? null, !!s.enabled, index]
+        );
+      }
+    }
+    await p.query("COMMIT");
+    invalidateDashboardSliderCache(userId);
+  } catch (e) {
+    await p.query("ROLLBACK");
+    throw e;
+  }
+}
+
+export async function createDashboardSliderForUser(userId: number, input: { type: number; title: string; data: string }): Promise<DashboardSlider> {
+  await ensureSchema();
+  const p = getPool();
+  const orderRes = await p.query(`SELECT COALESCE(MAX(order_index), -1) + 1 AS next_order FROM user_dashboard_slider WHERE user_id = $1`, [userId]);
+  const nextOrder = Number(orderRes.rows[0]?.next_order ?? 0);
+  const res = await p.query(
+    `
+    INSERT INTO user_dashboard_slider (user_id, type, title, data, enabled, order_index, is_builtin)
+    VALUES ($1, $2, $3, $4, false, $5, false)
+    RETURNING id, type, title, data, enabled, order_index, is_builtin
+    `,
+    [userId, Number(input.type), input.title, input.data, nextOrder]
+  );
+  const slider = mapDashboardSliderRow(res.rows[0]);
+  invalidateDashboardSliderCache(userId);
+  return slider;
+}
+
+export async function updateCustomDashboardSliderForUser(userId: number, sliderId: number, input: { type: number; title: string; data: string }): Promise<DashboardSlider | null> {
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    UPDATE user_dashboard_slider
+    SET type = $3, title = $4, data = $5, updated_at = NOW()
+    WHERE user_id = $1 AND id = $2 AND is_builtin = false
+    RETURNING id, type, title, data, enabled, order_index, is_builtin
+    `,
+    [userId, sliderId, Number(input.type), input.title, input.data]
+  );
+  if (!res.rows.length) return null;
+  const slider = mapDashboardSliderRow(res.rows[0]);
+  invalidateDashboardSliderCache(userId);
+  return slider;
+}
+
+export async function deleteCustomDashboardSliderForUser(userId: number, sliderId: number): Promise<boolean> {
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(
+    `DELETE FROM user_dashboard_slider WHERE user_id = $1 AND id = $2 AND is_builtin = false`,
+    [userId, sliderId]
+  );
+  if ((res.rowCount ?? 0) > 0) {
+    invalidateDashboardSliderCache(userId);
+  }
+  return (res.rowCount ?? 0) > 0;
+}
+
+export type MediaIssue = {
+  id: string;
+  media_type: "movie" | "tv";
+  tmdb_id: number;
+  title: string;
+  category: string;
+  description: string;
+  reporter_id: number;
+  status: string;
+  created_at: string;
+  reporter_username?: string | null;
+};
+
+export async function createMediaIssue(input: {
+  mediaType: "movie" | "tv";
+  tmdbId: number;
+  title: string;
+  category: string;
+  description: string;
+  reporterId: number;
+}): Promise<MediaIssue> {
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    INSERT INTO media_issue (media_type, tmdb_id, title, category, description, reporter_id)
+    VALUES ($1, $2, $3, $4, $5, $6)
+    RETURNING id, media_type, tmdb_id, title, category, description, reporter_id, status, created_at
+    `,
+    [input.mediaType, input.tmdbId, input.title, input.category, input.description, input.reporterId]
+  );
+  return res.rows[0];
+}
+
+export async function countMediaIssuesByTmdb(mediaType: "movie" | "tv", tmdbId: number): Promise<number> {
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT COUNT(*)::int AS count
+    FROM media_issue
+    WHERE media_type = $1 AND tmdb_id = $2
+    `,
+    [mediaType, tmdbId]
+  );
+  return Number(res.rows[0]?.count ?? 0);
+}
+
+export async function listMediaIssues(limit = 200): Promise<MediaIssue[]> {
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT mi.id, mi.media_type, mi.tmdb_id, mi.title, mi.category, mi.description, mi.reporter_id, mi.status, mi.created_at,
+           u.username AS reporter_username
+    FROM media_issue mi
+    JOIN app_user u ON u.id = mi.reporter_id
+    ORDER BY mi.created_at DESC
+    LIMIT $1
+    `,
+    [limit]
+  );
+  return res.rows.map((row: { id: string; media_type: "movie" | "tv"; tmdb_id: number; title: string; category: string; description: string; reporter_id: number; status: string; created_at: string; reporter_username: string | null }) => ({
+    id: row.id,
+    media_type: row.media_type,
+    tmdb_id: row.tmdb_id,
+    title: row.title,
+    category: row.category,
+    description: row.description,
+    reporter_id: row.reporter_id,
+    status: row.status,
+    created_at: row.created_at,
+    reporter_username: row.reporter_username ?? null
+  }));
+}
+
+export async function getMediaIssueCounts(): Promise<{
+  total: number;
+  open: number;
+  closed: number;
+  video: number;
+  audio: number;
+  subtitles: number;
+  others: number;
+}> {
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT
+      COUNT(*)::int AS total,
+      COUNT(CASE WHEN status = 'open' THEN 1 END)::int AS open,
+      COUNT(CASE WHEN status = 'resolved' THEN 1 END)::int AS closed,
+      COUNT(CASE WHEN LOWER(category) = 'video' THEN 1 END)::int AS video,
+      COUNT(CASE WHEN LOWER(category) = 'audio' THEN 1 END)::int AS audio,
+      COUNT(CASE WHEN LOWER(category) IN ('subtitle', 'subtitles') THEN 1 END)::int AS subtitles,
+      COUNT(CASE WHEN LOWER(category) = 'other' THEN 1 END)::int AS others
+    FROM media_issue
+    `
+  );
+  if (!res.rows.length) {
+    return { total: 0, open: 0, closed: 0, video: 0, audio: 0, subtitles: 0, others: 0 };
+  }
+  const row = res.rows[0];
+  return {
+    total: Number(row.total ?? 0),
+    open: Number(row.open ?? 0),
+    closed: Number(row.closed ?? 0),
+    video: Number(row.video ?? 0),
+    audio: Number(row.audio ?? 0),
+    subtitles: Number(row.subtitles ?? 0),
+    others: Number(row.others ?? 0),
+  };
+}
+
+export async function getMediaIssueById(id: string): Promise<MediaIssue | null> {
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT mi.id, mi.media_type, mi.tmdb_id, mi.title, mi.category, mi.description, mi.reporter_id, mi.status, mi.created_at,
+           u.username AS reporter_username
+    FROM media_issue mi
+    JOIN app_user u ON u.id = mi.reporter_id
+    WHERE mi.id = $1
+    LIMIT 1
+    `,
+    [id]
+  );
+  if (!res.rows.length) return null;
+  const row = res.rows[0];
+  return {
+    id: row.id,
+    media_type: row.media_type,
+    tmdb_id: row.tmdb_id,
+    title: row.title,
+    category: row.category,
+    description: row.description,
+    reporter_id: row.reporter_id,
+    status: row.status,
+    created_at: row.created_at,
+    reporter_username: row.reporter_username ?? null
+  };
+}
+
+export async function updateMediaIssueStatus(id: string, status: string): Promise<MediaIssue | null> {
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    UPDATE media_issue
+    SET status = $2
+    WHERE id = $1
+    RETURNING id
+    `,
+    [id, status]
+  );
+  if (!res.rows.length) return null;
+  return getMediaIssueById(res.rows[0].id);
+}
+
+export async function deleteMediaIssueById(id: string): Promise<boolean> {
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(`DELETE FROM media_issue WHERE id = $1`, [id]);
+  return (res.rowCount ?? 0) > 0;
+}
+
+export async function clearRequestsForTmdb(mediaType: "movie" | "tv", tmdbId: number) {
+  await ensureSchema();
+  const p = getPool();
+  const requestType = mediaType === "movie" ? "movie" : "episode";
+  const reqRes = await p.query(
+    `
+    DELETE FROM media_request
+    WHERE request_type = $1 AND tmdb_id = $2
+    RETURNING id
+    `,
+    [requestType, tmdbId]
+  );
+  const ids = reqRes.rows.map((row: any) => row.id);
+  if (ids.length) {
+    await p.query(`DELETE FROM request_item WHERE request_id = ANY($1)`, [ids]);
+  }
+}
+
+export type NotificationEndpointType =
+  | "telegram"
+  | "discord"
+  | "email"
+  | "webhook"
+  | "webpush"
+  | "gotify"
+  | "ntfy"
+  | "pushbullet"
+  | "pushover"
+  | "slack";
+
+export type NotificationEndpointPublic = {
+  id: number;
+  name: string;
+  type: NotificationEndpointType;
+  enabled: boolean;
+  is_global: boolean;
+  owner_user_id: number | null;
+  events: string[];
+  types: number;
+  created_at: string;
+};
+
+// Proper types for notification endpoint configs
+export type TelegramConfig = {
+  botToken: string;
+  chatId: string;
+};
+
+export type DiscordConfig = {
+  webhookUrl: string;
+};
+
+export type SlackConfig = {
+  webhookUrl: string;
+};
+
+export type GotifyConfig = {
+  baseUrl: string;
+  token: string;
+};
+
+export type NtfyConfig = {
+  topic: string;
+  baseUrl?: string;
+};
+
+export type PushbulletConfig = {
+  accessToken: string;
+};
+
+export type PushoverConfig = {
+  apiToken: string;
+  userKey: string;
+};
+
+export type EmailConfig = {
+  to?: string;
+  userEmailRequired?: boolean;
+  emailFrom?: string;
+  smtpHost?: string;
+  smtpPort?: number;
+  secure?: boolean;
+  ignoreTls?: boolean;
+  requireTls?: boolean;
+  authUser?: string;
+  authPass?: string;
+  allowSelfSigned?: boolean;
+  senderName?: string;
+  senderAddress?: string;
+  encryption?: "none" | "starttls" | "tls" | "default" | "opportunistic" | "implicit";
+};
+
+export type WebhookConfig = {
+  url: string;
+};
+
+export type WebPushConfig = Record<string, never>;
+
+export type NotificationEndpointConfig =
+  | TelegramConfig
+  | DiscordConfig
+  | SlackConfig
+  | GotifyConfig
+  | NtfyConfig
+  | PushbulletConfig
+  | PushoverConfig
+  | EmailConfig
+  | WebhookConfig
+  | WebPushConfig
+  | Record<string, unknown>; // Fallback for unknown configs
+
+export type NotificationEndpointFull =
+  | (NotificationEndpointPublic & { type: "discord"; config: DiscordConfig })
+  | (NotificationEndpointPublic & { type: "telegram"; config: TelegramConfig })
+  | (NotificationEndpointPublic & { type: "slack"; config: SlackConfig })
+  | (NotificationEndpointPublic & { type: "gotify"; config: GotifyConfig })
+  | (NotificationEndpointPublic & { type: "ntfy"; config: NtfyConfig })
+  | (NotificationEndpointPublic & { type: "pushbullet"; config: PushbulletConfig })
+  | (NotificationEndpointPublic & { type: "pushover"; config: PushoverConfig })
+  | (NotificationEndpointPublic & { type: "email"; config: EmailConfig })
+  | (NotificationEndpointPublic & { type: "webpush"; config: WebPushConfig })
+  | (NotificationEndpointPublic & { type: "webhook"; config: WebhookConfig });
+
+export async function listNotificationEndpoints(): Promise<NotificationEndpointPublic[]> {
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT id, name, type, enabled, is_global, owner_user_id, events, types, created_at
+    FROM notification_endpoint
+    ORDER BY created_at DESC
+    `
+  );
+  return res.rows.map(r => {
+    const id = Number(r.id);
+    return {
+      id,
+      name: r.name,
+      type: r.type,
+      enabled: !!r.enabled,
+      is_global: !!r.is_global,
+      owner_user_id: r.owner_user_id == null ? null : Number(r.owner_user_id),
+      events: Array.isArray(r.events) ? r.events.map((e: unknown) => String(e)) : [],
+      types: Number.isFinite(Number(r.types)) ? Number(r.types) : 0,
+      config: r.config,
+      created_at: r.created_at
+    };
+  });
+}
+
+export async function listNotificationEndpointsFull(): Promise<NotificationEndpointFull[]> {
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT id, name, type, enabled, is_global, owner_user_id, events, types, config, created_at
+    FROM notification_endpoint
+    ORDER BY created_at DESC
+    `
+  );
+  return res.rows.map(r => {
+    const id = Number(r.id);
+    return {
+      id,
+      name: r.name,
+      type: r.type,
+      enabled: !!r.enabled,
+      is_global: !!r.is_global,
+      owner_user_id: r.owner_user_id == null ? null : Number(r.owner_user_id),
+      events: Array.isArray(r.events) ? r.events.map((e: unknown) => String(e)) : [],
+      types: Number.isFinite(Number(r.types)) ? Number(r.types) : 0,
+      config: r.config,
+      created_at: r.created_at
+    };
+  });
+}
+
+const SETTINGS_CACHE_TTL_SECONDS = Math.max(
+  5,
+  Number(process.env.SETTINGS_CACHE_TTL_SECONDS ?? "30") || 30
+);
+const settingsCache = cacheManager.getCache("settings", {
+  stdTTL: SETTINGS_CACHE_TTL_SECONDS,
+  checkperiod: Math.max(10, Math.floor(SETTINGS_CACHE_TTL_SECONDS / 2))
+});
+
+function settingCacheKey(key: string) {
+  return `setting:${key}`;
+}
+
+export async function getSetting(key: string): Promise<string | null> {
+  await ensureSchema();
+  const cacheKey = settingCacheKey(key);
+  const cached = settingsCache.get<string | null>(cacheKey);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const p = getPool();
+  const res = await p.query(`SELECT value FROM app_setting WHERE key = $1 LIMIT 1`, [key]);
+  const value = res.rows.length ? (res.rows[0].value as string) : null;
+  settingsCache.set(cacheKey, value, SETTINGS_CACHE_TTL_SECONDS);
+  return value;
+}
+
+export async function setSetting(key: string, value: string): Promise<void> {
+  await ensureSchema();
+  const p = getPool();
+  await p.query(`INSERT INTO app_setting (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [key, value]);
+  settingsCache.del(settingCacheKey(key));
+}
+
+export type ThirdPartyAuthProviderKey = "google" | "github" | "telegram";
+
+export type ThirdPartyOauthProviderSettings = {
+  enabled: boolean;
+  clientId: string;
+  clientSecret: string;
+};
+
+export type ThirdPartyTelegramSettings = ThirdPartyOauthProviderSettings;
+
+export type ThirdPartyAuthSettings = {
+  google: ThirdPartyOauthProviderSettings;
+  github: ThirdPartyOauthProviderSettings;
+  telegram: ThirdPartyTelegramSettings;
+};
+
+type ThirdPartyAuthStoredProvider = {
+  enabled?: boolean;
+  clientId?: string;
+  clientSecretEncrypted?: string | null;
+};
+
+type ThirdPartyAuthStoredSettings = {
+  google?: ThirdPartyAuthStoredProvider;
+  github?: ThirdPartyAuthStoredProvider;
+  telegram?: ThirdPartyAuthStoredProvider;
+};
+
+const ThirdPartyAuthStoredSchema = z.object({
+  google: z.object({
+    enabled: z.boolean().optional(),
+    clientId: z.string().optional(),
+    clientSecretEncrypted: z.string().nullable().optional()
+  }).optional(),
+  github: z.object({
+    enabled: z.boolean().optional(),
+    clientId: z.string().optional(),
+    clientSecretEncrypted: z.string().nullable().optional()
+  }).optional(),
+  telegram: z.object({
+    enabled: z.boolean().optional(),
+    clientId: z.string().optional(),
+    clientSecretEncrypted: z.string().nullable().optional()
+  }).optional()
+});
+
+const ThirdPartyAuthDefaults: ThirdPartyAuthSettings = {
+  google: {
+    enabled: false,
+    clientId: "",
+    clientSecret: ""
+  },
+  github: {
+    enabled: false,
+    clientId: "",
+    clientSecret: ""
+  },
+  telegram: {
+    enabled: false,
+    clientId: "",
+    clientSecret: ""
+  }
+};
+
+function normalizeThirdPartyOauthProvider(input?: ThirdPartyAuthStoredProvider, envClientId?: string, envClientSecret?: string): ThirdPartyOauthProviderSettings {
+  const storedClientId = input?.clientId?.trim() ?? "";
+  const storedSecret = decryptOptionalSecret(input?.clientSecretEncrypted) ?? "";
+  const clientId = storedClientId || envClientId?.trim() || "";
+  const clientSecret = storedSecret || envClientSecret?.trim() || "";
+  const hasStoredEnabled = typeof input?.enabled === "boolean";
+  const enabled = hasStoredEnabled ? Boolean(input?.enabled) : Boolean(clientId && clientSecret);
+
+  return {
+    enabled,
+    clientId,
+    clientSecret
+  };
+}
+
+export async function getThirdPartyAuthSettings(): Promise<ThirdPartyAuthSettings> {
+  const raw = await getSetting("third_party_auth_settings");
+  let parsed: ThirdPartyAuthStoredSettings = {};
+
+  if (raw) {
+    try {
+      parsed = ThirdPartyAuthStoredSchema.parse(JSON.parse(raw));
+    } catch {
+      parsed = {};
+    }
+  }
+
+  const google = normalizeThirdPartyOauthProvider(
+    parsed.google,
+    process.env.GOOGLE_OAUTH_CLIENT_ID,
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET
+  );
+  const github = normalizeThirdPartyOauthProvider(
+    parsed.github,
+    process.env.GITHUB_OAUTH_CLIENT_ID,
+    process.env.GITHUB_OAUTH_CLIENT_SECRET
+  );
+  const telegram = normalizeThirdPartyOauthProvider(
+    parsed.telegram,
+    process.env.TELEGRAM_OAUTH_CLIENT_ID,
+    process.env.TELEGRAM_OAUTH_CLIENT_SECRET
+  );
+
+  return {
+    google,
+    github,
+    telegram
+  };
+}
+
+export async function setThirdPartyAuthSettings(input: ThirdPartyAuthSettings): Promise<void> {
+  const payload: ThirdPartyAuthStoredSettings = {
+    google: {
+      enabled: Boolean(input.google.enabled),
+      clientId: input.google.clientId.trim(),
+      clientSecretEncrypted: encryptOptionalSecret(input.google.clientSecret)
+    },
+    github: {
+      enabled: Boolean(input.github.enabled),
+      clientId: input.github.clientId.trim(),
+      clientSecretEncrypted: encryptOptionalSecret(input.github.clientSecret)
+    },
+    telegram: {
+      enabled: Boolean(input.telegram.enabled),
+      clientId: input.telegram.clientId.trim(),
+      clientSecretEncrypted: encryptOptionalSecret(input.telegram.clientSecret)
+    }
+  };
+
+  await setSetting("third_party_auth_settings", JSON.stringify(payload));
+}
+
+export async function getSettingInt(key: string, fallback: number): Promise<number> {
+  const raw = await getSetting(key);
+  if (!raw) return fallback;
+  const v = parseInt(raw, 10);
+  if (!Number.isFinite(v) || isNaN(v)) return fallback;
+  return v;
+}
+
+// ============================================================================
+// Setup Wizard Functions
+// ============================================================================
+
+/**
+ * Get the total number of users in the database
+ */
+export async function getUserCount(): Promise<number> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(`SELECT COUNT(*)::int AS count FROM app_user`);
+  return res.rows[0]?.count ?? 0;
+}
+
+/**
+ * Check if the initial setup has been completed.
+ * Returns true if:
+ * - The setup_completed setting is "1" or "true", OR
+ * - Users already exist in the database (backwards compatibility for existing installations)
+ */
+export async function isSetupComplete(): Promise<boolean> {
+  // First check the explicit setting
+  const value = await getSetting("setup_completed");
+  if (value === "1" || value === "true") {
+    return true;
+  }
+
+  // Fallback: if users already exist, consider setup complete
+  // This handles existing installations that didn't go through setup wizard
+  const userCount = await getUserCount();
+  if (userCount > 0) {
+    // Auto-mark as complete for existing installations
+    await setSetting("setup_completed", "1");
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Mark the initial setup as complete
+ */
+export async function markSetupComplete(): Promise<void> {
+  await setSetting("setup_completed", "1");
+}
+
+type RequestLimitSettings = {
+  limit: number;
+  days: number;
+};
+
+export type RequestLimitDefaults = {
+  movie: RequestLimitSettings;
+  series: RequestLimitSettings;
+};
+
+export type RequestLimitOverrides = {
+  movieLimit: number | null;
+  movieDays: number | null;
+  seriesLimit: number | null;
+  seriesDays: number | null;
+};
+
+export type RequestLimitStatus = {
+  limit: number;
+  days: number;
+  used: number;
+  remaining: number | null;
+  unlimited: boolean;
+};
+
+const DEFAULT_REQUEST_LIMIT = 0;
+const DEFAULT_REQUEST_DAYS = 7;
+
+function normalizeLimitValue(value: number, fallback: number) {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(0, Math.floor(value));
+}
+
+function normalizeDaysValue(value: number, fallback: number) {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(1, Math.floor(value));
+}
+
+export async function getDefaultRequestLimits(): Promise<RequestLimitDefaults> {
+  const movieLimitRaw = await getSettingInt("request_limit_movie", DEFAULT_REQUEST_LIMIT);
+  const movieDaysRaw = await getSettingInt("request_limit_movie_days", DEFAULT_REQUEST_DAYS);
+  const seriesLimitRaw = await getSettingInt("request_limit_series", DEFAULT_REQUEST_LIMIT);
+  const seriesDaysRaw = await getSettingInt("request_limit_series_days", DEFAULT_REQUEST_DAYS);
+
+  return {
+    movie: {
+      limit: normalizeLimitValue(movieLimitRaw, DEFAULT_REQUEST_LIMIT),
+      days: normalizeDaysValue(movieDaysRaw, DEFAULT_REQUEST_DAYS)
+    },
+    series: {
+      limit: normalizeLimitValue(seriesLimitRaw, DEFAULT_REQUEST_LIMIT),
+      days: normalizeDaysValue(seriesDaysRaw, DEFAULT_REQUEST_DAYS)
+    }
+  };
+}
+
+export async function getUserRequestLimitOverrides(userId: number): Promise<RequestLimitOverrides> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT
+      request_limit_movie,
+      request_limit_movie_days,
+      request_limit_series,
+      request_limit_series_days
+    FROM app_user
+    WHERE id = $1
+    LIMIT 1
+    `,
+    [userId]
+  );
+  if (!res.rows.length) {
+    return { movieLimit: null, movieDays: null, seriesLimit: null, seriesDays: null };
+  }
+  const row = res.rows[0];
+  return {
+    movieLimit: row.request_limit_movie ?? null,
+    movieDays: row.request_limit_movie_days ?? null,
+    seriesLimit: row.request_limit_series ?? null,
+    seriesDays: row.request_limit_series_days ?? null
+  };
+}
+
+export async function getEffectiveRequestLimits(userId: number): Promise<RequestLimitDefaults> {
+  const defaults = await getDefaultRequestLimits();
+  const overrides = await getUserRequestLimitOverrides(userId);
+
+  const movieLimit = overrides.movieLimit ?? defaults.movie.limit;
+  const movieDays = overrides.movieDays ?? defaults.movie.days;
+  const seriesLimit = overrides.seriesLimit ?? defaults.series.limit;
+  const seriesDays = overrides.seriesDays ?? defaults.series.days;
+
+  return {
+    movie: {
+      limit: normalizeLimitValue(movieLimit, defaults.movie.limit),
+      days: normalizeDaysValue(movieDays, defaults.movie.days)
+    },
+    series: {
+      limit: normalizeLimitValue(seriesLimit, defaults.series.limit),
+      days: normalizeDaysValue(seriesDays, defaults.series.days)
+    }
+  };
+}
+
+export async function getUserRequestLimitStatus(
+  userId: number,
+  requestType: "movie" | "episode"
+): Promise<RequestLimitStatus> {
+  const limits = await getEffectiveRequestLimits(userId);
+  const limitConfig = requestType === "movie" ? limits.movie : limits.series;
+  const limit = limitConfig.limit;
+  const days = limitConfig.days;
+
+  if (limit <= 0) {
+    return { limit: 0, days, used: 0, remaining: null, unlimited: true };
+  }
+
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT COUNT(*)::int AS count
+    FROM media_request
+    WHERE requested_by = $1
+      AND request_type = $2
+      AND created_at >= NOW() - ($3::int * INTERVAL '1 day')
+    `,
+    [userId, requestType, days]
+  );
+  const used = Number(res.rows[0]?.count ?? 0);
+  const remaining = Math.max(limit - used, 0);
+  return { limit, days, used, remaining, unlimited: false };
+}
+
+export type JellyfinConfig = {
+  name: string;
+  hostname: string;
+  port: number;
+  useSsl: boolean;
+  urlBase: string;
+  externalUrl: string;
+  jellyfinForgotPasswordUrl: string;
+  libraries: Array<{
+    id: string;
+    name: string;
+    type: "movie" | "show";
+    enabled: boolean;
+    lastScan?: number;
+  }>;
+  serverId: string;
+  apiKeyEncrypted: string;
+};
+
+const JellyfinConfigSchema = z.object({
+  name: z.string().optional(),
+  hostname: z.string().optional(),
+  port: z.number().optional(),
+  useSsl: z.boolean().optional(),
+  urlBase: z.string().optional(),
+  externalUrl: z.string().optional(),
+  jellyfinForgotPasswordUrl: z.string().optional(),
+  libraries: z
+    .array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        type: z.enum(["movie", "show"]),
+        enabled: z.boolean(),
+        lastScan: z.number().optional()
+      })
+    )
+    .optional(),
+  serverId: z.string().optional(),
+  apiKeyEncrypted: z.string().optional(),
+});
+
+const JellyfinConfigDefaults: JellyfinConfig = {
+  name: "",
+  hostname: "",
+  port: 8096,
+  useSsl: false,
+  urlBase: "",
+  externalUrl: "",
+  jellyfinForgotPasswordUrl: "",
+  libraries: [],
+  serverId: "",
+  apiKeyEncrypted: "",
+};
+
+export async function getJellyfinConfig(): Promise<JellyfinConfig> {
+  const raw = await getSetting("jellyfin_config");
+  let parsed: Partial<JellyfinConfig> = {};
+  if (raw) {
+    try {
+      parsed = JellyfinConfigSchema.parse(JSON.parse(raw));
+    } catch {
+      parsed = {};
+    }
+  }
+
+  return {
+    ...JellyfinConfigDefaults,
+    ...parsed,
+    name: parsed.name ?? JellyfinConfigDefaults.name,
+    hostname: parsed.hostname ?? JellyfinConfigDefaults.hostname,
+    port: typeof parsed.port === "number" ? parsed.port : JellyfinConfigDefaults.port,
+    useSsl: parsed.useSsl ?? JellyfinConfigDefaults.useSsl,
+    urlBase: parsed.urlBase ?? JellyfinConfigDefaults.urlBase,
+    externalUrl: parsed.externalUrl ?? JellyfinConfigDefaults.externalUrl,
+    jellyfinForgotPasswordUrl: parsed.jellyfinForgotPasswordUrl ?? JellyfinConfigDefaults.jellyfinForgotPasswordUrl,
+    libraries: parsed.libraries ?? JellyfinConfigDefaults.libraries,
+    serverId: parsed.serverId ?? JellyfinConfigDefaults.serverId,
+    apiKeyEncrypted: parsed.apiKeyEncrypted ?? JellyfinConfigDefaults.apiKeyEncrypted,
+  };
+}
+
+export async function setJellyfinConfig(input: JellyfinConfig): Promise<void> {
+  await setSetting("jellyfin_config", JSON.stringify(input));
+}
+
+export type OidcConfig = {
+  enabled: boolean;
+  issuer: string;
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
+  authorizationUrl: string;
+  tokenUrl: string;
+  userinfoUrl: string;
+  jwksUrl: string;
+  logoutUrl: string;
+  scopes: string[];
+  usernameClaim: string;
+  emailClaim: string;
+  groupsClaim: string;
+  allowAutoCreate: boolean;
+  matchByEmail: boolean;
+  matchByUsername: boolean;
+  syncGroups: boolean;
+};
+
+const OidcConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  issuer: z.string().optional(),
+  clientId: z.string().optional(),
+  clientSecret: z.string().optional(),
+  redirectUri: z.string().optional(),
+  authorizationUrl: z.string().optional(),
+  tokenUrl: z.string().optional(),
+  userinfoUrl: z.string().optional(),
+  jwksUrl: z.string().optional(),
+  logoutUrl: z.string().optional(),
+  scopes: z.array(z.string()).optional(),
+  usernameClaim: z.string().optional(),
+  emailClaim: z.string().optional(),
+  groupsClaim: z.string().optional(),
+  allowAutoCreate: z.boolean().optional(),
+  matchByEmail: z.boolean().optional(),
+  matchByUsername: z.boolean().optional(),
+  syncGroups: z.boolean().optional()
+});
+
+const OidcConfigDefaults: OidcConfig = {
+  enabled: false,
+  issuer: "",
+  clientId: "",
+  clientSecret: "",
+  redirectUri: "",
+  authorizationUrl: "",
+  tokenUrl: "",
+  userinfoUrl: "",
+  jwksUrl: "",
+  logoutUrl: "",
+  scopes: ["openid", "profile", "email"],
+  usernameClaim: "preferred_username",
+  emailClaim: "email",
+  groupsClaim: "groups",
+  allowAutoCreate: false,
+  matchByEmail: true,
+  matchByUsername: true,
+  syncGroups: false
+};
+
+export async function getOidcConfig(): Promise<OidcConfig> {
+  const raw = await getSetting("oidc_config");
+  let parsed: Partial<OidcConfig> = {};
+  if (raw) {
+    try {
+      parsed = OidcConfigSchema.parse(JSON.parse(raw));
+    } catch {
+      parsed = {};
+    }
+  }
+
+  const withEnv: Partial<OidcConfig> = {};
+  const envIssuer = process.env.OIDC_ISSUER?.trim();
+  const envClientId = process.env.OIDC_CLIENT_ID?.trim();
+  const envClientSecret = process.env.OIDC_CLIENT_SECRET?.trim();
+  const envRedirectUri = process.env.OIDC_REDIRECT_URI?.trim();
+  if (envIssuer) withEnv.issuer = envIssuer;
+  if (envClientId) withEnv.clientId = envClientId;
+  if (envClientSecret) withEnv.clientSecret = envClientSecret;
+  if (envRedirectUri) withEnv.redirectUri = envRedirectUri;
+
+  return {
+    ...OidcConfigDefaults,
+    ...withEnv,
+    ...parsed,
+    scopes: Array.isArray(parsed.scopes) && parsed.scopes.length ? parsed.scopes : OidcConfigDefaults.scopes,
+    redirectUri: parsed.redirectUri ?? withEnv.redirectUri ?? OidcConfigDefaults.redirectUri
+  };
+}
+
+export async function setOidcConfig(input: OidcConfig): Promise<void> {
+  await setSetting("oidc_config", JSON.stringify(input));
+}
+
+export type OidcProviderConfig = {
+  id: string;
+  name?: string;
+  providerType?: "oidc" | "duo_websdk";
+  duoApiHostname?: string;
+  enabled?: boolean;
+  issuer?: string;
+  clientId?: string;
+  clientSecret?: string;
+  redirectUri?: string;
+  authorizationUrl?: string;
+  tokenUrl?: string;
+  userinfoUrl?: string;
+  jwksUrl?: string;
+  logoutUrl?: string;
+  scopes?: string[];
+  usernameClaim?: string;
+  emailClaim?: string;
+  groupsClaim?: string;
+  allowAutoCreate?: boolean;
+  matchByEmail?: boolean;
+  matchByUsername?: boolean;
+  syncGroups?: boolean;
+};
+
+export type OidcSettings = {
+  activeProviderId: string | null;
+  providers: OidcProviderConfig[];
+};
+
+const OidcProviderDefaults: OidcProviderConfig = {
+  id: "default",
+  name: "OIDC Provider",
+  providerType: "oidc",
+  duoApiHostname: "",
+  enabled: false,
+  issuer: "",
+  clientId: "",
+  clientSecret: "",
+  redirectUri: "",
+  authorizationUrl: "",
+  tokenUrl: "",
+  userinfoUrl: "",
+  jwksUrl: "",
+  logoutUrl: "",
+  scopes: ["openid", "profile", "email"],
+  usernameClaim: "preferred_username",
+  emailClaim: "email",
+  groupsClaim: "groups",
+  allowAutoCreate: false,
+  matchByEmail: true,
+  matchByUsername: true,
+  syncGroups: false
+};
+
+function normalizeOidcProvider(input: OidcProviderConfig): OidcProviderConfig {
+  return {
+    ...OidcProviderDefaults,
+    ...input,
+    id: input.id || OidcProviderDefaults.id,
+    name: input.name?.trim() || OidcProviderDefaults.name,
+    providerType: input.providerType ?? "oidc",
+    duoApiHostname: input.duoApiHostname?.trim() ?? "",
+    issuer: input.issuer?.trim() ?? "",
+    clientId: input.clientId?.trim() ?? "",
+    clientSecret: input.clientSecret ?? "",
+    redirectUri: input.redirectUri?.trim() ?? "",
+    authorizationUrl: input.authorizationUrl?.trim() ?? "",
+    tokenUrl: input.tokenUrl?.trim() ?? "",
+    userinfoUrl: input.userinfoUrl?.trim() ?? "",
+    jwksUrl: input.jwksUrl?.trim() ?? "",
+    logoutUrl: input.logoutUrl?.trim() ?? "",
+    scopes: Array.isArray(input.scopes) && input.scopes.length ? input.scopes : OidcProviderDefaults.scopes,
+    usernameClaim: input.usernameClaim?.trim() || OidcProviderDefaults.usernameClaim,
+    emailClaim: input.emailClaim?.trim() || OidcProviderDefaults.emailClaim,
+    groupsClaim: input.groupsClaim?.trim() || OidcProviderDefaults.groupsClaim,
+    allowAutoCreate: input.allowAutoCreate ?? OidcProviderDefaults.allowAutoCreate,
+    matchByEmail: input.matchByEmail ?? OidcProviderDefaults.matchByEmail,
+    matchByUsername: input.matchByUsername ?? OidcProviderDefaults.matchByUsername,
+    syncGroups: input.syncGroups ?? OidcProviderDefaults.syncGroups,
+    enabled: input.enabled ?? false
+  };
+}
+
+export async function getOidcSettings(): Promise<OidcSettings> {
+  const raw = await getSetting("oidc_settings");
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as OidcSettings;
+      const providers = Array.isArray(parsed.providers) ? parsed.providers.map(normalizeOidcProvider) : [];
+      return {
+        activeProviderId: parsed.activeProviderId ?? null,
+        providers
+      };
+    } catch {
+      // fall through to legacy
+    }
+  }
+
+  const legacyRaw = await getSetting("oidc_config");
+  if (legacyRaw) {
+    try {
+      const parsed = JSON.parse(legacyRaw) as Partial<OidcSettings>;
+      if (Array.isArray(parsed.providers)) {
+        const providers = parsed.providers.map(normalizeOidcProvider);
+        const normalized: OidcSettings = {
+          activeProviderId: parsed.activeProviderId ?? null,
+          providers
+        };
+        await setSetting("oidc_settings", JSON.stringify(normalized));
+        return normalized;
+      }
+    } catch {
+      // fall through to legacy config parser
+    }
+  }
+
+  const legacy = await getOidcConfig();
+  const provider: OidcProviderConfig = {
+    ...legacy,
+    id: "legacy",
+    name: "OIDC Provider",
+    providerType: "oidc",
+    enabled: legacy.enabled
+  };
+
+  return {
+    activeProviderId: legacy.enabled ? provider.id : null,
+    providers: [normalizeOidcProvider(provider)]
+  };
+}
+
+export async function setOidcSettings(input: OidcSettings): Promise<void> {
+  await setSetting("oidc_settings", JSON.stringify(input));
+}
+
+export async function getActiveOidcProvider(): Promise<OidcProviderConfig | null> {
+  const settings = await getOidcSettings();
+  const candidates = settings.providers ?? [];
+  if (!candidates.length) return null;
+  const active = settings.activeProviderId
+    ? candidates.find((provider) => provider.id === settings.activeProviderId)
+    : candidates.find((provider) => provider.enabled);
+  return active?.enabled ? normalizeOidcProvider(active) : null;
+}
+
+export async function getOidcProviderById(providerId: string): Promise<OidcProviderConfig | null> {
+  const settings = await getOidcSettings();
+  const found = settings.providers.find((provider) => provider.id === providerId);
+  return found ? normalizeOidcProvider(found) : null;
+}
+
+export async function getUserByUsernameInsensitive(username: string): Promise<DbUserWithHash | null> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT id, username, display_name, groups, password_hash, email, oidc_sub, jellyfin_user_id, jellyfin_username, jellyfin_device_id, jellyfin_auth_token, letterboxd_username, discord_user_id, trakt_username, avatar_url, avatar_version, created_at, last_seen_at, mfa_secret, discover_region, original_language, watchlist_sync_movies, watchlist_sync_tv, request_limit_movie, request_limit_movie_days, request_limit_series, request_limit_series_days, banned, weekly_digest_opt_in
+    FROM app_user
+    WHERE LOWER(username) = LOWER($1)
+    LIMIT 1
+    `,
+    [username]
+  );
+  if (!res.rows.length) return null;
+  const row = res.rows[0];
+  return {
+    id: Number(row.id),
+    username: row.username,
+    display_name: row.display_name ?? null,
+    groups: normalizeGroupList(row.groups as string),
+    password_hash: row.password_hash,
+    email: row.email ?? null,
+    oidc_sub: row.oidc_sub ?? null,
+    jellyfin_user_id: row.jellyfin_user_id ?? null,
+    jellyfin_username: row.jellyfin_username ?? null,
+    jellyfin_device_id: row.jellyfin_device_id ?? null,
+    jellyfin_auth_token: decryptOptionalSecret(row.jellyfin_auth_token),
+    letterboxd_username: row.letterboxd_username ?? null,
+    discord_user_id: row.discord_user_id ?? null,
+    trakt_username: row.trakt_username ?? null,
+    avatar_url: row.avatar_url ?? null,
+    avatar_version: row.avatar_version ?? null,
+    created_at: row.created_at,
+    last_seen_at: row.last_seen_at,
+    mfa_secret: decryptOptionalSecret(row.mfa_secret),
+    discover_region: row.discover_region ?? null,
+    original_language: row.original_language ?? null,
+    watchlist_sync_movies: !!row.watchlist_sync_movies,
+    watchlist_sync_tv: !!row.watchlist_sync_tv,
+    request_limit_movie: row.request_limit_movie ?? null,
+    request_limit_movie_days: row.request_limit_movie_days ?? null,
+    request_limit_series: row.request_limit_series ?? null,
+    request_limit_series_days: row.request_limit_series_days ?? null,
+    banned: !!row.banned,
+    weekly_digest_opt_in: !!row.weekly_digest_opt_in
+  };
+}
+
+export type PlexLibraryConfig = {
+  id: string;
+  name: string;
+  type: "movie" | "show";
+  enabled: boolean;
+};
+
+export type PlexConfig = {
+  enabled: boolean;
+  name: string;
+  hostname: string;
+  port: number;
+  useSsl: boolean;
+  urlBase: string;
+  externalUrl: string;
+  libraries: PlexLibraryConfig[];
+  serverId: string;
+  tokenEncrypted: string;
+};
+
+const PlexConfigDefaults: PlexConfig = {
+  enabled: false,
+  name: "",
+  hostname: "",
+  port: 32400,
+  useSsl: false,
+  urlBase: "",
+  externalUrl: "",
+  libraries: [],
+  serverId: "",
+  tokenEncrypted: ""
+};
+
+export async function getPlexConfig(): Promise<PlexConfig> {
+  const raw = await getSetting("plex_config");
+  let parsed: Partial<PlexConfig> = {};
+  if (raw) {
+    try {
+      parsed = JSON.parse(raw) as Partial<PlexConfig>;
+    } catch {
+      parsed = {};
+    }
+  }
+  return {
+    ...PlexConfigDefaults,
+    ...parsed,
+    libraries: Array.isArray(parsed.libraries) ? parsed.libraries : PlexConfigDefaults.libraries
+  };
+}
+
+export async function setPlexConfig(input: PlexConfig): Promise<void> {
+  await setSetting("plex_config", JSON.stringify(input));
+}
+
+let ensurePlexAvailabilitySchemaPromise: Promise<void> | null = null;
+async function ensurePlexAvailabilitySchema() {
+  if (ensurePlexAvailabilitySchemaPromise) return ensurePlexAvailabilitySchemaPromise;
+  ensurePlexAvailabilitySchemaPromise = (async () => {
+    const p = getPool();
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS plex_availability (
+        id BIGSERIAL PRIMARY KEY,
+        tmdb_id INTEGER,
+        tvdb_id INTEGER,
+        imdb_id TEXT,
+        media_type TEXT NOT NULL CHECK (media_type IN ('movie','episode','season','series')),
+        title TEXT,
+        season_number INTEGER,
+        episode_number INTEGER,
+        air_date DATE,
+        plex_item_id TEXT UNIQUE NOT NULL,
+        plex_library_id TEXT,
+        last_scanned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_plex_availability_tmdb ON plex_availability(tmdb_id);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_plex_availability_tvdb ON plex_availability(tvdb_id);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_plex_availability_imdb ON plex_availability(imdb_id);`);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_plex_availability_scanned ON plex_availability(last_scanned_at DESC);`);
+
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS plex_scan_log (
+        id BIGSERIAL PRIMARY KEY,
+        library_id TEXT,
+        library_name TEXT,
+        items_scanned INTEGER NOT NULL DEFAULT 0,
+        items_added INTEGER NOT NULL DEFAULT 0,
+        items_removed INTEGER NOT NULL DEFAULT 0,
+        scan_started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        scan_completed_at TIMESTAMPTZ,
+        scan_status TEXT NOT NULL DEFAULT 'running' CHECK (scan_status IN ('running','completed','failed')),
+        error_message TEXT
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_plex_scan_log_started ON plex_scan_log(scan_started_at DESC);`);
+  })();
+  return ensurePlexAvailabilitySchemaPromise;
+}
+
+export async function upsertPlexAvailability(params: {
+  tmdbId?: number | null;
+  tvdbId?: number | null;
+  imdbId?: string | null;
+  mediaType: 'movie' | 'episode' | 'season' | 'series';
+  title?: string | null;
+  seasonNumber?: number | null;
+  episodeNumber?: number | null;
+  airDate?: string | null;
+  plexItemId: string;
+  plexLibraryId?: string | null;
+}): Promise<{ isNew: boolean }> {
+  await ensurePlexAvailabilitySchema();
+  const p = getPool();
+  const res = await p.query(
+    `INSERT INTO plex_availability
+      (tmdb_id, tvdb_id, imdb_id, media_type, title, season_number, episode_number, air_date, plex_item_id, plex_library_id, last_scanned_at, created_at)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+    ON CONFLICT (plex_item_id)
+    DO UPDATE SET
+      last_scanned_at = NOW(),
+      title = COALESCE($5, plex_availability.title),
+      tmdb_id = COALESCE($1, plex_availability.tmdb_id),
+      tvdb_id = COALESCE($2, plex_availability.tvdb_id),
+      imdb_id = COALESCE($3, plex_availability.imdb_id),
+      air_date = COALESCE($8, plex_availability.air_date)
+    RETURNING (xmax = 0) AS is_new`,
+    [
+      params.tmdbId ?? null,
+      params.tvdbId ?? null,
+      params.imdbId ?? null,
+      params.mediaType,
+      params.title ?? null,
+      params.seasonNumber ?? null,
+      params.episodeNumber ?? null,
+      params.airDate ?? null,
+      params.plexItemId,
+      params.plexLibraryId ?? null
+    ]
+  );
+  return { isNew: res.rows[0]?.is_new ?? false };
+}
+
+export async function startPlexScan(params: {
+  libraryId?: string | null;
+  libraryName?: string | null;
+}): Promise<number> {
+  await ensurePlexAvailabilitySchema();
+  const p = getPool();
+  const res = await p.query(
+    `INSERT INTO plex_scan_log
+      (library_id, library_name, items_scanned, items_added, items_removed, scan_started_at, scan_status)
+    VALUES ($1, $2, 0, 0, 0, NOW(), 'running')
+    RETURNING id`,
+    [params.libraryId ?? null, params.libraryName ?? null]
+  );
+  return res.rows[0].id;
+}
+
+export async function updatePlexScan(scanId: number, params: {
+  itemsScanned?: number;
+  itemsAdded?: number;
+  itemsRemoved?: number;
+  scanStatus?: 'running' | 'completed' | 'failed';
+  errorMessage?: string | null;
+}): Promise<void> {
+  await ensurePlexAvailabilitySchema();
+  const p = getPool();
+  const updates: string[] = [];
+  const values: any[] = [];
+  let paramIdx = 1;
+
+  if (params.itemsScanned !== undefined) {
+    values.push(params.itemsScanned);
+    updates.push(`items_scanned = $${paramIdx++}`);
+  }
+  if (params.itemsAdded !== undefined) {
+    values.push(params.itemsAdded);
+    updates.push(`items_added = $${paramIdx++}`);
+  }
+  if (params.itemsRemoved !== undefined) {
+    values.push(params.itemsRemoved);
+    updates.push(`items_removed = $${paramIdx++}`);
+  }
+  if (params.scanStatus !== undefined) {
+    values.push(params.scanStatus);
+    updates.push(`scan_status = $${paramIdx++}`);
+    if (params.scanStatus !== "running") {
+      updates.push(`scan_completed_at = NOW()`);
+    }
+  }
+  if (params.errorMessage !== undefined) {
+    values.push(params.errorMessage);
+    updates.push(`error_message = $${paramIdx++}`);
+  }
+  if (!updates.length) return;
+  values.push(scanId);
+  await p.query(
+    `UPDATE plex_scan_log SET ${updates.join(', ')} WHERE id = $${paramIdx}`,
+    values
+  );
+}
+
+export type TraktConfig = {
+  enabled: boolean;
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
+  appAuthorizedAt?: string | null;
+};
+
+const TraktConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  clientId: z.string().optional(),
+  clientSecret: z.string().optional(),
+  redirectUri: z.string().optional(),
+  appAuthorizedAt: z.string().nullable().optional()
+});
+
+const TraktConfigDefaults: TraktConfig = {
+  enabled: false,
+  clientId: "",
+  clientSecret: "",
+  redirectUri: "",
+  appAuthorizedAt: null
+};
+
+function parseEnvBoolean(value?: string | null): boolean | undefined {
+  if (!value) return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return undefined;
+  if (["1", "true", "yes", "y", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "n", "off"].includes(normalized)) return false;
+  return undefined;
+}
+
+export async function getTraktConfig(): Promise<TraktConfig> {
+  const raw = await getSetting("trakt_config");
+  let parsed: Partial<TraktConfig> = {};
+  if (raw) {
+    try {
+      parsed = TraktConfigSchema.parse(JSON.parse(raw));
+    } catch {
+      parsed = {};
+    }
+  }
+
+  const withEnv: Partial<TraktConfig> = {};
+  const envEnabled = parseEnvBoolean(process.env.TRAKT_ENABLED);
+  const envClientId = process.env.TRAKT_CLIENT_ID?.trim();
+  const envClientSecret = process.env.TRAKT_CLIENT_SECRET?.trim();
+  const envRedirectUri = process.env.TRAKT_REDIRECT_URI?.trim();
+  if (envEnabled !== undefined) withEnv.enabled = envEnabled;
+  if (envClientId) withEnv.clientId = envClientId;
+  if (envClientSecret) withEnv.clientSecret = envClientSecret;
+  if (envRedirectUri) withEnv.redirectUri = envRedirectUri;
+
+  return {
+    ...TraktConfigDefaults,
+    ...withEnv,
+    ...parsed,
+    clientId: parsed.clientId ?? withEnv.clientId ?? TraktConfigDefaults.clientId,
+    clientSecret: parsed.clientSecret ?? withEnv.clientSecret ?? TraktConfigDefaults.clientSecret,
+    redirectUri: parsed.redirectUri ?? withEnv.redirectUri ?? TraktConfigDefaults.redirectUri,
+    enabled: parsed.enabled ?? withEnv.enabled ?? TraktConfigDefaults.enabled
+  };
+}
+
+export async function setTraktConfig(input: TraktConfig): Promise<void> {
+  await setSetting("trakt_config", JSON.stringify(input));
+}
+
+export async function createNotificationEndpoint(input: {
+  name: string;
+  type: NotificationEndpointType;
+  enabled?: boolean;
+  is_global?: boolean;
+  owner_user_id?: number | null;
+  events?: string[];
+  config: NotificationEndpointConfig;
+}) {
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    INSERT INTO notification_endpoint (name, type, enabled, is_global, owner_user_id, events, config)
+    VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb)
+    RETURNING id, name, type, enabled, is_global, owner_user_id, events, types, created_at
+    `,
+    [
+      input.name,
+      input.type,
+      input.enabled ?? true,
+      input.is_global ?? false,
+      input.owner_user_id ?? null,
+      JSON.stringify(
+        input.events ?? [
+          "request_pending",
+          "request_submitted",
+          "request_denied",
+          "request_failed",
+          "request_already_exists",
+          "request_partially_available",
+          "request_downloading",
+          "request_available",
+          "request_removed",
+          "issue_reported",
+          "issue_resolved",
+          "watch_party_invite",
+          "watch_party_join_request",
+          "watch_party_join_request_approved",
+          "watch_party_join_request_denied"
+        ]
+      ),
+      JSON.stringify(input.config ?? {})
+    ]
+  );
+  const row = res.rows[0];
+  return {
+    id: row.id as number,
+    name: row.name as string,
+    type: row.type as NotificationEndpointType,
+    enabled: !!row.enabled,
+    is_global: !!row.is_global,
+    owner_user_id: row.owner_user_id == null ? null : Number(row.owner_user_id),
+    events: Array.isArray(row.events) ? row.events.map((e: unknown) => String(e)) : [],
+    types: Number.isFinite(Number(row.types)) ? Number(row.types) : 0,
+    created_at: row.created_at as string
+  };
+}
+
+export async function deleteNotificationEndpoint(id: number) {
+  await ensureSchema();
+  const p = getPool();
+  await p.query(`DELETE FROM notification_endpoint WHERE id = $1`, [id]);
+}
+
+export async function getNotificationEndpointByIdFull(id: number): Promise<NotificationEndpointFull | null> {
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT id, name, type, enabled, is_global, owner_user_id, events, types, config, created_at
+    FROM notification_endpoint
+    WHERE id = $1
+    LIMIT 1
+    `,
+    [id]
+  );
+  if (!res.rows.length) return null;
+  const r = res.rows[0];
+  return {
+    id: r.id,
+    name: r.name,
+    type: r.type,
+    enabled: !!r.enabled,
+    is_global: !!r.is_global,
+    owner_user_id: r.owner_user_id == null ? null : Number(r.owner_user_id),
+    events: Array.isArray(r.events) ? r.events.map((e: unknown) => String(e)) : [],
+    types: Number.isFinite(Number(r.types)) ? Number(r.types) : 0,
+    config: r.config,
+    created_at: r.created_at
+  };
+}
+
+export async function updateNotificationEndpoint(
+  id: number,
+  input: {
+    name: string;
+    enabled: boolean;
+    is_global: boolean;
+    owner_user_id?: number | null;
+    events: string[];
+    config: NotificationEndpointConfig;
+  }
+): Promise<NotificationEndpointPublic | null> {
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    UPDATE notification_endpoint
+    SET name = $2,
+        enabled = $3,
+        is_global = $4,
+        owner_user_id = $5,
+        events = $6::jsonb,
+        config = $7::jsonb
+    WHERE id = $1
+    RETURNING id, name, type, enabled, is_global, owner_user_id, events, types, created_at
+    `,
+    [
+      id,
+      input.name,
+      input.enabled,
+      input.is_global,
+      input.owner_user_id ?? null,
+      JSON.stringify(input.events ?? []),
+      JSON.stringify(input.config ?? {})
+    ]
+  );
+  if (!res.rows.length) return null;
+  const row = res.rows[0];
+  return {
+    id: row.id as number,
+    name: row.name as string,
+    type: row.type as NotificationEndpointType,
+    enabled: !!row.enabled,
+    is_global: !!row.is_global,
+    owner_user_id: row.owner_user_id == null ? null : Number(row.owner_user_id),
+    events: Array.isArray(row.events) ? row.events.map((e: unknown) => String(e)) : [],
+    types: Number.isFinite(Number(row.types)) ? Number(row.types) : 0,
+    created_at: row.created_at as string
+  };
+}
+
+export async function listGlobalNotificationEndpointsFull(): Promise<NotificationEndpointFull[]> {
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT id, name, type, enabled, is_global, owner_user_id, events, types, config, created_at
+    FROM notification_endpoint
+    WHERE enabled = TRUE AND is_global = TRUE
+    ORDER BY created_at DESC
+    `
+  );
+  return res.rows.map(r => {
+    const id = Number(r.id);
+    return {
+      id,
+      name: r.name,
+      type: r.type,
+      enabled: !!r.enabled,
+      is_global: !!r.is_global,
+      owner_user_id: r.owner_user_id == null ? null : Number(r.owner_user_id),
+      events: Array.isArray(r.events) ? r.events.map((e: unknown) => String(e)) : [],
+      types: Number.isFinite(Number(r.types)) ? Number(r.types) : 0,
+      config: r.config,
+      created_at: r.created_at
+    };
+  });
+}
+
+export async function listNotificationEndpointsForUser(userId: number): Promise<NotificationEndpointFull[]> {
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT e.id, e.name, e.type, e.enabled, e.is_global, e.owner_user_id, e.events, e.types, e.config, e.created_at
+    FROM notification_endpoint e
+    JOIN user_notification_endpoint u ON u.endpoint_id = e.id
+    WHERE u.user_id = $1
+      AND e.enabled = TRUE
+    ORDER BY e.created_at DESC
+    `,
+    [userId]
+  );
+  return res.rows.map(r => {
+    const id = Number(r.id);
+    return {
+      id,
+      name: r.name,
+      type: r.type,
+      enabled: !!r.enabled,
+      is_global: !!r.is_global,
+      owner_user_id: r.owner_user_id == null ? null : Number(r.owner_user_id),
+      events: Array.isArray(r.events) ? r.events.map((e: unknown) => String(e)) : [],
+      types: Number.isFinite(Number(r.types)) ? Number(r.types) : 0,
+      config: r.config,
+      created_at: r.created_at
+    };
+  });
+}
+
+export async function listNotificationEndpointsForAllUsers(): Promise<NotificationEndpointFull[]> {
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT DISTINCT e.id, e.name, e.type, e.enabled, e.is_global, e.owner_user_id, e.events, e.types, e.config, e.created_at
+    FROM notification_endpoint e
+    JOIN user_notification_endpoint u ON u.endpoint_id = e.id
+    WHERE e.enabled = TRUE
+    ORDER BY e.created_at DESC
+    `
+  );
+  return res.rows.map(r => {
+    const id = Number(r.id);
+    return {
+      id,
+      name: r.name,
+      type: r.type,
+      enabled: !!r.enabled,
+      is_global: !!r.is_global,
+      owner_user_id: r.owner_user_id == null ? null : Number(r.owner_user_id),
+      events: Array.isArray(r.events) ? r.events.map((e: unknown) => String(e)) : [],
+      types: Number.isFinite(Number(r.types)) ? Number(r.types) : 0,
+      config: r.config,
+      created_at: r.created_at
+    };
+  });
+}
+
+export async function listNotificationEndpointsForOwner(userId: number): Promise<NotificationEndpointFull[]> {
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT id, name, type, enabled, is_global, owner_user_id, events, types, config, created_at
+    FROM notification_endpoint
+    WHERE owner_user_id = $1
+    ORDER BY created_at DESC
+    `,
+    [userId]
+  );
+
+  return res.rows.map((r) => ({
+    id: Number(r.id),
+    name: String(r.name),
+    type: r.type,
+    enabled: !!r.enabled,
+    is_global: !!r.is_global,
+    owner_user_id: r.owner_user_id == null ? null : Number(r.owner_user_id),
+    events: Array.isArray(r.events) ? r.events.map((e: unknown) => String(e)) : [],
+    types: Number.isFinite(Number(r.types)) ? Number(r.types) : 0,
+    config: r.config,
+    created_at: String(r.created_at),
+  }));
+}
+
+export async function getNotificationEndpointByIdForOwner(id: number, userId: number): Promise<NotificationEndpointFull | null> {
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT id, name, type, enabled, is_global, owner_user_id, events, types, config, created_at
+    FROM notification_endpoint
+    WHERE id = $1 AND owner_user_id = $2
+    LIMIT 1
+    `,
+    [id, userId]
+  );
+  if (!res.rows.length) return null;
+  const row = res.rows[0];
+  return {
+    id: Number(row.id),
+    name: String(row.name),
+    type: row.type,
+    enabled: !!row.enabled,
+    is_global: !!row.is_global,
+    owner_user_id: row.owner_user_id == null ? null : Number(row.owner_user_id),
+    events: Array.isArray(row.events) ? row.events.map((e: unknown) => String(e)) : [],
+    types: Number.isFinite(Number(row.types)) ? Number(row.types) : 0,
+    config: row.config,
+    created_at: String(row.created_at),
+  };
+}
+
+export type NotificationDeliveryAttemptStatus = "success" | "failure" | "skipped";
+
+export type NotificationDeliveryAttemptInput = {
+  endpointId: number;
+  endpointType: string;
+  eventType: string;
+  status: NotificationDeliveryAttemptStatus;
+  attemptNumber?: number;
+  durationMs?: number | null;
+  errorMessage?: string | null;
+  targetUserId?: number | null;
+  metadata?: Record<string, unknown> | null;
+};
+
+export async function recordNotificationDeliveryAttempt(input: NotificationDeliveryAttemptInput): Promise<void> {
+  await ensureSchema();
+  const p = getPool();
+  await p.query(
+    `
+    INSERT INTO notification_delivery_attempt (
+      endpoint_id,
+      endpoint_type,
+      event_type,
+      status,
+      attempt_number,
+      duration_ms,
+      error_message,
+      target_user_id,
+      metadata
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+    `,
+    [
+      input.endpointId,
+      input.endpointType,
+      input.eventType,
+      input.status,
+      Math.max(1, Number(input.attemptNumber ?? 1)),
+      input.durationMs ?? null,
+      input.errorMessage ?? null,
+      input.targetUserId ?? null,
+      JSON.stringify(input.metadata ?? {})
+    ]
+  );
+}
+
+export type NotificationReliabilityChannelSummary = {
+  channel: string;
+  totalAttempts: number;
+  successCount: number;
+  failureCount: number;
+  skippedCount: number;
+  retryCount: number;
+  successRate: number;
+  lastAttemptAt: string | null;
+  lastSuccessAt: string | null;
+  lastFailureAt: string | null;
+  lastError: string | null;
+};
+
+export type NotificationReliabilityFailure = {
+  id: number;
+  endpointId: number;
+  endpointName: string;
+  channel: string;
+  eventType: string;
+  attemptNumber: number;
+  errorMessage: string | null;
+  createdAt: string;
+};
+
+export type NotificationReliabilityOverview = {
+  generatedAt: string;
+  windowDays: number;
+  channels: NotificationReliabilityChannelSummary[];
+  recentFailures: NotificationReliabilityFailure[];
+};
+
+export type UserEpisodeReminderDelivery = {
+  id: number;
+  endpointId: number;
+  endpointName: string;
+  channel: string;
+  status: NotificationDeliveryAttemptStatus;
+  attemptNumber: number;
+  errorMessage: string | null;
+  createdAt: string;
+};
+
+export async function listUserEpisodeReminderDeliveries(
+  userId: number,
+  limit = 10
+): Promise<UserEpisodeReminderDelivery[]> {
+  await ensureSchema();
+  const p = getPool();
+  const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 50);
+  const res = await p.query(
+    `
+    SELECT
+      nda.id,
+      nda.endpoint_id,
+      COALESCE(ne.name, CONCAT('Endpoint #', nda.endpoint_id::text)) AS endpoint_name,
+      nda.endpoint_type,
+      nda.status,
+      nda.attempt_number,
+      nda.error_message,
+      nda.created_at
+    FROM notification_delivery_attempt nda
+    LEFT JOIN notification_endpoint ne ON ne.id = nda.endpoint_id
+    WHERE nda.target_user_id = $1
+      AND nda.event_type = 'episode_air_reminder'
+    ORDER BY nda.created_at DESC
+    LIMIT $2
+    `,
+    [userId, safeLimit]
+  );
+
+  return res.rows.map((row) => ({
+    id: Number(row.id),
+    endpointId: Number(row.endpoint_id),
+    endpointName: String(row.endpoint_name),
+    channel: String(row.endpoint_type),
+    status: String(row.status) as NotificationDeliveryAttemptStatus,
+    attemptNumber: Number(row.attempt_number ?? 1),
+    errorMessage: row.error_message ? String(row.error_message) : null,
+    createdAt: String(row.created_at),
+  }));
+}
+
+export async function clearNotificationDeliveryAttempts(input?: {
+  status?: NotificationDeliveryAttemptStatus;
+  olderThanDays?: number;
+}): Promise<number> {
+  await ensureSchema();
+  const p = getPool();
+
+  const params: Array<string | number> = [];
+  const where: string[] = [];
+
+  if (input?.status) {
+    params.push(input.status);
+    where.push(`status = $${params.length}`);
+  }
+
+  if (Number.isFinite(input?.olderThanDays)) {
+    const safeDays = Math.min(Math.max(Math.floor(Number(input?.olderThanDays ?? 0)), 1), 3650);
+    params.push(safeDays);
+    where.push(`created_at < NOW() - ($${params.length}::int * interval '1 day')`);
+  }
+
+  const query = `
+    DELETE FROM notification_delivery_attempt
+    ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+  `;
+
+  const res = await p.query(query, params);
+  return Number(res.rowCount ?? 0);
+}
+
+export async function getNotificationReliabilityOverview(windowDays = 14): Promise<NotificationReliabilityOverview> {
+  await ensureSchema();
+  const p = getPool();
+  const safeWindowDays = Math.max(1, Math.min(90, Math.floor(windowDays)));
+  const intervalExpr = `${safeWindowDays} days`;
+
+  const channelRes = await p.query(
+    `
+    WITH windowed AS (
+      SELECT *
+      FROM notification_delivery_attempt
+      WHERE created_at >= NOW() - ($1::text)::interval
+    ),
+    grouped AS (
+      SELECT
+        endpoint_type AS channel,
+        COUNT(*)::int AS total_attempts,
+        COUNT(*) FILTER (WHERE status = 'success')::int AS success_count,
+        COUNT(*) FILTER (WHERE status = 'failure')::int AS failure_count,
+        COUNT(*) FILTER (WHERE status = 'skipped')::int AS skipped_count,
+        COUNT(*) FILTER (WHERE attempt_number > 1)::int AS retry_count,
+        MAX(created_at) AS last_attempt_at,
+        MAX(created_at) FILTER (WHERE status = 'success') AS last_success_at,
+        MAX(created_at) FILTER (WHERE status = 'failure') AS last_failure_at
+      FROM windowed
+      GROUP BY endpoint_type
+    )
+    SELECT
+      g.channel,
+      g.total_attempts,
+      g.success_count,
+      g.failure_count,
+      g.skipped_count,
+      g.retry_count,
+      g.last_attempt_at,
+      g.last_success_at,
+      g.last_failure_at,
+      (
+        SELECT nda.error_message
+        FROM notification_delivery_attempt nda
+        WHERE nda.endpoint_type = g.channel
+          AND nda.status = 'failure'
+          AND nda.created_at >= NOW() - ($1::text)::interval
+        ORDER BY nda.created_at DESC
+        LIMIT 1
+      ) AS last_error
+    FROM grouped g
+    ORDER BY g.total_attempts DESC, g.channel ASC
+    `,
+    [intervalExpr]
+  );
+
+  const failureRes = await p.query(
+    `
+    SELECT
+      nda.id,
+      nda.endpoint_id,
+      COALESCE(ne.name, CONCAT('Endpoint #', nda.endpoint_id::text)) AS endpoint_name,
+      nda.endpoint_type,
+      nda.event_type,
+      nda.attempt_number,
+      nda.error_message,
+      nda.created_at
+    FROM notification_delivery_attempt nda
+    LEFT JOIN notification_endpoint ne ON ne.id = nda.endpoint_id
+    WHERE nda.status = 'failure'
+      AND nda.created_at >= NOW() - ($1::text)::interval
+    ORDER BY nda.created_at DESC
+    LIMIT 25
+    `,
+    [intervalExpr]
+  );
+
+  const channels: NotificationReliabilityChannelSummary[] = channelRes.rows.map((row) => {
+    const totalAttempts = Number(row.total_attempts ?? 0);
+    const successCount = Number(row.success_count ?? 0);
+    const failureCount = Number(row.failure_count ?? 0);
+    const skippedCount = Number(row.skipped_count ?? 0);
+    const retryCount = Number(row.retry_count ?? 0);
+    return {
+      channel: String(row.channel),
+      totalAttempts,
+      successCount,
+      failureCount,
+      skippedCount,
+      retryCount,
+      successRate: totalAttempts > 0 ? successCount / totalAttempts : 0,
+      lastAttemptAt: row.last_attempt_at ? String(row.last_attempt_at) : null,
+      lastSuccessAt: row.last_success_at ? String(row.last_success_at) : null,
+      lastFailureAt: row.last_failure_at ? String(row.last_failure_at) : null,
+      lastError: row.last_error ? String(row.last_error) : null,
+    };
+  });
+
+  const recentFailures: NotificationReliabilityFailure[] = failureRes.rows.map((row) => ({
+    id: Number(row.id),
+    endpointId: Number(row.endpoint_id),
+    endpointName: String(row.endpoint_name),
+    channel: String(row.endpoint_type),
+    eventType: String(row.event_type),
+    attemptNumber: Number(row.attempt_number ?? 1),
+    errorMessage: row.error_message ? String(row.error_message) : null,
+    createdAt: String(row.created_at),
+  }));
+
+  return {
+    generatedAt: new Date().toISOString(),
+    windowDays: safeWindowDays,
+    channels,
+    recentFailures,
+  };
+}
+
+export async function getRequestNotificationContext(requestId: string): Promise<{
+  id: string;
+  request_type: "movie" | "episode";
+  tmdb_id: number;
+  title: string;
+  status: string;
+  created_at: string;
+  username: string;
+  user_id: number;
+} | null> {
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT r.id, r.request_type, r.tmdb_id, r.title, r.status, r.created_at, r.requested_by as user_id, u.username
+    FROM media_request r
+    JOIN app_user u ON u.id = r.requested_by
+    WHERE r.id = $1
+    LIMIT 1
+    `,
+    [requestId]
+  );
+  if (!res.rows.length) return null;
+  const r = res.rows[0];
+  return {
+    id: r.id as string,
+    request_type: r.request_type as "movie" | "episode",
+    tmdb_id: r.tmdb_id as number,
+    title: r.title as string,
+    status: r.status as string,
+    created_at: r.created_at as string,
+    username: r.username as string,
+    user_id: r.user_id as number
+  };
+}
+
+export async function listUserNotificationEndpointIds(userId: number): Promise<number[]> {
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(
+    `
+    SELECT endpoint_id
+    FROM user_notification_endpoint
+    WHERE user_id = $1
+    ORDER BY endpoint_id ASC
+    `,
+    [userId]
+  );
+  return res.rows
+    .map(r => Number(r.endpoint_id))
+    .filter(n => Number.isFinite(n));
+}
+
+export async function addUserNotificationEndpointId(userId: number, endpointId: number): Promise<void> {
+  await ensureSchema();
+  const p = getPool();
+  await p.query(
+    `INSERT INTO user_notification_endpoint (user_id, endpoint_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+    [userId, endpointId]
+  );
+}
+
+export async function setUserNotificationEndpointIds(userId: number, endpointIds: number[]) {
+  await ensureSchema();
+  const p = getPool();
+  await p.query("BEGIN");
+  try {
+    await p.query(`DELETE FROM user_notification_endpoint WHERE user_id = $1`, [userId]);
+    const unique = Array.from(new Set(endpointIds)).filter(n => Number.isFinite(n));
+    for (const endpointId of unique) {
+      await p.query(
+        `INSERT INTO user_notification_endpoint (user_id, endpoint_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [userId, endpointId]
+      );
+    }
+    await p.query("COMMIT");
+  } catch (e) {
+    await p.query("ROLLBACK");
+    throw e;
+  }
+}
+
+// ============================================
+// Request Comments
+// ============================================
+
+export async function addRequestComment(input: {
+  requestId: string;
+  userId: number;
+  comment: string;
+  isAdminComment: boolean;
+}) {
+  const p = getPool();
+  const res = await p.query(
+    `INSERT INTO request_comment (request_id, user_id, comment, is_admin_comment)
+     VALUES ($1, $2, $3, $4)
+     RETURNING id, created_at`,
+    [input.requestId, input.userId, input.comment, input.isAdminComment]
+  );
+  return {
+    id: res.rows[0].id as number,
+    createdAt: res.rows[0].created_at as string,
+  };
+}
+
+export async function getRequestComments(requestId: string) {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT 
+      rc.id,
+      rc.request_id,
+      rc.comment,
+      rc.is_admin_comment,
+      rc.created_at,
+      u.id as user_id,
+      u.username,
+      u.avatar_url,
+      u.groups
+     FROM request_comment rc
+     JOIN app_user u ON rc.user_id = u.id
+     WHERE rc.request_id = $1
+     ORDER BY rc.created_at ASC`,
+    [requestId]
+  );
+  return res.rows.map(r => ({
+    id: r.id as number,
+    requestId: r.request_id as string,
+    comment: r.comment as string,
+    isAdminComment: r.is_admin_comment as boolean,
+    createdAt: r.created_at as string,
+    user: {
+      id: r.user_id as number,
+      username: r.username as string,
+      avatarUrl: r.avatar_url as string | null,
+      groups: normalizeGroupList(r.groups as string),
+    },
+  }));
+}
+
+export async function getRequestCommentCount(requestId: string): Promise<number> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT COUNT(*) as count FROM request_comment WHERE request_id = $1`,
+    [requestId]
+  );
+  return parseInt(res.rows[0].count, 10);
+}
+
+export async function deleteRequestComment(
+  commentId: number,
+  userId: number,
+  isAdmin: boolean
+): Promise<boolean> {
+  const p = getPool();
+  let res;
+  if (isAdmin) {
+    res = await p.query(
+      `DELETE FROM request_comment WHERE id = $1 RETURNING id`,
+      [commentId]
+    );
+  } else {
+    res = await p.query(
+      `DELETE FROM request_comment WHERE id = $1 AND user_id = $2 RETURNING id`,
+      [commentId, userId]
+    );
+  }
+  return (res.rowCount ?? 0) > 0;
+}
+
+// ============================================
+// User Reviews
+// ============================================
+
+export async function upsertUserReview(input: {
+  userId: number;
+  mediaType: "movie" | "tv";
+  tmdbId: number;
+  rating: number;
+  reviewText?: string | null;
+  spoiler: boolean;
+  title: string;
+  posterPath?: string | null;
+  releaseYear?: number | null;
+}) {
+  const p = getPool();
+  const res = await p.query(
+    `INSERT INTO user_review (
+        user_id,
+        media_type,
+        tmdb_id,
+        rating,
+        review_text,
+        spoiler,
+        title,
+        poster_path,
+        release_year
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     ON CONFLICT (user_id, media_type, tmdb_id)
+     DO UPDATE SET
+        rating = EXCLUDED.rating,
+        review_text = EXCLUDED.review_text,
+        spoiler = EXCLUDED.spoiler,
+        title = EXCLUDED.title,
+        poster_path = EXCLUDED.poster_path,
+        release_year = EXCLUDED.release_year,
+        updated_at = NOW()
+     RETURNING id, created_at, updated_at`,
+    [
+      input.userId,
+      input.mediaType,
+      input.tmdbId,
+      input.rating,
+      input.reviewText ?? null,
+      input.spoiler,
+      input.title,
+      input.posterPath ?? null,
+      input.releaseYear ?? null,
+    ]
+  );
+  return {
+    id: res.rows[0].id as number,
+    createdAt: res.rows[0].created_at as string,
+    updatedAt: res.rows[0].updated_at as string,
+  };
+}
+
+export async function getUserReviewForMedia(userId: number, mediaType: "movie" | "tv", tmdbId: number) {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, rating, review_text, spoiler, created_at, updated_at
+     FROM user_review
+     WHERE user_id = $1 AND media_type = $2 AND tmdb_id = $3`,
+    [userId, mediaType, tmdbId]
+  );
+  if (!res.rows[0]) return null;
+  const r = res.rows[0];
+  return {
+    id: r.id as number,
+    rating: r.rating as number,
+    reviewText: r.review_text as string | null,
+    spoiler: r.spoiler as boolean,
+    createdAt: r.created_at as string,
+    updatedAt: r.updated_at as string,
+  };
+}
+
+export async function getReviewStatsForMedia(mediaType: "movie" | "tv", tmdbId: number) {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT COUNT(*)::int as count, COALESCE(AVG(rating), 0) as avg
+     FROM user_review
+     WHERE media_type = $1 AND tmdb_id = $2`,
+    [mediaType, tmdbId]
+  );
+  const row = res.rows[0];
+  return {
+    total: row?.count ? Number(row.count) : 0,
+    average: row?.avg ? Number(row.avg) : 0,
+  };
+}
+
+export async function listUserReviewsForUser(input: {
+  userId: number;
+  minRating?: number;
+  limit?: number;
+}) {
+  const p = getPool();
+  const minRating = Math.min(Math.max(input.minRating ?? 4, 1), 5);
+  const limit = Math.min(Math.max(input.limit ?? 20, 1), 200);
+  const res = await p.query(
+    `SELECT media_type, tmdb_id, rating, created_at
+     FROM user_review
+     WHERE user_id = $1 AND rating >= $2
+     ORDER BY created_at DESC
+     LIMIT $3`,
+    [input.userId, minRating, limit]
+  );
+  return res.rows.map(r => ({
+    mediaType: r.media_type as "movie" | "tv",
+    tmdbId: r.tmdb_id as number,
+    rating: r.rating as number,
+    createdAt: r.created_at as string
+  }));
+}
+
+export async function getRecentReviewsByUser(userId: number, limit = 10) {
+  const p = getPool();
+  const safeLimit = Math.min(Math.max(limit, 1), 50);
+  const res = await p.query(
+    `SELECT
+        r.id,
+        r.user_id,
+        r.media_type,
+        r.tmdb_id,
+        r.rating,
+        r.review_text,
+        r.spoiler,
+        r.title,
+        r.poster_path,
+        r.release_year,
+        r.created_at,
+        r.updated_at,
+        u.username,
+        u.display_name,
+        u.avatar_url,
+        u.jellyfin_user_id,
+        u.groups
+     FROM user_review r
+     JOIN app_user u ON r.user_id = u.id
+     WHERE r.user_id = $1
+     ORDER BY r.created_at DESC
+     LIMIT $2`,
+    [userId, safeLimit]
+  );
+
+  return res.rows.map(r => ({
+    id: r.id as number,
+    userId: r.user_id as number,
+    mediaType: r.media_type as "movie" | "tv",
+    tmdbId: r.tmdb_id as number,
+    rating: r.rating as number,
+    reviewText: r.review_text as string | null,
+    spoiler: r.spoiler as boolean,
+    title: r.title as string,
+    posterPath: r.poster_path as string | null,
+    releaseYear: r.release_year as number | null,
+    createdAt: r.created_at as string,
+    updatedAt: r.updated_at as string,
+    user: {
+      id: r.user_id as number,
+      username: r.username as string,
+      displayName: r.display_name as string | null,
+      avatarUrl: r.avatar_url as string | null,
+      jellyfinUserId: r.jellyfin_user_id as string | null,
+      groups: normalizeGroupList(r.groups as string),
+    },
+  }));
+}
+
+export async function getReviewsForMedia(mediaType: "movie" | "tv", tmdbId: number, limit = 50) {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT
+        r.id,
+        r.user_id,
+        r.media_type,
+        r.tmdb_id,
+        r.rating,
+        r.review_text,
+        r.spoiler,
+        r.title,
+        r.poster_path,
+        r.release_year,
+        r.created_at,
+        r.updated_at,
+        u.username,
+        u.display_name,
+        u.avatar_url,
+        u.jellyfin_user_id,
+        u.groups
+     FROM user_review r
+     JOIN app_user u ON r.user_id = u.id
+     WHERE r.media_type = $1 AND r.tmdb_id = $2
+     ORDER BY r.created_at DESC
+     LIMIT $3`,
+    [mediaType, tmdbId, limit]
+  );
+  return res.rows.map(r => ({
+    id: r.id as number,
+    userId: r.user_id as number,
+    mediaType: r.media_type as "movie" | "tv",
+    tmdbId: r.tmdb_id as number,
+    rating: r.rating as number,
+    reviewText: r.review_text as string | null,
+    spoiler: r.spoiler as boolean,
+    title: r.title as string,
+    posterPath: r.poster_path as string | null,
+    releaseYear: r.release_year as number | null,
+    createdAt: r.created_at as string,
+    updatedAt: r.updated_at as string,
+    user: {
+      id: r.user_id as number,
+      username: r.username as string,
+      displayName: r.display_name as string | null,
+      avatarUrl: r.avatar_url as string | null,
+      jellyfinUserId: r.jellyfin_user_id as string | null,
+      groups: normalizeGroupList(r.groups as string),
+    },
+  }));
+}
+
+export async function getRecentReviews(limit = 20) {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT
+        r.id,
+        r.user_id,
+        r.media_type,
+        r.tmdb_id,
+        r.rating,
+        r.review_text,
+        r.spoiler,
+        r.title,
+        r.poster_path,
+        r.release_year,
+        r.created_at,
+        r.updated_at,
+        u.username,
+        u.avatar_url,
+        u.groups
+     FROM user_review r
+     JOIN app_user u ON r.user_id = u.id
+     ORDER BY r.created_at DESC
+     LIMIT $1`,
+    [limit]
+  );
+  return res.rows.map(r => ({
+    id: r.id as number,
+    userId: r.user_id as number,
+    mediaType: r.media_type as "movie" | "tv",
+    tmdbId: r.tmdb_id as number,
+    rating: r.rating as number,
+    reviewText: r.review_text as string | null,
+    spoiler: r.spoiler as boolean,
+    title: r.title as string,
+    posterPath: r.poster_path as string | null,
+    releaseYear: r.release_year as number | null,
+    createdAt: r.created_at as string,
+    updatedAt: r.updated_at as string,
+    user: {
+      id: r.user_id as number,
+      username: r.username as string,
+      avatarUrl: r.avatar_url as string | null,
+      groups: normalizeGroupList(r.groups as string),
+    },
+  }));
+}
+
+export async function deleteUserReview(id: number, userId: number): Promise<boolean> {
+  const p = getPool();
+  const res = await p.query(
+    `DELETE FROM user_review WHERE id = $1 AND user_id = $2`,
+    [id, userId]
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
+export type ReviewComment = {
+  id: number;
+  reviewId: number;
+  userId: number;
+  parentId: number | null;
+  content: string;
+  edited: boolean;
+  createdAt: string;
+  updatedAt: string;
+  user: {
+    id: number;
+    username: string;
+    displayName: string | null;
+    avatarUrl: string | null;
+    avatarVersion: number | null;
+    jellyfinUserId: string | null;
+  };
+  replyCount: number;
+};
+
+export async function getReviewById(reviewId: number): Promise<{
+  id: number;
+  userId: number;
+  mediaType: "movie" | "tv";
+  tmdbId: number;
+  title: string;
+  reviewerUsername: string;
+} | null> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT r.id, r.user_id as "userId", r.media_type as "mediaType", r.tmdb_id as "tmdbId", r.title,
+            u.username as "reviewerUsername"
+     FROM user_review r
+     JOIN app_user u ON u.id = r.user_id
+     WHERE r.id = $1
+     LIMIT 1`,
+    [reviewId]
+  );
+  return (res.rows[0] as {
+    id: number;
+    userId: number;
+    mediaType: "movie" | "tv";
+    tmdbId: number;
+    title: string;
+    reviewerUsername: string;
+  } | undefined) ?? null;
+}
+
+export async function getReviewCommentById(commentId: number): Promise<{ id: number; reviewId: number; userId: number } | null> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, review_id as "reviewId", user_id as "userId"
+     FROM review_comment
+     WHERE id = $1
+     LIMIT 1`,
+    [commentId]
+  );
+  return (res.rows[0] as { id: number; reviewId: number; userId: number } | undefined) ?? null;
+}
+
+export async function addReviewComment(reviewId: number, userId: number, content: string, parentId?: number): Promise<ReviewComment> {
+  const p = getPool();
+  const res = await p.query(
+    `INSERT INTO review_comment (review_id, user_id, content, parent_id)
+     VALUES ($1, $2, $3, $4)
+     RETURNING
+       id,
+       review_id as "reviewId",
+       user_id as "userId",
+       parent_id as "parentId",
+       content,
+       edited,
+       created_at as "createdAt",
+       updated_at as "updatedAt"`,
+    [reviewId, userId, content, parentId ?? null]
+  );
+
+  const userRes = await p.query(
+    `SELECT id, username, display_name as "displayName", avatar_url as "avatarUrl",
+            avatar_version as "avatarVersion", jellyfin_user_id as "jellyfinUserId"
+     FROM app_user
+     WHERE id = $1`,
+    [userId]
+  );
+
+  const row = res.rows[0];
+  const user = userRes.rows[0];
+  return {
+    id: Number(row.id),
+    reviewId: Number(row.reviewId),
+    userId: Number(row.userId),
+    parentId: row.parentId === null ? null : Number(row.parentId),
+    content: String(row.content),
+    edited: !!row.edited,
+    createdAt: String(row.createdAt),
+    updatedAt: String(row.updatedAt),
+    user: {
+      id: Number(user.id),
+      username: String(user.username),
+      displayName: (user.displayName as string | null) ?? null,
+      avatarUrl: (user.avatarUrl as string | null) ?? null,
+      avatarVersion: user.avatarVersion == null ? null : Number(user.avatarVersion),
+      jellyfinUserId: (user.jellyfinUserId as string | null) ?? null,
+    },
+    replyCount: 0,
+  };
+}
+
+export async function updateReviewComment(reviewId: number, commentId: number, userId: number, content: string): Promise<ReviewComment | null> {
+  const p = getPool();
+  const res = await p.query(
+    `UPDATE review_comment
+     SET content = $1, edited = TRUE, updated_at = NOW()
+     WHERE review_id = $2 AND id = $3 AND user_id = $4
+     RETURNING
+       id,
+       review_id as "reviewId",
+       user_id as "userId",
+       parent_id as "parentId",
+       content,
+       edited,
+       created_at as "createdAt",
+       updated_at as "updatedAt"`,
+    [content, reviewId, commentId, userId]
+  );
+  if (!res.rows.length) return null;
+
+  const userRes = await p.query(
+    `SELECT id, username, display_name as "displayName", avatar_url as "avatarUrl",
+            avatar_version as "avatarVersion", jellyfin_user_id as "jellyfinUserId"
+     FROM app_user
+     WHERE id = $1`,
+    [userId]
+  );
+
+  const row = res.rows[0];
+  const user = userRes.rows[0];
+  return {
+    id: Number(row.id),
+    reviewId: Number(row.reviewId),
+    userId: Number(row.userId),
+    parentId: row.parentId === null ? null : Number(row.parentId),
+    content: String(row.content),
+    edited: !!row.edited,
+    createdAt: String(row.createdAt),
+    updatedAt: String(row.updatedAt),
+    user: {
+      id: Number(user.id),
+      username: String(user.username),
+      displayName: (user.displayName as string | null) ?? null,
+      avatarUrl: (user.avatarUrl as string | null) ?? null,
+      avatarVersion: user.avatarVersion == null ? null : Number(user.avatarVersion),
+      jellyfinUserId: (user.jellyfinUserId as string | null) ?? null,
+    },
+    replyCount: 0,
+  };
+}
+
+export async function deleteReviewComment(reviewId: number, commentId: number, userId: number, isAdmin = false): Promise<boolean> {
+  const p = getPool();
+  const res = isAdmin
+    ? await p.query(`DELETE FROM review_comment WHERE review_id = $1 AND id = $2`, [reviewId, commentId])
+    : await p.query(`DELETE FROM review_comment WHERE review_id = $1 AND id = $2 AND user_id = $3`, [reviewId, commentId, userId]);
+  return (res.rowCount ?? 0) > 0;
+}
+
+export async function getReviewComments(reviewId: number, parentId: number | null = null, limit = 100, offset = 0): Promise<ReviewComment[]> {
+  const p = getPool();
+  const boundedLimit = Math.min(Math.max(limit, 1), 200);
+  const boundedOffset = Math.max(offset, 0);
+  const params: Array<number | null> = [reviewId, boundedLimit, boundedOffset];
+  let parentClause = "";
+
+  if (parentId === null) {
+    parentClause = "";
+  } else {
+    params.push(parentId);
+    parentClause = `AND rc.parent_id = $4`;
+  }
+
+  const res = await p.query(
+    `SELECT
+       rc.id,
+       rc.review_id as "reviewId",
+       rc.user_id as "userId",
+       rc.parent_id as "parentId",
+       rc.content,
+       rc.edited,
+       rc.created_at as "createdAt",
+       rc.updated_at as "updatedAt",
+       u.id as "authorId",
+       u.username,
+       u.display_name as "displayName",
+       u.avatar_url as "avatarUrl",
+       u.avatar_version as "avatarVersion",
+       u.jellyfin_user_id as "jellyfinUserId",
+       (SELECT COUNT(*) FROM review_comment c WHERE c.parent_id = rc.id)::int as "replyCount"
+     FROM review_comment rc
+     JOIN app_user u ON u.id = rc.user_id
+     WHERE rc.review_id = $1
+       ${parentClause}
+     ORDER BY rc.created_at ASC
+     LIMIT $2 OFFSET $3`,
+    params
+  );
+
+  return res.rows.map((row) => ({
+    id: Number(row.id),
+    reviewId: Number(row.reviewId),
+    userId: Number(row.userId),
+    parentId: row.parentId === null ? null : Number(row.parentId),
+    content: String(row.content),
+    edited: !!row.edited,
+    createdAt: String(row.createdAt),
+    updatedAt: String(row.updatedAt),
+    user: {
+      id: Number(row.authorId),
+      username: String(row.username),
+      displayName: (row.displayName as string | null) ?? null,
+      avatarUrl: (row.avatarUrl as string | null) ?? null,
+      avatarVersion: row.avatarVersion == null ? null : Number(row.avatarVersion),
+      jellyfinUserId: (row.jellyfinUserId as string | null) ?? null,
+    },
+    replyCount: Number(row.replyCount ?? 0),
+  }));
+}
+
+export async function getReviewCommentCount(reviewId: number): Promise<number> {
+  const p = getPool();
+  const res = await p.query(`SELECT COUNT(*)::int as count FROM review_comment WHERE review_id = $1`, [reviewId]);
+  return Number(res.rows[0]?.count ?? 0);
+}
+
+export async function addReviewCommentMentions(commentId: number, mentionedUserIds: number[]): Promise<void> {
+  const ids = Array.from(new Set(mentionedUserIds.filter((id) => Number.isFinite(id) && id > 0)));
+  if (!ids.length) return;
+  const p = getPool();
+  await p.query(
+    `INSERT INTO review_comment_mention (comment_id, mentioned_user_id)
+     SELECT $1, unnest($2::bigint[])
+     ON CONFLICT (comment_id, mentioned_user_id) DO NOTHING`,
+    [commentId, ids]
+  );
+}
+
+// ============================================
+// Auto-Approval Rules
+// ============================================
+
+export async function createApprovalRule(input: {
+  name: string;
+  description?: string;
+  enabled: boolean;
+  priority: number;
+  ruleType: string;
+  conditions: Record<string, unknown>;
+}) {
+  const p = getPool();
+  const res = await p.query(
+    `INSERT INTO approval_rule (name, description, enabled, priority, rule_type, conditions)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id, created_at`,
+    [input.name, input.description ?? null, input.enabled, input.priority, input.ruleType, JSON.stringify(input.conditions)]
+  );
+  return {
+    id: res.rows[0].id as number,
+    createdAt: res.rows[0].created_at as string,
+  };
+}
+
+export async function updateApprovalRule(id: number, input: {
+  name?: string;
+  description?: string;
+  enabled?: boolean;
+  priority?: number;
+  conditions?: Record<string, unknown>;
+}) {
+  const p = getPool();
+  const updates: string[] = [];
+  const values: any[] = [];
+  let paramIdx = 1;
+
+  if (input.name !== undefined) {
+    updates.push(`name = $${paramIdx++}`);
+    values.push(input.name);
+  }
+  if (input.description !== undefined) {
+    updates.push(`description = $${paramIdx++}`);
+    values.push(input.description);
+  }
+  if (input.enabled !== undefined) {
+    updates.push(`enabled = $${paramIdx++}`);
+    values.push(input.enabled);
+  }
+  if (input.priority !== undefined) {
+    updates.push(`priority = $${paramIdx++}`);
+    values.push(input.priority);
+  }
+  if (input.conditions !== undefined) {
+    updates.push(`conditions = $${paramIdx++}`);
+    values.push(JSON.stringify(input.conditions));
+  }
+
+  if (updates.length === 0) return;
+
+  updates.push(`updated_at = NOW()`);
+  values.push(id);
+
+  await p.query(
+    `UPDATE approval_rule SET ${updates.join(", ")} WHERE id = $${paramIdx}`,
+    values
+  );
+}
+
+export async function deleteApprovalRule(id: number) {
+  const p = getPool();
+  await p.query(`DELETE FROM approval_rule WHERE id = $1`, [id]);
+}
+
+export async function listApprovalRules() {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, name, description, enabled, priority, rule_type, conditions, created_at, updated_at
+     FROM approval_rule
+     ORDER BY priority DESC, created_at DESC`
+  );
+  return res.rows.map(r => ({
+    id: r.id as number,
+    name: r.name as string,
+    description: r.description as string | null,
+    enabled: r.enabled as boolean,
+    priority: r.priority as number,
+    ruleType: r.rule_type as string,
+    conditions: r.conditions as Record<string, unknown>,
+    createdAt: r.created_at as string,
+    updatedAt: r.updated_at as string,
+  }));
+}
+
+export async function getApprovalRuleById(id: number) {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, name, description, enabled, priority, rule_type, conditions, created_at, updated_at
+     FROM approval_rule
+     WHERE id = $1`,
+    [id]
+  );
+  if (!res.rows.length) return null;
+  const r = res.rows[0];
+  return {
+    id: r.id as number,
+    name: r.name as string,
+    description: r.description as string | null,
+    enabled: r.enabled as boolean,
+    priority: r.priority as number,
+    ruleType: r.rule_type as string,
+    conditions: r.conditions as Record<string, unknown>,
+    createdAt: r.created_at as string,
+    updatedAt: r.updated_at as string,
+  };
+}
+
+export async function getActiveApprovalRules() {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, name, rule_type, conditions, priority
+     FROM approval_rule
+     WHERE enabled = TRUE
+     ORDER BY priority DESC`
+  );
+  return res.rows.map(r => ({
+    id: r.id as number,
+    name: r.name as string,
+    ruleType: r.rule_type as string,
+    conditions: r.conditions as Record<string, unknown>,
+    priority: r.priority as number,
+  }));
+}
+
+// ============================================
+// Push Subscriptions
+// ============================================
+
+export async function savePushSubscription(input: {
+  userId: number;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  userAgent?: string;
+}) {
+  const p = getPool();
+  const res = await p.query(
+    `INSERT INTO push_subscription (user_id, endpoint, p256dh, auth, user_agent, last_used_at)
+     VALUES ($1, $2, $3, $4, $5, NOW())
+     ON CONFLICT (user_id, endpoint)
+     DO UPDATE SET p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth, last_used_at = NOW()
+     RETURNING id`,
+    [input.userId, input.endpoint, input.p256dh, input.auth, input.userAgent ?? null]
+  );
+  return { id: res.rows[0].id as number };
+}
+
+export async function deletePushSubscription(userId: number, endpoint: string) {
+  const p = getPool();
+  await p.query(
+    `DELETE FROM push_subscription WHERE user_id = $1 AND endpoint = $2`,
+    [userId, endpoint]
+  );
+}
+
+export async function getUserPushSubscriptions(userId: number) {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, endpoint, p256dh, auth, user_agent, created_at, last_used_at
+     FROM push_subscription
+     WHERE user_id = $1
+     ORDER BY last_used_at DESC NULLS LAST, created_at DESC`,
+    [userId]
+  );
+  return res.rows.map(r => ({
+    id: r.id as number,
+    endpoint: r.endpoint as string,
+    keys: {
+      p256dh: r.p256dh as string,
+      auth: r.auth as string,
+    },
+    userAgent: r.user_agent as string | null,
+    createdAt: r.created_at as string,
+    lastUsedAt: r.last_used_at as string | null,
+  }));
+}
+
+export async function updatePushSubscriptionLastUsed(subscriptionId: number) {
+  const p = getPool();
+  await p.query(
+    `UPDATE push_subscription SET last_used_at = NOW() WHERE id = $1`,
+    [subscriptionId]
+  );
+}
+
+// ============================================
+// Request Analytics
+// ============================================
+
+export async function getRequestAnalytics(input: {
+  startDate?: string;
+  endDate?: string;
+}): Promise<{
+  totalRequests: number;
+  movieRequests: number;
+  tvRequests: number;
+  pendingRequests: number;
+  approvedRequests: number;
+  deniedRequests: number;
+  avgApprovalTimeHours: number;
+  topRequesters: Array<{ username: string; displayName: string | null; avatarUrl: string | null; jellyfinUserId: string | null; count: number }>;
+  requestsByDay: Array<{ date: string; count: number }>;
+  requestsByStatus: Array<{ status: string; count: number }>;
+}> {
+  const p = getPool();
+
+  const dateFilter = input.startDate && input.endDate
+    ? `WHERE mr.created_at >= $1 AND mr.created_at <= $2`
+    : input.startDate
+      ? `WHERE mr.created_at >= $1`
+      : input.endDate
+        ? `WHERE mr.created_at <= $1`
+        : "";
+
+  const params = input.startDate && input.endDate
+    ? [input.startDate, input.endDate]
+    : input.startDate || input.endDate
+      ? [input.startDate || input.endDate]
+      : [];
+
+  // Overall stats
+  const statsQuery = `
+    SELECT
+      COUNT(*)::int AS total,
+      COUNT(CASE WHEN request_type = 'movie' THEN 1 END)::int AS movies,
+      COUNT(CASE WHEN request_type = 'episode' THEN 1 END)::int AS tv,
+      COUNT(CASE WHEN status IN ('pending', 'queued') THEN 1 END)::int AS pending,
+      COUNT(CASE WHEN status IN ('submitted', 'available') THEN 1 END)::int AS approved,
+      COUNT(CASE WHEN status = 'denied' THEN 1 END)::int AS denied
+    FROM media_request mr
+    ${dateFilter}
+  `;
+  const statsRes = await p.query(statsQuery, params);
+  const stats = statsRes.rows[0];
+
+  // Top requesters
+  const topRequestersQuery = `
+    SELECT u.username, u.display_name, u.avatar_url, u.jellyfin_user_id, COUNT(*)::int as count
+    FROM media_request mr
+    JOIN app_user u ON mr.requested_by = u.id
+    ${dateFilter}
+    GROUP BY u.id, u.username, u.display_name, u.avatar_url, u.jellyfin_user_id
+    ORDER BY count DESC
+    LIMIT 10
+  `;
+  const topRequestersRes = await p.query(topRequestersQuery, params);
+  const topRequesters = topRequestersRes.rows.map(r => ({
+    username: r.username as string,
+    displayName: r.display_name as string | null,
+    avatarUrl: r.avatar_url as string | null,
+    jellyfinUserId: r.jellyfin_user_id as string | null,
+    count: r.count as number,
+  }));
+
+  // Requests by day (last 30 days)
+  const requestsByDayQuery = `
+    SELECT DATE(mr.created_at) as date, COUNT(*)::int as count
+    FROM media_request mr
+    WHERE mr.created_at >= NOW() - INTERVAL '30 days'
+    GROUP BY DATE(mr.created_at)
+    ORDER BY date ASC
+  `;
+  const requestsByDayRes = await p.query(requestsByDayQuery);
+  const requestsByDay = requestsByDayRes.rows.map(r => ({
+    date: r.date as string,
+    count: r.count as number,
+  }));
+
+  // Requests by status
+  const requestsByStatusQuery = `
+    SELECT status, COUNT(*)::int as count
+    FROM media_request mr
+    ${dateFilter}
+    GROUP BY status
+    ORDER BY count DESC
+  `;
+  const requestsByStatusRes = await p.query(requestsByStatusQuery, params);
+  const requestsByStatus = requestsByStatusRes.rows.map(r => ({
+    status: r.status as string,
+    count: r.count as number,
+  }));
+
+  // Average approval time (from pending to submitted/available)
+  const avgTimeQuery = `
+    SELECT EXTRACT(EPOCH FROM AVG(
+      CASE
+        WHEN status IN ('submitted', 'available') 
+        THEN NOW() - created_at
+        ELSE NULL
+      END
+    )) / 3600 as avg_hours
+    FROM media_request mr
+    ${dateFilter}
+  `;
+  const avgTimeRes = await p.query(avgTimeQuery, params);
+  const avgApprovalTimeHours = parseFloat(avgTimeRes.rows[0]?.avg_hours ?? "0") || 0;
+
+  return {
+    totalRequests: stats.total,
+    movieRequests: stats.movies,
+    tvRequests: stats.tv,
+    pendingRequests: stats.pending,
+    approvedRequests: stats.approved,
+    deniedRequests: stats.denied,
+    avgApprovalTimeHours,
+    topRequesters,
+    requestsByDay,
+    requestsByStatus,
+  };
+}
+// Web Push Preferences
+export async function getWebPushPreference(userId: number): Promise<boolean | null> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT web_push_enabled FROM app_user WHERE id = $1`,
+    [userId]
+  );
+  return res.rows[0]?.web_push_enabled ?? null;
+}
+
+export async function setWebPushPreference(userId: number, enabled: boolean): Promise<void> {
+  const p = getPool();
+  await p.query(
+    `UPDATE app_user SET web_push_enabled = $1 WHERE id = $2`,
+    [enabled, userId]
+  );
+}
+
+export async function getWeeklyDigestPreference(userId: number): Promise<boolean | null> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT weekly_digest_opt_in FROM app_user WHERE id = $1`,
+    [userId]
+  );
+  return res.rows[0]?.weekly_digest_opt_in ?? null;
+}
+
+export async function setWeeklyDigestPreference(userId: number, enabled: boolean): Promise<void> {
+  const p = getPool();
+  await p.query(
+    `UPDATE app_user SET weekly_digest_opt_in = $1 WHERE id = $2`,
+    [enabled, userId]
+  );
+}
+
+export async function listWeeklyDigestRecipients(): Promise<Array<{ id: number; email: string; username: string }>> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, email, username
+     FROM app_user
+     WHERE weekly_digest_opt_in = true
+       AND email IS NOT NULL
+       AND banned = false`
+  );
+  return res.rows.map((row) => ({
+    id: Number(row.id),
+    email: row.email,
+    username: row.username
+  }));
+}
+
+export async function listUpgradeFinderHints(): Promise<UpgradeFinderHint[]> {
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(
+    `SELECT media_type, media_id, status, hint_text, checked_at
+     FROM upgrade_finder_hint
+     ORDER BY checked_at DESC`
+  );
+  return res.rows.map((row) => ({
+    mediaType: row.media_type,
+    mediaId: Number(row.media_id),
+    status: row.status,
+    hintText: row.hint_text ?? null,
+    checkedAt: row.checked_at ? new Date(row.checked_at).toISOString() : null
+  }));
+}
+
+export async function upsertUpgradeFinderHint(input: {
+  mediaType: "movie" | "tv";
+  mediaId: number;
+  status: "available" | "none" | "error";
+  hintText?: string | null;
+}) {
+  await ensureSchema();
+  const p = getPool();
+  await p.query(
+    `
+    INSERT INTO upgrade_finder_hint (media_type, media_id, status, hint_text, checked_at)
+    VALUES ($1, $2, $3, $4, NOW())
+    ON CONFLICT (media_type, media_id)
+    DO UPDATE SET
+      status = EXCLUDED.status,
+      hint_text = EXCLUDED.hint_text,
+      checked_at = EXCLUDED.checked_at
+    `,
+    [input.mediaType, input.mediaId, input.status, input.hintText ?? null]
+  );
+}
+
+export async function listUpgradeFinderOverrides(): Promise<UpgradeFinderOverride[]> {
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(
+    `SELECT media_type, media_id, ignore_4k, updated_at
+     FROM upgrade_finder_override
+     ORDER BY updated_at DESC`
+  );
+  return res.rows.map((row) => ({
+    mediaType: row.media_type,
+    mediaId: Number(row.media_id),
+    ignore4k: !!row.ignore_4k,
+    updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null
+  }));
+}
+
+export async function upsertUpgradeFinderOverride(input: {
+  mediaType: "movie" | "tv";
+  mediaId: number;
+  ignore4k: boolean;
+}) {
+  await ensureSchema();
+  const p = getPool();
+  await p.query(
+    `
+    INSERT INTO upgrade_finder_override (media_type, media_id, ignore_4k, updated_at)
+    VALUES ($1, $2, $3, NOW())
+    ON CONFLICT (media_type, media_id)
+    DO UPDATE SET
+      ignore_4k = EXCLUDED.ignore_4k,
+      updated_at = EXCLUDED.updated_at
+    `,
+    [input.mediaType, input.mediaId, input.ignore4k]
+  );
+}
+
+export type Job = {
+  id: number;
+  name: string;
+  schedule: string;
+  intervalSeconds: number;
+  type: "system" | "user";
+  enabled: boolean;
+  lastRun: string | null;
+  nextRun: string | null;
+  runOnStart: boolean;
+  failureCount: number;
+  lastError: string | null;
+  disabledReason: string | null;
+};
+
+export async function listJobs(): Promise<Job[]> {
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(`SELECT * FROM jobs ORDER BY name ASC`);
+  return res.rows.map(r => ({
+    id: r.id,
+    name: r.name,
+    schedule: r.schedule,
+    intervalSeconds: r.interval_seconds,
+    type: r.type,
+    enabled: r.enabled,
+    lastRun: r.last_run,
+    nextRun: r.next_run,
+    runOnStart: r.run_on_start,
+    failureCount: r.failure_count ?? 0,
+    lastError: r.last_error ?? null,
+    disabledReason: r.disabled_reason ?? null
+  }));
+}
+
+export async function getJob(name: string): Promise<Job | null> {
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(`SELECT * FROM jobs WHERE name = $1`, [name]);
+  if (!res.rows.length) return null;
+  const r = res.rows[0];
+  return {
+    id: r.id,
+    name: r.name,
+    schedule: r.schedule,
+    intervalSeconds: r.interval_seconds,
+    type: r.type,
+    enabled: r.enabled,
+    lastRun: r.last_run,
+    nextRun: r.next_run,
+    runOnStart: r.run_on_start,
+    failureCount: r.failure_count ?? 0,
+    lastError: r.last_error ?? null,
+    disabledReason: r.disabled_reason ?? null
+  };
+}
+
+export async function updateJob(id: number, schedule: string, intervalSeconds: number) {
+  const p = getPool();
+  await p.query(
+    `UPDATE jobs SET schedule = $1, interval_seconds = $2 WHERE id = $3`,
+    [schedule, intervalSeconds, id]
+  );
+}
+
+export async function updateJobSchedule(id: number, schedule: string, intervalSeconds: number, nextRun: Date) {
+  const p = getPool();
+  await p.query(
+    `UPDATE jobs
+     SET schedule = $1,
+         interval_seconds = $2,
+         next_run = $3
+     WHERE id = $4`,
+    [schedule, intervalSeconds, nextRun, id]
+  );
+}
+
+export async function updateJobRun(id: number, lastRun: Date, nextRun: Date) {
+  const p = getPool();
+  await p.query(
+    `UPDATE jobs
+     SET last_run = $1,
+         next_run = $2,
+         failure_count = 0,
+         last_error = NULL
+     WHERE id = $3`,
+    [lastRun, nextRun, id]
+  );
+}
+
+export async function updateJobEnabled(id: number, enabled: boolean, nextRun?: Date): Promise<void> {
+  const p = getPool();
+  if (enabled) {
+    await p.query(
+      `UPDATE jobs
+       SET enabled = TRUE,
+           disabled_reason = NULL,
+           failure_count = 0,
+           last_error = NULL,
+           next_run = COALESCE($2, next_run)
+       WHERE id = $1`,
+      [id, nextRun ?? null]
+    );
+    return;
+  }
+  await p.query(
+    `UPDATE jobs
+     SET enabled = FALSE,
+         disabled_reason = $2
+     WHERE id = $1`,
+    [id, "Disabled by admin"]
+  );
+}
+
+export async function recordJobFailure(id: number, error: string, maxFailures: number): Promise<number> {
+  const p = getPool();
+  const res = await p.query(
+    `UPDATE jobs
+     SET failure_count = COALESCE(failure_count, 0) + 1,
+         last_error = $2
+     WHERE id = $1
+     RETURNING failure_count`,
+    [id, error]
+  );
+  const failures = Number(res.rows[0]?.failure_count ?? 0);
+  if (failures >= maxFailures) {
+    await p.query(
+      `UPDATE jobs
+       SET enabled = FALSE,
+           disabled_reason = $2
+       WHERE id = $1`,
+      [id, `Disabled after ${failures} failures`]
+    );
+  }
+  return failures;
+}
+
+// ===== User Notifications =====
+export type UserNotification = {
+  id: number;
+  userId: number;
+  type: string;
+  title: string;
+  message: string;
+  link: string | null;
+  isRead: boolean;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+};
+
+export async function createNotification(params: {
+  userId: number;
+  type: string;
+  title: string;
+  message: string;
+  link?: string | null;
+  metadata?: Record<string, unknown> | null;
+}): Promise<UserNotification> {
+  const p = getPool();
+  const res = await p.query(
+    `INSERT INTO user_notification (user_id, type, title, message, link, metadata)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id, user_id as "userId", type, title, message, link, is_read as "isRead", metadata, created_at as "createdAt"`,
+    [params.userId, params.type, params.title, params.message, params.link ?? null, params.metadata ? JSON.stringify(params.metadata) : null]
+  );
+  return res.rows[0];
+}
+
+export async function getUserNotifications(userId: number, limit = 50): Promise<UserNotification[]> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, user_id as "userId", type, title, message, link, is_read as "isRead", metadata, created_at as "createdAt"
+     FROM user_notification
+     WHERE user_id = $1
+     ORDER BY created_at DESC
+     LIMIT $2`,
+    [userId, limit]
+  );
+  return res.rows;
+}
+
+export async function getUnreadNotifications(userId: number): Promise<UserNotification[]> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, user_id as "userId", type, title, message, link, is_read as "isRead", metadata, created_at as "createdAt"
+     FROM user_notification
+     WHERE user_id = $1 AND is_read = false
+     ORDER BY created_at DESC
+     LIMIT 50`,
+    [userId]
+  );
+  return res.rows;
+}
+
+export async function getUnreadNotificationCount(userId: number): Promise<number> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT COUNT(*)::int as count FROM user_notification WHERE user_id = $1 AND is_read = false`,
+    [userId]
+  );
+  return res.rows[0]?.count ?? 0;
+}
+
+export async function markNotificationAsRead(notificationId: number, userId: number): Promise<boolean> {
+  const p = getPool();
+  const res = await p.query(
+    `UPDATE user_notification SET is_read = true WHERE id = $1 AND user_id = $2`,
+    [notificationId, userId]
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
+export async function markAllNotificationsAsRead(userId: number): Promise<void> {
+  const p = getPool();
+  await p.query(
+    `UPDATE user_notification SET is_read = true WHERE user_id = $1 AND is_read = false`,
+    [userId]
+  );
+}
+
+export async function deleteNotification(notificationId: number, userId: number): Promise<boolean> {
+  const p = getPool();
+  const res = await p.query(
+    `DELETE FROM user_notification WHERE id = $1 AND user_id = $2`,
+    [notificationId, userId]
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
+// ===== Recently Viewed =====
+export type RecentlyViewed = {
+  userId: number;
+  mediaType: 'movie' | 'tv';
+  tmdbId: number;
+  title: string;
+  posterPath: string | null;
+  lastViewedAt: string;
+};
+
+export async function trackRecentlyViewed(params: {
+  userId: number;
+  mediaType: 'movie' | 'tv';
+  tmdbId: number;
+  title: string;
+  posterPath?: string | null;
+}): Promise<void> {
+  const p = getPool();
+  await p.query(
+    `INSERT INTO recently_viewed (user_id, media_type, tmdb_id, title, poster_path, last_viewed_at)
+     VALUES ($1, $2, $3, $4, $5, NOW())
+     ON CONFLICT (user_id, media_type, tmdb_id)
+     DO UPDATE SET last_viewed_at = NOW(), title = $4, poster_path = $5`,
+    [params.userId, params.mediaType, params.tmdbId, params.title, params.posterPath ?? null]
+  );
+}
+
+export async function getRecentlyViewed(userId: number, limit = 20): Promise<RecentlyViewed[]> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT user_id as "userId", media_type as "mediaType", tmdb_id as "tmdbId", 
+            title, poster_path as "posterPath", last_viewed_at as "lastViewedAt"
+     FROM recently_viewed
+     WHERE user_id = $1
+     ORDER BY last_viewed_at DESC
+     LIMIT $2`,
+    [userId, limit]
+  );
+  return res.rows;
+}
+
+export async function clearRecentlyViewed(userId: number): Promise<void> {
+  const p = getPool();
+  await p.query(`DELETE FROM recently_viewed WHERE user_id = $1`, [userId]);
+}
+// ===== Media Shares =====
+export type MediaShare = {
+  id: number;
+  token: string;
+  mediaType: 'movie' | 'tv';
+  tmdbId: number;
+  createdBy: number;
+  expiresAt: string | null;
+  viewCount: number;
+  maxViews: number | null;
+  passwordHash?: string | null;
+  lastViewedAt?: string | null;
+  lastViewedIp?: string | null;
+  lastViewedReferrer?: string | null;
+  lastViewedCountry?: string | null;
+  lastViewedUaHash?: string | null;
+  createdAt: string;
+};
+
+export async function createMediaShare(params: {
+  token: string;
+  mediaType: 'movie' | 'tv';
+  tmdbId: number;
+  createdBy: number;
+  expiresAt?: Date | null;
+  maxViews?: number | null;
+  passwordHash?: string | null;
+}): Promise<MediaShare> {
+  const p = getPool();
+  const res = await p.query(
+    `INSERT INTO media_share (token, media_type, tmdb_id, created_by, expires_at, max_views, password_hash)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING id, token, media_type as "mediaType", tmdb_id as "tmdbId", 
+               created_by as "createdBy", expires_at as "expiresAt", 
+               view_count as "viewCount", max_views as "maxViews", created_at as "createdAt"`,
+    [
+      params.token,
+      params.mediaType,
+      params.tmdbId,
+      params.createdBy,
+      params.expiresAt ?? null,
+      params.maxViews ?? null,
+      params.passwordHash ?? null,
+    ]
+  );
+  return res.rows[0];
+}
+
+export async function getMediaShareByToken(token: string): Promise<MediaShare | null> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, token, media_type as "mediaType", tmdb_id as "tmdbId",
+            created_by as "createdBy", expires_at as "expiresAt",
+            view_count as "viewCount", max_views as "maxViews",
+            password_hash as "passwordHash",
+            last_viewed_at as "lastViewedAt", last_viewed_ip as "lastViewedIp",
+            last_viewed_referrer as "lastViewedReferrer",
+            last_viewed_country as "lastViewedCountry",
+            last_viewed_ua_hash as "lastViewedUaHash",
+            created_at as "createdAt"
+     FROM media_share
+     WHERE token = $1`,
+    [token]
+  );
+  return res.rows[0] || null;
+}
+
+export async function getMediaShareById(id: number): Promise<MediaShare | null> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, token, media_type as "mediaType", tmdb_id as "tmdbId",
+            created_by as "createdBy", expires_at as "expiresAt",
+            view_count as "viewCount", max_views as "maxViews",
+            password_hash as "passwordHash",
+            last_viewed_at as "lastViewedAt", last_viewed_ip as "lastViewedIp",
+            last_viewed_referrer as "lastViewedReferrer",
+            last_viewed_country as "lastViewedCountry",
+            last_viewed_ua_hash as "lastViewedUaHash",
+            created_at as "createdAt"
+     FROM media_share
+     WHERE id = $1`,
+    [id]
+  );
+  return res.rows[0] || null;
+}
+
+export async function incrementShareViewCount(token: string): Promise<void> {
+  const p = getPool();
+  await p.query(
+    `UPDATE media_share SET view_count = view_count + 1 WHERE token = $1`,
+    [token]
+  );
+}
+
+export async function incrementShareViewCountById(
+  id: number,
+  meta?: {
+    lastViewedIp?: string | null;
+    lastViewedReferrer?: string | null;
+    lastViewedCountry?: string | null;
+    lastViewedUaHash?: string | null;
+  }
+): Promise<void> {
+  const p = getPool();
+  await p.query(
+    `UPDATE media_share
+     SET view_count = view_count + 1,
+         last_viewed_at = NOW(),
+         last_viewed_ip = $2,
+         last_viewed_referrer = $3,
+         last_viewed_country = $4,
+         last_viewed_ua_hash = $5
+     WHERE id = $1`,
+    [
+      id,
+      meta?.lastViewedIp ?? null,
+      meta?.lastViewedReferrer ?? null,
+      meta?.lastViewedCountry ?? null,
+      meta?.lastViewedUaHash ?? null,
+    ]
+  );
+}
+
+export async function getRecentSharesByUser(userId: number, limit = 10): Promise<MediaShare[]> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, token, media_type as "mediaType", tmdb_id as "tmdbId", 
+            created_by as "createdBy", expires_at as "expiresAt", 
+            view_count as "viewCount", max_views as "maxViews", created_at as "createdAt"
+     FROM media_share
+     WHERE created_by = $1
+     ORDER BY created_at DESC
+     LIMIT $2`,
+    [userId, limit]
+  );
+  return res.rows;
+}
+
+export async function deleteMediaShare(id: number, userId: number): Promise<boolean> {
+  const p = getPool();
+  const res = await p.query(
+    `DELETE FROM media_share WHERE id = $1 AND created_by = $2`,
+    [id, userId]
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
+export async function countRecentSharesByUser(userId: number, minutes = 60): Promise<number> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT COUNT(*) as count FROM media_share 
+     WHERE created_by = $1 AND created_at > NOW() - INTERVAL '${minutes} minutes'`,
+    [userId]
+  );
+  return parseInt(res.rows[0]?.count ?? '0', 10);
+}
+
+export interface MediaShareWithUser extends MediaShare {
+  createdByUsername: string;
+  passwordSet: boolean;
+}
+
+export async function getAllMediaShares(): Promise<MediaShareWithUser[]> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT 
+      ms.id, ms.token, ms.media_type as "mediaType", ms.tmdb_id as "tmdbId", 
+      ms.created_by as "createdBy", ms.expires_at as "expiresAt", 
+      ms.view_count as "viewCount", ms.max_views as "maxViews",
+      (ms.password_hash IS NOT NULL) as "passwordSet",
+      ms.last_viewed_at as "lastViewedAt", ms.last_viewed_ip as "lastViewedIp",
+      ms.last_viewed_referrer as "lastViewedReferrer",
+      ms.last_viewed_country as "lastViewedCountry",
+      ms.last_viewed_ua_hash as "lastViewedUaHash",
+      ms.created_at as "createdAt",
+      u.username as "createdByUsername"
+     FROM media_share ms
+     JOIN app_user u ON ms.created_by = u.id
+     ORDER BY ms.created_at DESC`
+  );
+  return res.rows;
+}
+
+export async function deleteMediaShareByAdmin(id: number): Promise<boolean> {
+  const p = getPool();
+  const res = await p.query(
+    `DELETE FROM media_share WHERE id = $1 RETURNING token`,
+    [id]
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
+// ===== Calendar Preferences =====
+
+export interface CalendarPreferences {
+  userId: number;
+  defaultView: 'month' | 'week' | 'list' | 'agenda';
+  filters: {
+    movies: boolean;
+    tv: boolean;
+    requests: boolean;
+    sonarr: boolean;
+    radarr: boolean;
+  };
+  genreFilters: number[];
+  monitoredOnly: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function getCalendarPreferences(userId: number): Promise<CalendarPreferences | null> {
+  const pool = getPool();
+  const result = await pool.query(
+    `SELECT
+      user_id as "userId",
+      default_view as "defaultView",
+      filters,
+      genre_filters as "genreFilters",
+      monitored_only as "monitoredOnly",
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+    FROM calendar_preferences
+    WHERE user_id = $1`,
+    [userId]
+  );
+  return result.rows[0] || null;
+}
+
+export async function setCalendarPreferences(
+  userId: number,
+  prefs: {
+    defaultView?: 'month' | 'week' | 'list' | 'agenda';
+    filters?: Record<string, unknown> | null;
+    genreFilters?: number[];
+    monitoredOnly?: boolean;
+  }
+): Promise<void> {
+  const pool = getPool();
+  await pool.query(
+    `INSERT INTO calendar_preferences
+      (user_id, default_view, filters, genre_filters, monitored_only, updated_at)
+    VALUES ($1, $2, $3, $4, $5, NOW())
+    ON CONFLICT (user_id) DO UPDATE SET
+      default_view = COALESCE($2, calendar_preferences.default_view),
+      filters = COALESCE($3, calendar_preferences.filters),
+      genre_filters = COALESCE($4, calendar_preferences.genre_filters),
+      monitored_only = COALESCE($5, calendar_preferences.monitored_only),
+      updated_at = NOW()`,
+    [
+      userId,
+      prefs.defaultView || null,
+      prefs.filters ? JSON.stringify(prefs.filters) : null,
+      prefs.genreFilters || null,
+      prefs.monitoredOnly !== undefined ? prefs.monitoredOnly : null
+    ]
+  );
+}
+
+// ===== Calendar Feed Tokens =====
+
+export async function getCalendarFeedToken(userId: number): Promise<string> {
+  const pool = getPool();
+  const existing = await pool.query<{ token: string }>(
+    `SELECT token
+     FROM calendar_feed_token
+     WHERE user_id = $1`,
+    [userId]
+  );
+  if (existing.rows[0]?.token) return existing.rows[0].token;
+
+  const inserted = await pool.query<{ token: string }>(
+    `INSERT INTO calendar_feed_token (user_id)
+     VALUES ($1)
+     RETURNING token`,
+    [userId]
+  );
+  return inserted.rows[0].token;
+}
+
+export async function rotateCalendarFeedToken(userId: number): Promise<string> {
+  const pool = getPool();
+  const result = await pool.query<{ token: string }>(
+    `INSERT INTO calendar_feed_token (user_id, token, rotated_at)
+     VALUES ($1, uuid_generate_v4(), NOW())
+     ON CONFLICT (user_id)
+     DO UPDATE SET token = uuid_generate_v4(), rotated_at = NOW()
+     RETURNING token`,
+    [userId]
+  );
+  return result.rows[0].token;
+}
+
+export async function getCalendarFeedUserByToken(token: string): Promise<{ id: number; username: string } | null> {
+  const pool = getPool();
+  const result = await pool.query<{ id: number; username: string }>(
+    `SELECT u.id, u.username
+     FROM calendar_feed_token cft
+     JOIN app_user u ON u.id = cft.user_id
+     WHERE cft.token = $1`,
+    [token]
+  );
+  return result.rows[0] || null;
+}
+
+// ===== Calendar Event Subscriptions =====
+
+export interface CalendarEventSubscription {
+  id: string;
+  userId: number;
+  eventType: 'movie_release' | 'tv_premiere' | 'tv_episode' | 'season_premiere';
+  tmdbId: number;
+  seasonNumber?: number | null;
+  episodeNumber?: number | null;
+  notifyOnAvailable: boolean;
+  createdAt: string;
+}
+
+export type FollowedMediaItem = {
+  id: string;
+  userId: number;
+  mediaType: "movie" | "tv";
+  tmdbId: number;
+  title: string;
+  posterPath: string | null;
+  theatricalReleaseDate: string | null;
+  digitalReleaseDate: string | null;
+  notifyOnTheatrical: boolean;
+  notifyOnDigital: boolean;
+  notifiedTheatricalAt: string | null;
+  notifiedDigitalAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type DueFollowedMediaReleaseNotification = FollowedMediaItem & {
+  releaseType: "theatrical" | "digital";
+  telegramId: string | null;
+  telegramFollowOptIn: boolean;
+};
+
+export async function getUserTelegramFollowedMediaPreference(userId: number): Promise<boolean> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query<{ followed_media_notifications: boolean }>(
+    `SELECT followed_media_notifications
+     FROM user_telegram_preference
+     WHERE user_id = $1
+     LIMIT 1`,
+    [userId]
+  );
+  return !!res.rows[0]?.followed_media_notifications;
+}
+
+export async function setUserTelegramFollowedMediaPreference(userId: number, enabled: boolean): Promise<void> {
+  await ensureUserSchema();
+  const p = getPool();
+  await p.query(
+    `INSERT INTO user_telegram_preference (user_id, followed_media_notifications, updated_at)
+     VALUES ($1, $2, NOW())
+     ON CONFLICT (user_id)
+     DO UPDATE SET followed_media_notifications = EXCLUDED.followed_media_notifications, updated_at = NOW()`,
+    [userId, enabled]
+  );
+}
+
+export type UserEpisodeReminderPreference = {
+  followedMediaNotifications: boolean;
+  episodeReminderEnabled: boolean;
+  episodeReminderPrimaryMinutes: number;
+  episodeReminderSecondEnabled: boolean;
+  episodeReminderSecondMinutes: number;
+  episodeReminderTelegramEnabled: boolean;
+  reminderTimezone: string | null;
+};
+
+export async function getUserEpisodeReminderPreference(userId: number): Promise<UserEpisodeReminderPreference> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query<{
+    followed_media_notifications: boolean;
+    episode_reminder_enabled: boolean;
+    episode_reminder_primary_minutes: number;
+    episode_reminder_second_enabled: boolean;
+    episode_reminder_second_minutes: number;
+    episode_reminder_telegram_enabled: boolean;
+    reminder_timezone: string | null;
+  }>(
+    `SELECT
+      followed_media_notifications,
+      episode_reminder_enabled,
+      episode_reminder_primary_minutes,
+      episode_reminder_second_enabled,
+      episode_reminder_second_minutes,
+      episode_reminder_telegram_enabled,
+      reminder_timezone
+     FROM user_telegram_preference
+     WHERE user_id = $1
+     LIMIT 1`,
+    [userId]
+  );
+
+  const row = res.rows[0];
+  return {
+    followedMediaNotifications: row ? !!row.followed_media_notifications : false,
+    episodeReminderEnabled: row ? !!row.episode_reminder_enabled : true,
+    episodeReminderPrimaryMinutes: row ? Math.max(1, Number(row.episode_reminder_primary_minutes ?? 1440) || 1440) : 1440,
+    episodeReminderSecondEnabled: row ? !!row.episode_reminder_second_enabled : true,
+    episodeReminderSecondMinutes: row ? Math.max(1, Number(row.episode_reminder_second_minutes ?? 60) || 60) : 60,
+    episodeReminderTelegramEnabled: row ? !!row.episode_reminder_telegram_enabled : true,
+    reminderTimezone: row?.reminder_timezone ? String(row.reminder_timezone) : null,
+  };
+}
+
+export async function setUserEpisodeReminderPreference(
+  userId: number,
+  input: {
+    followedMediaNotifications: boolean;
+    episodeReminderEnabled: boolean;
+    episodeReminderPrimaryMinutes: number;
+    episodeReminderSecondEnabled: boolean;
+    episodeReminderSecondMinutes: number;
+    episodeReminderTelegramEnabled: boolean;
+    reminderTimezone: string | null;
+  }
+): Promise<void> {
+  await ensureUserSchema();
+  const p = getPool();
+  await p.query(
+    `INSERT INTO user_telegram_preference (
+      user_id,
+      followed_media_notifications,
+      episode_reminder_enabled,
+      episode_reminder_primary_minutes,
+      episode_reminder_second_enabled,
+      episode_reminder_second_minutes,
+      episode_reminder_telegram_enabled,
+      reminder_timezone,
+      updated_at
+    )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+     ON CONFLICT (user_id)
+     DO UPDATE SET
+      followed_media_notifications = EXCLUDED.followed_media_notifications,
+      episode_reminder_enabled = EXCLUDED.episode_reminder_enabled,
+      episode_reminder_primary_minutes = EXCLUDED.episode_reminder_primary_minutes,
+      episode_reminder_second_enabled = EXCLUDED.episode_reminder_second_enabled,
+      episode_reminder_second_minutes = EXCLUDED.episode_reminder_second_minutes,
+      episode_reminder_telegram_enabled = EXCLUDED.episode_reminder_telegram_enabled,
+      reminder_timezone = EXCLUDED.reminder_timezone,
+      updated_at = NOW()`,
+    [
+      userId,
+      input.followedMediaNotifications,
+      input.episodeReminderEnabled,
+      Math.min(Math.max(Math.floor(input.episodeReminderPrimaryMinutes), 1), 43200),
+      input.episodeReminderSecondEnabled,
+      Math.min(Math.max(Math.floor(input.episodeReminderSecondMinutes), 1), 43200),
+      input.episodeReminderTelegramEnabled,
+      input.reminderTimezone,
+    ]
+  );
+}
+
+export async function listFollowedMediaForUser(userId: number): Promise<FollowedMediaItem[]> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `SELECT
+      id,
+      user_id as "userId",
+      media_type as "mediaType",
+      tmdb_id as "tmdbId",
+      title,
+      poster_path as "posterPath",
+      theatrical_release_date::text as "theatricalReleaseDate",
+      digital_release_date::text as "digitalReleaseDate",
+      notify_on_theatrical as "notifyOnTheatrical",
+      notify_on_digital as "notifyOnDigital",
+      notified_theatrical_at as "notifiedTheatricalAt",
+      notified_digital_at as "notifiedDigitalAt",
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+     FROM followed_media
+     WHERE user_id = $1
+     ORDER BY created_at DESC`,
+    [userId]
+  );
+  return res.rows;
+}
+
+export async function getFollowedMediaByTmdb(userId: number, mediaType: "movie" | "tv", tmdbId: number): Promise<FollowedMediaItem | null> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `SELECT
+      id,
+      user_id as "userId",
+      media_type as "mediaType",
+      tmdb_id as "tmdbId",
+      title,
+      poster_path as "posterPath",
+      theatrical_release_date::text as "theatricalReleaseDate",
+      digital_release_date::text as "digitalReleaseDate",
+      notify_on_theatrical as "notifyOnTheatrical",
+      notify_on_digital as "notifyOnDigital",
+      notified_theatrical_at as "notifiedTheatricalAt",
+      notified_digital_at as "notifiedDigitalAt",
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+     FROM followed_media
+     WHERE user_id = $1 AND media_type = $2 AND tmdb_id = $3
+     LIMIT 1`,
+    [userId, mediaType, tmdbId]
+  );
+  return res.rows[0] ?? null;
+}
+
+export async function upsertFollowedMedia(input: {
+  userId: number;
+  mediaType: "movie" | "tv";
+  tmdbId: number;
+  title: string;
+  posterPath?: string | null;
+  theatricalReleaseDate?: string | null;
+  digitalReleaseDate?: string | null;
+  notifyOnTheatrical?: boolean;
+  notifyOnDigital?: boolean;
+}): Promise<FollowedMediaItem> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `INSERT INTO followed_media (
+      user_id,
+      media_type,
+      tmdb_id,
+      title,
+      poster_path,
+      theatrical_release_date,
+      digital_release_date,
+      notify_on_theatrical,
+      notify_on_digital,
+      updated_at
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
+    ON CONFLICT (user_id, media_type, tmdb_id)
+    DO UPDATE SET
+      title = EXCLUDED.title,
+      poster_path = EXCLUDED.poster_path,
+      theatrical_release_date = EXCLUDED.theatrical_release_date,
+      digital_release_date = EXCLUDED.digital_release_date,
+      notify_on_theatrical = EXCLUDED.notify_on_theatrical,
+      notify_on_digital = EXCLUDED.notify_on_digital,
+      updated_at = NOW()
+    RETURNING
+      id,
+      user_id as "userId",
+      media_type as "mediaType",
+      tmdb_id as "tmdbId",
+      title,
+      poster_path as "posterPath",
+      theatrical_release_date::text as "theatricalReleaseDate",
+      digital_release_date::text as "digitalReleaseDate",
+      notify_on_theatrical as "notifyOnTheatrical",
+      notify_on_digital as "notifyOnDigital",
+      notified_theatrical_at as "notifiedTheatricalAt",
+      notified_digital_at as "notifiedDigitalAt",
+      created_at as "createdAt",
+      updated_at as "updatedAt"`,
+    [
+      input.userId,
+      input.mediaType,
+      input.tmdbId,
+      input.title,
+      input.posterPath ?? null,
+      input.theatricalReleaseDate ?? null,
+      input.digitalReleaseDate ?? null,
+      input.notifyOnTheatrical ?? true,
+      input.notifyOnDigital ?? true,
+    ]
+  );
+  return res.rows[0];
+}
+
+export async function removeFollowedMediaById(userId: number, id: string): Promise<boolean> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(`DELETE FROM followed_media WHERE user_id = $1 AND id = $2`, [userId, id]);
+  return (res.rowCount ?? 0) > 0;
+}
+
+export async function removeFollowedMediaByTmdb(userId: number, mediaType: "movie" | "tv", tmdbId: number): Promise<boolean> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(`DELETE FROM followed_media WHERE user_id = $1 AND media_type = $2 AND tmdb_id = $3`, [userId, mediaType, tmdbId]);
+  return (res.rowCount ?? 0) > 0;
+}
+
+export async function updateFollowedMediaOptions(userId: number, id: string, input: {
+  notifyOnTheatrical?: boolean;
+  notifyOnDigital?: boolean;
+}): Promise<FollowedMediaItem | null> {
+  await ensureUserSchema();
+  const clauses: string[] = [];
+  const values: any[] = [userId, id];
+  let idx = 3;
+  if (input.notifyOnTheatrical !== undefined) {
+    clauses.push(`notify_on_theatrical = $${idx++}`);
+    values.push(input.notifyOnTheatrical);
+  }
+  if (input.notifyOnDigital !== undefined) {
+    clauses.push(`notify_on_digital = $${idx++}`);
+    values.push(input.notifyOnDigital);
+  }
+  if (clauses.length === 0) {
+    return getPool().query(
+      `SELECT
+        id,
+        user_id as "userId",
+        media_type as "mediaType",
+        tmdb_id as "tmdbId",
+        title,
+        poster_path as "posterPath",
+        theatrical_release_date::text as "theatricalReleaseDate",
+        digital_release_date::text as "digitalReleaseDate",
+        notify_on_theatrical as "notifyOnTheatrical",
+        notify_on_digital as "notifyOnDigital",
+        notified_theatrical_at as "notifiedTheatricalAt",
+        notified_digital_at as "notifiedDigitalAt",
+        created_at as "createdAt",
+        updated_at as "updatedAt"
+       FROM followed_media
+       WHERE user_id = $1 AND id = $2
+       LIMIT 1`,
+      [userId, id]
+    ).then(r => r.rows[0] ?? null);
+  }
+  const p = getPool();
+  const res = await p.query(
+    `UPDATE followed_media
+     SET ${clauses.join(", ")}, updated_at = NOW()
+     WHERE user_id = $1 AND id = $2
+     RETURNING
+      id,
+      user_id as "userId",
+      media_type as "mediaType",
+      tmdb_id as "tmdbId",
+      title,
+      poster_path as "posterPath",
+      theatrical_release_date::text as "theatricalReleaseDate",
+      digital_release_date::text as "digitalReleaseDate",
+      notify_on_theatrical as "notifyOnTheatrical",
+      notify_on_digital as "notifyOnDigital",
+      notified_theatrical_at as "notifiedTheatricalAt",
+      notified_digital_at as "notifiedDigitalAt",
+      created_at as "createdAt",
+      updated_at as "updatedAt"`,
+    values
+  );
+  return res.rows[0] ?? null;
+}
+
+export async function listDueFollowedMediaReleaseNotifications(
+  limit = 200,
+  timeZone = "Europe/London"
+): Promise<DueFollowedMediaReleaseNotification[]> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `WITH due_theatrical AS (
+      SELECT
+        f.id,
+        f.user_id as "userId",
+        f.media_type as "mediaType",
+        f.tmdb_id as "tmdbId",
+        f.title,
+        f.poster_path as "posterPath",
+        f.theatrical_release_date::text as "theatricalReleaseDate",
+        f.digital_release_date::text as "digitalReleaseDate",
+        f.notify_on_theatrical as "notifyOnTheatrical",
+        f.notify_on_digital as "notifyOnDigital",
+        f.notified_theatrical_at as "notifiedTheatricalAt",
+        f.notified_digital_at as "notifiedDigitalAt",
+        f.created_at as "createdAt",
+        f.updated_at as "updatedAt",
+        'theatrical'::text as "releaseType",
+        tu.telegram_id as "telegramId",
+        COALESCE(utp.followed_media_notifications, FALSE) as "telegramFollowOptIn"
+      FROM followed_media f
+      LEFT JOIN telegram_users tu ON tu.user_id = f.user_id
+      LEFT JOIN user_telegram_preference utp ON utp.user_id = f.user_id
+      WHERE f.notify_on_theatrical = TRUE
+        AND f.notified_theatrical_at IS NULL
+        AND f.theatrical_release_date IS NOT NULL
+        AND f.theatrical_release_date <= (NOW() AT TIME ZONE $2)::date
+    ), due_digital AS (
+      SELECT
+        f.id,
+        f.user_id as "userId",
+        f.media_type as "mediaType",
+        f.tmdb_id as "tmdbId",
+        f.title,
+        f.poster_path as "posterPath",
+        f.theatrical_release_date::text as "theatricalReleaseDate",
+        f.digital_release_date::text as "digitalReleaseDate",
+        f.notify_on_theatrical as "notifyOnTheatrical",
+        f.notify_on_digital as "notifyOnDigital",
+        f.notified_theatrical_at as "notifiedTheatricalAt",
+        f.notified_digital_at as "notifiedDigitalAt",
+        f.created_at as "createdAt",
+        f.updated_at as "updatedAt",
+        'digital'::text as "releaseType",
+        tu.telegram_id as "telegramId",
+        COALESCE(utp.followed_media_notifications, FALSE) as "telegramFollowOptIn"
+      FROM followed_media f
+      LEFT JOIN telegram_users tu ON tu.user_id = f.user_id
+      LEFT JOIN user_telegram_preference utp ON utp.user_id = f.user_id
+      WHERE f.notify_on_digital = TRUE
+        AND f.notified_digital_at IS NULL
+        AND f.digital_release_date IS NOT NULL
+        AND f.digital_release_date <= (NOW() AT TIME ZONE $2)::date
+    )
+    SELECT *
+    FROM (
+      SELECT * FROM due_theatrical
+      UNION ALL
+      SELECT * FROM due_digital
+    ) due
+    ORDER BY "createdAt" ASC
+    LIMIT $1`,
+    [limit, timeZone]
+  );
+  return res.rows as DueFollowedMediaReleaseNotification[];
+}
+
+export async function markFollowedMediaReleaseNotified(id: string, releaseType: "theatrical" | "digital"): Promise<void> {
+  await ensureUserSchema();
+  const p = getPool();
+  if (releaseType === "theatrical") {
+    await p.query(`UPDATE followed_media SET notified_theatrical_at = NOW(), updated_at = NOW() WHERE id = $1`, [id]);
+    return;
+  }
+  await p.query(`UPDATE followed_media SET notified_digital_at = NOW(), updated_at = NOW() WHERE id = $1`, [id]);
+}
+
+export async function listCalendarSubscriptions(userId: number): Promise<CalendarEventSubscription[]> {
+  const pool = getPool();
+  const result = await pool.query(
+    `SELECT
+      id,
+      user_id as "userId",
+      event_type as "eventType",
+      tmdb_id as "tmdbId",
+      season_number as "seasonNumber",
+      episode_number as "episodeNumber",
+      notify_on_available as "notifyOnAvailable",
+      created_at as "createdAt"
+    FROM calendar_event_subscription
+    WHERE user_id = $1
+    ORDER BY created_at DESC`,
+    [userId]
+  );
+  return result.rows;
+}
+
+export async function addCalendarSubscription(data: {
+  userId: number;
+  eventType: 'movie_release' | 'tv_premiere' | 'tv_episode' | 'season_premiere';
+  tmdbId: number;
+  seasonNumber?: number;
+  episodeNumber?: number;
+}): Promise<void> {
+  const pool = getPool();
+  await pool.query(
+    `INSERT INTO calendar_event_subscription
+      (user_id, event_type, tmdb_id, season_number, episode_number)
+    VALUES ($1, $2, $3, $4, $5)
+    ON CONFLICT (user_id, event_type, tmdb_id, season_number, episode_number)
+    DO UPDATE SET notify_on_available = true`,
+    [data.userId, data.eventType, data.tmdbId, data.seasonNumber || null, data.episodeNumber || null]
+  );
+}
+
+export async function removeCalendarSubscription(subscriptionId: string, userId: number): Promise<boolean> {
+  const pool = getPool();
+  const result = await pool.query(
+    `DELETE FROM calendar_event_subscription
+    WHERE id = $1 AND user_id = $2`,
+    [subscriptionId, userId]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+export async function listActiveCalendarSubscriptions(): Promise<CalendarEventSubscription[]> {
+  const pool = getPool();
+  const result = await pool.query(
+    `SELECT
+      id,
+      user_id as "userId",
+      event_type as "eventType",
+      tmdb_id as "tmdbId",
+      season_number as "seasonNumber",
+      episode_number as "episodeNumber",
+      notify_on_available as "notifyOnAvailable",
+      created_at as "createdAt"
+    FROM calendar_event_subscription
+    WHERE notify_on_available = true
+    ORDER BY created_at ASC`
+  );
+  return result.rows;
+}
+
+export async function disableCalendarSubscriptionNotifications(subscriptionId: string): Promise<void> {
+  const pool = getPool();
+  await pool.query(
+    `UPDATE calendar_event_subscription
+    SET notify_on_available = false
+    WHERE id = $1`,
+    [subscriptionId]
+  );
+}
+
+// ===== Jellyfin Availability Cache =====
+
+export type JellyfinAvailabilityItem = {
+  id: number;
+  tmdbId: number | null;
+  tvdbId: number | null;
+  imdbId: string | null;
+  mediaType: 'movie' | 'episode' | 'season' | 'series';
+  title: string | null;
+  seasonNumber: number | null;
+  episodeNumber: number | null;
+  airDate: string | null;
+  jellyfinItemId: string;
+  jellyfinLibraryId: string | null;
+  lastScannedAt: string;
+  createdAt: string;
+};
+
+export type JellyfinScanLog = {
+  id: number;
+  libraryId: string | null;
+  libraryName: string | null;
+  itemsScanned: number;
+  itemsAdded: number;
+  itemsRemoved: number;
+  scanStartedAt: string;
+  scanCompletedAt: string | null;
+  scanStatus: 'running' | 'completed' | 'failed';
+  errorMessage: string | null;
+};
+
+export type NewJellyfinItem = {
+  jellyfinItemId: string;
+  title: string | null;
+  mediaType: 'movie' | 'episode' | 'season' | 'series';
+  tmdbId: number | null;
+  addedAt: string;
+};
+
+export async function hasCachedEpisodeAvailability(params: {
+  tmdbId: number;
+  tvdbId?: number | null;
+}): Promise<boolean> {
+  const p = getPool();
+  const tvdbId = params.tvdbId ?? null;
+  const res = await p.query(
+    `SELECT 1
+     FROM jellyfin_availability
+     WHERE media_type = 'episode'
+       AND (tmdb_id = $1 OR ($2::int IS NOT NULL AND tvdb_id = $2::int))
+     LIMIT 1`,
+    [params.tmdbId, tvdbId]
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
+export async function hasRecentJellyfinAvailabilityScan(maxAgeMs: number): Promise<boolean> {
+  const p = getPool();
+  const res = await p.query(`SELECT MAX(last_scanned_at) AS last_scanned_at FROM jellyfin_availability`);
+  const last = res.rows[0]?.last_scanned_at;
+  if (!last) return false;
+  const lastMs = new Date(last).getTime();
+  if (!Number.isFinite(lastMs)) return false;
+  return Date.now() - lastMs <= maxAgeMs;
+}
+
+export async function getAvailableSeasons(params: {
+  tmdbId: number;
+  tvdbId?: number | null;
+}): Promise<number[]> {
+  const p = getPool();
+  const tvdbId = params.tvdbId ?? null;
+  const res = await p.query(
+    `SELECT DISTINCT season_number
+     FROM jellyfin_availability
+     WHERE media_type = 'episode'
+       AND season_number IS NOT NULL
+       AND (tmdb_id = $1 OR ($2::int IS NOT NULL AND tvdb_id = $2::int))
+     ORDER BY season_number`,
+    [params.tmdbId, tvdbId]
+  );
+  return res.rows.map((row: any) => row.season_number);
+}
+
+export async function getCachedJellyfinSeriesItemId(params: {
+  tmdbId: number;
+  tvdbId?: number | null;
+}): Promise<string | null> {
+  const p = getPool();
+  const tvdbId = params.tvdbId ?? null;
+  const res = await p.query(
+    `SELECT jellyfin_item_id
+     FROM jellyfin_availability
+     WHERE media_type = 'series'
+       AND (tmdb_id = $1 OR ($2::int IS NOT NULL AND tvdb_id = $2::int))
+     ORDER BY last_scanned_at DESC
+     LIMIT 1`,
+    [params.tmdbId, tvdbId]
+  );
+  return res.rows[0]?.jellyfin_item_id ?? null;
+}
+
+export async function upsertJellyfinAvailability(params: {
+  tmdbId?: number | null;
+  tvdbId?: number | null;
+  imdbId?: string | null;
+  mediaType: 'movie' | 'episode' | 'season' | 'series';
+  title?: string | null;
+  seasonNumber?: number | null;
+  episodeNumber?: number | null;
+  airDate?: string | null;
+  jellyfinItemId: string;
+  jellyfinLibraryId?: string | null;
+}): Promise<{ isNew: boolean }> {
+  const p = getPool();
+  const res = await p.query(
+    `INSERT INTO jellyfin_availability
+      (tmdb_id, tvdb_id, imdb_id, media_type, title, season_number, episode_number, air_date, jellyfin_item_id, jellyfin_library_id, last_scanned_at, created_at)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+    ON CONFLICT (jellyfin_item_id)
+    DO UPDATE SET
+      last_scanned_at = NOW(),
+      title = COALESCE($5, jellyfin_availability.title),
+      tmdb_id = COALESCE($1, jellyfin_availability.tmdb_id),
+      tvdb_id = COALESCE($2, jellyfin_availability.tvdb_id),
+      imdb_id = COALESCE($3, jellyfin_availability.imdb_id),
+      air_date = COALESCE($8, jellyfin_availability.air_date)
+    RETURNING (xmax = 0) AS is_new`,
+    [
+      params.tmdbId ?? null,
+      params.tvdbId ?? null,
+      params.imdbId ?? null,
+      params.mediaType,
+      params.title ?? null,
+      params.seasonNumber ?? null,
+      params.episodeNumber ?? null,
+      params.airDate ?? null,
+      params.jellyfinItemId,
+      params.jellyfinLibraryId ?? null
+    ]
+  );
+  return { isNew: res.rows[0]?.is_new ?? false };
+}
+
+export async function getNewJellyfinItems(sinceDate?: Date, limit = 100): Promise<NewJellyfinItem[]> {
+  const p = getPool();
+  const query = sinceDate
+    ? `SELECT jellyfin_item_id as "jellyfinItemId", title, media_type as "mediaType",
+              tmdb_id as "tmdbId", created_at as "addedAt"
+       FROM jellyfin_availability
+       WHERE created_at > $1
+       ORDER BY created_at DESC
+       LIMIT $2`
+    : `SELECT jellyfin_item_id as "jellyfinItemId", title, media_type as "mediaType",
+              tmdb_id as "tmdbId", created_at as "addedAt"
+       FROM jellyfin_availability
+       ORDER BY created_at DESC
+       LIMIT $1`;
+
+  const params = sinceDate ? [sinceDate, limit] : [limit];
+  const res = await p.query(query, params);
+  return res.rows;
+}
+
+export async function startJellyfinScan(params: {
+  libraryId?: string | null;
+  libraryName?: string | null;
+}): Promise<number> {
+  const p = getPool();
+  const res = await p.query(
+    `INSERT INTO jellyfin_scan_log
+      (library_id, library_name, items_scanned, items_added, items_removed, scan_started_at, scan_status)
+    VALUES ($1, $2, 0, 0, 0, NOW(), 'running')
+    RETURNING id`,
+    [params.libraryId ?? null, params.libraryName ?? null]
+  );
+  return res.rows[0].id;
+}
+
+export async function updateJellyfinScan(scanId: number, params: {
+  itemsScanned?: number;
+  itemsAdded?: number;
+  itemsRemoved?: number;
+  scanStatus?: 'running' | 'completed' | 'failed';
+  errorMessage?: string | null;
+}): Promise<void> {
+  const p = getPool();
+  const updates: string[] = [];
+  const values: any[] = [];
+  let paramIdx = 1;
+
+  if (params.itemsScanned !== undefined) {
+    updates.push(`items_scanned = $${paramIdx++}`);
+    values.push(params.itemsScanned);
+  }
+  if (params.itemsAdded !== undefined) {
+    updates.push(`items_added = $${paramIdx++}`);
+    values.push(params.itemsAdded);
+  }
+  if (params.itemsRemoved !== undefined) {
+    updates.push(`items_removed = $${paramIdx++}`);
+    values.push(params.itemsRemoved);
+  }
+  if (params.scanStatus) {
+    updates.push(`scan_status = $${paramIdx++}`);
+    values.push(params.scanStatus);
+    if (params.scanStatus === 'completed' || params.scanStatus === 'failed') {
+      updates.push(`scan_completed_at = NOW()`);
+    }
+  }
+  if (params.errorMessage !== undefined) {
+    updates.push(`error_message = $${paramIdx++}`);
+    values.push(params.errorMessage);
+  }
+
+  if (updates.length === 0) return;
+
+  values.push(scanId);
+  await p.query(
+    `UPDATE jellyfin_scan_log SET ${updates.join(', ')} WHERE id = $${paramIdx}`,
+    values
+  );
+}
+
+export async function getRecentJellyfinScans(limit = 10): Promise<JellyfinScanLog[]> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, library_id as "libraryId", library_name as "libraryName",
+            items_scanned as "itemsScanned", items_added as "itemsAdded",
+            items_removed as "itemsRemoved", scan_started_at as "scanStartedAt",
+            scan_completed_at as "scanCompletedAt", scan_status as "scanStatus",
+            error_message as "errorMessage"
+     FROM jellyfin_scan_log
+     ORDER BY scan_started_at DESC
+     LIMIT $1`,
+    [limit]
+  );
+  return res.rows;
+}
+
+// ==================== CUSTOM LISTS ====================
+
+export interface CustomList {
+  id: number;
+  userId: number;
+  name: string;
+  description: string | null;
+  isPublic: boolean;
+  shareId: string;
+  shareSlug: string | null;
+  mood: string | null;
+  occasion: string | null;
+  coverTmdbId: number | null;
+  coverMediaType: "movie" | "tv" | null;
+  customCoverImagePath: string | null;
+  customCoverImageSize: number | null;
+  customCoverImageMimeType: string | null;
+  itemCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CustomListItem {
+  id: number;
+  listId: number;
+  tmdbId: number;
+  mediaType: "movie" | "tv";
+  position: number;
+  note: string | null;
+  addedAt: string;
+}
+
+export async function createCustomList(input: {
+  userId: number;
+  name: string;
+  description?: string;
+  isPublic?: boolean;
+  mood?: string;
+  occasion?: string;
+}): Promise<CustomList> {
+  const p = getPool();
+  const shareSlug = await generateUniqueCustomListSlug(input.name);
+  const isPublic = input.isPublic ?? false;
+  const visibility = isPublic ? "public" : "private";
+  const res = await p.query(
+    `INSERT INTO custom_list (user_id, name, description, is_public, visibility, share_slug, mood, occasion)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     RETURNING id, user_id as "userId", name, description, is_public as "isPublic",
+               share_id as "shareId", share_slug as "shareSlug", mood, occasion,
+               cover_tmdb_id as "coverTmdbId",
+               cover_media_type as "coverMediaType",
+               custom_cover_image_path as "customCoverImagePath",
+               custom_cover_image_size as "customCoverImageSize",
+               custom_cover_image_mime_type as "customCoverImageMimeType",
+               item_count as "itemCount",
+               created_at as "createdAt", updated_at as "updatedAt"`,
+    [
+      input.userId,
+      input.name,
+      input.description || null,
+      isPublic,
+      visibility,
+      shareSlug,
+      input.mood || null,
+      input.occasion || null,
+    ]
+  );
+  return res.rows[0];
+}
+
+export async function getCustomListById(listId: number): Promise<CustomList | null> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, user_id as "userId", name, description, is_public as "isPublic",
+          share_id as "shareId", share_slug as "shareSlug", mood, occasion,
+          cover_tmdb_id as "coverTmdbId",
+          cover_media_type as "coverMediaType",
+          custom_cover_image_path as "customCoverImagePath",
+          custom_cover_image_size as "customCoverImageSize",
+          custom_cover_image_mime_type as "customCoverImageMimeType",
+          item_count as "itemCount",
+          created_at as "createdAt", updated_at as "updatedAt"
+     FROM custom_list WHERE id = $1`,
+    [listId]
+  );
+  const row = res.rows[0] || null;
+  if (row && !row.shareSlug) {
+    const shareSlug = await generateUniqueCustomListSlug(row.name, row.id);
+    await p.query(`UPDATE custom_list SET share_slug = $1 WHERE id = $2`, [shareSlug, row.id]);
+    row.shareSlug = shareSlug;
+  }
+  return row;
+}
+
+export async function getCustomListByShareId(shareIdOrSlug: string): Promise<CustomList | null> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, user_id as "userId", name, description, is_public as "isPublic",
+          share_id as "shareId", share_slug as "shareSlug", mood, occasion,
+          cover_tmdb_id as "coverTmdbId",
+          cover_media_type as "coverMediaType",
+          custom_cover_image_path as "customCoverImagePath",
+          custom_cover_image_size as "customCoverImageSize",
+          custom_cover_image_mime_type as "customCoverImageMimeType",
+          item_count as "itemCount",
+          created_at as "createdAt", updated_at as "updatedAt"
+     FROM custom_list
+     WHERE (share_id::text = $1 OR share_slug = $1)
+       AND (is_public = TRUE OR visibility = 'public')`,
+    [shareIdOrSlug]
+  );
+  const row = res.rows[0] || null;
+  if (row && !row.shareSlug) {
+    const shareSlug = await generateUniqueCustomListSlug(row.name, row.id);
+    await p.query(`UPDATE custom_list SET share_slug = $1 WHERE id = $2`, [shareSlug, row.id]);
+    row.shareSlug = shareSlug;
+  }
+  return row;
+}
+
+export async function listUserCustomLists(userId: number): Promise<CustomList[]> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, user_id as "userId", name, description, is_public as "isPublic",
+          share_id as "shareId", share_slug as "shareSlug", mood, occasion,
+          cover_tmdb_id as "coverTmdbId",
+          cover_media_type as "coverMediaType",
+          custom_cover_image_path as "customCoverImagePath",
+          custom_cover_image_size as "customCoverImageSize",
+          custom_cover_image_mime_type as "customCoverImageMimeType",
+          item_count as "itemCount",
+          created_at as "createdAt", updated_at as "updatedAt"
+     FROM custom_list WHERE user_id = $1 ORDER BY updated_at DESC`,
+    [userId]
+  );
+  return res.rows;
+}
+
+export async function updateCustomList(
+  listId: number,
+  userId: number,
+  updates: {
+    name?: string;
+    description?: string;
+    isPublic?: boolean;
+    shareSlug?: string;
+    mood?: string;
+    occasion?: string;
+  }
+): Promise<CustomList | null> {
+  const p = getPool();
+  const sets: string[] = [];
+  const values: any[] = [];
+  let idx = 1;
+
+  if (updates.shareSlug !== undefined) {
+    const normalizedSlug = normalizeCustomListSlug(updates.shareSlug);
+    if (!normalizedSlug) {
+      throw new Error("Invalid share slug");
+    }
+    const slugConflict = await p.query(
+      `SELECT id FROM custom_list WHERE share_slug = $1 AND id <> $2 LIMIT 1`,
+      [normalizedSlug, listId]
+    );
+    if (slugConflict.rows.length) {
+      throw new Error("Share slug already in use");
+    }
+    sets.push(`share_slug = $${idx++}`);
+    values.push(normalizedSlug);
+  } else if (updates.name !== undefined) {
+    const shareSlug = await generateUniqueCustomListSlug(updates.name, listId);
+    sets.push(`share_slug = $${idx++}`);
+    values.push(shareSlug);
+  }
+
+  if (updates.name !== undefined) {
+    sets.push(`name = $${idx++}`);
+    values.push(updates.name);
+  }
+  if (updates.description !== undefined) {
+    sets.push(`description = $${idx++}`);
+    values.push(updates.description);
+  }
+  if (updates.mood !== undefined) {
+    sets.push(`mood = $${idx++}`);
+    values.push(updates.mood);
+  }
+  if (updates.occasion !== undefined) {
+    sets.push(`occasion = $${idx++}`);
+    values.push(updates.occasion);
+  }
+  if (updates.isPublic !== undefined) {
+    sets.push(`is_public = $${idx++}`);
+    values.push(updates.isPublic);
+    sets.push(`visibility = $${idx++}`);
+    values.push(updates.isPublic ? "public" : "private");
+  }
+
+  if (sets.length === 0) return getCustomListById(listId);
+
+  sets.push(`updated_at = NOW()`);
+  values.push(listId, userId);
+
+  const res = await p.query(
+    `UPDATE custom_list SET ${sets.join(", ")}
+     WHERE id = $${idx++} AND user_id = $${idx}
+     RETURNING id, user_id as "userId", name, description, is_public as "isPublic",
+               share_id as "shareId", share_slug as "shareSlug", mood, occasion,
+               cover_tmdb_id as "coverTmdbId",
+               cover_media_type as "coverMediaType",
+               custom_cover_image_path as "customCoverImagePath",
+               custom_cover_image_size as "customCoverImageSize",
+               custom_cover_image_mime_type as "customCoverImageMimeType",
+               item_count as "itemCount",
+               created_at as "createdAt", updated_at as "updatedAt"`,
+    values
+  );
+  return res.rows[0] || null;
+}
+
+function slugifyCustomListName(name: string): string {
+  const trimmed = name.trim().toLowerCase();
+  const slug = trimmed
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || "list";
+}
+
+function normalizeCustomListSlug(input: string): string {
+  const trimmed = input.trim().toLowerCase();
+  return trimmed.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+async function generateUniqueCustomListSlug(name: string, listId?: number): Promise<string> {
+  const base = slugifyCustomListName(name);
+  const p = getPool();
+  let candidate = base;
+  let suffix = 2;
+
+  while (true) {
+    const res = await p.query(
+      `SELECT id FROM custom_list WHERE share_slug = $1 ${listId ? "AND id <> $2" : ""} LIMIT 1`,
+      listId ? [candidate, listId] : [candidate]
+    );
+    if (!res.rows.length) return candidate;
+    candidate = `${base}-${suffix++}`;
+  }
+}
+
+export async function deleteCustomList(listId: number, userId: number): Promise<{ deleted: boolean; imagePath: string | null }> {
+  const p = getPool();
+  const client = await p.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Get image path before deletion
+    const getRes = await client.query(
+      `SELECT custom_cover_image_path FROM custom_list WHERE id = $1 AND user_id = $2`,
+      [listId, userId]
+    );
+    const imagePath = getRes.rows[0]?.custom_cover_image_path ?? null;
+
+    // Delete the list
+    const delRes = await client.query(
+      `DELETE FROM custom_list WHERE id = $1 AND user_id = $2`,
+      [listId, userId]
+    );
+
+    await client.query("COMMIT");
+    return { deleted: (delRes.rowCount ?? 0) > 0, imagePath };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function addCustomListItem(input: {
+  listId: number;
+  tmdbId: number;
+  mediaType: "movie" | "tv";
+  note?: string;
+}): Promise<CustomListItem> {
+  const p = getPool();
+  // Get max position
+  const posRes = await p.query(
+    `SELECT COALESCE(MAX(position), -1) + 1 as next_pos FROM custom_list_item WHERE list_id = $1`,
+    [input.listId]
+  );
+  const nextPos = posRes.rows[0]?.next_pos ?? 0;
+
+  const res = await p.query(
+    `INSERT INTO custom_list_item (list_id, tmdb_id, media_type, position, note)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (list_id, tmdb_id, media_type) DO UPDATE SET note = EXCLUDED.note
+     RETURNING id, list_id as "listId", tmdb_id as "tmdbId", media_type as "mediaType",
+               position, note, added_at as "addedAt"`,
+    [input.listId, input.tmdbId, input.mediaType, nextPos, input.note || null]
+  );
+  return res.rows[0];
+}
+
+export async function removeCustomListItem(
+  listId: number,
+  tmdbId: number,
+  mediaType: "movie" | "tv"
+): Promise<boolean> {
+  const p = getPool();
+  const res = await p.query(
+    `DELETE FROM custom_list_item WHERE list_id = $1 AND tmdb_id = $2 AND media_type = $3`,
+    [listId, tmdbId, mediaType]
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
+export async function listCustomListItems(listId: number): Promise<CustomListItem[]> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, list_id as "listId", tmdb_id as "tmdbId", media_type as "mediaType",
+            position, note, added_at as "addedAt"
+     FROM custom_list_item WHERE list_id = $1 ORDER BY position ASC`,
+    [listId]
+  );
+  return res.rows;
+}
+
+export async function reorderCustomListItems(listId: number, itemIds: number[]): Promise<void> {
+  const p = getPool();
+  const client = await p.connect();
+  try {
+    await client.query("BEGIN");
+    for (let i = 0; i < itemIds.length; i++) {
+      await client.query(
+        `UPDATE custom_list_item SET position = $1 WHERE id = $2 AND list_id = $3`,
+        [i, itemIds[i], listId]
+      );
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function setCustomListCover(
+  listId: number,
+  userId: number,
+  tmdbId: number,
+  mediaType: "movie" | "tv"
+): Promise<void> {
+  const p = getPool();
+  await p.query(
+    `UPDATE custom_list SET cover_tmdb_id = $1, cover_media_type = $2, updated_at = NOW()
+     WHERE id = $3 AND user_id = $4`,
+    [tmdbId, mediaType, listId, userId]
+  );
+}
+
+export async function setCustomListCoverImage(
+  listId: number,
+  userId: number,
+  imagePath: string,
+  imageSize: number,
+  mimeType: string,
+  oldImagePath?: string | null
+): Promise<void> {
+  const p = getPool();
+  const client = await p.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Clear TMDB cover and set custom image
+    await client.query(
+      `UPDATE custom_list SET 
+        custom_cover_image_path = $1,
+        custom_cover_image_size = $2,
+        custom_cover_image_mime_type = $3,
+        cover_tmdb_id = NULL,
+        cover_media_type = NULL,
+        updated_at = NOW()
+       WHERE id = $4 AND user_id = $5`,
+      [imagePath, imageSize, mimeType, listId, userId]
+    );
+
+    // Note: File deletion is handled by the API endpoint, not here
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function removeCustomListCoverImage(
+  listId: number,
+  userId: number
+): Promise<{ imagePath: string | null }> {
+  const p = getPool();
+  const res = await p.query(
+    `UPDATE custom_list 
+     SET custom_cover_image_path = NULL,
+         custom_cover_image_size = NULL,
+         custom_cover_image_mime_type = NULL,
+         updated_at = NOW()
+     WHERE id = $1 AND user_id = $2
+     RETURNING custom_cover_image_path`,
+    [listId, userId]
+  );
+  if (!res.rows.length) {
+    return { imagePath: null };
+  }
+  return { imagePath: res.rows[0].custom_cover_image_path ?? null };
+}
+
+export async function getListsContainingMedia(
+  userId: number,
+  tmdbId: number,
+  mediaType: "movie" | "tv"
+): Promise<Array<{ id: number; name: string }>> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT cl.id, cl.name
+     FROM custom_list cl
+     INNER JOIN custom_list_item cli ON cli.list_id = cl.id
+     WHERE cl.user_id = $1 AND cli.tmdb_id = $2 AND cli.media_type = $3
+     ORDER BY cl.name ASC`,
+    [userId, tmdbId, mediaType]
+  );
+  return res.rows.map(row => ({
+    id: Number(row.id),
+    name: row.name
+  }));
+}
+
+// ==================== TASTE PROFILE & QUIZ ====================
+
+export interface UserTasteProfile {
+  id: number;
+  userId: number;
+  genreAction: number | null;
+  genreAdventure: number | null;
+  genreAnimation: number | null;
+  genreComedy: number | null;
+  genreCrime: number | null;
+  genreDocumentary: number | null;
+  genreDrama: number | null;
+  genreFamily: number | null;
+  genreFantasy: number | null;
+  genreHistory: number | null;
+  genreHorror: number | null;
+  genreMusic: number | null;
+  genreMystery: number | null;
+  genreRomance: number | null;
+  genreScifi: number | null;
+  genreThriller: number | null;
+  genreWar: number | null;
+  genreWestern: number | null;
+  preferNewReleases: boolean | null;
+  preferClassics: boolean | null;
+  preferForeign: boolean | null;
+  preferIndie: boolean | null;
+  minRating: number | null;
+  moodIntense: number | null;
+  moodLighthearted: number | null;
+  moodThoughtful: number | null;
+  moodExciting: number | null;
+  preferMovies: number | null;
+  preferTv: number | null;
+  preferShort: boolean | null;
+  preferLong: boolean | null;
+  extendedPreferences: Record<string, any>;
+  quizCompleted: boolean;
+  quizCompletedAt: string | null;
+  quizVersion: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function getUserTasteProfile(userId: number): Promise<UserTasteProfile | null> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, user_id as "userId",
+            genre_action as "genreAction", genre_adventure as "genreAdventure",
+            genre_animation as "genreAnimation", genre_comedy as "genreComedy",
+            genre_crime as "genreCrime", genre_documentary as "genreDocumentary",
+            genre_drama as "genreDrama", genre_family as "genreFamily",
+            genre_fantasy as "genreFantasy", genre_history as "genreHistory",
+            genre_horror as "genreHorror", genre_music as "genreMusic",
+            genre_mystery as "genreMystery", genre_romance as "genreRomance",
+            genre_scifi as "genreScifi", genre_thriller as "genreThriller",
+            genre_war as "genreWar", genre_western as "genreWestern",
+            prefer_new_releases as "preferNewReleases", prefer_classics as "preferClassics",
+            prefer_foreign as "preferForeign", prefer_indie as "preferIndie",
+            min_rating as "minRating",
+            mood_intense as "moodIntense", mood_lighthearted as "moodLighthearted",
+            mood_thoughtful as "moodThoughtful", mood_exciting as "moodExciting",
+            prefer_movies as "preferMovies", prefer_tv as "preferTv",
+            prefer_short as "preferShort", prefer_long as "preferLong",
+            extended_preferences as "extendedPreferences",
+            quiz_completed as "quizCompleted", quiz_completed_at as "quizCompletedAt",
+            quiz_version as "quizVersion",
+            created_at as "createdAt", updated_at as "updatedAt"
+     FROM user_taste_profile WHERE user_id = $1`,
+    [userId]
+  );
+  return res.rows[0] || null;
+}
+
+export async function upsertUserTasteProfile(
+  userId: number,
+  updates: Partial<Omit<UserTasteProfile, "id" | "userId" | "createdAt" | "updatedAt">>
+): Promise<UserTasteProfile> {
+  const p = getPool();
+
+  // Build dynamic upsert
+  const fields: string[] = ["user_id"];
+  const values: any[] = [userId];
+  const placeholders: string[] = ["$1"];
+  const updateSets: string[] = [];
+  let idx = 2;
+
+  const fieldMap: Record<string, string> = {
+    genreAction: "genre_action",
+    genreAdventure: "genre_adventure",
+    genreAnimation: "genre_animation",
+    genreComedy: "genre_comedy",
+    genreCrime: "genre_crime",
+    genreDocumentary: "genre_documentary",
+    genreDrama: "genre_drama",
+    genreFamily: "genre_family",
+    genreFantasy: "genre_fantasy",
+    genreHistory: "genre_history",
+    genreHorror: "genre_horror",
+    genreMusic: "genre_music",
+    genreMystery: "genre_mystery",
+    genreRomance: "genre_romance",
+    genreScifi: "genre_scifi",
+    genreThriller: "genre_thriller",
+    genreWar: "genre_war",
+    genreWestern: "genre_western",
+    preferNewReleases: "prefer_new_releases",
+    preferClassics: "prefer_classics",
+    preferForeign: "prefer_foreign",
+    preferIndie: "prefer_indie",
+    minRating: "min_rating",
+    moodIntense: "mood_intense",
+    moodLighthearted: "mood_lighthearted",
+    moodThoughtful: "mood_thoughtful",
+    moodExciting: "mood_exciting",
+    preferMovies: "prefer_movies",
+    preferTv: "prefer_tv",
+    preferShort: "prefer_short",
+    preferLong: "prefer_long",
+    extendedPreferences: "extended_preferences",
+    quizCompleted: "quiz_completed",
+    quizCompletedAt: "quiz_completed_at",
+    quizVersion: "quiz_version",
+  };
+
+  for (const [key, dbField] of Object.entries(fieldMap)) {
+    if (key in updates) {
+      fields.push(dbField);
+      placeholders.push(`$${idx}`);
+      updateSets.push(`${dbField} = EXCLUDED.${dbField}`);
+      values.push((updates as any)[key]);
+      idx++;
+    }
+  }
+
+  updateSets.push("updated_at = NOW()");
+
+  const res = await p.query(
+    `INSERT INTO user_taste_profile (${fields.join(", ")})
+     VALUES (${placeholders.join(", ")})
+     ON CONFLICT (user_id) DO UPDATE SET ${updateSets.join(", ")}
+     RETURNING id, user_id as "userId",
+            genre_action as "genreAction", genre_adventure as "genreAdventure",
+            genre_animation as "genreAnimation", genre_comedy as "genreComedy",
+            genre_crime as "genreCrime", genre_documentary as "genreDocumentary",
+            genre_drama as "genreDrama", genre_family as "genreFamily",
+            genre_fantasy as "genreFantasy", genre_history as "genreHistory",
+            genre_horror as "genreHorror", genre_music as "genreMusic",
+            genre_mystery as "genreMystery", genre_romance as "genreRomance",
+            genre_scifi as "genreScifi", genre_thriller as "genreThriller",
+            genre_war as "genreWar", genre_western as "genreWestern",
+            prefer_new_releases as "preferNewReleases", prefer_classics as "preferClassics",
+            prefer_foreign as "preferForeign", prefer_indie as "preferIndie",
+            min_rating as "minRating",
+            mood_intense as "moodIntense", mood_lighthearted as "moodLighthearted",
+            mood_thoughtful as "moodThoughtful", mood_exciting as "moodExciting",
+            prefer_movies as "preferMovies", prefer_tv as "preferTv",
+            prefer_short as "preferShort", prefer_long as "preferLong",
+            extended_preferences as "extendedPreferences",
+            quiz_completed as "quizCompleted", quiz_completed_at as "quizCompletedAt",
+            quiz_version as "quizVersion",
+            created_at as "createdAt", updated_at as "updatedAt"`,
+    values
+  );
+  return res.rows[0];
+}
+
+export interface UserQuizState {
+  id: number;
+  userId: number;
+  currentStep: number;
+  totalSteps: number;
+  answers: Record<string, any>;
+  startedAt: string;
+  updatedAt: string;
+}
+
+export async function getUserQuizState(userId: number): Promise<UserQuizState | null> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, user_id as "userId", current_step as "currentStep",
+            total_steps as "totalSteps", answers, started_at as "startedAt",
+            updated_at as "updatedAt"
+     FROM user_quiz_state WHERE user_id = $1`,
+    [userId]
+  );
+  return res.rows[0] || null;
+}
+
+export async function upsertUserQuizState(
+  userId: number,
+  updates: { currentStep?: number; totalSteps?: number; answers?: Record<string, any> }
+): Promise<UserQuizState> {
+  const p = getPool();
+  const res = await p.query(
+    `INSERT INTO user_quiz_state (user_id, current_step, total_steps, answers)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (user_id) DO UPDATE SET
+       current_step = COALESCE($2, user_quiz_state.current_step),
+       total_steps = COALESCE($3, user_quiz_state.total_steps),
+       answers = COALESCE($4, user_quiz_state.answers),
+       updated_at = NOW()
+     RETURNING id, user_id as "userId", current_step as "currentStep",
+               total_steps as "totalSteps", answers, started_at as "startedAt",
+               updated_at as "updatedAt"`,
+    [userId, updates.currentStep ?? 0, updates.totalSteps ?? 12, updates.answers ?? {}]
+  );
+  return res.rows[0];
+}
+
+export async function deleteUserQuizState(userId: number): Promise<void> {
+  const p = getPool();
+  await p.query(`DELETE FROM user_quiz_state WHERE user_id = $1`, [userId]);
+}
+
+// ==================== BULK REQUESTS ====================
+
+export async function createBulkRequests(input: {
+  userId: number;
+  username: string;
+  items: Array<{
+    requestType: "movie" | "episode";
+    tmdbId: number;
+    title: string;
+    posterPath?: string;
+    backdropPath?: string;
+    releaseYear?: number;
+  }>;
+}): Promise<{ created: number; skipped: number; requestIds: string[] }> {
+  const p = getPool();
+  const client = await p.connect();
+  let created = 0;
+  let skipped = 0;
+  const requestIds: string[] = [];
+
+  try {
+    await client.query("BEGIN");
+
+    for (const item of input.items) {
+      // Check if active request exists
+      const existing = await client.query(
+        `SELECT id FROM media_request 
+         WHERE tmdb_id = $1 AND request_type = $2 AND status IN ('queued', 'pending', 'submitted')`,
+        [item.tmdbId, item.requestType]
+      );
+
+      if (existing.rows.length > 0) {
+        skipped++;
+        continue;
+      }
+
+      const reqId = randomUUID();
+      await client.query(
+        `INSERT INTO media_request (id, request_type, tmdb_id, title, requested_by, status, poster_path, backdrop_path, release_year)
+         VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8)`,
+        [reqId, item.requestType, item.tmdbId, item.title, input.userId, item.posterPath, item.backdropPath, item.releaseYear]
+      );
+
+      await client.query(
+        `INSERT INTO request_item (request_id, provider, status)
+         VALUES ($1, $2, 'pending')`,
+        [reqId, item.requestType === "movie" ? "radarr" : "sonarr"]
+      );
+
+      requestIds.push(reqId);
+      created++;
+    }
+
+    await client.query("COMMIT");
+    return { created, skipped, requestIds };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function bulkUpdateRequestStatus(
+  requestIds: string[],
+  status: string,
+  statusReason?: string,
+  deniedByUserId?: number
+): Promise<number> {
+  if (requestIds.length === 0) return 0;
+  const p = getPool();
+
+  let query = `UPDATE media_request SET status = $1, updated_at = NOW()`;
+  const values: any[] = [status];
+  let idx = 2;
+
+  if (statusReason !== undefined) {
+    query += `, status_reason = $${idx++}`;
+    values.push(statusReason);
+  }
+  if (deniedByUserId !== undefined) {
+    query += `, denied_by_user_id = $${idx++}`;
+    values.push(deniedByUserId);
+  }
+
+  query += ` WHERE id = ANY($${idx})`;
+  values.push(requestIds);
+
+  const res = await p.query(query, values);
+  return res.rowCount ?? 0;
+}
+
+export async function getTelegramUserByUserId(userId: number): Promise<{ telegram_id: string } | null> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT telegram_id FROM telegram_users WHERE user_id = $1 LIMIT 1`,
+    [userId]
+  );
+  return res.rows[0] ?? null;
+}
+
+export async function listLinkedTelegramUsers(): Promise<{ userId: number; telegramId: string; username: string }[]> {
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(
+    `SELECT tu.user_id, tu.telegram_id, u.username
+     FROM telegram_users tu
+     JOIN users u ON u.id = tu.user_id
+     WHERE COALESCE(u.banned, FALSE) = FALSE
+     ORDER BY u.username ASC`
+  );
+  return res.rows.map((row) => ({
+    userId: Number(row.user_id),
+    telegramId: String(row.telegram_id),
+    username: String(row.username)
+  }));
+}
+
+export async function insertJobHistory(
+  jobName: string,
+  status: "success" | "failure",
+  startedAt: Date,
+  finishedAt: Date,
+  durationMs: number,
+  error: string | null,
+  details?: string
+): Promise<void> {
+  const p = getPool();
+  await p.query(
+    `INSERT INTO job_history (job_name, status, started_at, finished_at, duration_ms, error, details)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [jobName, status, startedAt, finishedAt, durationMs, error ?? null, details ?? null]
+  );
+  // Prune: keep only last 500 per job
+  await p.query(
+    `DELETE FROM job_history WHERE job_name = $1 AND id NOT IN (
+       SELECT id FROM job_history WHERE job_name = $1 ORDER BY started_at DESC LIMIT 500
+     )`,
+    [jobName]
+  );
+}
+
+export async function getJobHistory(
+  jobName?: string,
+  limit = 50,
+  offset = 0
+): Promise<{
+  entries: {
+    id: number;
+    jobName: string;
+    status: "success" | "failure";
+    startedAt: Date | string;
+    finishedAt: Date | string | null;
+    durationMs: number | null;
+    error: string | null;
+    details: string | null;
+  }[];
+  total: number;
+}> {
+  const p = getPool();
+  const where = jobName ? `WHERE job_name = $1` : "";
+  const params: any[] = jobName ? [jobName] : [];
+  const countRes = await p.query(
+    `SELECT COUNT(*) as count FROM job_history ${where}`,
+    params
+  );
+  const total = Number(countRes.rows[0]?.count ?? 0);
+  const dataRes = await p.query(
+    `SELECT id, job_name, status, started_at, finished_at, duration_ms, error, details
+     FROM job_history ${where}
+     ORDER BY started_at DESC
+     LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    [...params, limit, offset]
+  );
+  const entries = dataRes.rows.map((row) => ({
+    id: row.id,
+    jobName: row.job_name,
+    status: row.status,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+    durationMs: row.duration_ms,
+    error: row.error,
+    details: row.details,
+  }));
+  return { entries, total };
+}
+
+export async function clearJobHistory(jobName?: string): Promise<number> {
+  const p = getPool();
+  const res = jobName
+    ? await p.query(`DELETE FROM job_history WHERE job_name = $1`, [jobName])
+    : await p.query(`DELETE FROM job_history`);
+  return res.rowCount ?? 0;
+}
+
+export async function customListContainsMedia(
+  listId: number,
+  tmdbId: number,
+  mediaType: string
+): Promise<boolean> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT 1 FROM custom_list_item WHERE list_id = $1 AND tmdb_id = $2 AND media_type = $3 LIMIT 1`,
+    [listId, tmdbId, mediaType]
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
+export async function hasNotifiedSeason(requestId: string, season: number): Promise<boolean> {
+  await ensureSchema();
+  const p = getPool();
+  const res = await p.query(
+    `SELECT 1 FROM notified_season WHERE request_id = $1 AND season = $2 LIMIT 1`,
+    [requestId, season]
+  );
+  return res.rows.length > 0;
+}
+
+export async function markSeasonNotified(requestId: string, season: number): Promise<void> {
+  await ensureSchema();
+  const p = getPool();
+  await p.query(
+    `INSERT INTO notified_season (request_id, season) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+    [requestId, season]
+  );
+}
+
+export async function setRequestPriority(
+  requestId: string,
+  priority: "low" | "normal" | "high"
+): Promise<boolean> {
+  const p = getPool();
+  const res = await p.query(
+    `UPDATE media_request SET priority = $2 WHERE id = $1`,
+    [requestId, priority]
+  );
+  return Number(res.rowCount ?? 0) > 0;
+}
+
+export async function autoExpirePendingRequests(input: {
+  olderThanDays: number;
+  reason?: string;
+}): Promise<Array<{
+  id: string;
+  request_type: "movie" | "episode";
+  tmdb_id: number;
+  title: string;
+  username: string;
+  user_id: number;
+  status_reason: string;
+}>> {
+  const p = getPool();
+  const reason = input.reason?.trim() || `Automatically expired after ${input.olderThanDays} day(s) without approval`;
+
+  const expired = await p.query(
+    `
+    WITH expired AS (
+      UPDATE media_request
+      SET status = 'denied',
+          status_reason = $2,
+          denied_by_user_id = NULL
+      WHERE status = 'pending'
+        AND created_at < NOW() - make_interval(days => $1)
+      RETURNING id, request_type, tmdb_id, title, requested_by AS user_id
+    )
+    SELECT e.id, e.request_type, e.tmdb_id, e.title, e.user_id, u.username, $2::text AS status_reason
+    FROM expired e
+    JOIN app_user u ON u.id = e.user_id
+    `,
+    [input.olderThanDays, reason]
+  );
+
+  const ids = expired.rows.map((r) => String(r.id));
+  if (!ids.length) return [];
+
+  await p.query(
+    `UPDATE request_item SET status = 'denied' WHERE request_id = ANY($1::uuid[])`,
+    [ids]
+  );
+
+  return expired.rows.map((row) => ({
+    id: String(row.id),
+    request_type: row.request_type as "movie" | "episode",
+    tmdb_id: Number(row.tmdb_id),
+    title: String(row.title),
+    username: String(row.username),
+    user_id: Number(row.user_id),
+    status_reason: String(row.status_reason),
+  }));
+}
+
+// ============================================
+// Request Upvotes
+// ============================================
+
+export async function getRequestUpvote(
+  requestId: string,
+  userId: number
+): Promise<{ count: number; voted: boolean }> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT
+       COUNT(*)::int            AS count,
+       BOOL_OR(user_id = $2)   AS voted
+     FROM request_upvote
+     WHERE request_id = $1`,
+    [requestId, userId]
+  );
+  const row = res.rows[0];
+  return {
+    count: Number(row?.count ?? 0),
+    voted: Boolean(row?.voted),
+  };
+}
+
+export async function toggleRequestUpvote(
+  requestId: string,
+  userId: number
+): Promise<{ count: number; voted: boolean }> {
+  const p = getPool();
+  const existing = await p.query(
+    `SELECT 1 FROM request_upvote WHERE request_id = $1 AND user_id = $2`,
+    [requestId, userId]
+  );
+  if (existing.rows.length > 0) {
+    await p.query(
+      `DELETE FROM request_upvote WHERE request_id = $1 AND user_id = $2`,
+      [requestId, userId]
+    );
+  } else {
+    await p.query(
+      `INSERT INTO request_upvote (request_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [requestId, userId]
+    );
+  }
+  return getRequestUpvote(requestId, userId);
+}
