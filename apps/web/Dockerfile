@@ -12,25 +12,25 @@ RUN apk add --no-cache libc6-compat
 WORKDIR /app
 # Only NEXT_PUBLIC_ vars need real values at build time (inlined into client JS).
 # Server-only secrets use placeholders during build and are injected at runtime via env_file.
-ARG NEXT_PUBLIC_TURNSTILE_SITE_KEY
-ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY
-ARG NEXT_PUBLIC_TELEGRAM_BOT_USERNAME
-ENV NEXT_PUBLIC_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_TURNSTILE_SITE_KEY}
-ENV NEXT_PUBLIC_VAPID_PUBLIC_KEY=${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
-ENV NEXT_PUBLIC_TELEGRAM_BOT_USERNAME=${NEXT_PUBLIC_TELEGRAM_BOT_USERNAME}
-# Placeholder values so next build doesn't fail when server code references these
-ENV DATABASE_URL=postgres://build:build@localhost:5432/build
-ENV SESSION_SECRET=build-placeholder-secret-not-used-at-runtime-32chars
-ENV SERVICES_SECRET_KEY=build-placeholder
-ENV VAPID_PUBLIC_KEY=build-placeholder
-ENV VAPID_PRIVATE_KEY=build-placeholder
-ENV VAPID_EMAIL=build@placeholder.local
+ARG BUILD_PUBLIC_TURNSTILE
+ARG BUILD_PUBLIC_VAPID
+ARG BUILD_PUBLIC_TELEGRAM_USERNAME
 COPY --from=deps /app ./
 COPY . .
 # Ensure public directory exists even if repo has no assets yet
 RUN mkdir -p public
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN --mount=type=cache,target=/root/.npm --mount=type=cache,target=/app/.next/cache npm run build
+RUN --mount=type=cache,target=/root/.npm --mount=type=cache,target=/app/.next/cache \
+    NEXT_PUBLIC_TURNSTILE_SITE_KEY="$BUILD_PUBLIC_TURNSTILE" \
+    NEXT_PUBLIC_VAPID_PUBLIC_KEY="$BUILD_PUBLIC_VAPID" \
+    NEXT_PUBLIC_TELEGRAM_BOT_USERNAME="$BUILD_PUBLIC_TELEGRAM_USERNAME" \
+    DATABASE_URL="postgres://build:build@localhost:5432/build" \
+    SESSION_SECRET="build-placeholder-secret-not-used-at-runtime-32chars" \
+    SERVICES_SECRET_KEY="build-placeholder" \
+    VAPID_PUBLIC_KEY="build-placeholder" \
+    VAPID_PRIVATE_KEY="build-placeholder" \
+    VAPID_EMAIL="build@placeholder.local" \
+    npm run build
 
 FROM node:22-alpine AS run
 WORKDIR /app

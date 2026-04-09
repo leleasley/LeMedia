@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { getTv, tmdbImageUrl } from "@/lib/tmdb";
+import { getSeriesWatchHistory } from "@/lib/jellyfin-watch";
 import { TvDetailClientNew } from "@/components/Tv/TvDetailClientNew";
 import { pickTrailerUrl } from "@/lib/trailer-utils";
 import { MediaSlider } from "@/components/Media/MediaSlider";
@@ -32,9 +33,9 @@ async function resolveUserId() {
   const user = await getUser().catch(() => null);
   if (!user) return null;
   const dbUser = await getUserByUsername(user.username).catch(() => null);
-  if (dbUser) return dbUser.id;
+  if (dbUser) return { id: dbUser.id, jellyfinUserId: dbUser.jellyfin_user_id ?? null };
   const created = await upsertUser(user.username, user.groups).catch(() => null);
-  return created?.id ?? null;
+  return created ? { id: created.id, jellyfinUserId: null } : null;
 }
 
 async function fetchRatings(mediaType: "movie" | "tv", tmdbId: number) {
@@ -79,7 +80,7 @@ export default async function TvPage({ params }: { params: ParamsInput }) {
     const ratingsPromise = fetchRatings("tv", id);
     const activeRequestPromise = findActiveRequestByTmdb({ requestType: "episode", tmdbId: id }).catch(() => null);
 
-    const [details, userId, initialRatings, activeRequest] = await Promise.all([
+    const [details, userData, initialRatings, activeRequest] = await Promise.all([
       detailsPromise,
       userIdPromise,
       ratingsPromise,
@@ -94,11 +95,15 @@ export default async function TvPage({ params }: { params: ParamsInput }) {
     const keywords = details.keywords;
     const tvdbId = details.tvdbId;
     const imdbId = details.imdbId;
-    const [listStatus, reviews, reviewStats, userReview] = await Promise.all([
-      userId ? getUserMediaListStatus({ userId, mediaType: "tv", tmdbId: id }).catch(() => null) : Promise.resolve(null),
-      getReviewsForMedia("tv", id, 50).catch(() => []),
+    const seasons = (tv.seasons ?? [])
+      .filter((s: any) => s.season_number !== 0)
+      .sort((a: any, b: any) => a.season_number - b.season_number);
+    const [listStatus, reviews, reviewStats, userReview, seriesHistory] = await Promise.all([
+      userData ? getUserMediaListStatus({ userId: userData.id, mediaType: "tv", tmdbId: id }).catch(() => null) : Promise.resolve(null),
+      getReviewsForMedia("tv", id, 50, userData?.id ?? null).catch(() => []),
       getReviewStatsForMedia("tv", id).catch(() => ({ total: 0, average: 0 })),
-      userId ? getUserReviewForMedia(userId, "tv", id).catch(() => null) : Promise.resolve(null)
+      userData ? getUserReviewForMedia(userData.id, "tv", id).catch(() => null) : Promise.resolve(null),
+      userData?.jellyfinUserId ? getSeriesWatchHistory(userData.jellyfinUserId).catch(() => []) : Promise.resolve([])
     ]);
 
     // These values hydrate client-side via SWR in TvDetailClientNew.
@@ -119,9 +124,15 @@ export default async function TvPage({ params }: { params: ParamsInput }) {
     const poster = tmdbImageUrl(tv.poster_path, "w600_and_h900_bestv2", false);
     const backdrop = tmdbImageUrl(tv.backdrop_path, "w1920_and_h800_multi_faces", false);
     const trailerUrl = pickTrailerUrl(tv);
-    const seasons = (tv.seasons ?? [])
-      .filter((s: any) => s.season_number !== 0)
-      .sort((a: any, b: any) => a.season_number - b.season_number);
+    const firstStandardSeason = seasons.find((season: any) => Number(season.episode_count ?? 0) > 0) ?? null;
+    const currentSeriesHistory = Array.isArray(seriesHistory)
+      ? seriesHistory.find((item) => Number(item.tmdbId) === id) ?? null
+      : null;
+    const reviewPromptEligible = Boolean(
+      firstStandardSeason &&
+      currentSeriesHistory &&
+      Number(currentSeriesHistory.episodesWatched ?? 0) >= Number(firstStandardSeason.episode_count ?? 0)
+    );
 
     pageData = {
       tv,
@@ -152,6 +163,7 @@ export default async function TvPage({ params }: { params: ParamsInput }) {
       reviews,
       reviewStats,
       userReview,
+      reviewPromptEligible,
       imageProxyEnabled,
       requestedBy: activeRequest?.requestedBy ?? null
     };
@@ -218,6 +230,8 @@ export default async function TvPage({ params }: { params: ParamsInput }) {
           />
         }
         requestedBy={pageData.requestedBy ?? null}
+        initialHasReview={Boolean(pageData.userReview)}
+        reviewPromptEligible={pageData.reviewPromptEligible}
         initialListStatus={pageData.listStatus ?? undefined}
       >
         <div className="px-4 mt-8">

@@ -19,6 +19,7 @@ import {
   Layers,
   Library,
   Loader2,
+  MessageSquare,
   Play,
   Sparkles,
   Star,
@@ -140,6 +141,20 @@ type FriendActivity = {
   avatarUrl: string | null;
   metadata: any;
   createdAt: string;
+};
+
+type PendingReviewItem = {
+  mediaType: "movie" | "tv";
+  tmdbId: number;
+  title: string;
+  posterPath: string | null;
+  releaseYear: number | null;
+  watchedAt: string;
+};
+
+type PendingReviewsResponse = {
+  count: number;
+  items: PendingReviewItem[];
 };
 
 type SurpriseMediaType = "movie" | "tv";
@@ -287,6 +302,11 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
   const { data: friendsActivityData } = useSWR<{ events: FriendActivity[] }>(
     "/api/v1/social/feed?type=friends&limit=5",
     { refreshInterval: 60000, revalidateOnFocus: true }
+  );
+
+  const { data: pendingReviewsData } = useSWR<PendingReviewsResponse>(
+    "/api/v1/my-activity/pending-reviews?limit=4",
+    { refreshInterval: 300000, revalidateOnFocus: true }
   );
 
   const [greeting] = useState(() => getGreeting());
@@ -563,6 +583,8 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
   const SpotlightIcon = spotlightCard?.icon;
 
   const name = displayName || username;
+  const pendingReviews = pendingReviewsData?.items ?? [];
+  const pendingReviewCount = pendingReviewsData?.count ?? 0;
 
   return (
     <div className="space-y-6">
@@ -580,8 +602,8 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
           <div className="absolute -bottom-16 left-1/3 h-48 w-48 rounded-full bg-amber-500/[0.07] blur-3xl" />
         </div>
 
-        <div className="relative grid gap-5 p-5 md:p-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)] xl:items-stretch">
-          <div className="space-y-5">
+        <div className="relative grid gap-5 p-5 pt-8 md:p-6 md:pt-10 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)] xl:items-stretch">
+          <div className="space-y-5 pt-2 md:pt-3">
             <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
               <div className="flex flex-wrap items-center gap-2">
                 <p className="text-sm font-medium text-slate-400">{nowLine}</p>
@@ -748,6 +770,64 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
           </div>
         </div>
       </section>
+
+      {pendingReviewCount > 0 && (
+        <section className="rounded-[24px] border border-amber-300/15 bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-transparent p-4 sm:p-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="max-w-2xl">
+              <div className="inline-flex items-center gap-2 rounded-full border border-amber-300/20 bg-amber-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-100">
+                <MessageSquare className="h-3.5 w-3.5" />
+                Review queue
+              </div>
+              <h2 className="mt-3 text-xl font-semibold text-white">
+                You have {pendingReviewCount} unwritten review{pendingReviewCount === 1 ? "" : "s"}
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-slate-300/80">
+                Titles you marked watched without leaving a review. Pick one and jump straight into the reviews section.
+              </p>
+            </div>
+            <PrefetchLink
+              href="/review-queue"
+              className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-white/10"
+            >
+              Open queue
+              <ArrowUpRight className="h-4 w-4" />
+            </PrefetchLink>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {pendingReviews.map((item) => {
+              const href = `/${item.mediaType}/${item.tmdbId}#reviews`;
+              const posterUrl = item.posterPath ? `https://image.tmdb.org/t/p/w342${item.posterPath}` : null;
+
+              return (
+                <PrefetchLink
+                  key={`${item.mediaType}-${item.tmdbId}`}
+                  href={href}
+                  className="group flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 p-3 transition-colors hover:border-white/20 hover:bg-black/30"
+                >
+                  <div className="relative h-16 w-12 shrink-0 overflow-hidden rounded-lg border border-white/10 bg-white/5">
+                    {posterUrl ? (
+                      <Image src={posterUrl} alt={item.title} fill className="object-cover" unoptimized />
+                    ) : null}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-slate-500">
+                      <span>{item.mediaType === "movie" ? "Movie" : "Series"}</span>
+                      <span className="h-1 w-1 rounded-full bg-slate-600" />
+                      <span>{new Date(item.watchedAt).toLocaleDateString()}</span>
+                    </div>
+                    <p className="mt-1 line-clamp-1 text-sm font-semibold text-white group-hover:text-amber-100">
+                      {item.title}{item.releaseYear ? ` (${item.releaseYear})` : ""}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-400">Write a review</p>
+                  </div>
+                </PrefetchLink>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       <Modal open={surpriseWizardOpen} onClose={closeSurpriseWizard} title="Surprise Wizard" forceCenter>
         <div className="space-y-4">

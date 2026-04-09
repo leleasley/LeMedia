@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useMemo, useState, useCallback, useRef } from "react";
-import { AlertTriangle, CalendarDays, Clock, Ellipsis, Film, Activity, Settings, Sparkles, Tv, Users, X, Star, LayoutGrid, Compass, Heart, Bell, Search } from "lucide-react";
+import { AlertTriangle, CalendarDays, Clock, Ellipsis, Film, Activity, Settings, Sparkles, Tv, Users, X, Star, LayoutGrid, Compass, Heart, Bell, Search, Eye } from "lucide-react";
 import { PrefetchLink } from "@/components/Layout/PrefetchLink";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -118,7 +118,7 @@ export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, 
             { href: "/discover", label: "Discover", icon: Compass, isActive: current.startsWith("/discover") },
             { href: "/movies", label: "Movies", icon: Film, isActive: current === "/movies" || current.startsWith("/movie/") },
             { href: "/tv", label: "Series", icon: Tv, isActive: current === "/tv" || current.startsWith("/tv/") },
-            { href: "/my-activity", label: "Activity", icon: Activity, isActive: current.startsWith("/my-activity") },
+            { href: "/watched", label: "Watched", icon: Eye, isActive: current.startsWith("/watched") },
         ];
     }, [pathname]);
 
@@ -126,6 +126,7 @@ export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, 
     const browseMoreLinks = useMemo<NavLink[]>(() => {
         const current = pathname ?? "/";
         return [
+            { href: "/my-activity", label: "Activity", icon: Activity, isActive: current.startsWith("/my-activity") },
             { href: "/recommendations", label: "Recommendations", icon: Sparkles, isActive: current === "/recommendations" },
             { href: "/calendar", label: "Calendar", icon: CalendarDays, isActive: current === "/calendar" },
             { href: "/following", label: "Following", icon: Bell, isActive: current === "/following" },

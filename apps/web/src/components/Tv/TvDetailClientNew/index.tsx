@@ -210,6 +210,8 @@ export function TvDetailClientNew({
     externalRatingsSlot,
     keywordsSlot,
     initialListStatus,
+    initialHasReview,
+    reviewPromptEligible,
     prefetchedAggregate,
     requestedBy = null,
     children
@@ -248,6 +250,8 @@ export function TvDetailClientNew({
     externalRatingsSlot?: React.ReactNode;
     keywordsSlot?: React.ReactNode;
     initialListStatus?: { favorite: boolean; watchlist: boolean; watched?: boolean } | null;
+    initialHasReview?: boolean | null;
+    reviewPromptEligible?: boolean | null;
     prefetchedAggregate?: unknown;
     requestedBy?: RequestedBy | null;
     children?: React.ReactNode;
@@ -1290,6 +1294,9 @@ export function TvDetailClientNew({
                             initialFavorite={initialListStatus?.favorite ?? null}
                             initialWatchlist={initialListStatus?.watchlist ?? null}
                             initialWatched={initialListStatus?.watched ?? null}
+                            initialHasReview={initialHasReview}
+                            reviewPromptEligible={reviewPromptEligible}
+                            title={tv.name ?? tv.title ?? "TV Show"}
                         />
                         <ShareButton
                             mediaType="tv"

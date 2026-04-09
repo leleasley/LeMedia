@@ -285,6 +285,7 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
               backdropUrl={backdropImage}
               posterUrl={poster}
               year={releaseYear ?? null}
+              initialHasReview={Boolean(userReview)}
               initialListStatus={listStatus}
             />
           </div>

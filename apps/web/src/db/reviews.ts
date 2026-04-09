@@ -2,6 +2,61 @@ import { normalizeGroupList } from "@/lib/groups";
 import { getPool } from "./core";
 
 
+export type ReviewReactionSummary = {
+  helpfulCount: number;
+  viewerHasHelpful: boolean;
+};
+
+
+type ReviewReactionRow = {
+  review_id: number;
+  helpful_count: string | number;
+  viewer_has_helpful: boolean;
+};
+
+
+async function getReviewReactionSummaryMap(reviewIds: number[], viewerUserId?: number | null) {
+  if (!reviewIds.length) return new Map<number, ReviewReactionSummary>();
+
+  const p = getPool();
+  const viewerId = viewerUserId ?? null;
+  const res = await p.query(
+    `SELECT
+        r.id AS review_id,
+        COUNT(rr.user_id)::int AS helpful_count,
+        COALESCE(BOOL_OR(rr.user_id = $2), FALSE) AS viewer_has_helpful
+     FROM user_review r
+     LEFT JOIN review_reaction rr
+       ON rr.review_id = r.id
+      AND rr.reaction = 'helpful'
+     WHERE r.id = ANY($1::bigint[])
+     GROUP BY r.id`,
+    [reviewIds, viewerId]
+  );
+
+  return new Map<number, ReviewReactionSummary>(
+    (res.rows as ReviewReactionRow[]).map((row) => [
+      Number(row.review_id),
+      {
+        helpfulCount: Number(row.helpful_count ?? 0),
+        viewerHasHelpful: Boolean(row.viewer_has_helpful),
+      },
+    ])
+  );
+}
+
+
+function attachReactionSummary<T extends { id: number }>(
+  items: T[],
+  reactionMap: Map<number, ReviewReactionSummary>
+) {
+  return items.map((item) => ({
+    ...item,
+    reactions: reactionMap.get(item.id) ?? { helpfulCount: 0, viewerHasHelpful: false },
+  }));
+}
+
+
 // ============================================
 // User Reviews
 // ============================================
@@ -123,7 +178,7 @@ export async function listUserReviewsForUser(input: {
 }
 
 
-export async function getRecentReviewsByUser(userId: number, limit = 10) {
+export async function getRecentReviewsByUser(userId: number, limit = 10, viewerUserId?: number | null) {
   const p = getPool();
   const safeLimit = Math.min(Math.max(limit, 1), 50);
   const res = await p.query(
@@ -153,7 +208,7 @@ export async function getRecentReviewsByUser(userId: number, limit = 10) {
     [userId, safeLimit]
   );
 
-  return res.rows.map(r => ({
+  const reviews = res.rows.map(r => ({
     id: r.id as number,
     userId: r.user_id as number,
     mediaType: r.media_type as "movie" | "tv",
@@ -175,10 +230,22 @@ export async function getRecentReviewsByUser(userId: number, limit = 10) {
       groups: normalizeGroupList(r.groups as string),
     },
   }));
+
+  const reactionMap = await getReviewReactionSummaryMap(
+    reviews.map((review) => review.id),
+    viewerUserId
+  );
+
+  return attachReactionSummary(reviews, reactionMap);
 }
 
 
-export async function getReviewsForMedia(mediaType: "movie" | "tv", tmdbId: number, limit = 50) {
+export async function getReviewsForMedia(
+  mediaType: "movie" | "tv",
+  tmdbId: number,
+  limit = 50,
+  viewerUserId?: number | null
+) {
   const p = getPool();
   const res = await p.query(
     `SELECT
@@ -206,7 +273,7 @@ export async function getReviewsForMedia(mediaType: "movie" | "tv", tmdbId: numb
      LIMIT $3`,
     [mediaType, tmdbId, limit]
   );
-  return res.rows.map(r => ({
+  const reviews = res.rows.map(r => ({
     id: r.id as number,
     userId: r.user_id as number,
     mediaType: r.media_type as "movie" | "tv",
@@ -228,10 +295,17 @@ export async function getReviewsForMedia(mediaType: "movie" | "tv", tmdbId: numb
       groups: normalizeGroupList(r.groups as string),
     },
   }));
+
+  const reactionMap = await getReviewReactionSummaryMap(
+    reviews.map((review) => review.id),
+    viewerUserId
+  );
+
+  return attachReactionSummary(reviews, reactionMap);
 }
 
 
-export async function getRecentReviews(limit = 20) {
+export async function getRecentReviews(limit = 20, viewerUserId?: number | null) {
   const p = getPool();
   const res = await p.query(
     `SELECT
@@ -256,7 +330,7 @@ export async function getRecentReviews(limit = 20) {
      LIMIT $1`,
     [limit]
   );
-  return res.rows.map(r => ({
+  const reviews = res.rows.map(r => ({
     id: r.id as number,
     userId: r.user_id as number,
     mediaType: r.media_type as "movie" | "tv",
@@ -276,6 +350,40 @@ export async function getRecentReviews(limit = 20) {
       groups: normalizeGroupList(r.groups as string),
     },
   }));
+
+  const reactionMap = await getReviewReactionSummaryMap(
+    reviews.map((review) => review.id),
+    viewerUserId
+  );
+
+  return attachReactionSummary(reviews, reactionMap);
+}
+
+
+export async function getReviewReactions(reviewId: number, viewerUserId?: number | null): Promise<ReviewReactionSummary> {
+  const reactionMap = await getReviewReactionSummaryMap([reviewId], viewerUserId);
+  return reactionMap.get(reviewId) ?? { helpfulCount: 0, viewerHasHelpful: false };
+}
+
+
+export async function addReviewReaction(reviewId: number, userId: number, reaction: "helpful" = "helpful") {
+  const p = getPool();
+  await p.query(
+    `INSERT INTO review_reaction (review_id, user_id, reaction)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (review_id, user_id, reaction) DO NOTHING`,
+    [reviewId, userId, reaction]
+  );
+}
+
+
+export async function removeReviewReaction(reviewId: number, userId: number, reaction: "helpful" = "helpful") {
+  const p = getPool();
+  await p.query(
+    `DELETE FROM review_reaction
+     WHERE review_id = $1 AND user_id = $2 AND reaction = $3`,
+    [reviewId, userId, reaction]
+  );
 }
 
 

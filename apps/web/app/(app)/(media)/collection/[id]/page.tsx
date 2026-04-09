@@ -7,7 +7,7 @@ import { CollectionRequestButton } from "@/components/Requests/CollectionRequest
 import { Film, Layers, Star, CheckCircle2 } from "lucide-react";
 import { getImageProxyEnabled } from "@/lib/app-settings";
 import { getUser } from "@/auth";
-import { getUserByUsername, listUserMediaList, upsertUser } from "@/db";
+import { getUserByUsername, getUserReviewForMedia, listUserMediaList, upsertUser } from "@/db";
 import { CollectionWatchedBulkActions } from "@/components/Collection/CollectionWatchedBulkActions";
 
 const Params = z.object({ id: z.coerce.number().int() });
@@ -84,12 +84,15 @@ export default async function CollectionPage({ params }: { params: ParamsInput }
 
   // Franchise completion: use only explicit watched-list entries so bulk mark/unmark works correctly.
   let watchedMovieIds = new Set<number>();
+  let reviewedMovieIds = new Set<number>();
+  let dbUserId: number | null = null;
   try {
     const user = await getUser().catch(() => null);
     if (user?.username) {
       const dbUser = await getUserByUsername(user.username).catch(() => null)
         ?? await upsertUser(user.username, user.groups).catch(() => null);
       if (dbUser?.id) {
+        dbUserId = dbUser.id;
         const explicitWatched = await listUserMediaList({ userId: dbUser.id, listType: "watched", limit: 5000 }).catch(() => []);
 
         const explicitWatchedIds = explicitWatched
@@ -101,6 +104,25 @@ export default async function CollectionPage({ params }: { params: ParamsInput }
     }
   } catch {
     watchedMovieIds = new Set<number>();
+  }
+
+  if (dbUserId) {
+    try {
+      const reviewedIds = await Promise.all(
+        parts.map(async (movie: any) => {
+          const tmdbId = Number(movie.id);
+          if (!Number.isFinite(tmdbId) || tmdbId <= 0) return null;
+          const review = await getUserReviewForMedia(dbUserId as number, "movie", tmdbId).catch(() => null);
+          return review ? tmdbId : null;
+        })
+      );
+
+      reviewedMovieIds = new Set(
+        reviewedIds.filter((tmdbId): tmdbId is number => Number.isFinite(tmdbId) && tmdbId > 0)
+      );
+    } catch {
+      reviewedMovieIds = new Set<number>();
+    }
   }
 
   const watchedCount = parts.filter((movie: any) => watchedMovieIds.has(Number(movie.id))).length;
@@ -189,7 +211,13 @@ export default async function CollectionPage({ params }: { params: ParamsInput }
             <p className="mt-2 text-xs text-emerald-100/80">
               {remainingCount === 0 ? "Collection complete. Nice." : `${remainingCount} title${remainingCount === 1 ? "" : "s"} left to finish this franchise.`}
             </p>
-            <CollectionWatchedBulkActions movieIds={parts.map((movie: any) => Number(movie.id)).filter((idValue: number) => Number.isFinite(idValue) && idValue > 0)} />
+            <CollectionWatchedBulkActions
+              items={partsSorted.map((movie: any) => ({
+                tmdbId: Number(movie.id),
+                title: movie.title ?? movie.name ?? `TMDB ${movie.id}`,
+                hasReview: reviewedMovieIds.has(Number(movie.id)),
+              })).filter((item: { tmdbId: number }) => Number.isFinite(item.tmdbId) && item.tmdbId > 0)}
+            />
           </div>
 
           <div className="media-actions">

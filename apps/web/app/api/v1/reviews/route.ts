@@ -21,8 +21,9 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const limit = Math.min(Math.max(Number(searchParams.get("limit") ?? 20), 1), 50);
+  const dbUser = await upsertUser(user.username, user.groups);
 
-  const reviews = await getRecentReviews(limit);
+  const reviews = await getRecentReviews(limit, dbUser.id);
   return NextResponse.json({ reviews });
 }
 

@@ -68,6 +68,8 @@ function AppHeader({
     } | null;
 }) {
     const [isScrolled, setIsScrolled] = useState(false);
+    const pathname = usePathname();
+    const hideMobileHeader = isDesktop === false && (pathname?.startsWith("/discover") ?? false);
 
     useEffect(() => {
         let rafId = 0;
@@ -104,7 +106,7 @@ function AppHeader({
     return (
         <>
             {/* Mobile header - iOS liquid glass style */}
-            {isDesktop === false ? (
+            {isDesktop === false && !hideMobileHeader ? (
                 <div
                     data-search-header
                     className={cn(

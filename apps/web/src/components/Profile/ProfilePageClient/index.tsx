@@ -6,6 +6,7 @@ import Image from "next/image";
 import { ArrowRightCircle, ShieldCheck, Lock, Film, Tv, CheckCircle2, XCircle } from "lucide-react";
 import useSWR from "swr";
 import { ProfileHeader } from "@/components/Profile/ProfileHeader";
+import { ProfileBackgroundOverride } from "@/components/Profile/ProfileBackgroundOverride";
 import { ImageFader } from "@/components/Common/ImageFader";
 import { ProgressCircle } from "@/components/Common/ProgressCircle";
 import { RecentRequestsSlider } from "@/components/Dashboard/RecentRequestsSlider";
@@ -265,16 +266,18 @@ export function ProfilePageClient({
   };
 
   return (
-    <>
+    <div className="profile-page-root">
+      <ProfileBackgroundOverride />
       {/* Background Image Fader */}
       {backgroundImages.length > 0 && (
-        <div className="absolute left-0 right-0 -top-16 z-0 h-[65vh] max-h-[720px] min-h-[480px]">
+        <div className="profile-page-backdrop absolute -left-3 -right-3 z-0 h-[65vh] max-h-[720px] min-h-[480px] lg:-left-6 lg:-right-6">
           <ImageFader
             backgroundImages={backgroundImages}
             isDarker
             className="absolute inset-0 mask-image-gradient-b"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-[#0b1120] via-[#0b1120]/60 to-transparent" />
+          <div className="profile-page-backdrop-fade absolute inset-x-0 bottom-0 h-28" />
         </div>
       )}
 
@@ -572,6 +575,6 @@ export function ProfilePageClient({
           <p className="text-lg">No requests yet. Start requesting your favorite movies and shows!</p>
         </div>
       )}
-    </>
+    </div>
   );
 }

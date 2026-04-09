@@ -25,7 +25,7 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
 
   const dbUser = await upsertUser(user.username, user.groups);
   const [reviews, stats, userReview] = await Promise.all([
-    getReviewsForMedia(parsed.mediaType, parsed.tmdbId, limit),
+    getReviewsForMedia(parsed.mediaType, parsed.tmdbId, limit, dbUser.id),
     getReviewStatsForMedia(parsed.mediaType, parsed.tmdbId),
     getUserReviewForMedia(dbUser.id, parsed.mediaType, parsed.tmdbId),
   ]);

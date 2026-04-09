@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import Image from "next/image";
-import { Star, Loader2, Trash2, EyeOff, Eye, MessageSquare } from "lucide-react";
+import Link from "next/link";
+import { Star, Loader2, Trash2, EyeOff, Eye, MessageSquare, ThumbsUp } from "lucide-react";
 import { formatDate } from "@/lib/dateFormat";
 import { tmdbImageUrl } from "@/lib/tmdb-images";
 import { cn } from "@/lib/utils";
@@ -47,6 +48,10 @@ interface Review {
   createdAt: string;
   updatedAt: string;
   user: ReviewUser;
+  reactions: {
+    helpfulCount: number;
+    viewerHasHelpful: boolean;
+  };
 }
 
 interface ReviewsResponse {
@@ -123,6 +128,8 @@ export function MediaReviews({ tmdbId, mediaType, title, posterPath, releaseYear
   const [submitting, setSubmitting] = useState(false);
   const [revealed, setRevealed] = useState<Record<number, boolean>>({});
   const [openThreads, setOpenThreads] = useState<Record<number, boolean>>({});
+  const [reactingReviewIds, setReactingReviewIds] = useState<Record<number, boolean>>({});
+  const reviewTextRef = useRef<HTMLTextAreaElement | null>(null);
 
   const userReview = data?.userReview ?? null;
   const viewer = data?.viewer ?? null;
@@ -138,6 +145,22 @@ export function MediaReviews({ tmdbId, mediaType, title, posterPath, releaseYear
       setSpoiler(false);
     }
   }, [userReview]);
+
+  useEffect(() => {
+    const focusReviewComposer = () => {
+      if (window.location.hash !== "#reviews") return;
+      window.setTimeout(() => {
+        reviewTextRef.current?.focus();
+      }, 120);
+    };
+
+    focusReviewComposer();
+    window.addEventListener("hashchange", focusReviewComposer);
+
+    return () => {
+      window.removeEventListener("hashchange", focusReviewComposer);
+    };
+  }, []);
 
   const averageDisplay = useMemo(() => {
     if (!data?.stats?.total) return null;
@@ -174,6 +197,9 @@ export function MediaReviews({ tmdbId, mediaType, title, posterPath, releaseYear
       }
 
       await mutate();
+      window.dispatchEvent(new CustomEvent("media-review-state-changed", {
+        detail: { mediaType, tmdbId, hasReview: true },
+      }));
     } catch (err) {
       logger.error("[Reviews] Error saving review", err);
       toast.error("Failed to save review");
@@ -195,6 +221,9 @@ export function MediaReviews({ tmdbId, mediaType, title, posterPath, releaseYear
         return;
       }
       await mutate();
+      window.dispatchEvent(new CustomEvent("media-review-state-changed", {
+        detail: { mediaType, tmdbId, hasReview: false },
+      }));
     } catch (err) {
       logger.error("[Reviews] Error deleting review", err);
       toast.error("Failed to delete review");
@@ -203,12 +232,68 @@ export function MediaReviews({ tmdbId, mediaType, title, posterPath, releaseYear
     }
   };
 
+  const handleHelpfulToggle = async (review: Review) => {
+    if (!viewer?.id) {
+      toast.info("Sign in to react to reviews.");
+      return;
+    }
+
+    const currentlyHelpful = Boolean(review.reactions?.viewerHasHelpful);
+    setReactingReviewIds((prev) => ({ ...prev, [review.id]: true }));
+
+    try {
+      const response = currentlyHelpful
+        ? await csrfFetch(`/api/v1/reviews/review/${review.id}/reactions?reaction=helpful`, {
+            method: "DELETE",
+          })
+        : await csrfFetch(`/api/v1/reviews/review/${review.id}/reactions`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ reaction: "helpful" }),
+          });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => null);
+        toast.error(error?.error || "Failed to update reaction");
+        return;
+      }
+
+      const payload = await response.json().catch(() => null) as {
+        reactions?: { helpfulCount: number; viewerHasHelpful: boolean };
+      } | null;
+      const nextReactions = payload?.reactions ?? null;
+
+      await mutate((current) => {
+        if (!current || !nextReactions) return current;
+        return {
+          ...current,
+          reviews: current.reviews.map((item) =>
+            item.id === review.id
+              ? {
+                  ...item,
+                  reactions: nextReactions,
+                }
+              : item
+          ),
+        };
+      }, { revalidate: false });
+    } catch (err) {
+      logger.error("[Reviews] Error updating reaction", err);
+      toast.error("Failed to update reaction");
+    } finally {
+      setReactingReviewIds((prev) => ({ ...prev, [review.id]: false }));
+    }
+  };
+
   const reviews = data?.reviews ?? [];
   const posterUrl = tmdbImageUrl(posterPath ?? null, "w300", imageProxyEnabled);
   const letterboxdReviews = letterboxdData?.reviews ?? [];
+  const titleHref = `/${mediaType}/${tmdbId}#reviews`;
 
   return (
-    <div className="mt-10">
+    <div id="reviews" className="mt-10 scroll-mt-24">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h3 className="text-lg sm:text-xl font-semibold text-white">Reviews</h3>
@@ -224,18 +309,23 @@ export function MediaReviews({ tmdbId, mediaType, title, posterPath, releaseYear
       </div>
 
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-        <form onSubmit={handleSubmit} className="glass-strong rounded-xl border border-white/10 p-4 space-y-4">
+        <form onSubmit={handleSubmit} className="glass-strong rounded-2xl border border-white/10 p-4 space-y-4 bg-gradient-to-b from-white/[0.05] to-transparent">
           <div className="flex items-center gap-3">
-            {posterUrl ? (
-              <div className="relative h-16 w-12 overflow-hidden rounded-md border border-white/10">
-                <Image src={posterUrl} alt={title} fill className="object-cover" />
-              </div>
-            ) : (
-              <div className="h-16 w-12 rounded-md bg-white/5" />
-            )}
+            <Link href={titleHref} aria-label={`Open ${title} page`} className="group/poster shrink-0">
+              {posterUrl ? (
+                <div className="relative h-16 w-12 overflow-hidden rounded-md border border-white/10 transition-transform duration-300 group-hover/poster:scale-[1.03]">
+                  <Image src={posterUrl} alt={title} fill className="object-cover transition-transform duration-500 group-hover/poster:scale-110" />
+                </div>
+              ) : (
+                <div className="h-16 w-12 rounded-md bg-white/5 transition-colors group-hover/poster:bg-white/10" />
+              )}
+            </Link>
             <div>
               <div className="text-sm font-semibold text-white">Your review</div>
               <div className="text-xs text-gray-400">Rate {title}</div>
+              <Link href={titleHref} className="mt-1 inline-flex text-[11px] font-medium text-amber-200 transition-colors hover:text-amber-100">
+                Open title section
+              </Link>
             </div>
           </div>
 
@@ -263,6 +353,8 @@ export function MediaReviews({ tmdbId, mediaType, title, posterPath, releaseYear
 
           <div className="glass-strong rounded-lg border border-white/10 focus-within:border-white/20 transition-colors">
             <textarea
+              ref={reviewTextRef}
+              id="review-textarea"
               value={reviewText}
               onChange={(e) => setReviewText(e.target.value)}
               placeholder="Write a short review (optional)"
@@ -325,8 +417,12 @@ export function MediaReviews({ tmdbId, mediaType, title, posterPath, releaseYear
               });
               const avatarAlt = getAvatarAlt({ displayName, username: review.user.username });
               return (
-                <div id={`review-${review.id}`} key={review.id} className="glass-strong rounded-xl border border-white/10 p-4">
-                  <div className="flex items-center gap-3">
+                <div
+                  id={`review-${review.id}`}
+                  key={review.id}
+                  className="glass-strong rounded-2xl border border-white/10 bg-gradient-to-b from-white/[0.05] to-transparent p-4 transition-colors hover:border-white/20"
+                >
+                  <div className="flex items-start gap-3">
                     <div className="relative h-9 w-9 overflow-hidden rounded-full">
                       <Image
                         src={avatarSrc}
@@ -336,12 +432,24 @@ export function MediaReviews({ tmdbId, mediaType, title, posterPath, releaseYear
                         unoptimized={shouldBypassNextImage(avatarSrc)}
                       />
                     </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="text-sm font-semibold text-white">{displayName}</span>
-                        <span className="text-xs text-gray-400">{formatDate(review.createdAt)}</span>
+                        <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-gray-300">
+                          {formatDate(review.createdAt)}
+                        </span>
+                        {review.updatedAt !== review.createdAt ? (
+                          <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-gray-400">
+                            Edited
+                          </span>
+                        ) : null}
+                        {review.spoiler ? (
+                          <span className="rounded-full border border-amber-400/20 bg-amber-400/10 px-2 py-0.5 text-[11px] text-amber-100">
+                            Spoilers
+                          </span>
+                        ) : null}
                       </div>
-                      <div className="flex items-center gap-1">
+                      <div className="mt-2 flex items-center gap-1">
                         {Array.from({ length: 5 }).map((_, idx) => (
                           <Star
                             key={idx}
@@ -365,22 +473,46 @@ export function MediaReviews({ tmdbId, mediaType, title, posterPath, releaseYear
                     )}
                   </div>
 
-                  {review.reviewText && (
-                    <p className={cn("mt-3 text-sm text-gray-200", isSpoilerHidden && "blur-sm select-none")}
-                       aria-hidden={isSpoilerHidden}>
-                      {review.reviewText}
-                    </p>
+                  {review.reviewText ? (
+                    <div className="mt-3 rounded-xl border border-white/10 bg-black/10 p-3">
+                      <p
+                        className={cn("text-sm leading-6 text-gray-200", isSpoilerHidden && "blur-sm select-none")}
+                        aria-hidden={isSpoilerHidden}
+                      >
+                        {review.reviewText}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="mt-3 rounded-xl border border-dashed border-white/10 bg-white/[0.03] p-3 text-sm text-gray-500">
+                      Rated without written notes.
+                    </div>
                   )}
 
-                  <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-3">
-                    <button
-                      type="button"
-                      onClick={() => setOpenThreads((prev) => ({ ...prev, [review.id]: !prev[review.id] }))}
-                      className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-white"
-                    >
-                      <MessageSquare className="h-3.5 w-3.5" />
-                      {openThreads[review.id] ? "Hide comments" : "View comments"}
-                    </button>
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void handleHelpfulToggle(review)}
+                        disabled={Boolean(reactingReviewIds[review.id])}
+                        className={cn(
+                          "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+                          review.reactions?.viewerHasHelpful
+                            ? "border-amber-400/30 bg-amber-400/10 text-amber-100 hover:border-amber-300/40 hover:text-amber-50"
+                            : "border-white/10 bg-white/5 text-gray-300 hover:border-white/20 hover:text-white"
+                        )}
+                      >
+                        {reactingReviewIds[review.id] ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ThumbsUp className="h-3.5 w-3.5" />}
+                        Helpful {review.reactions?.helpfulCount ? `(${review.reactions.helpfulCount})` : ""}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setOpenThreads((prev) => ({ ...prev, [review.id]: !prev[review.id] }))}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-white/20 hover:text-white"
+                      >
+                        <MessageSquare className="h-3.5 w-3.5" />
+                        {openThreads[review.id] ? "Hide comments" : "View comments"}
+                      </button>
+                    </div>
                   </div>
 
                   {openThreads[review.id] && (

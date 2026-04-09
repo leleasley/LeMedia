@@ -165,7 +165,7 @@ export function MediaCarousel({ title, items, itemType, viewAllHref, className, 
                     onClick={() => scroll("left")}
                     disabled={!canScrollLeft}
                     className={cn(
-                        "absolute left-2 top-1/2 -translate-y-1/2 z-20 p-3 rounded-full glass-strong transition-all duration-300 hover:scale-110 active:scale-95 disabled:opacity-0 disabled:pointer-events-none",
+                        "absolute left-2 top-1/2 z-20 hidden -translate-y-1/2 rounded-full glass-strong p-3 transition-all duration-300 hover:scale-110 active:scale-95 disabled:pointer-events-none md:block",
                         canScrollLeft ? "opacity-0 group-hover/carousel:opacity-100" : "opacity-0"
                     )}
                     aria-label="Scroll left"
@@ -239,7 +239,7 @@ export function MediaCarousel({ title, items, itemType, viewAllHref, className, 
                     onClick={() => scroll("right")}
                     disabled={!canScrollRight}
                     className={cn(
-                        "absolute right-2 top-1/2 -translate-y-1/2 z-20 p-3 rounded-full glass-strong transition-all duration-300 hover:scale-110 active:scale-95 disabled:opacity-0 disabled:pointer-events-none",
+                        "absolute right-2 top-1/2 z-20 hidden -translate-y-1/2 rounded-full glass-strong p-3 transition-all duration-300 hover:scale-110 active:scale-95 disabled:pointer-events-none md:block",
                         canScrollRight ? "opacity-0 group-hover/carousel:opacity-100" : "opacity-0"
                     )}
                     aria-label="Scroll right"

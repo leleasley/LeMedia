@@ -7,7 +7,9 @@ export const metadata = {
 };
 export const revalidate = 0;
 
-import { getPopularMovies, getPopularTv, getTopRatedMovies, getTopRatedTv, getTrendingAll, getUpcomingMoviesUkLatest, getUpcomingTvAccurate, tmdbImageUrl } from "@/lib/tmdb";
+import { getMovie, getPopularMovies, getPopularTv, getTopRatedMovies, getTopRatedTv, getTrendingAll, getTv, getUpcomingMoviesUkLatest, getUpcomingTvAccurate, tmdbImageUrl } from "@/lib/tmdb";
+import { MediaCastScroller } from "@/components/Media/MediaCastScroller";
+import { DiscoverBackgroundOverride } from "@/components/Discover/DiscoverBackgroundOverride";
 import { MediaCarousel } from "@/components/Media/MediaCarousel";
 import { DiscoverHeroCarousel } from "@/components/Discover/DiscoverHeroCarousel";
 import { DashboardGenreRail } from "@/components/Dashboard/DashboardGenreRail";
@@ -33,6 +35,87 @@ type MediaCard = {
   overview?: string;
   type?: "movie" | "tv";
 };
+
+type HeroCard = MediaCard & {
+  backdrop: string | null;
+  poster: string | null;
+  logoUrl?: string | null;
+  mobileRank?: number;
+};
+
+function pickHeroLogoPath(logos: any[] | null | undefined): string | null {
+  const candidates = Array.isArray(logos) ? logos.filter(Boolean) : [];
+  if (!candidates.length) return null;
+
+  const scored = candidates
+    .filter((logo) => Boolean(logo.file_path))
+    .sort((left, right) => {
+      const leftLanguage = left.iso_639_1 === "en" ? 3 : left.iso_639_1 == null ? 2 : 1;
+      const rightLanguage = right.iso_639_1 === "en" ? 3 : right.iso_639_1 == null ? 2 : 1;
+      if (leftLanguage !== rightLanguage) return rightLanguage - leftLanguage;
+
+      const leftSvg = String(left.file_path).endsWith(".svg") ? 1 : 0;
+      const rightSvg = String(right.file_path).endsWith(".svg") ? 1 : 0;
+      if (leftSvg !== rightSvg) return rightSvg - leftSvg;
+
+      return Number(right.vote_average ?? 0) - Number(left.vote_average ?? 0);
+    });
+
+  return scored[0]?.file_path ?? null;
+}
+
+async function withHeroLogos(items: HeroCard[], imageProxyEnabled: boolean): Promise<HeroCard[]> {
+  if (!items.length) return items;
+
+  const logoEntries = await Promise.all(
+    items.map(async (item) => {
+      try {
+        const details = item.type === "tv" ? await getTv(item.id) : await getMovie(item.id);
+        const filePath = pickHeroLogoPath(details?.images?.logos);
+        return [
+          `${item.type}:${item.id}`,
+          tmdbImageUrl(filePath, "original", imageProxyEnabled),
+        ] as const;
+      } catch {
+        return [`${item.type}:${item.id}`, null] as const;
+      }
+    })
+  );
+
+  const logosByKey = new Map(logoEntries);
+
+  return items.map((item) => ({
+    ...item,
+    logoUrl: logosByKey.get(`${item.type}:${item.id}`) ?? null,
+  }));
+}
+
+function buildRankedMobileHero(items: HeroCard[], targetLength = 10): HeroCard[] {
+  const movies = items.filter((item) => item.type === "movie");
+  const series = items.filter((item) => item.type === "tv");
+  const paired: HeroCard[] = [];
+  const pairCount = Math.max(1, Math.ceil(targetLength / 2));
+
+  for (let index = 0; index < pairCount; index += 1) {
+    const rank = index + 1;
+    const movie = movies[index];
+    const tv = series[index];
+
+    if (movie) {
+      paired.push({ ...movie, mobileRank: rank });
+    }
+
+    if (tv) {
+      paired.push({ ...tv, mobileRank: rank });
+    }
+
+    if (paired.length >= targetLength) {
+      break;
+    }
+  }
+
+  return paired.slice(0, targetLength);
+}
 
 function toCards(list: any[], type: "movie" | "tv", useProxy: boolean): MediaCard[] {
   return (list ?? [])
@@ -81,7 +164,8 @@ export default async function Page() {
     }
   };
   const [
-    trendingRaw,
+    trendingPageOneRaw,
+    trendingPageTwoRaw,
     popularMoviesRaw,
     popularTvRaw,
     topRatedMoviesRaw,
@@ -89,7 +173,8 @@ export default async function Page() {
     upcomingMoviesRaw,
     upcomingTvRaw
   ] = await Promise.all([
-    enabledTypes.has(DashboardSliderType.TRENDING) ? safe(() => getTrendingAll()) : Promise.resolve([]),
+    enabledTypes.has(DashboardSliderType.TRENDING) ? safe(() => getTrendingAll(1)) : Promise.resolve([]),
+    enabledTypes.has(DashboardSliderType.TRENDING) ? safe(() => getTrendingAll(2)) : Promise.resolve([]),
     enabledTypes.has(DashboardSliderType.POPULAR_MOVIES) ? safe(() => getPopularMovies()) : Promise.resolve([]),
     enabledTypes.has(DashboardSliderType.POPULAR_TV) ? safe(() => getPopularTv()) : Promise.resolve([]),
     enabledTypes.has(DashboardSliderType.TOP_RATED_MOVIES) ? safe(() => getTopRatedMovies()) : Promise.resolve([]),
@@ -98,9 +183,18 @@ export default async function Page() {
     enabledTypes.has(DashboardSliderType.UPCOMING_TV) ? safe(() => getUpcomingTvAccurate()) : Promise.resolve([])
   ]);
 
-  const trending = (trendingRaw ?? [])
+  const trendingCombined = [...(trendingPageOneRaw ?? []), ...(trendingPageTwoRaw ?? [])];
+  const seenTrendingIds = new Set<string>();
+
+  const trending: HeroCard[] = trendingCombined
     .filter((item: any) => (item?.media_type === "movie" || item?.media_type === "tv") && item.id)
-    .slice(0, 20)
+    .filter((item: any) => {
+      const key = `${item.media_type}:${item.id}`;
+      if (seenTrendingIds.has(key)) return false;
+      seenTrendingIds.add(key);
+      return true;
+    })
+    .slice(0, 40)
     .map((item: any) => ({
       id: item.id,
       title: item.media_type === "movie" ? item.title ?? "Untitled" : item.name ?? "Untitled",
@@ -114,8 +208,13 @@ export default async function Page() {
       overview: item.overview,
       type: item.media_type as "movie" | "tv"
     }));
-  
-  const heroItems = trending.slice(0, 10);
+
+  const desktopHeroItems = trending.slice(0, 10);
+  const mobileHeroItems = buildRankedMobileHero(trending, 20);
+  const [heroItems, mobileHeroSlides] = await Promise.all([
+    withHeroLogos(desktopHeroItems, imageProxyEnabled),
+    withHeroLogos(mobileHeroItems, imageProxyEnabled),
+  ]);
   const popularMovies = toCards(popularMoviesRaw, "movie", imageProxyEnabled);
   const popularTv = toCards(popularTvRaw, "tv", imageProxyEnabled);
   const topRatedMovies = toCards(topRatedMoviesRaw, "movie", imageProxyEnabled);
@@ -341,6 +440,7 @@ export default async function Page() {
 
   return (
     <div className="discover-page-root">
+      <DiscoverBackgroundOverride />
       {/* Hero Carousel with Trending Content */}
       <div className="discover-hero-bleed">
         <DiscoverHeroCarousel
@@ -354,11 +454,34 @@ export default async function Page() {
               posterUrl: item.poster,
               rating: item.rating,
               year: item.year,
-              type: item.type
+              type: item.type,
+              logoUrl: item.logoUrl,
             }))}
+          mobileItems={mobileHeroSlides
+            .filter((item: any) => item.backdrop ?? item.poster)
+            .map((item: any) => ({
+              id: item.id,
+              title: item.title,
+              overview: item.overview,
+              backdropUrl: item.backdrop,
+              posterUrl: item.poster,
+              rating: item.rating,
+              year: item.year,
+              type: item.type,
+              logoUrl: item.logoUrl,
+              mobileRank: item.mobileRank,
+            }))}
+          isAdmin={u.isAdmin}
+          profile={{
+            username: u.username,
+            displayName: u.displayName ?? null,
+            email: null,
+            avatarUrl: null,
+            avatarVersion: null,
+            jellyfinUserId: u.jellyfinUserId ?? null,
+          }}
         />
       </div>
-      <div className="discover-hero-mobile-fade md:hidden" aria-hidden="true" />
 
       {/* Regular content */}
       <div className="discover-page-container mt-8">

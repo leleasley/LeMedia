@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import useSWR from "swr";
@@ -469,18 +470,20 @@ export function WatchPartyRoomClient({ partyId }: { partyId: string }) {
   const cooldownRemainingSeconds = Math.ceil(cooldownRemaining / 1000);
   const canSendChat =
     !me?.chatMuted && pendingAction !== "chat" && cooldownRemainingSeconds <= 0;
+  const partyStatus = party?.status;
+  const playbackUpdatedAt = party?.playbackUpdatedAt ?? null;
+  const isPartyPaused = party?.isPaused ?? true;
 
   // ─── Effects ────────────────────────────────────────────────────────────
 
   // Auto-scroll when messages grow
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allMessages.length]);
 
   useEffect(() => {
-    if (party?.status && party.status !== "active") setReviewModalOpen(true);
-  }, [party?.status]);
+    if (partyStatus && partyStatus !== "active") setReviewModalOpen(true);
+  }, [partyStatus]);
 
   useEffect(() => {
     if (chatCooldownUntil <= Date.now()) return;
@@ -545,20 +548,17 @@ export function WatchPartyRoomClient({ partyId }: { partyId: string }) {
       esRef.current = null;
       setSseConnected(false);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [partyId]);
 
   // Reload iframe when host changes playback state
   useEffect(() => {
-    if (!party) return;
-    const updatedAt = party.playbackUpdatedAt ?? null;
-    if (updatedAt && updatedAt !== prevPlaybackUpdatedAtRef.current) {
-      prevPlaybackUpdatedAtRef.current = updatedAt;
-      if (!party.isPaused) {
+    if (playbackUpdatedAt && playbackUpdatedAt !== prevPlaybackUpdatedAtRef.current) {
+      prevPlaybackUpdatedAtRef.current = playbackUpdatedAt;
+      if (!isPartyPaused) {
         setIframeKey((k) => k + 1);
       }
     }
-  }, [party?.playbackUpdatedAt, party?.isPaused]);
+  }, [playbackUpdatedAt, isPartyPaused]);
 
   // ─── Action handlers ─────────────────────────────────────────────────────
 
@@ -1520,9 +1520,12 @@ export function WatchPartyRoomClient({ partyId }: { partyId: string }) {
                             }`}
                           />
                           {p.avatarUrl ? (
-                            <img
+                            <Image
                               src={p.avatarUrl}
-                              alt=""
+                              alt={`${p.displayName || p.username} avatar`}
+                              width={28}
+                              height={28}
+                              unoptimized
                               className="h-7 w-7 shrink-0 rounded-full object-cover"
                             />
                           ) : (

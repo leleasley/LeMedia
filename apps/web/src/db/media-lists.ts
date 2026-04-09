@@ -13,6 +13,13 @@ export type UserMediaListItem = {
 };
 
 
+export type PendingReviewListItem = {
+  mediaType: "movie" | "tv";
+  tmdbId: number;
+  watchedAt: string;
+};
+
+
 export async function addUserMediaListItem(input: {
   userId: number;
   listType: UserMediaListType;
@@ -155,4 +162,52 @@ export async function hasUserMediaListEntry(input: {
     [input.userId, input.mediaType, input.tmdbId, listTypes]
   );
   return res.rows.length > 0;
+}
+
+
+export async function getPendingReviewQueue(input: {
+  userId: number;
+  limit?: number;
+}) {
+  await ensureMediaListSchema();
+  const p = getPool();
+  const limit = Math.min(Math.max(input.limit ?? 6, 1), 24);
+
+  const [countRes, itemsRes] = await Promise.all([
+    p.query(
+      `SELECT COUNT(*)::int AS count
+       FROM user_media_list uml
+       LEFT JOIN user_review ur
+         ON ur.user_id = uml.user_id
+        AND ur.media_type = uml.media_type
+        AND ur.tmdb_id = uml.tmdb_id
+       WHERE uml.user_id = $1
+         AND uml.list_type = 'watched'
+         AND ur.id IS NULL`,
+      [input.userId]
+    ),
+    p.query(
+      `SELECT uml.media_type, uml.tmdb_id, uml.created_at
+       FROM user_media_list uml
+       LEFT JOIN user_review ur
+         ON ur.user_id = uml.user_id
+        AND ur.media_type = uml.media_type
+        AND ur.tmdb_id = uml.tmdb_id
+       WHERE uml.user_id = $1
+         AND uml.list_type = 'watched'
+         AND ur.id IS NULL
+       ORDER BY uml.created_at DESC
+       LIMIT $2`,
+      [input.userId, limit]
+    )
+  ]);
+
+  return {
+    count: Number(countRes.rows[0]?.count ?? 0),
+    items: itemsRes.rows.map((row) => ({
+      mediaType: row.media_type as "movie" | "tv",
+      tmdbId: Number(row.tmdb_id),
+      watchedAt: String(row.created_at),
+    })) satisfies PendingReviewListItem[],
+  };
 }
