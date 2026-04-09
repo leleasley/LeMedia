@@ -523,11 +523,13 @@
     @apply relative -mx-2 bg-cover bg-center px-2 md:-mx-3 md:px-3 lg:-mx-6 lg:px-6;
     margin-top: -7rem;
     padding-top: calc(7rem + env(safe-area-inset-top));
+    isolation: isolate;
   }
 
   .media-page-bg-image {
     @apply absolute inset-0 h-full w-full;
     z-index: -10;
+    pointer-events: none;
   }
 
   /* Locked visual match to app background; change only with explicit approval. */
@@ -806,16 +808,165 @@
 
   /* Mobile-only improvements for media info pages */
   @media (max-width: 639px) {
-    /* Hide the backdrop image on mobile - looks much cleaner */
     .media-page-bg-image {
-      display: none;
+      display: block;
+      height: clamp(30rem, 68svh, 40rem) !important;
     }
 
-    /* Adjust media page for mobile - no negative margins */
     .media-page {
-      margin-top: 0;
-      padding-top: calc(env(safe-area-inset-top) + 3.5rem);
-      @apply -mx-0 px-3;
+      margin-top: calc(-1 * (3.5rem + env(safe-area-inset-top) + 1rem));
+      padding-top: calc(env(safe-area-inset-top) + 9.5rem);
+      background-color: #0b1120;
+      @apply -mx-3 px-3;
+    }
+
+    .media-page-gradient {
+      background-image: linear-gradient(
+        180deg,
+        rgba(11, 17, 32, 0.14) 0%,
+        rgba(11, 17, 32, 0.5) 36%,
+        rgba(11, 17, 32, 0.88) 72%,
+        rgba(11, 17, 32, 1) 100%
+      );
+    }
+
+    .media-header {
+      @apply items-start pt-0;
+    }
+
+    .media-poster {
+      @apply w-28 rounded-2xl;
+    }
+
+    .media-title {
+      @apply mt-5 w-full text-left;
+    }
+
+    .media-title > h1 {
+      font-size: clamp(2rem, 8vw, 2.6rem);
+      line-height: 0.95;
+    }
+
+    h1 .media-year {
+      font-size: clamp(1.35rem, 5.5vw, 1.8rem);
+    }
+
+    .media-status,
+    .media-ratings-inline,
+    .media-attributes,
+    .media-actions {
+      @apply justify-start;
+    }
+
+    .media-tagline {
+      @apply text-left;
+    }
+
+    #media-social-info {
+      width: 100%;
+    }
+
+    /* Mobile action area — 3-row hierarchy */
+    .media-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      width: 100%;
+    }
+
+    .media-actions > * {
+      margin: 0 !important;
+    }
+
+    /* Row 1: primary action (Request) — full width */
+    .media-primary-row {
+      width: 100%;
+    }
+
+    .media-primary-row .media-action-button,
+    .media-primary-row .media-action-button.button-sm,
+    .media-primary-row .media-action-button.button-md {
+      width: 100%;
+      justify-content: center;
+      padding: 0.5rem 1rem;
+      font-size: 0.8125rem;
+      min-height: 2.375rem;
+    }
+
+    .media-primary-row .media-action-button > span {
+      width: 100%;
+      justify-content: center;
+      gap: 0.375rem;
+    }
+
+    .media-action-status {
+      justify-content: center;
+      padding: 0.5rem 0.75rem;
+      font-size: 0.8125rem;
+      width: 100%;
+    }
+
+    /* Row 2: secondary actions (Share + Trailer/Play) — side by side */
+    .media-secondary-row {
+      display: flex;
+      gap: 0.5rem;
+      width: 100%;
+    }
+
+    .media-secondary-row > * {
+      flex: 1 1 0%;
+      min-width: 0;
+    }
+
+    .media-secondary-row .media-action-button,
+    .media-secondary-row .media-action-button.button-sm,
+    .media-secondary-row .media-action-button.button-md {
+      width: 100%;
+      justify-content: center;
+      padding: 0.5rem 0.625rem;
+      font-size: 0.8125rem;
+      min-height: 2.375rem;
+    }
+
+    .media-secondary-row .media-action-button > span {
+      width: 100%;
+      justify-content: center;
+      gap: 0.325rem;
+    }
+
+    .media-secondary-row .media-action-icon-button,
+    .media-secondary-row .media-action-icon-button.button-md,
+    .media-secondary-row .media-action-icon-button.button-sm {
+      flex: 0 0 auto;
+      width: auto;
+      padding: 0.5rem 0.625rem;
+      min-height: 2.375rem;
+    }
+
+    /* Row 3: icon toolbar — compact, left-aligned, not stretched */
+    .media-list-buttons {
+      display: flex;
+      flex-wrap: nowrap;
+      justify-content: flex-start;
+      gap: 0.25rem;
+      width: 100%;
+    }
+
+    .media-list-buttons > * {
+      flex: 0 0 auto;
+      width: auto;
+    }
+
+    .media-overview {
+      @apply pt-6;
+    }
+
+    .media-overview p {
+      max-width: none;
+    }
+
+    ul.media-crew {
+      @apply mt-4 gap-4;
     }
 
     .discover-hero-bleed {

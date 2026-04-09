@@ -163,41 +163,45 @@ export function MovieActionButtons({
 
   return (
     <>
+      <div className="media-primary-row">
+        {/* Avoid flashing Radarr-derived labels before the aggregate determines availability. */}
+        {!aggregateLoaded ? (
+          <div
+            className="h-10 w-full rounded-lg border border-white/10 bg-white/5 opacity-0"
+            aria-hidden="true"
+          />
+        ) : !available ? (
+          <MovieRequestPanel
+            tmdbId={tmdbId}
+            prefetched={radarr ? { ...radarr, isAdmin } : undefined}
+            loading={isLoading}
+            title={title}
+            posterUrl={posterUrl}
+            backdropUrl={backdropUrl}
+            year={year}
+          />
+        ) : null}
+      </div>
+      <div className="media-secondary-row">
+        <ShareButton
+          mediaType="movie"
+          tmdbId={tmdbId}
+          title={title}
+          backdropPath={backdropUrl ?? null}
+          posterUrl={posterUrl ?? null}
+        />
+        {actionMenu}
+      </div>
       <MediaListButtons
         tmdbId={tmdbId}
         mediaType="movie"
+        className="media-list-buttons"
         initialFavorite={initialListStatus?.favorite ?? null}
         initialWatchlist={initialListStatus?.watchlist ?? null}
         initialWatched={initialListStatus?.watched ?? null}
         initialHasReview={initialHasReview}
         title={title}
       />
-      <ShareButton
-        mediaType="movie"
-        tmdbId={tmdbId}
-        title={title}
-        backdropPath={backdropUrl ?? null}
-        posterUrl={posterUrl ?? null}
-      />
-      {actionMenu}
-
-      {/* Avoid flashing Radarr-derived labels before the aggregate determines availability. */}
-      {!aggregateLoaded ? (
-        <div
-          className="h-10 w-28 rounded-lg border border-white/10 bg-white/5 opacity-0"
-          aria-hidden="true"
-        />
-      ) : !available ? (
-        <MovieRequestPanel
-          tmdbId={tmdbId}
-          prefetched={radarr ? { ...radarr, isAdmin } : undefined}
-          loading={isLoading}
-          title={title}
-          posterUrl={posterUrl}
-          backdropUrl={backdropUrl}
-          year={year}
-        />
-      ) : null}
     </>
   );
 }

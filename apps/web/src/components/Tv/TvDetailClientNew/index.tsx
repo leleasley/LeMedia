@@ -310,6 +310,15 @@ export function TvDetailClientNew({
         () => seasons.filter((season) => season.season_number !== 0).length,
         [seasons]
     );
+    const watchedSeasonOptions = useMemo(
+        () => seasons
+            .filter((season) => season.season_number > 0)
+            .map((season) => ({
+                seasonNumber: season.season_number,
+                name: season.name ?? `Season ${season.season_number}`,
+            })),
+        [seasons]
+    );
     const [expandedSeasons, setExpandedSeasons] = useState<Set<number>>(new Set());
     const [seasonEpisodes, setSeasonEpisodes] = useState<Record<number, Episode[]>>({});
     const [loadingSeasons, setLoadingSeasons] = useState<Set<number>>(new Set());
@@ -463,7 +472,8 @@ export function TvDetailClientNew({
                     : typeof rawItemId === "string" && rawItemId.trim().length > 0
                         ? Number(rawItemId)
                         : null;
-            setManageItemIdState(Number.isFinite(Number(parsedItemId)) ? Number(parsedItemId) : null);
+            const numericItemId = parsedItemId !== null ? Number(parsedItemId) : null;
+            setManageItemIdState(numericItemId !== null && Number.isFinite(numericItemId) && numericItemId > 0 ? numericItemId : null);
             setManageSlugState(aggregate.manage.slug ?? null);
             setManageBaseUrlState(aggregate.manage.baseUrl ?? null);
         }
@@ -547,7 +557,7 @@ export function TvDetailClientNew({
             manageItemId={manageItemIdState ?? null}
             manageSlug={manageSlugState ?? null}
             manageBaseUrl={manageBaseUrlState ?? null}
-            requestStatus={requestStatusState ?? null}
+            requestStatus={manageItemIdState != null ? requestStatusState ?? null : null}
             prowlarrEnabled={prowlarrEnabledState}
         />
     );
@@ -1288,71 +1298,78 @@ export function TvDetailClientNew({
 
                     {/* Action Buttons */}
                     <div className="media-actions">
+                        <div className="media-primary-row">
+                            {!requestInfoLoaded ? (
+                                <div
+                                    className="h-10 w-full rounded-lg border border-white/10 bg-white/5 opacity-0"
+                                    aria-hidden="true"
+                                />
+                            ) : (canRequestSeries && !isFullyAvailable) ? (
+                                <>
+                                    <ButtonWithDropdown
+                                        buttonSize="sm"
+                                        className="media-action-button"
+                                        text={
+                                            <>
+                                                <ArrowDownTrayIcon />
+                                                <span>Request</span>
+                                            </>
+                                        }
+                                        onClick={() => setRequestModalOpen(true)}
+                                    />
+                                    <SeriesRequestModal
+                                        open={requestModalOpen}
+                                        onClose={() => setRequestModalOpen(false)}
+                                        tmdbId={tv.id}
+                                        tvdbId={tvdbId ?? undefined}
+                                        qualityProfiles={qualityProfilesState}
+                                        defaultQualityProfileId={selectedQualityProfileId}
+                                        requestsBlocked={requestsBlockedState}
+                                        title={tv.name ?? tv.title ?? "Unknown"}
+                                        posterUrl={poster}
+                                        backdropUrl={backdrop}
+                                        isLoading={!requestInfoLoaded}
+                                        isAdmin={isAdminState}
+                                        prowlarrEnabled={prowlarrEnabledState}
+                                        serviceItemId={existingSeriesState?.id ?? null}
+                                        defaultMonitoringOption={monitoringOption}
+                                        onRequestPlaced={() => {
+                                            setRequestModalOpen(false);
+                                            mutateAggregate();
+                                            router.refresh();
+                                        }}
+                                    />
+                                </>
+                            ) : (
+                                !isExisting && qualityProfilesState.length === 0 && (
+                                    <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-2 text-amber-200 text-sm">
+                                        ⚠️ Configure Sonarr first
+                                    </div>
+                                )
+                            )}
+                        </div>
+                        <div className="media-secondary-row">
+                            <ShareButton
+                                mediaType="tv"
+                                tmdbId={tv.id}
+                                title={tv.name ?? tv.title ?? "Unknown"}
+                                backdropPath={backdrop ?? null}
+                                posterUrl={poster ?? null}
+                            />
+                            {actionMenu}
+                        </div>
                         <MediaListButtons
                             tmdbId={tv.id}
                             mediaType="tv"
+                            className="media-list-buttons"
                             initialFavorite={initialListStatus?.favorite ?? null}
                             initialWatchlist={initialListStatus?.watchlist ?? null}
                             initialWatched={initialListStatus?.watched ?? null}
                             initialHasReview={initialHasReview}
                             reviewPromptEligible={reviewPromptEligible}
                             title={tv.name ?? tv.title ?? "TV Show"}
+                            tvSeasonOptions={watchedSeasonOptions}
                         />
-                        <ShareButton
-                            mediaType="tv"
-                            tmdbId={tv.id}
-                            title={tv.name ?? tv.title ?? "Unknown"}
-                            backdropPath={backdrop ?? null}
-                            posterUrl={poster ?? null}
-                        />
-                        {actionMenu}
-
-                        {!requestInfoLoaded ? (
-                            <div
-                                className="h-10 w-28 rounded-lg border border-white/10 bg-white/5 opacity-0"
-                                aria-hidden="true"
-                            />
-                        ) : (canRequestSeries && !isFullyAvailable) ? (
-                            <>
-                                <ButtonWithDropdown
-                                    text={
-                                        <>
-                                            <ArrowDownTrayIcon />
-                                            <span>Request</span>
-                                        </>
-                                    }
-                                    onClick={() => setRequestModalOpen(true)}
-                                />
-                                <SeriesRequestModal
-                                    open={requestModalOpen}
-                                    onClose={() => setRequestModalOpen(false)}
-                                    tmdbId={tv.id}
-                                    tvdbId={tvdbId ?? undefined}
-                                    qualityProfiles={qualityProfilesState}
-                                    defaultQualityProfileId={selectedQualityProfileId}
-                                    requestsBlocked={requestsBlockedState}
-                                    title={tv.name ?? tv.title ?? "Unknown"}
-                                    posterUrl={poster}
-                                    backdropUrl={backdrop}
-                                    isLoading={!requestInfoLoaded}
-                                    isAdmin={isAdminState}
-                                    prowlarrEnabled={prowlarrEnabledState}
-                                    serviceItemId={existingSeriesState?.id ?? null}
-                                    defaultMonitoringOption={monitoringOption}
-                                    onRequestPlaced={() => {
-                                        setRequestModalOpen(false);
-                                        mutateAggregate();
-                                        router.refresh();
-                                    }}
-                                />
-                            </>
-                        ) : (
-                            !isExisting && qualityProfilesState.length === 0 && (
-                                <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-2 text-amber-200 text-sm">
-                                    ⚠️ Configure Sonarr first
-                                </div>
-                            )
-                        )}
                     </div>
                 </div>
             </div>

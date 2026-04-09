@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Share2 } from "lucide-react";
+import Button from "@/components/Common/Button";
 import { ShareModal } from "@/components/Media/ShareModal";
 
 interface ShareButtonProps {
@@ -17,13 +18,15 @@ export function ShareButton({ mediaType, tmdbId, title, backdropPath, posterUrl 
 
   return (
     <>
-      <button
+      <Button
+        buttonType="ghost"
+        buttonSize="sm"
         onClick={() => setIsModalOpen(true)}
-        className="flex items-center gap-2 rounded-lg bg-slate-800 border border-white/10 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60"
+        className="media-action-button"
       >
         <Share2 className="h-4 w-4" />
-        Share
-      </button>
+        <span>Share</span>
+      </Button>
 
       <ShareModal
         isOpen={isModalOpen}

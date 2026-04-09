@@ -344,6 +344,16 @@ export async function ensureMediaListSchema() {
     `).catch(() => {});
     await p.query(`CREATE INDEX IF NOT EXISTS idx_user_media_list_user ON user_media_list(user_id, list_type, created_at DESC);`);
     await p.query(`CREATE INDEX IF NOT EXISTS idx_user_media_list_tmdb ON user_media_list(media_type, tmdb_id);`);
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS user_tv_watched_season (
+        user_id BIGINT NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+        tmdb_id INTEGER NOT NULL,
+        season_number INTEGER NOT NULL CHECK (season_number > 0),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (user_id, tmdb_id, season_number)
+      );
+    `);
+    await p.query(`CREATE INDEX IF NOT EXISTS idx_user_tv_watched_season_user ON user_tv_watched_season(user_id, tmdb_id, created_at DESC);`);
   })();
   return ensureMediaListSchemaPromise;
 }

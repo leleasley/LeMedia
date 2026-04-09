@@ -480,9 +480,9 @@ export async function GET(req: NextRequest, { params }: { params: ParamsInput })
         : null,
       requestedSeasons,
       manage: {
-        itemId: isAdmin ? existingSeriesSummary?.id ?? null : null,
-        slug: isAdmin ? existingSeriesSummary?.titleSlug ?? null : null,
-        baseUrl: isAdmin ? sonarrService?.base_url ?? null : null
+        itemId: isAdmin && (sonarrHasFiles || availableInJellyfin) ? existingSeriesSummary?.id ?? null : null,
+        slug: isAdmin && (sonarrHasFiles || availableInJellyfin) ? existingSeriesSummary?.titleSlug ?? null : null,
+        baseUrl: isAdmin && (sonarrHasFiles || availableInJellyfin) ? sonarrService?.base_url ?? null : null
       },
       sonarr: {
         qualityProfiles,

@@ -20,6 +20,14 @@ export type PendingReviewListItem = {
 };
 
 
+export type UserTvWatchedSeasonItem = {
+  userId: number;
+  tmdbId: number;
+  seasonNumber: number;
+  createdAt: string;
+};
+
+
 export async function addUserMediaListItem(input: {
   userId: number;
   listType: UserMediaListType;
@@ -210,4 +218,79 @@ export async function getPendingReviewQueue(input: {
       watchedAt: String(row.created_at),
     })) satisfies PendingReviewListItem[],
   };
+}
+
+
+export async function getUserTvWatchedSeasons(input: {
+  userId: number;
+  tmdbId: number;
+}) {
+  await ensureMediaListSchema();
+  const p = getPool();
+  const res = await p.query(
+    `SELECT user_id, tmdb_id, season_number, created_at
+     FROM user_tv_watched_season
+     WHERE user_id = $1 AND tmdb_id = $2
+     ORDER BY season_number ASC`,
+    [input.userId, input.tmdbId]
+  );
+
+  return res.rows.map((row) => ({
+    userId: Number(row.user_id),
+    tmdbId: Number(row.tmdb_id),
+    seasonNumber: Number(row.season_number),
+    createdAt: String(row.created_at),
+  })) satisfies UserTvWatchedSeasonItem[];
+}
+
+
+export async function replaceUserTvWatchedSeasons(input: {
+  userId: number;
+  tmdbId: number;
+  seasonNumbers: number[];
+}) {
+  await ensureMediaListSchema();
+  const p = getPool();
+  const seasonNumbers = Array.from(
+    new Set(
+      input.seasonNumbers
+        .map((seasonNumber) => Number(seasonNumber))
+        .filter((seasonNumber) => Number.isInteger(seasonNumber) && seasonNumber > 0)
+    )
+  ).sort((left, right) => left - right);
+
+  const client = await p.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `DELETE FROM user_tv_watched_season
+       WHERE user_id = $1 AND tmdb_id = $2`,
+      [input.userId, input.tmdbId]
+    );
+
+    if (seasonNumbers.length > 0) {
+      const values = seasonNumbers.flatMap((seasonNumber) => [input.userId, input.tmdbId, seasonNumber]);
+      const placeholders = seasonNumbers
+        .map((_, index) => {
+          const base = index * 3;
+          return `($${base + 1}, $${base + 2}, $${base + 3})`;
+        })
+        .join(", ");
+
+      await client.query(
+        `INSERT INTO user_tv_watched_season (user_id, tmdb_id, season_number)
+         VALUES ${placeholders}`,
+        values
+      );
+    }
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  return seasonNumbers;
 }

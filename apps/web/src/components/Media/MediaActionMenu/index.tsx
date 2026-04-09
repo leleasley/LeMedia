@@ -44,7 +44,7 @@ export function MediaActionMenu(props: {
   const [manageOpen, setManageOpen] = useState(false);
   const [watchPartyOpen, setWatchPartyOpen] = useState(false);
   const canManage =
-    isAdmin && (Number.isFinite(Number(manageItemId ?? NaN)) || Boolean(requestStatus));
+    isAdmin && ((manageItemId != null && Number(manageItemId) > 0) || Boolean(requestStatus));
   const canCreateWatchParty = Boolean(playUrl);
 
   const links: PlayButtonLink[] = [];
@@ -72,7 +72,7 @@ export function MediaActionMenu(props: {
           buttonType="warning"
           onClick={() => setReportOpen(true)}
           aria-label="Report an issue"
-          className="ml-2 first:ml-0"
+          className="media-action-icon-button ml-2 first:ml-0"
         >
           <ExclamationTriangleIcon />
         </Button>
@@ -83,7 +83,7 @@ export function MediaActionMenu(props: {
           buttonType="default"
           onClick={() => setWatchPartyOpen(true)}
           aria-label="Create watch party"
-          className="ml-2 first:ml-0"
+          className="media-action-icon-button ml-2 first:ml-0"
         >
           <UserGroupIcon className="!mr-0" />
         </Button>
@@ -94,7 +94,7 @@ export function MediaActionMenu(props: {
           buttonType="ghost"
           onClick={() => setManageOpen(true)}
           aria-label="Manage media"
-          className="ml-2 first:ml-0"
+          className="media-action-icon-button ml-2 first:ml-0"
         >
           <CogIcon className="!mr-0" />
         </Button>

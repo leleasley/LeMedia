@@ -79,7 +79,7 @@ export function MovieRequestPanel({
     // Check if file is already available
     if (info.radarrMovie.hasFile) {
       return (
-        <div className="flex items-center gap-2 px-6 py-3 rounded-lg font-bold border bg-emerald-500/20 border-emerald-500/30 text-emerald-100">
+        <div className="media-action-status flex items-center gap-2 px-6 py-3 rounded-lg font-bold border bg-emerald-500/20 border-emerald-500/30 text-emerald-100">
           <CheckCircle className="h-5 w-5" />
           Available in Radarr
         </div>
@@ -112,6 +112,7 @@ export function MovieRequestPanel({
     <>
       <ButtonWithDropdown
         buttonSize="sm"
+        className="media-action-button"
         text={
           <>
             <ArrowDownTrayIcon />

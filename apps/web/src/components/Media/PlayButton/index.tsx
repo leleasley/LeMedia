@@ -66,7 +66,7 @@ export function PlayButton({ links }: PlayButtonProps) {
 
   return (
     <>
-      <Modal open={trailerOpen} title="Trailer" onClose={() => setTrailerOpen(false)}>
+      <Modal open={trailerOpen} title="Trailer" onClose={() => setTrailerOpen(false)} forceCenter>
         {trailerEmbedUrl ? (
           <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-black">
             <iframe
@@ -93,7 +93,7 @@ export function PlayButton({ links }: PlayButtonProps) {
         }
         href={links[0].url}
         target="_blank"
-        className="z-20"
+        className="media-action-button z-20"
         onClick={(event) => handleClick(links[0], event)}
       >
         {links.length > 1
