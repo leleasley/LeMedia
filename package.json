@@ -20,6 +20,10 @@
     "fast-uri": "^3.0.1"
   },
   "overrides": {
+    "@duosecurity/duo_universal": {
+      "axios": "1.15.0"
+    },
+    "axios": "1.15.0",
     "minimatch": "10.2.4",
     "flatted": "3.4.2",
     "glob": "13.0.6"

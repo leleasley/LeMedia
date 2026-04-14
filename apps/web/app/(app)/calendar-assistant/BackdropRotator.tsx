@@ -12,8 +12,6 @@ export default function BackdropRotator({ images, intervalMs = 10000 }: Backdrop
   const uniqueImages = useMemo(() => Array.from(new Set(images.filter(Boolean))), [images]);
   const [activeIndex, setActiveIndex] = useState(0);
 
-
-
   useEffect(() => {
     if (uniqueImages.length <= 1) return;
     const timer = window.setInterval(() => {

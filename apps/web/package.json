@@ -15,9 +15,6 @@
     "migrate:create": "tsx src/scripts/migrate.ts create"
   },
   "dependencies": {
-      "overrides": {
-        "axios": ">=1.15.0"
-      },
     "@asteasolutions/zod-to-openapi": "^8.4.0",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Component, type ErrorInfo, type ReactNode, useEffect, useState } from "react";
 import useSWR from "swr";
 import { UserPermissionsClient } from "@/components/Settings/Users/UserPermissionsClient";
 import { NotificationsSettingsPage } from "@/components/Settings/NotificationsPage";
@@ -14,10 +14,11 @@ import { csrfFetch } from "@/lib/csrf-client";
 import { Modal } from "@/components/Common/Modal";
 import { ConfirmModal, useConfirm } from "@/components/Common/ConfirmModal";
 import { TelegramBotPanel } from "@/components/Profile/TelegramBotPanel";
+import { ProfilePrivacySettings } from "@/components/Profile/ProfilePrivacySettings";
 import { UserNotificationChannelsPanel } from "@/components/Profile/UserNotificationChannelsPanel";
 import { EpisodeReminderPreferencesCard } from "@/components/Profile/EpisodeReminderPreferencesCard";
 import { GlobalChannelSubscriptionsPanel } from "@/components/Profile/GlobalChannelSubscriptionsPanel";
-import { ProfilePrivacySettings } from "@/components/Profile/ProfilePrivacySettings";
+import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 
 interface AssignedEndpoint {
   id: number;
@@ -72,6 +73,15 @@ type PushPreference = {
   enabled: boolean;
 };
 
+type CalendarAssistantPreference = {
+  enabled: boolean;
+  channels: Array<"in_app" | "telegram" | "endpoints">;
+  dayOfWeek: number;
+  hourOfDay: number;
+  lastSentDate: string | null;
+  serverTimezone?: string;
+};
+
 const tabOrder: Array<{ key: SettingsTabKey; label: string }> = [
   { key: "general", label: "General" },
   { key: "security", label: "Security" },
@@ -81,6 +91,40 @@ const tabOrder: Array<{ key: SettingsTabKey; label: string }> = [
   { key: "privacy", label: "Privacy" },
   { key: "bot", label: "Telegram Bot" }
 ];
+
+class GeneralSettingsErrorBoundary extends Component<
+  { children: ReactNode },
+  { hasError: boolean; message: string | null }
+> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, message: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return {
+      hasError: true,
+      message: error?.message ?? "General settings failed to render.",
+    };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    // Keep the rest of profile settings usable if one general-tab widget crashes.
+    console.error("[ProfileSettings] General tab render error", error, info);
+  }
+
+  render() {
+    if (!this.state.hasError) return this.props.children;
+    return (
+      <div className="rounded-2xl md:rounded-3xl border border-amber-500/30 bg-amber-500/10 p-6 text-amber-100">
+        <h3 className="text-lg font-semibold">General settings hit a render error</h3>
+        <p className="mt-2 text-sm text-amber-200/90">
+          {this.state.message ?? "Please refresh. If this persists, use another tab while we diagnose it."}
+        </p>
+      </div>
+    );
+  }
+}
 
 export function ProfileSettingsPageClient({
   user,
@@ -110,7 +154,9 @@ export function ProfileSettingsPageClient({
 
   // Notifications data
   const { data: pushData } = useSWR<PushPreference>("/api/push/preference", securityFetcher);
+  const { data: calendarAssistantData } = useSWR<CalendarAssistantPreference>("/api/profile/calendar-assistant", securityFetcher);
   const pushEnabled = pushData?.enabled ?? null;
+  const calendarAssistantEnabled = calendarAssistantData?.enabled ?? false;
   const showSystemChannelsSection = assignedEndpoints.length > 0;
 
   const apiToken = apiTokenData?.token ?? null;
@@ -233,11 +279,13 @@ export function ProfileSettingsPageClient({
       </Modal>
       <div className="mt-10 text-white space-y-8">
         {activeTab === "general" && (
-          <ProfileSettings
-            section="general"
-            accountTypeLabel={user.jellyfinUserId ? "Jellyfin User" : "Local User"}
-            roleLabel={isAdmin ? "Owner" : "Member"}
-          />
+          <GeneralSettingsErrorBoundary>
+            <ProfileSettings
+              section="general"
+              accountTypeLabel={user.jellyfinUserId ? "Jellyfin User" : "Local User"}
+              roleLabel={isAdmin ? "Owner" : "Member"}
+            />
+          </GeneralSettingsErrorBoundary>
         )}
 
         {activeTab === "linked" && (
@@ -361,10 +409,10 @@ export function ProfileSettingsPageClient({
                   </div>
                 )}
 
-                <div className="flex flex-wrap gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
                   <button
                     type="button"
-                    className="btn flex-1 sm:flex-none"
+                    className="btn w-full"
                     onClick={() => setApiTokenVisible(prev => !prev)}
                     disabled={!apiToken}
                   >
@@ -372,7 +420,7 @@ export function ProfileSettingsPageClient({
                   </button>
                   <button
                     type="button"
-                    className="btn flex-1 sm:flex-none"
+                    className="btn w-full"
                     onClick={async () => {
                       if (!apiToken) return;
                       try {
@@ -388,7 +436,7 @@ export function ProfileSettingsPageClient({
                   </button>
                   <button
                     type="button"
-                    className="btn flex-1 sm:flex-none"
+                    className="btn w-full"
                     disabled={apiTokenSaving}
                     onClick={async () => {
                       if (!apiToken) {
@@ -404,7 +452,7 @@ export function ProfileSettingsPageClient({
                   </button>
                   <button
                     type="button"
-                    className="btn-danger flex-1 sm:flex-none"
+                    className="w-full rounded-xl border border-red-500/35 bg-red-500/10 px-4 py-2.5 text-sm font-semibold text-red-100 transition-colors hover:bg-red-500/20 hover:text-red-50 disabled:opacity-50"
                     disabled={!apiToken || apiTokenSaving}
                     onClick={async () => {
                       if (!apiToken) return;
@@ -471,7 +519,7 @@ export function ProfileSettingsPageClient({
                 </div>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <div className="flex items-center gap-3 rounded-xl bg-black/20 border border-white/5 p-4">
                   <div className={`flex items-center justify-center w-10 h-10 rounded-full ${pushEnabled ? 'bg-emerald-500/20' : 'bg-white/10'}`}>
                     <span className="text-lg">{pushEnabled ? '✓' : '○'}</span>
@@ -507,15 +555,28 @@ export function ProfileSettingsPageClient({
                     </div>
                   </div>
                 </div>
+
+                <div className="flex items-center gap-3 rounded-xl bg-black/20 border border-white/5 p-4">
+                  <div className={`flex items-center justify-center w-10 h-10 rounded-full ${calendarAssistantEnabled ? 'bg-emerald-500/20' : 'bg-white/10'}`}>
+                    <span className="text-lg">🗓</span>
+                  </div>
+                  <div>
+                    <div className="text-xs text-white/50 uppercase tracking-wider">Calendar</div>
+                    <div className={`font-semibold ${calendarAssistantEnabled ? 'text-emerald-300' : 'text-white/70'}`}>
+                      {calendarAssistantEnabled ? 'Scheduled' : 'Off'}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div className="grid gap-6 2xl:grid-cols-2">
+            <div className="grid gap-6 2xl:grid-cols-3">
               <NotificationsSettingsPage initialEnabled={pushEnabled} />
               <WeeklyDigestSettings
                 initialEnabled={!!user.weeklyDigestOptIn}
                 email={user.email ?? null}
               />
+              <CalendarAssistantSettings initialData={calendarAssistantData ?? null} />
             </div>
 
             <UserNotificationChannelsPanel />
@@ -678,6 +739,204 @@ function WeeklyDigestSettings({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function CalendarAssistantSettings({
+  initialData,
+}: {
+  initialData: CalendarAssistantPreference | null;
+}) {
+  const toast = useToast();
+  const [enabled, setEnabled] = useState<boolean>(initialData?.enabled ?? false);
+  const [dayOfWeek, setDayOfWeek] = useState<number>(initialData?.dayOfWeek ?? 1);
+  const [hourOfDay, setHourOfDay] = useState<number>(initialData?.hourOfDay ?? 9);
+  const [channels, setChannels] = useState<Array<"in_app" | "telegram" | "endpoints">>(initialData?.channels ?? ["in_app"]);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+
+  const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+  useEffect(() => {
+    if (!initialData) return;
+    setEnabled(initialData.enabled);
+    setDayOfWeek(initialData.dayOfWeek);
+    setHourOfDay(initialData.hourOfDay);
+    setChannels(initialData.channels);
+  }, [initialData]);
+
+  function toggleChannel(channel: "in_app" | "telegram" | "endpoints") {
+    setChannels((prev) => {
+      if (prev.includes(channel)) {
+        const next = prev.filter((entry) => entry !== channel);
+        return next.length ? next : ["in_app"];
+      }
+      return [...prev, channel];
+    });
+  }
+
+  async function save() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const csrfRes = await fetch("/api/csrf");
+      const { token } = await csrfRes.json();
+
+      const res = await fetch("/api/profile/calendar-assistant", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": token,
+        },
+        body: JSON.stringify({
+          enabled,
+          channels,
+          dayOfWeek,
+          hourOfDay,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to save calendar assistant settings");
+      }
+
+      toast.success(enabled ? "Calendar Assistant enabled" : "Calendar Assistant disabled");
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to save calendar assistant settings");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function sendTest() {
+    if (testing) return;
+    setTesting(true);
+    try {
+      const csrfRes = await fetch("/api/csrf");
+      const { token } = await csrfRes.json();
+      const res = await fetch("/api/profile/calendar-assistant/test", {
+        method: "POST",
+        headers: { "X-CSRF-Token": token },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to send test digest");
+      }
+      toast.success("Test digest sent via your selected channels!");
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to send test digest");
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  return (
+    <div className="rounded-2xl md:rounded-3xl border border-white/10 bg-white/[0.02] p-6 md:p-8 space-y-5">
+      <div className="flex items-center gap-4">
+        <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 ring-1 ring-white/10">
+          <span className="text-xl">🗓</span>
+        </div>
+        <div className="flex-1">
+          <h3 className="text-xl font-bold text-white">Calendar Assistant</h3>
+          <p className="text-sm text-gray-400 mt-1">Scheduled release radar with spoiler-free summaries</p>
+        </div>
+      </div>
+
+      <label className="flex items-start justify-between gap-4 rounded-xl border border-white/10 bg-black/25 p-4">
+        <div>
+          <p className="text-sm font-medium text-white">Enable Calendar Assistant</p>
+          <p className="text-xs text-gray-400 mt-1">Send a personal release brief on your chosen day and hour.</p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={enabled}
+          onClick={() => setEnabled((prev) => !prev)}
+          className={`ui-switch ui-switch-md shrink-0 transition-colors ${enabled ? "bg-[#229ED9]" : "bg-gray-700"}`}
+        >
+          <span className={`ui-switch-thumb ${enabled ? "translate-x-6" : "translate-x-0"}`} />
+        </button>
+      </label>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="space-y-2">
+          <span className="text-xs font-medium uppercase tracking-[0.18em] text-gray-500">Day</span>
+          <AdaptiveSelect
+            value={String(dayOfWeek)}
+            onValueChange={(value) => setDayOfWeek(Number(value))}
+            options={days.map((day, index) => ({ value: String(index), label: day }))}
+            triggerClassName="w-full rounded-lg border border-white/15 bg-slate-900/70 px-3 py-2 text-sm text-white outline-none transition focus:border-[#229ED9]"
+            disabled={saving || testing}
+          />
+        </label>
+        <label className="space-y-2">
+          <span className="text-xs font-medium uppercase tracking-[0.18em] text-gray-500">
+            Hour{initialData?.serverTimezone ? ` (${initialData.serverTimezone})` : " (server time)"}
+          </span>
+          <AdaptiveSelect
+            value={String(hourOfDay)}
+            onValueChange={(value) => setHourOfDay(Number(value))}
+            options={Array.from({ length: 24 }, (_, hour) => ({
+              value: String(hour),
+              label: `${String(hour).padStart(2, "0")}:00`
+            }))}
+            triggerClassName="w-full rounded-lg border border-white/15 bg-slate-900/70 px-3 py-2 text-sm text-white outline-none transition focus:border-[#229ED9]"
+            disabled={saving || testing}
+          />
+        </label>
+      </div>
+
+      {initialData && (
+        <p className="text-xs text-gray-500">
+          {initialData.lastSentDate
+            ? `Last sent: ${new Date(`${initialData.lastSentDate}T12:00:00Z`).toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short", year: "numeric" })}`
+            : "Not yet sent — the digest will be delivered on your chosen day and hour in the server timezone."}
+        </p>
+      )}
+
+      <div className="rounded-xl border border-white/10 bg-black/25 p-4 space-y-2">
+        <p className="text-sm font-medium text-white">Delivery channels</p>
+        <div className="flex flex-wrap gap-2">
+          {([
+            ["in_app", "In-app"],
+            ["telegram", "Telegram"],
+            ["endpoints", "Linked endpoints"],
+          ] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => toggleChannel(value)}
+              className={`rounded-lg border px-3 py-1.5 text-sm transition ${channels.includes(value)
+                ? "border-sky-300/50 bg-sky-500/20 text-sky-100"
+                : "border-white/10 bg-white/5 text-white/70"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => void save()}
+          disabled={saving || testing}
+          className="rounded-lg bg-[#229ED9] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#1a8bc4] disabled:opacity-60"
+        >
+          {saving ? "Saving..." : "Save calendar settings"}
+        </button>
+        <button
+          type="button"
+          onClick={() => void sendTest()}
+          disabled={testing || saving}
+          className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/10 disabled:opacity-60"
+        >
+          {testing ? "Sending..." : "Send test now"}
+        </button>
+      </div>
     </div>
   );
 }
