@@ -847,6 +847,20 @@ export async function getUserNotifications(userId: number, limit = 50): Promise<
   return res.rows;
 }
 
+export async function getLatestCalendarAssistantNotification(userId: number): Promise<UserNotification | null> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, user_id as "userId", type, title, message, link, is_read as "isRead", metadata, created_at as "createdAt"
+     FROM user_notification
+     WHERE user_id = $1
+       AND type = 'calendar_assistant'
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [userId]
+  );
+  return res.rows[0] ?? null;
+}
+
 
 export async function getUnreadNotifications(userId: number): Promise<UserNotification[]> {
   const p = getPool();

@@ -270,129 +270,161 @@ export function ProfilePageClient({
       <ProfileBackgroundOverride />
       {/* Background Image Fader */}
       {backgroundImages.length > 0 && (
-        <div className="profile-page-backdrop absolute -left-3 -right-3 z-0 h-[65vh] max-h-[720px] min-h-[480px] lg:-left-6 lg:-right-6">
+        <div className="profile-page-backdrop absolute -left-3 -right-3 z-0 h-[58vh] min-h-[420px] max-h-[620px] sm:h-[62vh] sm:min-h-[500px] sm:max-h-[700px] lg:-left-6 lg:-right-6 lg:h-[70vh] lg:max-h-[820px] lg:min-h-[560px]">
           <ImageFader
             backgroundImages={backgroundImages}
             isDarker
             className="absolute inset-0 mask-image-gradient-b"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-[#0b1120] via-[#0b1120]/60 to-transparent" />
-          <div className="profile-page-backdrop-fade absolute inset-x-0 bottom-0 h-28" />
+          <div className="profile-page-backdrop-fade absolute inset-x-0 bottom-0 h-32 sm:h-36" />
         </div>
       )}
 
-      {/* Profile Header */}
-      <ProfileHeader user={profileUser} isAdmin={isAdmin} />
+      <div className="relative z-10 pt-28 sm:pt-36 lg:pt-44">
+        <ProfileHeader user={profileUser} isAdmin={isAdmin} />
 
-      {/* Profile Basics */}
-      <div className="relative z-0 mt-6 grid gap-5 lg:grid-cols-3">
-        <div className="relative overflow-hidden rounded-2xl border border-blue-500/20 bg-gradient-to-br from-blue-950/30 via-slate-900/60 to-slate-900/40 p-5 shadow-lg backdrop-blur-md lg:col-span-2 hover:border-blue-500/30 transition-all">
-          <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-transparent pointer-events-none" />
-          <div className="relative">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white">
-                    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
-                    <circle cx="12" cy="7" r="4" />
-                  </svg>
-                </div>
-                <h2 className="text-lg font-semibold text-white">Profile Basics</h2>
-              </div>
-              <Link href="/settings/profile/general" className="text-xs text-gray-400 hover:text-white transition-colors">
-                More options
-              </Link>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="text-xs uppercase tracking-wider text-gray-400">Display name</label>
-                <input
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  placeholder="Your display name"
-                  className="mt-2 w-full rounded-xl border border-blue-500/20 bg-blue-950/20 px-4 py-2.5 text-sm text-white placeholder:text-white/30 outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all"
-                />
-              </div>
-              <div>
-                <label className="text-xs uppercase tracking-wider text-gray-400">Username</label>
-                <div className="mt-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-gray-300">
-                  @{profileUser.username}
-                </div>
-              </div>
-            </div>
-            <div className="mt-4 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={saveDisplayName}
-                disabled={displayNameSaving}
-                className="rounded-xl bg-blue-600/80 px-5 py-2 text-xs font-semibold text-white hover:bg-blue-600 transition-colors disabled:opacity-60"
-              >
-                {displayNameSaving ? "Saving..." : "Save Display Name"}
-              </button>
-            </div>
-          </div>
+        <div className="mb-8 flex flex-wrap items-center gap-2 sm:gap-3">
+          {badges.map((badge) => {
+            const colorMap: Record<string, string> = {
+              purple: "border-purple-500/30 bg-purple-500/12 text-purple-100",
+              emerald: "border-emerald-500/30 bg-emerald-500/12 text-emerald-100",
+              red: "border-red-500/30 bg-red-500/12 text-red-100",
+              indigo: "border-indigo-500/30 bg-indigo-500/12 text-indigo-100",
+            };
+            const cls = colorMap[badge.color] || "border-white/10 bg-white/5 text-gray-200";
+            return (
+              <span key={badge.label} className={`inline-flex items-center gap-1.5 rounded-full border ${cls} px-3 py-1.5 text-xs font-semibold backdrop-blur-sm`}>
+                {badge.icon === "shield" && <ShieldCheck className="h-3.5 w-3.5" />}
+                {badge.icon === "lock" && <Lock className="h-3.5 w-3.5" />}
+                {badge.icon === "jellyfin" && (
+                  <Image src="/images/jellyfin.svg" alt="" width={14} height={14} className="h-3.5 w-3.5" />
+                )}
+                {badge.icon === "trakt" && (
+                  <Image src="/images/trakt.svg" alt="" width={14} height={14} className="h-3.5 w-3.5" />
+                )}
+                {badge.label}
+              </span>
+            );
+          })}
+          {assignedEndpoints.length > 0 ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/20 px-3 py-1.5 text-xs font-semibold text-white/70 backdrop-blur-sm">
+              {assignedEndpoints.length} service {assignedEndpoints.length === 1 ? "endpoint" : "endpoints"}
+            </span>
+          ) : null}
         </div>
 
-        <div className="relative overflow-hidden rounded-2xl border border-amber-500/20 bg-gradient-to-br from-amber-950/30 via-slate-900/60 to-slate-900/40 p-5 shadow-lg backdrop-blur-md hover:border-amber-500/30 transition-all">
-          <div className="absolute inset-0 bg-gradient-to-br from-amber-500/5 to-transparent pointer-events-none" />
-          <div className="relative">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center shadow-lg">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white">
-                  <circle cx="12" cy="12" r="10" />
-                  <circle cx="12" cy="10" r="3" />
-                  <path d="M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662" />
-                </svg>
+        <div className="relative overflow-hidden rounded-[2rem] border border-white/8 bg-[linear-gradient(180deg,rgba(9,17,30,0.74),rgba(9,17,30,0.52))] px-5 py-6 shadow-[0_30px_80px_rgba(0,0,0,0.22)] backdrop-blur-xl sm:px-6 sm:py-7">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.12),transparent_28%),radial-gradient(circle_at_bottom_right,rgba(245,158,11,0.10),transparent_24%)]" />
+          <div className="relative grid gap-8 lg:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)] lg:gap-10">
+            <section>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-blue-200/70">Profile studio</p>
+                  <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white">Keep your public identity sharp</h2>
+                </div>
+                <Link href="/settings/profile/general" className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white">
+                  More options
+                </Link>
               </div>
-              <h2 className="text-lg font-semibold text-white">Avatar</h2>
-            </div>
-            <p className="text-xs text-gray-400 mb-3">
-              Uploading an avatar updates your Jellyfin profile too.
-            </p>
-            {!profileUser.jellyfinUserId && (
-              <div className="mb-3 flex items-center gap-2 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
-                <Image src="/images/jellyfin.svg" alt="" width={14} height={14} className="h-3.5 w-3.5" />
-                Link Jellyfin to enable avatar uploads.
+
+              <div className="mt-6 grid gap-5 sm:grid-cols-2">
+                <div>
+                  <label className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/45">Display name</label>
+                  <input
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    placeholder="Your display name"
+                    className="mt-3 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white placeholder:text-white/25 outline-none transition-colors focus:border-blue-400/40 focus:bg-black/30"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/45">Username</label>
+                  <div className="mt-3 rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-white/75">
+                    @{profileUser.username}
+                  </div>
+                </div>
               </div>
-            )}
-            <input
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              onChange={(e) => setAvatarFile(e.target.files?.[0] ?? null)}
-              disabled={!profileUser.jellyfinUserId}
-              className="w-full text-xs text-gray-300 file:mr-4 file:rounded-xl file:border-0 file:bg-amber-600/80 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white hover:file:bg-amber-600 file:transition-colors file:cursor-pointer disabled:opacity-60"
-            />
-            <button
-              type="button"
-              onClick={uploadAvatar}
-              disabled={!avatarFile || avatarUploading || !profileUser.jellyfinUserId}
-              className="mt-4 w-full rounded-xl bg-amber-600/80 px-4 py-2 text-xs font-semibold text-white hover:bg-amber-600 transition-colors disabled:opacity-60"
-            >
-              {avatarUploading ? "Uploading..." : "Upload Avatar"}
-            </button>
+
+              <div className="mt-6 flex flex-wrap gap-3 text-sm text-white/55">
+                {profileUser.email ? <span>{profileUser.email}</span> : null}
+                {profileUser.jellyfinUsername ? <span>Jellyfin: {profileUser.jellyfinUsername}</span> : null}
+                {profileUser.traktUsername ? <span>Trakt: @{profileUser.traktUsername}</span> : null}
+              </div>
+
+              <div className="mt-6 flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={saveDisplayName}
+                  disabled={displayNameSaving}
+                  className="inline-flex items-center justify-center rounded-full bg-blue-600/85 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-500 disabled:opacity-60"
+                >
+                  {displayNameSaving ? "Saving..." : "Save display name"}
+                </button>
+                <span className="text-xs text-white/45">A cleaner display name updates wherever your profile appears.</span>
+              </div>
+            </section>
+
+            <section className="lg:border-l lg:border-white/8 lg:pl-10">
+              <div className="flex items-center gap-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-200/70">Avatar tools</p>
+              </div>
+              <h3 className="mt-2 text-xl font-semibold text-white">Refresh your look</h3>
+              <p className="mt-2 text-sm leading-6 text-white/55">
+                Uploading an avatar updates your Jellyfin profile too, so your identity stays consistent across the app.
+              </p>
+
+              {!profileUser.jellyfinUserId && (
+                <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-amber-400/20 bg-amber-400/10 px-3 py-1.5 text-xs font-medium text-amber-100">
+                  <Image src="/images/jellyfin.svg" alt="" width={14} height={14} className="h-3.5 w-3.5" />
+                  Link Jellyfin to enable avatar uploads
+                </div>
+              )}
+
+              <div className="mt-5 space-y-4">
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={(e) => setAvatarFile(e.target.files?.[0] ?? null)}
+                  disabled={!profileUser.jellyfinUserId}
+                  className="w-full text-xs text-gray-300 file:mr-4 file:rounded-full file:border-0 file:bg-amber-600/85 file:px-4 file:py-2 file:text-xs file:font-semibold file:text-white hover:file:bg-amber-500 file:transition-colors file:cursor-pointer disabled:opacity-60"
+                />
+                <button
+                  type="button"
+                  onClick={uploadAvatar}
+                  disabled={!avatarFile || avatarUploading || !profileUser.jellyfinUserId}
+                  className="inline-flex w-full items-center justify-center rounded-full bg-amber-600/85 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-amber-500 disabled:opacity-60"
+                >
+                  {avatarUploading ? "Uploading..." : "Upload avatar"}
+                </button>
+              </div>
+            </section>
           </div>
         </div>
       </div>
 
       {/* Linked Accounts */}
-      <div className="relative z-0 mt-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-white">Linked Accounts</h2>
+      <div className="relative z-10 mt-10">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/45">Connected services</p>
+            <h2 className="mt-1 text-2xl font-semibold text-white">Linked accounts</h2>
+          </div>
           <Link href="/settings/profile/linked" className="text-xs text-gray-400 hover:text-white transition-colors">
             Manage links
           </Link>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="overflow-hidden rounded-[2rem] border border-white/8 bg-black/18 backdrop-blur-xl">
           {linkedAccounts.map((account) => {
             const isLinked = Boolean(account.value);
             return (
               <div
                 key={account.label}
-                className={`relative overflow-hidden rounded-2xl border ${account.borderClass} bg-gradient-to-br ${account.bgClass} p-4 backdrop-blur-md transition-all`}
+                className="relative border-b border-white/6 px-4 py-4 last:border-b-0 sm:px-5"
               >
-                <div className={`absolute inset-0 bg-gradient-to-br ${account.glowClass} to-transparent pointer-events-none`} />
-                <div className="relative flex items-center gap-3">
-                  <div className={`h-11 w-11 flex-shrink-0 rounded-xl bg-gradient-to-br ${account.iconBgClass} flex items-center justify-center shadow-lg`}>
+                <div className={`absolute inset-0 bg-gradient-to-r ${account.glowClass} via-transparent to-transparent pointer-events-none`} />
+                <div className="relative flex items-center gap-3 sm:gap-4">
+                  <div className={`h-11 w-11 flex-shrink-0 rounded-2xl bg-gradient-to-br ${account.iconBgClass} flex items-center justify-center shadow-lg`}>
                     <Image
                       src={account.icon}
                       alt={account.label}
@@ -402,8 +434,8 @@ export function ProfilePageClient({
                     />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-bold text-white">{account.label}</h3>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-sm font-bold text-white sm:text-base">{account.label}</h3>
                       {isLinked ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-semibold text-green-300 border border-green-500/30">
                           <CheckCircle2 className="h-3 w-3" />
@@ -416,7 +448,7 @@ export function ProfilePageClient({
                         </span>
                       )}
                     </div>
-                    <p className="mt-0.5 text-sm text-gray-300 truncate">
+                    <p className="mt-1 text-sm text-gray-300 truncate">
                       {account.value
                         ? (account.label === "Discord"
                           ? `ID: ${account.value}`
@@ -435,123 +467,79 @@ export function ProfilePageClient({
         </div>
       </div>
 
-      {/* Profile Badges */}
-      <div className="relative z-0 mt-6">
-        <h2 className="text-lg font-semibold text-white mb-4">Profile Badges</h2>
-        <div className="flex flex-wrap gap-2">
-          {badges.length === 0 && (
-            <span className="text-sm text-gray-400">No badges yet</span>
-          )}
-          {badges.map((badge) => {
-            const colorMap: Record<string, string> = {
-              purple: "border-purple-500/30 bg-purple-500/10 text-purple-200",
-              emerald: "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
-              red: "border-red-500/30 bg-red-500/10 text-red-200",
-              indigo: "border-indigo-500/30 bg-indigo-500/10 text-indigo-200",
-            };
-            const cls = colorMap[badge.color] || "border-white/10 bg-white/5 text-gray-200";
-            return (
-              <span key={badge.label} className={`inline-flex items-center gap-1.5 rounded-full border ${cls} px-3 py-1.5 text-xs font-semibold`}>
-                {badge.icon === "shield" && <ShieldCheck className="h-3.5 w-3.5" />}
-                {badge.icon === "lock" && <Lock className="h-3.5 w-3.5" />}
-                {badge.icon === "jellyfin" && (
-                  <Image src="/images/jellyfin.svg" alt="" width={14} height={14} className="h-3.5 w-3.5" />
-                )}
-                {badge.icon === "trakt" && (
-                  <Image src="/images/trakt.svg" alt="" width={14} height={14} className="h-3.5 w-3.5" />
-                )}
-                {badge.label}
-              </span>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Request Stats Cards */}
+      {/* Request Stats */}
       {stats && (
-        <div className="relative z-0 mt-6">
-          <h2 className="text-lg font-semibold text-white mb-4">Request Stats</h2>
-          <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            {/* Total Requests */}
-            <div className="relative overflow-hidden rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-950/40 via-slate-900/60 to-slate-900/40 p-5 backdrop-blur-md hover:border-purple-500/40 transition-all">
-              <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-transparent pointer-events-none" />
-              <div className="relative">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center shadow-lg">
-                    <ArrowRightCircle className="h-5 w-5 text-white" />
-                  </div>
-                  <dt className="text-sm font-bold text-gray-300">Total Requests</dt>
-                </div>
-                <dd className="text-3xl font-bold text-white">
-                  <Link href="/requests" className="hover:text-purple-300 transition-colors">
-                    {stats.total}
-                  </Link>
-                </dd>
-              </div>
+        <div className="relative z-10 mt-10">
+          <div className="mb-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/45">Numbers</p>
+            <h2 className="mt-1 text-2xl font-semibold text-white">Request rhythm</h2>
+          </div>
+          <dl className="overflow-hidden rounded-[2rem] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] backdrop-blur-xl sm:grid sm:grid-cols-3">
+            <div className="border-b border-white/8 p-5 sm:border-b-0 sm:border-r">
+              <dt className="flex items-center gap-3 text-sm font-semibold text-white/60">
+                <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-purple-500/15 text-purple-300">
+                  <ArrowRightCircle className="h-5 w-5" />
+                </span>
+                Total Requests
+              </dt>
+              <dd className="mt-4 text-4xl font-bold tracking-tight text-white">
+                <Link href="/requests" className="transition-colors hover:text-purple-300">
+                  {stats.total}
+                </Link>
+              </dd>
+              <p className="mt-2 text-sm text-white/45">Everything you have queued, requested, or pushed through the app.</p>
             </div>
 
-            {/* Movie Requests */}
-            <div className={`relative overflow-hidden rounded-2xl border ${movieQuota.restricted ? "border-red-500/40" : "border-indigo-500/20 hover:border-indigo-500/40"} bg-gradient-to-br ${movieQuota.restricted ? "from-red-950/40" : "from-indigo-950/40"} via-slate-900/60 to-slate-900/40 p-5 backdrop-blur-md transition-all`}>
-              <div className={`absolute inset-0 bg-gradient-to-br ${movieQuota.restricted ? "from-red-500/5" : "from-indigo-500/5"} to-transparent pointer-events-none`} />
-              <div className="relative">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className={`h-10 w-10 rounded-xl bg-gradient-to-br ${movieQuota.restricted ? "from-red-500 to-red-600" : "from-indigo-500 to-indigo-600"} flex items-center justify-center shadow-lg`}>
-                    <Film className="h-5 w-5 text-white" />
-                  </div>
-                  <dt className={`text-sm font-bold ${movieQuota.restricted ? "text-red-400" : "text-gray-300"}`}>
-                    Movie Quota
-                  </dt>
-                </div>
-                <dd className={`flex items-center ${movieQuota.restricted ? "text-red-400" : "text-white"}`}>
-                  {movieQuota.limit ? (
-                    <>
-                      <ProgressCircle
-                        progress={Math.round((movieQuota.remaining / movieQuota.limit) * 100)}
-                        useHeatLevel
-                        className="mr-3 h-9 w-9"
-                      />
-                      <div>
-                        <span className="text-2xl font-bold">{movieQuota.remaining}</span>
-                        <span className="text-sm text-gray-400 ml-1">/ {movieQuota.limit} remaining</span>
-                      </div>
-                    </>
-                  ) : (
-                    <span className="text-2xl font-bold text-emerald-400">Unlimited</span>
-                  )}
-                </dd>
-              </div>
+            <div className="border-b border-white/8 p-5 sm:border-b-0 sm:border-r">
+              <dt className={`flex items-center gap-3 text-sm font-semibold ${movieQuota.restricted ? "text-red-300" : "text-white/60"}`}>
+                <span className={`inline-flex h-10 w-10 items-center justify-center rounded-2xl ${movieQuota.restricted ? "bg-red-500/15 text-red-300" : "bg-indigo-500/15 text-indigo-300"}`}>
+                  <Film className="h-5 w-5" />
+                </span>
+                Movie Quota
+              </dt>
+              <dd className="mt-4 flex items-center gap-3 text-white">
+                {movieQuota.limit ? (
+                  <>
+                    <ProgressCircle
+                      progress={Math.round((movieQuota.remaining / movieQuota.limit) * 100)}
+                      useHeatLevel
+                      className="h-10 w-10"
+                    />
+                    <div>
+                      <div className={`text-3xl font-bold tracking-tight ${movieQuota.restricted ? "text-red-300" : "text-white"}`}>{movieQuota.remaining}</div>
+                      <div className="text-sm text-white/45">of {movieQuota.limit} remaining</div>
+                    </div>
+                  </>
+                ) : (
+                  <span className="text-3xl font-bold text-emerald-400">Unlimited</span>
+                )}
+              </dd>
             </div>
 
-            {/* Series Requests */}
-            <div className={`relative overflow-hidden rounded-2xl border ${seriesQuota.restricted ? "border-red-500/40" : "border-teal-500/20 hover:border-teal-500/40"} bg-gradient-to-br ${seriesQuota.restricted ? "from-red-950/40" : "from-teal-950/40"} via-slate-900/60 to-slate-900/40 p-5 backdrop-blur-md transition-all`}>
-              <div className={`absolute inset-0 bg-gradient-to-br ${seriesQuota.restricted ? "from-red-500/5" : "from-teal-500/5"} to-transparent pointer-events-none`} />
-              <div className="relative">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className={`h-10 w-10 rounded-xl bg-gradient-to-br ${seriesQuota.restricted ? "from-red-500 to-red-600" : "from-teal-500 to-teal-600"} flex items-center justify-center shadow-lg`}>
-                    <Tv className="h-5 w-5 text-white" />
-                  </div>
-                  <dt className={`text-sm font-bold ${seriesQuota.restricted ? "text-red-400" : "text-gray-300"}`}>
-                    Series Quota
-                  </dt>
-                </div>
-                <dd className={`flex items-center ${seriesQuota.restricted ? "text-red-400" : "text-white"}`}>
-                  {seriesQuota.limit ? (
-                    <>
-                      <ProgressCircle
-                        progress={Math.round((seriesQuota.remaining / seriesQuota.limit) * 100)}
-                        useHeatLevel
-                        className="mr-3 h-9 w-9"
-                      />
-                      <div>
-                        <span className="text-2xl font-bold">{seriesQuota.remaining}</span>
-                        <span className="text-sm text-gray-400 ml-1">/ {seriesQuota.limit} remaining</span>
-                      </div>
-                    </>
-                  ) : (
-                    <span className="text-2xl font-bold text-emerald-400">Unlimited</span>
-                  )}
-                </dd>
-              </div>
+            <div className="p-5">
+              <dt className={`flex items-center gap-3 text-sm font-semibold ${seriesQuota.restricted ? "text-red-300" : "text-white/60"}`}>
+                <span className={`inline-flex h-10 w-10 items-center justify-center rounded-2xl ${seriesQuota.restricted ? "bg-red-500/15 text-red-300" : "bg-teal-500/15 text-teal-300"}`}>
+                  <Tv className="h-5 w-5" />
+                </span>
+                Series Quota
+              </dt>
+              <dd className="mt-4 flex items-center gap-3 text-white">
+                {seriesQuota.limit ? (
+                  <>
+                    <ProgressCircle
+                      progress={Math.round((seriesQuota.remaining / seriesQuota.limit) * 100)}
+                      useHeatLevel
+                      className="h-10 w-10"
+                    />
+                    <div>
+                      <div className={`text-3xl font-bold tracking-tight ${seriesQuota.restricted ? "text-red-300" : "text-white"}`}>{seriesQuota.remaining}</div>
+                      <div className="text-sm text-white/45">of {seriesQuota.limit} remaining</div>
+                    </div>
+                  </>
+                ) : (
+                  <span className="text-3xl font-bold text-emerald-400">Unlimited</span>
+                )}
+              </dd>
             </div>
           </dl>
         </div>

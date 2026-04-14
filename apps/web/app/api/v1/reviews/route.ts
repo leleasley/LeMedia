@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/auth";
-import { getRecentReviews, upsertUser, upsertUserReview } from "@/db";
+import { getRecentReviews, getUserReviewForMedia, upsertUser, upsertUserReview } from "@/db";
+import { createSocialEvent } from "@/db-social";
 import { requireCsrf } from "@/lib/csrf";
 
 const ReviewBody = z.object({
@@ -36,6 +37,7 @@ export async function POST(req: NextRequest) {
 
   const body = ReviewBody.parse(await req.json());
   const dbUser = await upsertUser(user.username, user.groups);
+  const existingReview = await getUserReviewForMedia(dbUser.id, body.mediaType, body.tmdbId);
 
   const result = await upsertUserReview({
     userId: dbUser.id,
@@ -48,6 +50,24 @@ export async function POST(req: NextRequest) {
     posterPath: body.posterPath ?? null,
     releaseYear: body.releaseYear ?? null,
   });
+
+  if (!existingReview) {
+    await createSocialEvent(
+      dbUser.id,
+      "reviewed_media",
+      "media",
+      body.tmdbId,
+      {
+        mediaType: body.mediaType,
+        tmdbId: body.tmdbId,
+        title: body.title,
+        rating: body.rating,
+        spoiler: body.spoiler ?? false,
+        reviewText: body.reviewText ?? null,
+      },
+      "friends"
+    ).catch(() => null);
+  }
 
   return NextResponse.json({ review: result });
 }

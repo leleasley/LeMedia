@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { csrfFetch } from "@/lib/csrf-client";
 import { AnimatedCheckbox } from "@/components/Common/AnimatedCheckbox";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 
 type SystemAlertsConfig = {
   enabled: boolean;
@@ -224,7 +224,7 @@ export default function NotificationsSystemAlerts() {
           <p className="text-sm text-gray-400">Choose where system alerts should be delivered.</p>
         </div>
         <div className="max-w-xl">
-          <Select
+          <AdaptiveSelect
             value={form.routingMode}
             onValueChange={(value) => {
               setForm((prev) => ({
@@ -236,17 +236,14 @@ export default function NotificationsSystemAlerts() {
                     : []
               }));
             }}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select routing mode" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="target_users_and_global">Target user + global endpoints</SelectItem>
-              <SelectItem value="target_users">Target user only</SelectItem>
-              <SelectItem value="global_only">Global endpoints only</SelectItem>
-              <SelectItem value="all_user_endpoints_non_email">System Alerts Bot (all user endpoints, no email)</SelectItem>
-            </SelectContent>
-          </Select>
+            options={[
+              { value: "target_users_and_global", label: "Target user + global endpoints" },
+              { value: "target_users", label: "Target user only" },
+              { value: "global_only", label: "Global endpoints only" },
+              { value: "all_user_endpoints_non_email", label: "System Alerts Bot (all user endpoints, no email)" }
+            ]}
+            placeholder="Select routing mode"
+          />
         </div>
       </div>
 

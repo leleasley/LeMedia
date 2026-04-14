@@ -6,13 +6,7 @@ import { useToast } from "@/components/Providers/ToastProvider";
 import { csrfFetch } from "@/lib/csrf-client";
 import { AnimatedCheckbox } from "@/components/Common/AnimatedCheckbox";
 import { NotificationUserSelector } from "./NotificationUserSelector";
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
+import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 import NotificationTypeSelector from "./NotificationTypeSelector";
 
 type NtfyNotificationSettings = {
@@ -304,21 +298,19 @@ export default function NotificationsNtfy({
                     <label htmlFor="ntfyPriority" className="block text-sm font-medium mb-2">
                         Priority
                     </label>
-                    <Select
+                    <AdaptiveSelect
                         value={String(form.ntfyPriority)}
                         onValueChange={(value) => updateForm({ ntfyPriority: parseInt(value) })}
-                    >
-                        <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select priority" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="1">Min</SelectItem>
-                            <SelectItem value="2">Low</SelectItem>
-                            <SelectItem value="3">Default</SelectItem>
-                            <SelectItem value="4">High</SelectItem>
-                            <SelectItem value="5">Urgent</SelectItem>
-                        </SelectContent>
-                    </Select>
+                        options={[
+                            { value: "1", label: "Min" },
+                            { value: "2", label: "Low" },
+                            { value: "3", label: "Default" },
+                            { value: "4", label: "High" },
+                            { value: "5", label: "Urgent" }
+                        ]}
+                        placeholder="Select priority"
+                        triggerClassName="w-full"
+                    />
                 </div>
 
                 {/* Auth Method */}
@@ -326,21 +318,19 @@ export default function NotificationsNtfy({
                     <label htmlFor="ntfyAuthMethod" className="block text-sm font-medium mb-2">
                         Authentication Method
                     </label>
-                    <Select
+                    <AdaptiveSelect
                         value={form.ntfyAuthMethod}
                         onValueChange={(value) =>
                             updateForm({ ntfyAuthMethod: value as NtfyNotificationSettings["ntfyAuthMethod"] })
                         }
-                    >
-                        <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select auth method" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="none">None</SelectItem>
-                            <SelectItem value="basic">Basic Auth</SelectItem>
-                            <SelectItem value="access_token">Access Token</SelectItem>
-                        </SelectContent>
-                    </Select>
+                        options={[
+                            { value: "none", label: "None" },
+                            { value: "basic", label: "Basic Auth" },
+                            { value: "access_token", label: "Access Token" }
+                        ]}
+                        placeholder="Select auth method"
+                        triggerClassName="w-full"
+                    />
                 </div>
 
                 {/* Username (Basic Auth) */}

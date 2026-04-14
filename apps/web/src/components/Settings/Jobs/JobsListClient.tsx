@@ -14,13 +14,7 @@ import {
 import { useToast } from "@/components/Providers/ToastProvider";
 import { Modal } from "@/components/Common/Modal";
 import { csrfFetch } from "@/lib/csrf-client";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -309,10 +303,14 @@ function JobCard({
             <h3 className="font-semibold text-white truncate basis-full sm:basis-auto">{job.name}</h3>
             <span
               className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
-                job.type === "system" ? "bg-blue-500/20 text-blue-300" : "bg-green-500/20 text-green-300"
+                job.type === "system"
+                  ? "bg-blue-500/20 text-blue-300"
+                  : job.type === "user_managed"
+                  ? "bg-purple-500/20 text-purple-300"
+                  : "bg-green-500/20 text-green-300"
               }`}
             >
-              {job.type}
+              {job.type === "user_managed" ? "per-user" : job.type}
             </span>
             {!job.enabled && (
               <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-red-500/20 text-red-300">
@@ -327,12 +325,21 @@ function JobCard({
             >
               Logs
             </button>
-            <button
-              onClick={onEdit}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-white/10 text-gray-300 transition-colors flex-1 sm:flex-none"
-            >
-              Edit
-            </button>
+            {job.type === "user_managed" ? (
+              <span
+                title="Schedule is fixed — timing is configured per-user in profile settings"
+                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 text-gray-600 cursor-not-allowed select-none flex-1 sm:flex-none text-center"
+              >
+                Edit
+              </span>
+            ) : (
+              <button
+                onClick={onEdit}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-white/10 text-gray-300 transition-colors flex-1 sm:flex-none"
+              >
+                Edit
+              </button>
+            )}
             {!job.enabled ? (
               <button
                 onClick={onEnable}
@@ -389,6 +396,13 @@ function JobCard({
             </div>
           </div>
         </div>
+
+        {/* Per-user note */}
+        {job.type === "user_managed" && (
+          <div className="mt-3 text-xs text-purple-300 bg-purple-500/10 rounded-lg px-3 py-1.5">
+            Schedule is fixed (runs every hour). Individual delivery timing is set by each user in their profile notification settings.
+          </div>
+        )}
 
         {/* Error/disabled info */}
         {(job.disabledReason || job.lastError) && (
@@ -522,25 +536,19 @@ function ExecutionLog({
         <div className="flex items-center gap-2 w-full sm:w-auto">
           <label className="text-xs text-gray-400">Job:</label>
           <div className="min-w-[180px] flex-1 sm:flex-none">
-            <Select
+            <AdaptiveSelect
               value={filterJob ?? "all"}
               onValueChange={(value) => {
                 setFilterJob(value === "all" ? null : value);
                 setPage(0);
               }}
-            >
-              <SelectTrigger className="h-8 text-xs">
-                <SelectValue placeholder="All Jobs" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Jobs</SelectItem>
-                {jobNames.map((name) => (
-                  <SelectItem key={name} value={name}>
-                    {name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              options={[
+                { value: "all", label: "All Jobs" },
+                ...jobNames.map((name) => ({ value: name, label: name }))
+              ]}
+              placeholder="All Jobs"
+              triggerClassName="h-8 text-xs"
+            />
           </div>
         </div>
         <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -1114,7 +1122,7 @@ export function JobsListClient() {
           <form onSubmit={saveJob} className="space-y-4">
             <div>
               <label className="block text-sm font-medium mb-2 text-gray-300">Schedule type</label>
-              <Select
+              <AdaptiveSelect
                 value={scheduleMode}
                 onValueChange={(value) => {
                   setScheduleMode(value as typeof scheduleMode);
@@ -1122,18 +1130,9 @@ export function JobsListClient() {
                   if (value === "weekly") setEditInterval(604800);
                   if (value === "monthly") setEditInterval(2592000);
                 }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select schedule type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {SCHEDULE_MODES.map((mode) => (
-                    <SelectItem key={mode.value} value={mode.value}>
-                      {mode.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                options={SCHEDULE_MODES.map((mode) => ({ value: mode.value, label: mode.label }))}
+                placeholder="Select schedule type"
+              />
               <p className="mt-2 text-xs text-gray-400">Changes apply globally for all users.</p>
             </div>
 
@@ -1167,26 +1166,20 @@ export function JobsListClient() {
             {scheduleMode === "interval" && (
               <div>
                 <label className="block text-sm font-medium mb-2 text-gray-300">Run Every</label>
-                <Select
+                <AdaptiveSelect
                   value={editInterval.toString()}
                   onValueChange={(value) => setEditInterval(parseInt(value))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select frequency" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {FREQUENCY_PRESETS.map((preset) => (
-                      <SelectItem key={preset.value} value={preset.value.toString()}>
-                        {preset.label}
-                      </SelectItem>
-                    ))}
-                    {!FREQUENCY_PRESETS.some((p) => p.value === editInterval) && (
-                      <SelectItem value={editInterval.toString()}>
-                        Custom ({formatInterval(editInterval)})
-                      </SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
+                  options={[
+                    ...FREQUENCY_PRESETS.map((preset) => ({
+                      value: preset.value.toString(),
+                      label: preset.label
+                    })),
+                    ...(!FREQUENCY_PRESETS.some((preset) => preset.value === editInterval)
+                      ? [{ value: editInterval.toString(), label: `Custom (${formatInterval(editInterval)})` }]
+                      : [])
+                  ]}
+                  placeholder="Select frequency"
+                />
               </div>
             )}
 
@@ -1204,35 +1197,23 @@ export function JobsListClient() {
                 {scheduleMode === "weekly" && (
                   <div>
                     <label className="block text-sm font-medium mb-2 text-gray-300">Day of week</label>
-                    <Select value={dayOfWeek} onValueChange={setDayOfWeek}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select day" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {WEEK_DAYS.map((day) => (
-                          <SelectItem key={day.value} value={day.value}>
-                            {day.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <AdaptiveSelect
+                      value={dayOfWeek}
+                      onValueChange={setDayOfWeek}
+                      options={WEEK_DAYS.map((day) => ({ value: day.value, label: day.label }))}
+                      placeholder="Select day"
+                    />
                   </div>
                 )}
                 {scheduleMode === "monthly" && (
                   <div>
                     <label className="block text-sm font-medium mb-2 text-gray-300">Day of month</label>
-                    <Select value={dayOfMonth} onValueChange={setDayOfMonth}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select day" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {DAYS_OF_MONTH.map((day) => (
-                          <SelectItem key={day.value} value={day.value}>
-                            Day {day.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <AdaptiveSelect
+                      value={dayOfMonth}
+                      onValueChange={setDayOfMonth}
+                      options={DAYS_OF_MONTH.map((day) => ({ value: day.value, label: `Day ${day.label}` }))}
+                      placeholder="Select day"
+                    />
                     <p className="mt-2 text-xs text-gray-400">Limited to days 1-28 for monthly reliability.</p>
                   </div>
                 )}

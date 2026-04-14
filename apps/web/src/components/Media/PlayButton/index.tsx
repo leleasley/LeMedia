@@ -12,6 +12,7 @@ export interface PlayButtonLink {
 
 interface PlayButtonProps {
   links: PlayButtonLink[];
+  onTrailerClick?: (url: string) => void;
 }
 
 function parseYouTubeId(url: string): string | null {
@@ -35,7 +36,7 @@ function parseYouTubeId(url: string): string | null {
   return null;
 }
 
-export function PlayButton({ links }: PlayButtonProps) {
+export function PlayButton({ links, onTrailerClick }: PlayButtonProps) {
   const [trailerOpen, setTrailerOpen] = useState(false);
   const [trailerUrl, setTrailerUrl] = useState<string | null>(null);
   const hasLinks = Array.isArray(links) && links.length > 0;
@@ -55,6 +56,10 @@ export function PlayButton({ links }: PlayButtonProps) {
     const youtubeId = parseYouTubeId(link.url);
     if (youtubeId) {
       event?.preventDefault();
+      if (onTrailerClick) {
+        onTrailerClick(link.url);
+        return;
+      }
       setTrailerUrl(link.url);
       setTrailerOpen(true);
       return;

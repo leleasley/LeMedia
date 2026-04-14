@@ -6,13 +6,7 @@ import { useToast } from "@/components/Providers/ToastProvider";
 import { csrfFetch } from "@/lib/csrf-client";
 import { AnimatedCheckbox } from "@/components/Common/AnimatedCheckbox";
 import { NotificationUserSelector } from "./NotificationUserSelector";
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
+import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 import NotificationTypeSelector from "./NotificationTypeSelector";
 
 type PushoverNotificationSettings = {
@@ -313,21 +307,19 @@ export default function NotificationsPushover({
                     <label htmlFor="priority" className="block text-sm font-medium mb-2">
                         Priority
                     </label>
-                    <Select
+                    <AdaptiveSelect
                         value={String(form.priority)}
                         onValueChange={(value) => updateForm({ priority: parseInt(value) })}
-                    >
-                        <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select priority" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="-2">Lowest</SelectItem>
-                            <SelectItem value="-1">Low</SelectItem>
-                            <SelectItem value="0">Normal</SelectItem>
-                            <SelectItem value="1">High</SelectItem>
-                            <SelectItem value="2">Emergency</SelectItem>
-                        </SelectContent>
-                    </Select>
+                        options={[
+                            { value: "-2", label: "Lowest" },
+                            { value: "-1", label: "Low" },
+                            { value: "0", label: "Normal" },
+                            { value: "1", label: "High" },
+                            { value: "2", label: "Emergency" }
+                        ]}
+                        placeholder="Select priority"
+                        triggerClassName="w-full"
+                    />
                 </div>
 
                 {/* Sound */}
@@ -335,39 +327,37 @@ export default function NotificationsPushover({
                     <label htmlFor="sound" className="block text-sm font-medium mb-2">
                         Notification Sound
                     </label>
-                    <Select
+                    <AdaptiveSelect
                         value={form.sound}
                         onValueChange={(value) => updateForm({ sound: value })}
-                    >
-                        <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select sound" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="pushover">Pushover (default)</SelectItem>
-                            <SelectItem value="bike">Bike</SelectItem>
-                            <SelectItem value="bugle">Bugle</SelectItem>
-                            <SelectItem value="cashregister">Cash Register</SelectItem>
-                            <SelectItem value="classical">Classical</SelectItem>
-                            <SelectItem value="cosmic">Cosmic</SelectItem>
-                            <SelectItem value="falling">Falling</SelectItem>
-                            <SelectItem value="gamelan">Gamelan</SelectItem>
-                            <SelectItem value="incoming">Incoming</SelectItem>
-                            <SelectItem value="intermission">Intermission</SelectItem>
-                            <SelectItem value="magic">Magic</SelectItem>
-                            <SelectItem value="mechanical">Mechanical</SelectItem>
-                            <SelectItem value="pianobar">Piano Bar</SelectItem>
-                            <SelectItem value="siren">Siren</SelectItem>
-                            <SelectItem value="spacealarm">Space Alarm</SelectItem>
-                            <SelectItem value="tugboat">Tug Boat</SelectItem>
-                            <SelectItem value="alien">Alien Alarm (long)</SelectItem>
-                            <SelectItem value="climb">Climb (long)</SelectItem>
-                            <SelectItem value="persistent">Persistent (long)</SelectItem>
-                            <SelectItem value="echo">Pushover Echo (long)</SelectItem>
-                            <SelectItem value="updown">Up Down (long)</SelectItem>
-                            <SelectItem value="vibrate">Vibrate Only</SelectItem>
-                            <SelectItem value="none">None (silent)</SelectItem>
-                        </SelectContent>
-                    </Select>
+                        options={[
+                            { value: "pushover", label: "Pushover (default)" },
+                            { value: "bike", label: "Bike" },
+                            { value: "bugle", label: "Bugle" },
+                            { value: "cashregister", label: "Cash Register" },
+                            { value: "classical", label: "Classical" },
+                            { value: "cosmic", label: "Cosmic" },
+                            { value: "falling", label: "Falling" },
+                            { value: "gamelan", label: "Gamelan" },
+                            { value: "incoming", label: "Incoming" },
+                            { value: "intermission", label: "Intermission" },
+                            { value: "magic", label: "Magic" },
+                            { value: "mechanical", label: "Mechanical" },
+                            { value: "pianobar", label: "Piano Bar" },
+                            { value: "siren", label: "Siren" },
+                            { value: "spacealarm", label: "Space Alarm" },
+                            { value: "tugboat", label: "Tug Boat" },
+                            { value: "alien", label: "Alien Alarm (long)" },
+                            { value: "climb", label: "Climb (long)" },
+                            { value: "persistent", label: "Persistent (long)" },
+                            { value: "echo", label: "Pushover Echo (long)" },
+                            { value: "updown", label: "Up Down (long)" },
+                            { value: "vibrate", label: "Vibrate Only" },
+                            { value: "none", label: "None (silent)" }
+                        ]}
+                        placeholder="Select sound"
+                        triggerClassName="w-full"
+                    />
                 </div>
 
                 {/* Notification Types */}

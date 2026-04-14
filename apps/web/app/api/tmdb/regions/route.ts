@@ -10,6 +10,11 @@ export async function GET(req: NextRequest) {
     const regions = await getRegions();
     return jsonResponseWithETag(req, { regions });
   } catch (e) {
-    return jsonResponseWithETag(req, { error: "Failed to load regions" }, { status: 500 });
+    // Fail open so profile/general can still render when TMDB is temporarily unavailable.
+    return jsonResponseWithETag(req, {
+      regions: [],
+      degraded: true,
+      error: "Failed to load regions",
+    });
   }
 }

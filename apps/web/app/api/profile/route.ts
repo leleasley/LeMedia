@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/auth";
-import { addUserPasswordHistory, getUserPasswordHistory, getUserTraktTokenStatus, getUserWithHash, listUserOAuthAccounts, updateUserPasswordById, updateUserProfile } from "@/db";
+import { addUserPasswordHistory, getUserPasswordHistory, getUserTraktTokenStatus, getUserTvTrailerPreference, getUserWithHash, listUserOAuthAccounts, setUserTvTrailerPreference, updateUserPasswordById, updateUserProfile } from "@/db";
 import { hashPassword, verifyPassword } from "@/lib/auth-utils";
 import { z } from "zod";
 import { requireCsrf } from "@/lib/csrf";
@@ -31,6 +31,7 @@ const UpdateSchema = z.object({
   originalLanguage: z.string().nullable().optional(),
   watchlistSyncMovies: z.boolean().optional(),
   watchlistSyncTv: z.boolean().optional(),
+  tvTrailerPreference: z.enum(["series", "latest-season", "best-available"]).optional(),
 });
 
 export async function GET(req: NextRequest) {
@@ -41,9 +42,10 @@ export async function GET(req: NextRequest) {
     const dbUser = await getUserWithHash(user.username);
     if (!dbUser) return jsonResponseWithETag(req, { error: "User not found" }, { status: 404 });
 
-    const [traktStatus, oauthAccounts] = await Promise.all([
+    const [traktStatus, oauthAccounts, tvTrailerPreference] = await Promise.all([
       getUserTraktTokenStatus(dbUser.id),
-      listUserOAuthAccounts(dbUser.id)
+      listUserOAuthAccounts(dbUser.id),
+      getUserTvTrailerPreference(dbUser.id).catch(() => "series" as const)
     ]);
     const googleAccount = oauthAccounts.find((account) => account.provider === "google") ?? null;
     const githubAccount = oauthAccounts.find((account) => account.provider === "github") ?? null;
@@ -74,6 +76,7 @@ export async function GET(req: NextRequest) {
         originalLanguage: dbUser.original_language,
         watchlistSyncMovies: dbUser.watchlist_sync_movies,
         watchlistSyncTv: dbUser.watchlist_sync_tv,
+        tvTrailerPreference,
         requestLimitMovie: dbUser.request_limit_movie,
         requestLimitMovieDays: dbUser.request_limit_movie_days,
         requestLimitSeries: dbUser.request_limit_series,
@@ -104,7 +107,7 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
     }
 
-    if (!body.username && body.username !== "" && body.displayName === undefined && !body.email && !body.newPassword && body.discordUserId === undefined && body.letterboxdUsername === undefined && body.traktUsername === undefined && body.discoverRegion === undefined && body.originalLanguage === undefined && body.watchlistSyncMovies === undefined && body.watchlistSyncTv === undefined) {
+    if (!body.username && body.username !== "" && body.displayName === undefined && !body.email && !body.newPassword && body.discordUserId === undefined && body.letterboxdUsername === undefined && body.traktUsername === undefined && body.discoverRegion === undefined && body.originalLanguage === undefined && body.watchlistSyncMovies === undefined && body.watchlistSyncTv === undefined && body.tvTrailerPreference === undefined) {
       return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
     }
 
@@ -186,6 +189,9 @@ export async function PATCH(req: NextRequest) {
     if (Object.keys(updates).length > 0) {
       await updateUserProfile(dbUser.id, updates);
     }
+    if (body.tvTrailerPreference !== undefined) {
+      await setUserTvTrailerPreference(dbUser.id, body.tvTrailerPreference);
+    }
 
     const nextUsername = updates.username ?? dbUser.username;
     const nextEmail = updates.email !== undefined ? updates.email : dbUser.email;
@@ -206,6 +212,7 @@ export async function PATCH(req: NextRequest) {
         originalLanguage: updates.originalLanguage !== undefined ? updates.originalLanguage : dbUser.original_language,
         watchlistSyncMovies: updates.watchlistSyncMovies !== undefined ? updates.watchlistSyncMovies : dbUser.watchlist_sync_movies,
         watchlistSyncTv: updates.watchlistSyncTv !== undefined ? updates.watchlistSyncTv : dbUser.watchlist_sync_tv,
+        tvTrailerPreference: body.tvTrailerPreference !== undefined ? body.tvTrailerPreference : await getUserTvTrailerPreference(dbUser.id).catch(() => "series" as const),
       },
       requireLogout: !!(updates.username !== undefined || body.newPassword)
     });

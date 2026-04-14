@@ -2,19 +2,12 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Modal } from "@/components/Common/Modal";
-import { Plus, List, Loader2 } from "lucide-react";
+import { Check, List, Loader2, Plus, Search, Sparkles } from "lucide-react";
 import { CreateListModal } from "./CreateListModal";
 import { csrfFetch } from "@/lib/csrf-client";
 import { mutate as globalMutate } from "swr";
 import { triggerSocialFeedRefresh } from "@/lib/social-feed-refresh";
 import { useToast } from "@/components/Providers/ToastProvider";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
 interface CustomList {
   id: number;
@@ -44,9 +37,9 @@ export function AddToListModal({
   const [loading, setLoading] = useState(true);
   const [addingTo, setAddingTo] = useState<number | null>(null);
   const [addedTo, setAddedTo] = useState<Set<number>>(new Set());
-  const [selectedListId, setSelectedListId] = useState<number | null>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [displayTitle, setDisplayTitle] = useState(title);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const fetchLists = useCallback(async () => {
     try {
@@ -72,8 +65,8 @@ export function AddToListModal({
 
   useEffect(() => {
     if (open) {
-      setSelectedListId(null);
       setAddedTo(new Set());
+      setSearchQuery("");
       void fetchLists();
     }
   }, [open, fetchLists]);
@@ -98,14 +91,12 @@ export function AddToListModal({
     fetchTitle();
   }, [open, title, mediaType, tmdbId]);
 
-  const handleAddToList = async () => {
-    if (!selectedListId || addingTo || addedTo.has(selectedListId)) return;
-    const selected = lists.find((list) => list.id === selectedListId);
-    if (!selected || selected.alreadyContains) return;
+  const handleAddToList = async (list: CustomList) => {
+    if (addingTo || addedTo.has(list.id) || list.alreadyContains) return;
 
-    setAddingTo(selectedListId);
+    setAddingTo(list.id);
     try {
-      const res = await csrfFetch(`/api/v1/lists/${selectedListId}/items`, {
+      const res = await csrfFetch(`/api/v1/lists/${list.id}/items`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -113,20 +104,20 @@ export function AddToListModal({
       });
 
       if (res.ok) {
-        setAddedTo((prev) => new Set(prev).add(selectedListId));
+        setAddedTo((prev) => new Set(prev).add(list.id));
         setLists((prev) =>
           prev.map((l) =>
-            l.id === selectedListId ? { ...l, itemCount: l.itemCount + 1, alreadyContains: true } : l
+            l.id === list.id ? { ...l, itemCount: l.itemCount + 1, alreadyContains: true } : l
           )
         );
-        toast.success(`Added to ${selected.name}`);
+        toast.success(`Added to ${list.name}`);
         triggerSocialFeedRefresh();
         void globalMutate((key) =>
           typeof key === "string" && (key === "/api/v1/lists" || key.startsWith("/api/v1/social/feed"))
         );
       } else if (res.status === 409) {
         setLists((prev) =>
-          prev.map((l) => (l.id === selectedListId ? { ...l, alreadyContains: true } : l))
+          prev.map((l) => (l.id === list.id ? { ...l, alreadyContains: true } : l))
         );
       }
     } catch {
@@ -138,20 +129,37 @@ export function AddToListModal({
 
   const handleListCreated = (list: { id: number; name: string }) => {
     setLists((prev) => [{ ...list, itemCount: 0, alreadyContains: false }, ...prev]);
-    setSelectedListId(list.id);
     setCreateModalOpen(false);
     toast.success(`List \"${list.name}\" created`);
+    void handleAddToList({ id: list.id, name: list.name, itemCount: 0, alreadyContains: false });
   };
 
-  const selectedList = lists.find((list) => list.id === selectedListId) ?? null;
+  const visibleLists = lists
+    .filter((list) => {
+      const query = searchQuery.trim().toLowerCase();
+      if (!query) return true;
+      return list.name.toLowerCase().includes(query);
+    })
+    .sort((left, right) => {
+      const leftDisabled = Boolean(left.alreadyContains || addedTo.has(left.id));
+      const rightDisabled = Boolean(right.alreadyContains || addedTo.has(right.id));
+      if (leftDisabled !== rightDisabled) return leftDisabled ? 1 : -1;
+      return left.name.localeCompare(right.name);
+    });
 
   return (
     <>
       <Modal open={open} onClose={onClose} title="Add to List">
-        <div className="p-4 space-y-4">
-          <p className="text-sm text-gray-400">
-            Add <span className="text-white font-medium">{displayTitle || "Unknown"}</span> to a list
-          </p>
+        <div className="space-y-4 p-4">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-indigo-400/15 bg-indigo-500/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-indigo-200">
+              <Sparkles className="h-3.5 w-3.5" />
+              Save To List
+            </div>
+            <p className="text-sm text-gray-300">
+              Add <span className="font-medium text-white">{displayTitle || "Unknown"}</span> to one of your curated lists.
+            </p>
+          </div>
 
           {loading ? (
             <div className="flex items-center justify-center py-8">
@@ -165,7 +173,7 @@ export function AddToListModal({
               <p className="text-sm text-gray-400 mb-4">No lists yet</p>
               <button
                 onClick={() => setCreateModalOpen(true)}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500"
               >
                 <Plus className="w-4 h-4" />
                 Create List
@@ -173,51 +181,79 @@ export function AddToListModal({
             </div>
           ) : (
             <div className="space-y-3">
-              <Select
-                value={selectedListId ? String(selectedListId) : undefined}
-                onValueChange={(value) => setSelectedListId(Number(value))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a list" />
-                </SelectTrigger>
-                <SelectContent>
-                  {lists.map((list) => (
-                    <SelectItem
-                      key={list.id}
-                      value={String(list.id)}
-                      disabled={Boolean(list.alreadyContains || addedTo.has(list.id))}
-                    >
-                      {list.name} ({list.itemCount})
-                      {list.alreadyContains || addedTo.has(list.id) ? " • Already added" : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="Search your lists..."
+                  className="w-full rounded-xl border border-white/10 bg-white/[0.04] py-3 pl-9 pr-4 text-sm text-white placeholder:text-white/30 outline-none transition-colors focus:border-indigo-400/40 focus:bg-white/[0.06]"
+                />
+              </div>
 
-              {selectedList && (
-                <div className="rounded-lg border border-white/10 bg-gray-800/30 px-3 py-2 text-xs text-gray-300">
-                  {selectedList.alreadyContains || addedTo.has(selectedList.id)
-                    ? "This title is already in the selected list."
-                    : `Selected: ${selectedList.name} (${selectedList.itemCount} ${selectedList.itemCount === 1 ? "item" : "items"})`}
-                </div>
-              )}
+              <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-white/55">
+                <span>{visibleLists.length} {visibleLists.length === 1 ? "list" : "lists"} ready</span>
+                <span>Tap once to add</span>
+              </div>
+
+              <div className="max-h-[18rem] space-y-2 overflow-y-auto pr-1">
+                {visibleLists.length === 0 ? (
+                  <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-6 text-center text-sm text-white/55">
+                    No lists match that search yet.
+                  </div>
+                ) : (
+                  visibleLists.map((list) => {
+                    const disabled = Boolean(list.alreadyContains || addedTo.has(list.id));
+                    const isSaving = addingTo === list.id;
+                    return (
+                      <button
+                        key={list.id}
+                        type="button"
+                        onClick={() => !disabled && !isSaving && void handleAddToList(list)}
+                        disabled={disabled || isSaving}
+                        className={`flex w-full items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left transition-colors ${
+                          disabled
+                            ? "border-emerald-400/20 bg-emerald-500/[0.08] opacity-70"
+                            : isSaving
+                              ? "border-indigo-400/35 bg-indigo-500/[0.10]"
+                              : "border-white/10 bg-white/[0.04] hover:border-indigo-400/35 hover:bg-white/[0.07]"
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold text-white">{list.name}</div>
+                          <div className="mt-1 text-xs text-white/45">
+                            {list.itemCount} {list.itemCount === 1 ? "item" : "items"}
+                            {disabled ? " • Already added" : " • Add now"}
+                          </div>
+                        </div>
+                        <div className={`inline-flex min-w-[4.75rem] flex-shrink-0 items-center justify-center rounded-full border px-3 py-1.5 text-xs font-semibold ${
+                          disabled
+                            ? "border-emerald-300/30 bg-emerald-400/15 text-emerald-100"
+                            : isSaving
+                              ? "border-indigo-300/30 bg-indigo-400/15 text-indigo-100"
+                              : "border-white/10 bg-white/[0.04] text-white/75"
+                        }`}>
+                          {disabled ? (
+                            <span className="inline-flex items-center gap-1"><Check className="h-3.5 w-3.5" /> Added</span>
+                          ) : isSaving ? (
+                            <span className="inline-flex items-center gap-1"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Adding</span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1"><Plus className="h-3.5 w-3.5" /> Add</span>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
             </div>
           )}
 
           {lists.length > 0 && (
             <button
-              onClick={handleAddToList}
-              disabled={!selectedListId || addingTo !== null || Boolean(selectedList?.alreadyContains) || (selectedListId !== null && addedTo.has(selectedListId))}
-              className="w-full px-4 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {addingTo ? "Adding..." : "Add to Selected List"}
-            </button>
-          )}
-
-          {lists.length > 0 && (
-            <button
               onClick={() => setCreateModalOpen(true)}
-              className="w-full flex items-center justify-center gap-2 p-3 bg-gray-800/30 hover:bg-gray-800/50 border border-dashed border-white/10 rounded-lg text-gray-400 hover:text-white transition-colors"
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-white/[0.03] p-3 text-gray-400 transition-colors hover:bg-white/[0.05] hover:text-white"
             >
               <Plus className="w-4 h-4" />
               Create New List

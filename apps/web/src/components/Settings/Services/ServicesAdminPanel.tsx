@@ -14,7 +14,6 @@ import ProwlarrLogo from "@/assets/services/prowlarr.svg";
 import SabnzbdLogo from "@/assets/services/sabnzbd.svg";
 import QbittorrentLogo from "@/assets/services/qbittorrent.svg";
 import NzbgetLogo from "@/assets/services/nzbget.svg";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 import { Loader2, CheckCircle2, XCircle, Database, Film, Tv, RefreshCcw, Server, Download } from "lucide-react";
 
@@ -1065,14 +1064,17 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
                             {isDownloader && (
                                 <div className="space-y-2">
                                     <label className="text-sm font-medium text-white">Type</label>
-                                    <Select value={form.type} onValueChange={(value) => setForm({ ...form, type: value as FormState["type"] })}>
-                                        <SelectTrigger className="input"><SelectValue /></SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="sabnzbd">SABnzbd</SelectItem>
-                                            <SelectItem value="qbittorrent">qBittorrent</SelectItem>
-                                            <SelectItem value="nzbget">NZBGet</SelectItem>
-                                        </SelectContent>
-                                    </Select>
+                                    <AdaptiveSelect
+                                        value={form.type}
+                                        onValueChange={(value) => setForm({ ...form, type: value as FormState["type"] })}
+                                        options={[
+                                            { value: "sabnzbd", label: "SABnzbd" },
+                                            { value: "qbittorrent", label: "qBittorrent" },
+                                            { value: "nzbget", label: "NZBGet" }
+                                        ]}
+                                        className="w-full"
+                                        triggerClassName="input"
+                                    />
                                 </div>
                             )}
                         </div>

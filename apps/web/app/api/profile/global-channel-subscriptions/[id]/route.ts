@@ -61,10 +61,10 @@ export async function PATCH(req: NextRequest, context: { params: ParamsInput }) 
   if (bodyParsed.data.subscribed) {
     await addUserNotificationEndpointId(dbUser.id, endpointId);
   } else {
-    const currentIds = await listUserNotificationEndpointIds(dbUser.id);
+    const existingIds = await listUserNotificationEndpointIds(dbUser.id);
     await setUserNotificationEndpointIds(
       dbUser.id,
-      currentIds.filter((id) => id !== endpointId)
+      existingIds.filter((id) => id !== endpointId)
     );
   }
 

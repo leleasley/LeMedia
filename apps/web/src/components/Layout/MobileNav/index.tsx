@@ -35,11 +35,10 @@ type NavLink = {
 
 export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, children, profile }: MobileNavProps) {
     const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const [menuPathname, setMenuPathname] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<string | null>(null);
     const pathname = usePathname();
     const avatarSrc = useMemo(() => (profile ? getAvatarSrc(profile) : ""), [profile]);
-    const avatarSource = profile?.avatarUrl ? "direct" : profile?.jellyfinUserId ? "proxy" : "fallback";
-    const showAvatarDebug = process.env.NODE_ENV !== "production";
 
     // Drag-to-dismiss state
     const sheetRef = useRef<HTMLDivElement>(null);
@@ -49,7 +48,8 @@ export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, 
     const [dragOffset, setDragOffset] = useState(0);
 
     // Lock body scroll when mobile menu is open
-    useLockBodyScroll(isMenuOpen);
+    const isMenuVisible = isMenuOpen && menuPathname === pathname;
+    useLockBodyScroll(isMenuVisible);
 
     const isMediaPage = useMemo(() => {
         const current = pathname ?? "";
@@ -72,12 +72,15 @@ export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, 
     // Handle menu toggle with haptic feedback
     const handleMenuToggle = useCallback(() => {
         haptic('medium');
-        setIsMenuOpen(prev => {
-            const next = !prev;
-            if (!next) resetDragState();
-            return next;
-        });
-    }, [resetDragState]);
+        if (isMenuVisible) {
+            resetDragState();
+            setIsMenuOpen(false);
+            setMenuPathname(null);
+            return;
+        }
+        setMenuPathname(pathname ?? null);
+        setIsMenuOpen(true);
+    }, [isMenuVisible, pathname, resetDragState]);
 
     // Drag-to-dismiss handlers
     const handleTouchStart = useCallback((e: React.TouchEvent) => {
@@ -105,6 +108,7 @@ export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, 
         if (dragOffset > 80) {
             haptic('light');
             setIsMenuOpen(false);
+            setMenuPathname(null);
             resetDragState();
             return;
         }
@@ -176,6 +180,7 @@ export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, 
     const closeMenu = useCallback(() => {
         haptic('light');
         setIsMenuOpen(false);
+        setMenuPathname(null);
         resetDragState();
     }, [resetDragState]);
 
@@ -185,8 +190,8 @@ export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, 
                 {children}
             </div>
 
-            <Transition show={isMenuOpen} as={Fragment}>
-                <div className="fixed inset-0 z-50" style={{ bottom: "calc(3.75rem + env(safe-area-inset-bottom))" }}>
+            <Transition show={isMenuVisible} as={Fragment}>
+                <div className="fixed inset-0 z-[80]" style={{ bottom: "calc(3.75rem + env(safe-area-inset-bottom))" }}>
                     <Transition.Child
                         as={Fragment}
                         enter="transition-opacity duration-200"
@@ -223,23 +228,26 @@ export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, 
                                 transform: dragOffset > 0 ? `translateY(${dragOffset}px)` : undefined,
                                 transition: isDragging ? 'none' : 'transform 0.3s var(--ease-ios-spring)',
                                 animationTimingFunction: 'var(--ease-ios-spring)',
+                                overscrollBehavior: 'contain',
                             }}
-                            onTouchStart={handleTouchStart}
-                            onTouchMove={handleTouchMove}
-                            onTouchEnd={handleTouchEnd}
                         >
                             {/* iOS-style drag indicator */}
-                            <div className="flex justify-center pb-3">
-                                <div className="h-1 w-10 rounded-full bg-white/30" />
-                            </div>
+                            <div
+                                className="pb-3"
+                                onTouchStart={handleTouchStart}
+                                onTouchMove={handleTouchMove}
+                                onTouchEnd={handleTouchEnd}
+                            >
+                                <div className="flex justify-center pb-3">
+                                    <div className="h-1 w-10 rounded-full bg-white/30" />
+                                </div>
 
-                            <div className="flex items-center justify-between pb-3">
-                                {/* Profile pill */}
+                                <div className="flex items-center justify-between">
                                 {profile ? (
                                     <PrefetchLink
-                                        href="/settings/profile"
+                                        href="/profile"
                                         onClick={closeMenu}
-                                        className="flex items-center gap-2.5 rounded-xl px-2 py-1.5 transition-colors hover:bg-white/5"
+                                        className="flex min-w-0 items-center gap-2.5 rounded-xl px-2 py-1.5 transition-colors hover:bg-white/5"
                                     >
                                         <div className="relative h-8 w-8 flex-shrink-0 overflow-hidden rounded-full border border-white/10 bg-slate-700">
                                             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -252,22 +260,9 @@ export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, 
                                                 fetchPriority="high"
                                             />
                                         </div>
-                                        <div className="min-w-0">
-                                            <p className="truncate text-sm font-semibold text-slate-200">
-                                                {profile.displayName ?? profile.username}
-                                            </p>
-                                            <div className="flex items-center gap-1.5">
-                                                <p className="text-[10px] text-slate-500">View profile</p>
-                                                {showAvatarDebug && (
-                                                    <span
-                                                        className="rounded border border-white/15 bg-white/5 px-1 py-[1px] text-[9px] uppercase tracking-wide text-slate-400"
-                                                        title={avatarSrc}
-                                                    >
-                                                        {avatarSource}
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </div>
+                                        <p className="truncate text-sm font-semibold text-slate-200">
+                                            {profile.displayName ?? profile.username}
+                                        </p>
                                     </PrefetchLink>
                                 ) : (
                                     <div className="text-sm font-semibold text-slate-200">Quick Menu</div>
@@ -280,13 +275,15 @@ export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, 
                                 >
                                     <X className="h-4 w-4" />
                                 </button>
+                                </div>
                             </div>
 
                             <div 
                                 className="max-h-[75vh] space-y-4 overflow-y-scroll pr-1" 
                                 style={{ 
                                     WebkitOverflowScrolling: 'touch',
-                                    touchAction: 'pan-y'
+                                    touchAction: 'pan-y',
+                                    overscrollBehavior: 'contain',
                                 }}
                             >
                                 {/* ── Browse (items not on tab bar) ── */}
@@ -420,7 +417,7 @@ export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, 
                 <div className="flex items-center justify-around px-2 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
                     {mainLinks.map((link) => {
                         const Icon = link.icon;
-                        const isActive = link.isActive && !isMenuOpen;
+                        const isActive = link.isActive && !isMenuVisible;
                         const isAnimating = activeTab === link.href;
                         return (
                             <PrefetchLink
@@ -459,25 +456,25 @@ export function MobileNav({ isAdmin, pendingRequestsCount = 0, issuesCount = 0, 
                             onClick={handleMenuToggle}
                             className={cn(
                                 "ios-tab-item flex min-w-[3.5rem] flex-col items-center gap-0.5 rounded-xl px-3 py-1.5 text-[10px] font-medium",
-                                isMenuOpen ? "text-white" : "text-slate-400"
+                                isMenuVisible ? "text-white" : "text-slate-400"
                             )}
-                            aria-label={isMenuOpen ? "Close menu" : "Open menu"}
-                            aria-expanded={isMenuOpen}
+                            aria-label={isMenuVisible ? "Close menu" : "Open menu"}
+                            aria-expanded={isMenuVisible}
                         >
                             <span className={cn(
                                 "transition-transform duration-200",
-                                isMenuOpen && "rotate-90"
+                                isMenuVisible && "rotate-90"
                             )}>
-                                {isMenuOpen ? <X className="h-5 w-5 text-sky-400" /> : <Ellipsis className="h-5 w-5" />}
+                                {isMenuVisible ? <X className="h-5 w-5 text-sky-400" /> : <Ellipsis className="h-5 w-5" />}
                             </span>
                             <span className={cn(
                                 "transition-all duration-200",
-                                isMenuOpen && "font-semibold"
+                                isMenuVisible && "font-semibold"
                             )}>
                                 More
                             </span>
                             {/* Active indicator dot */}
-                            {isMenuOpen && (
+                            {isMenuVisible && (
                                 <span className="absolute -bottom-0.5 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-indigo-400" />
                             )}
                         </button>

@@ -11,6 +11,7 @@ import { csrfFetch } from "@/lib/csrf-client";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/dateFormat";
 import { tmdbImageUrl } from "@/lib/tmdb-images";
+import { triggerSocialFeedRefresh } from "@/lib/social-feed-refresh";
 
 const fetcher = (url: string) => fetch(url).then((response) => response.json());
 
@@ -130,6 +131,7 @@ export function ReviewQueuePageClient({ imageProxyEnabled }: { imageProxyEnabled
       window.dispatchEvent(new CustomEvent("media-review-state-changed", {
         detail: { mediaType: item.mediaType, tmdbId: item.tmdbId, hasReview: true },
       }));
+      triggerSocialFeedRefresh();
 
       toast.success("Review posted. It will appear on the title page as well.");
     } catch {

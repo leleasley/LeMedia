@@ -4,20 +4,15 @@ import { sendEmail } from "@/notifications/email";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { isValidCsrfToken } from "@/lib/csrf";
 import { isSameOriginRequest, getRequestContext } from "@/lib/proxy";
-import { resolvePublicBaseUrl } from "@/lib/server-utils";
 import { logAuditEvent } from "@/lib/audit-log";
 import { randomInt } from "crypto";
 
 // Generic response for every outcome so that callers cannot determine
 // whether an email address exists in the system.
-// NOTE: NextResponse.json() bodies are single-use streams — must create a new
-// instance per request, not a shared module-level constant.
-function makeOkResponse() {
-  return NextResponse.json({
-    ok: true,
-    message: "If that email address is registered, a reset link will be sent shortly.",
-  });
-}
+const OK_RESPONSE = NextResponse.json({
+  ok: true,
+  message: "If that email address is registered, a reset link will be sent shortly.",
+});
 
 /**
  * Sleeps for a random duration between minMs and maxMs (inclusive).
@@ -71,21 +66,19 @@ export async function POST(req: NextRequest) {
     // Randomized delay: makes this branch indistinguishable from the
     // "user found + email sent" path timing-wise.
     await randomDelay();
-    return makeOkResponse();
+    return OK_RESPONSE;
   }
 
   // Only allow password reset for accounts that have a password set.
   // OAuth-only accounts have no password_hash and cannot use this flow.
   if (!user.password_hash) {
     await randomDelay();
-    return makeOkResponse();
+    return OK_RESPONSE;
   }
 
   try {
     const token = await createPasswordResetToken(user.id);
-    const base = resolvePublicBaseUrl(req);
-    // Keep the user-facing link on /reset-password; the page redirects to exchange
-    // and then to a clean /reset-password URL with token in HttpOnly cookie only.
+    const base = ctx.base.replace(/\/$/, "");
     const resetUrl = `${base}/reset-password?token=${token}`;
 
     await sendEmail({
@@ -137,5 +130,5 @@ export async function POST(req: NextRequest) {
     // generic message so we never leak whether the address is registered.
   }
 
-  return makeOkResponse();
+  return OK_RESPONSE;
 }

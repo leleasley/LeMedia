@@ -8,7 +8,6 @@ import { cn } from "@/lib/utils";
 import { csrfFetch } from "@/lib/csrf-client";
 import { useToast } from "@/components/Providers/ToastProvider";
 import type { UpgradeFinderItem } from "@/lib/upgrade-finder";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useLockBodyScroll } from "@/hooks/useLockBodyScroll";
 import { useIsIOS } from "@/hooks/useIsApple";

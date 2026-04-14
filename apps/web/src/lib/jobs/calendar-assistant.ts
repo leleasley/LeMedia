@@ -138,7 +138,7 @@ function buildDigest(items: UpcomingItem[], timeZone: string): CalendarDigest {
   return {
     title: "Calendar Assistant: Next up",
     body: `Here is your spoiler-free release radar:\n${bullets}`,
-    link: `${baseUrl}/dashboard`,
+    link: `${baseUrl}/calendar-assistant`,
     metadata: {
       items: top,
       generatedAt: new Date().toISOString(),
@@ -176,7 +176,7 @@ async function sendViaEndpoints(userId: number, digest: CalendarDigest) {
           to,
           subject: `[LeMedia] ${digest.title}`,
           text: `${digest.body}\n\nOpen: ${digest.link}`,
-          html: `<p>${digest.body.replace(/\n/g, "<br />")}</p><p><a href="${digest.link}">Open dashboard</a></p>`,
+          html: `<p>${digest.body.replace(/\n/g, "<br />")}</p><p><a href="${digest.link}">Open Calendar Assistant</a></p>`,
           smtp: cfg,
         });
         continue;
@@ -202,6 +202,40 @@ async function sendViaEndpoints(userId: number, digest: CalendarDigest) {
         userId,
         endpointType: endpoint.type,
         error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+}
+
+export async function sendCalendarAssistantToUser(userId: number, channels: string[]): Promise<void> {
+  const timeZone = await resolveTimezone();
+  const upcomingItems = await loadUpcomingItems(timeZone);
+  const digest = buildDigest(upcomingItems, timeZone);
+  const channelSet = parseChannels(channels.join(","));
+
+  if (channelSet.has("in_app")) {
+    await createNotification({
+      userId,
+      type: "calendar_assistant",
+      title: digest.title,
+      message: digest.body,
+          link: "/calendar-assistant",
+      metadata: digest.metadata,
+    });
+  }
+
+  if (channelSet.has("endpoints")) {
+    await sendViaEndpoints(userId, digest);
+  }
+
+  if (channelSet.has("telegram")) {
+    const telegram = await getTelegramUserByUserId(userId);
+    const botToken = String(process.env.TELEGRAM_BOT_TOKEN ?? "").trim();
+    if (telegram?.telegram_id && botToken) {
+      await sendTelegramMessage({
+        botToken,
+        chatId: telegram.telegram_id,
+        text: `🗓 ${digest.title}\n\n${digest.body}`,
       });
     }
   }
@@ -241,7 +275,7 @@ export async function sendCalendarAssistantJob(): Promise<string> {
           type: "calendar_assistant",
           title: digest.title,
           message: digest.body,
-          link: "/dashboard",
+          link: "/calendar-assistant",
           metadata: digest.metadata,
         });
       }

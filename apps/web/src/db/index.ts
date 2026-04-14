@@ -12,6 +12,7 @@ export * from "./episode-reminders";
 export * from "./jobs";
 export * from "./media-issues";
 export * from "./media-lists";
+export * from "./media-preferences";
 export * from "./media-shares";
 export * from "./notifications";
 export * from "./push";

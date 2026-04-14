@@ -1,16 +1,14 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import useSWR from "swr";
-import { ModeToggle } from "@/components/ui/mode-toggle";
 import { LoginForm } from "@/components/auth/LoginForm";
 import { SessionResetModal } from "@/components/auth/SessionResetModal";
 import { ImageFader } from "@/components/Common/ImageFader";
 import { Modal } from "@/components/Common/Modal";
 import { CookieConsentBanner } from "@/components/Common/CookieConsentBanner";
 import { startAuthentication } from "@simplewebauthn/browser";
-import { ChevronDown, Fingerprint, KeyRound } from "lucide-react";
+import { ChevronDown, Fingerprint, KeyRound, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -34,6 +32,47 @@ const loginFormId = "lemedia-login-form";
 const ssoPopupName = "lemedia-sso";
 const ssoPopupIntervalMs = 1000;
 const ssoPopupMaxMs = 2 * 60 * 1000;
+const LAST_PROVIDER_KEY = "lemedia_last_provider";
+
+function getLastUsedProvider(): string | null {
+  if (typeof window === "undefined") return null;
+  try { return localStorage.getItem(LAST_PROVIDER_KEY); } catch { return null; }
+}
+
+function saveLastUsedProvider(provider: string): void {
+  if (typeof window === "undefined") return;
+  try { localStorage.setItem(LAST_PROVIDER_KEY, provider); } catch {}
+}
+
+type ProviderButtonProps = {
+  onClick: () => void;
+  disabled?: boolean;
+  logo: React.ReactNode;
+  label: string;
+  isLastUsed?: boolean;
+  loading?: boolean;
+};
+
+function ProviderButton({ onClick, disabled, logo, label, isLastUsed, loading }: ProviderButtonProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled || loading}
+      className="relative w-full flex items-center gap-3 px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white hover:bg-white/10 hover:border-white/25 active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+    >
+      <span className="flex-shrink-0 w-5 h-5 flex items-center justify-center">
+        {loading ? <Loader2 className="w-4 h-4 animate-spin text-white/60" /> : logo}
+      </span>
+      <span className="flex-1 text-left">{label}</span>
+      {isLastUsed && !loading && (
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-indigo-300 bg-indigo-500/15 px-2 py-0.5 rounded-full border border-indigo-400/25">
+          Last used
+        </span>
+      )}
+    </button>
+  );
+}
 
 function isMobileUserAgent(): boolean {
   if (typeof navigator === "undefined") return false;
@@ -76,6 +115,8 @@ export function LoginPageClient({
   const [duoUsername, setDuoUsername] = useState("");
   const [redirectingToSso, setRedirectingToSso] = useState(false);
   const [ssoPopupActive, setSsoPopupActive] = useState(false);
+  const [lastUsedProvider, setLastUsedProvider] = useState<string | null>(null);
+  const [loadingProvider, setLoadingProvider] = useState<string | null>(null);
   const [oauthVisibility, setOauthVisibility] = useState({
     google: googleOauthEnabled,
     github: githubOauthEnabled,
@@ -86,6 +127,10 @@ export function LoginPageClient({
     revalidateOnFocus: false,
     revalidateOnReconnect: false
   });
+
+  useEffect(() => {
+    setLastUsedProvider(getLastUsedProvider());
+  }, []);
 
   const handlePasskeyLogin = async () => {
     if (isTurnstileEnabled && !turnstileToken) {
@@ -111,6 +156,7 @@ export function LoginPageClient({
 
       const verification = await verifyRes.json();
       if (verification.verified) {
+        saveLastUsedProvider("passkey");
         window.location.href = from || "/";
       } else {
         throw new Error(verification.error || "Verification failed");
@@ -131,6 +177,7 @@ export function LoginPageClient({
       setShowDuoModal(true);
       return;
     }
+    saveLastUsedProvider("sso");
     startSsoFlow(`/api/v1/auth/oidc/login?from=${encodeURIComponent(from)}&turnstile_token=${encodeURIComponent(turnstileToken)}`);
   };
 
@@ -224,6 +271,7 @@ export function LoginPageClient({
           window.clearInterval(timer);
           ssoPopupTimerRef.current = null;
           setSsoPopupActive(false);
+          setLoadingProvider(null);
           return;
         }
 
@@ -236,6 +284,7 @@ export function LoginPageClient({
           }
           ssoPopupRef.current = null;
           setSsoPopupActive(false);
+          setLoadingProvider(null);
           router.replace(from || "/");
           return;
         }
@@ -248,6 +297,7 @@ export function LoginPageClient({
           }
           ssoPopupRef.current = null;
           setSsoPopupActive(false);
+          setLoadingProvider(null);
           toast.error("SSO timed out. Try again.");
         }
       } catch (err) {
@@ -257,26 +307,24 @@ export function LoginPageClient({
     ssoPopupTimerRef.current = timer;
   };
 
+  const hasAnyProvider = oauthVisibility.google || oauthVisibility.github || oauthVisibility.telegram || oidcEnabled;
+
   return (
     <main className="relative flex min-h-[100dvh] items-center justify-center overflow-auto bg-gray-900 px-4 py-6 sm:py-12">
       <SessionResetModal />
       <ImageFader backgroundImages={backgroundImages} className="absolute inset-0 z-0" />
-
-      <div className="absolute top-4 right-4 z-50">
-        <ModeToggle />
-      </div>
-
       <CookieConsentBanner />
 
       <div className="relative z-10 w-full max-w-[460px]">
-        <div className="relative z-40 mt-4 sm:mt-10 flex flex-col items-center px-4 sm:mx-auto sm:w-full sm:max-w-md">
-          <div className="relative h-32 sm:h-48 w-full max-w-full">
+        {/* Logo — smaller, pushed closer to the card */}
+        <div className="flex justify-center mb-3">
+          <div className="relative h-16 w-36 sm:h-20 sm:w-44">
             <Image src="/login-logo.png" alt="LeMedia Logo" fill className="object-contain" priority />
           </div>
         </div>
 
         <div
-          className="mt-4 sm:mt-8 rounded-lg bg-gray-800/50 p-6 sm:p-8 shadow-lg sm:mx-auto sm:w-full sm:max-w-md md:p-10"
+          className="rounded-lg bg-gray-800/50 p-6 sm:p-8 shadow-lg sm:mx-auto sm:w-full sm:max-w-md"
           style={{ backdropFilter: "blur(5px)" }}
         >
           {showJellyfinLogin ? (
@@ -303,10 +351,83 @@ export function LoginPageClient({
             </>
           ) : (
             <>
-              <div className="mb-6 text-center">
-                <div className="text-2xl font-semibold text-white">Sign In</div>
-                <p className="mt-1 text-sm text-gray-400">Sign in to continue</p>
+              <div className="mb-5 text-center">
+                <div className="text-2xl font-semibold text-white">Log into LeMedia</div>
               </div>
+
+              {/* Third-party provider buttons */}
+              {hasAnyProvider && (
+                <div className="space-y-2.5 mb-5">
+                  {oauthVisibility.google && (
+                    <ProviderButton
+                      onClick={() => {
+                        if (isTurnstileEnabled && !turnstileToken) return;
+                        saveLastUsedProvider("google");
+                        setLoadingProvider("google");
+                        startSsoFlow(`/api/v1/auth/oauth/google/start?from=${encodeURIComponent(from)}&turnstile_token=${encodeURIComponent(turnstileToken)}`);
+                      }}
+                      disabled={isTurnstileEnabled && !turnstileToken}
+                      logo={<Image src="/google-login.svg" alt="Google" width={20} height={20} />}
+                      label="Continue with Google"
+                      isLastUsed={lastUsedProvider === "google"}
+                      loading={loadingProvider === "google"}
+                    />
+                  )}
+                  {oauthVisibility.github && (
+                    <ProviderButton
+                      onClick={() => {
+                        if (isTurnstileEnabled && !turnstileToken) return;
+                        saveLastUsedProvider("github");
+                        setLoadingProvider("github");
+                        startSsoFlow(`/api/v1/auth/oauth/github/start?from=${encodeURIComponent(from)}&turnstile_token=${encodeURIComponent(turnstileToken)}`);
+                      }}
+                      disabled={isTurnstileEnabled && !turnstileToken}
+                      logo={<Image src="/github-login.svg" alt="GitHub" width={20} height={20} />}
+                      label="Continue with GitHub"
+                      isLastUsed={lastUsedProvider === "github"}
+                      loading={loadingProvider === "github"}
+                    />
+                  )}
+                  {oauthVisibility.telegram && (
+                    <ProviderButton
+                      onClick={() => {
+                        if (isTurnstileEnabled && !turnstileToken) return;
+                        saveLastUsedProvider("telegram");
+                        setLoadingProvider("telegram");
+                        startSsoFlow(`/api/v1/auth/oauth/telegram/start?from=${encodeURIComponent(from)}&turnstile_token=${encodeURIComponent(turnstileToken)}`);
+                      }}
+                      disabled={isTurnstileEnabled && !turnstileToken}
+                      logo={<Image src="/telegram.svg" alt="Telegram" width={20} height={20} />}
+                      label="Continue with Telegram"
+                      isLastUsed={lastUsedProvider === "telegram"}
+                      loading={loadingProvider === "telegram"}
+                    />
+                  )}
+                  {oidcEnabled && (
+                    <ProviderButton
+                      onClick={() => {
+                        saveLastUsedProvider("sso");
+                        setLoadingProvider("sso");
+                        startOidcLogin();
+                      }}
+                      disabled={isTurnstileEnabled && !turnstileToken}
+                      logo={<KeyRound className="h-5 w-5 text-gray-300" />}
+                      label="Continue with SSO"
+                      isLastUsed={lastUsedProvider === "sso"}
+                      loading={loadingProvider === "sso"}
+                    />
+                  )}
+                </div>
+              )}
+
+              {/* Divider */}
+              {hasAnyProvider && (
+                <div className="relative flex items-center gap-3 mb-5">
+                  <div className="flex-1 h-px bg-white/10" />
+                  <span className="text-xs text-gray-500 uppercase tracking-wider">or</span>
+                  <div className="flex-1 h-px bg-white/10" />
+                </div>
+              )}
 
               <LoginForm
                 from={from}
@@ -315,14 +436,15 @@ export function LoginPageClient({
                 onTurnstileTokenChange={setTurnstileToken}
               />
 
-              <div className="mt-6 flex items-center justify-center">
+              {/* Passkey + Jellyfin */}
+              <div className="mt-5 flex items-center justify-center">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
                       className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-gray-400 hover:text-white transition"
                     >
-                      Other sign-in methods
+                      More options
                       <ChevronDown className="h-3.5 w-3.5" />
                     </button>
                   </DropdownMenuTrigger>
@@ -338,17 +460,7 @@ export function LoginPageClient({
                       <Fingerprint className="h-4 w-4 text-gray-200" />
                       Sign in with Passkey
                     </DropdownMenuItem>
-                    {oidcEnabled ? (
-                      <DropdownMenuItem
-                        onSelect={startOidcLogin}
-                        disabled={isTurnstileEnabled && !turnstileToken}
-                        className={`cursor-pointer gap-2 px-3 py-2 text-sm ${isTurnstileEnabled && !turnstileToken ? "opacity-50" : ""}`}
-                      >
-                        <KeyRound className="h-4 w-4 text-gray-200" />
-                        Sign in with SSO
-                      </DropdownMenuItem>
-                    ) : null}
-                    {jellyfinEnabled ? (
+                    {jellyfinEnabled && (
                       <DropdownMenuItem
                         onSelect={() => {
                           if (isTurnstileEnabled && !turnstileToken) return;
@@ -360,46 +472,7 @@ export function LoginPageClient({
                         <Image src="/images/jellyfin.svg" alt="Jellyfin" width={16} height={16} />
                         Sign in with Jellyfin
                       </DropdownMenuItem>
-                    ) : null}
-                    {oauthVisibility.google ? (
-                      <DropdownMenuItem
-                        onSelect={() => {
-                          if (isTurnstileEnabled && !turnstileToken) return;
-                          startSsoFlow(`/api/v1/auth/oauth/google/start?from=${encodeURIComponent(from)}&turnstile_token=${encodeURIComponent(turnstileToken)}`);
-                        }}
-                        disabled={isTurnstileEnabled && !turnstileToken}
-                        className={`cursor-pointer gap-2 px-3 py-2 text-sm ${isTurnstileEnabled && !turnstileToken ? "opacity-50" : ""}`}
-                      >
-                        <Image src="/google-login.svg" alt="Google" width={16} height={16} />
-                        Continue with Google
-                      </DropdownMenuItem>
-                    ) : null}
-                    {oauthVisibility.github ? (
-                      <DropdownMenuItem
-                        onSelect={() => {
-                          if (isTurnstileEnabled && !turnstileToken) return;
-                          startSsoFlow(`/api/v1/auth/oauth/github/start?from=${encodeURIComponent(from)}&turnstile_token=${encodeURIComponent(turnstileToken)}`);
-                        }}
-                        disabled={isTurnstileEnabled && !turnstileToken}
-                        className={`cursor-pointer gap-2 px-3 py-2 text-sm ${isTurnstileEnabled && !turnstileToken ? "opacity-50" : ""}`}
-                      >
-                        <Image src="/github-login.svg" alt="GitHub" width={16} height={16} />
-                        Continue with GitHub
-                      </DropdownMenuItem>
-                    ) : null}
-                    {oauthVisibility.telegram ? (
-                      <DropdownMenuItem
-                        onSelect={() => {
-                          if (isTurnstileEnabled && !turnstileToken) return;
-                          startSsoFlow(`/api/v1/auth/oauth/telegram/start?from=${encodeURIComponent(from)}&turnstile_token=${encodeURIComponent(turnstileToken)}`);
-                        }}
-                        disabled={isTurnstileEnabled && !turnstileToken}
-                        className={`cursor-pointer gap-2 px-3 py-2 text-sm ${isTurnstileEnabled && !turnstileToken ? "opacity-50" : ""}`}
-                      >
-                        <Image src="/telegram.svg" alt="Telegram" width={16} height={16} />
-                        Continue with Telegram
-                      </DropdownMenuItem>
-                    ) : null}
+                    )}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
@@ -419,6 +492,7 @@ export function LoginPageClient({
                       toast.error("Enter your Duo username to continue.");
                       return;
                     }
+                    saveLastUsedProvider("sso");
                     startSsoFlow(`/api/v1/auth/duo/login?from=${encodeURIComponent(from)}&turnstile_token=${encodeURIComponent(turnstileToken)}&username=${encodeURIComponent(username)}`);
                   }}
                 >
@@ -467,7 +541,6 @@ export function LoginPageClient({
             </>
           )}
         </div>
-
       </div>
     </main>
   );

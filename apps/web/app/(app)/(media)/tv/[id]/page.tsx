@@ -10,7 +10,7 @@ import { ExternalRatings } from "@/components/Media/ExternalRatings";
 import { headers } from "next/headers";
 import { MediaReviews } from "@/components/Reviews/MediaReviews";
 import { getUser } from "@/auth";
-import { findActiveRequestByTmdb, getReviewStatsForMedia, getReviewsForMedia, getUserByUsername, getUserMediaListStatus, getUserReviewForMedia, upsertUser } from "@/db";
+import { findActiveRequestByTmdb, getReviewStatsForMedia, getReviewsForMedia, getUserByUsername, getUserMediaListStatus, getUserReviewForMedia, getUserTvTrailerPreference, getUserTvWatchedSeasons, upsertUser } from "@/db";
 
 const Params = z.object({ id: z.coerce.number().int() });
 type ParamsInput = { id: string } | Promise<{ id: string }>;
@@ -98,12 +98,14 @@ export default async function TvPage({ params }: { params: ParamsInput }) {
     const seasons = (tv.seasons ?? [])
       .filter((s: any) => s.season_number !== 0)
       .sort((a: any, b: any) => a.season_number - b.season_number);
-    const [listStatus, reviews, reviewStats, userReview, seriesHistory] = await Promise.all([
+    const [listStatus, reviews, reviewStats, userReview, seriesHistory, watchedSeasonItems, tvTrailerPreference] = await Promise.all([
       userData ? getUserMediaListStatus({ userId: userData.id, mediaType: "tv", tmdbId: id }).catch(() => null) : Promise.resolve(null),
       getReviewsForMedia("tv", id, 50, userData?.id ?? null).catch(() => []),
       getReviewStatsForMedia("tv", id).catch(() => ({ total: 0, average: 0 })),
       userData ? getUserReviewForMedia(userData.id, "tv", id).catch(() => null) : Promise.resolve(null),
-      userData?.jellyfinUserId ? getSeriesWatchHistory(userData.jellyfinUserId).catch(() => []) : Promise.resolve([])
+      userData?.jellyfinUserId ? getSeriesWatchHistory(userData.jellyfinUserId).catch(() => []) : Promise.resolve([]),
+      userData ? getUserTvWatchedSeasons({ userId: userData.id, tmdbId: id }).catch(() => []) : Promise.resolve([]),
+      userData ? getUserTvTrailerPreference(userData.id).catch(() => "series" as const) : Promise.resolve("series" as const)
     ]);
 
     // These values hydrate client-side via SWR in TvDetailClientNew.
@@ -165,7 +167,9 @@ export default async function TvPage({ params }: { params: ParamsInput }) {
       userReview,
       reviewPromptEligible,
       imageProxyEnabled,
-      requestedBy: activeRequest?.requestedBy ?? null
+      requestedBy: activeRequest?.requestedBy ?? null,
+      watchedSeasonNumbers: watchedSeasonItems.map((item) => item.seasonNumber),
+      tvTrailerPreference,
     };
   } catch (e: any) {
     loadError = e?.message ?? "Unknown error from TMDB.";
@@ -233,6 +237,8 @@ export default async function TvPage({ params }: { params: ParamsInput }) {
         initialHasReview={Boolean(pageData.userReview)}
         reviewPromptEligible={pageData.reviewPromptEligible}
         initialListStatus={pageData.listStatus ?? undefined}
+        initialWatchedSeasonNumbers={pageData.watchedSeasonNumbers}
+        tvTrailerPreference={pageData.tvTrailerPreference}
       >
         <div className="px-4 mt-8">
           <MediaReviews

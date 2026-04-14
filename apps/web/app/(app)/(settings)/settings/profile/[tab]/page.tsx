@@ -36,6 +36,10 @@ export default async function ProfileSettingsTabPage({
     listNotificationEndpoints()
   ]);
 
+  if (!dbUser) {
+    redirect("/login");
+  }
+
   const selectedIds = dbUser ? await listUserNotificationEndpointIds(dbUser.id) : [];
   const enabledEndpoints = (endpoints as any[]).filter(e => e?.enabled !== false);
   const assignedEndpoints = enabledEndpoints

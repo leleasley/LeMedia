@@ -6,13 +6,7 @@ import { useToast } from "@/components/Providers/ToastProvider";
 import { csrfFetch } from "@/lib/csrf-client";
 import { AnimatedCheckbox } from "@/components/Common/AnimatedCheckbox";
 import { NotificationUserSelector } from "./NotificationUserSelector";
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
+import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 
 type EmailNotificationSettings = {
     name: string;
@@ -387,22 +381,20 @@ export default function NotificationsEmail({
                     <label htmlFor="encryption" className="block text-sm font-medium mb-2">
                         Encryption Method
                     </label>
-                    <Select
+                    <AdaptiveSelect
                         value={form.encryption}
                         onValueChange={(value) =>
                             updateForm({ encryption: value as EmailNotificationSettings["encryption"] })
                         }
-                    >
-                        <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select encryption" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="none">None</SelectItem>
-                            <SelectItem value="default">Use STARTTLS if available</SelectItem>
-                            <SelectItem value="opportunistic">Always use STARTTLS</SelectItem>
-                            <SelectItem value="implicit">Use Implicit TLS</SelectItem>
-                        </SelectContent>
-                    </Select>
+                        options={[
+                            { value: "none", label: "None" },
+                            { value: "default", label: "Use STARTTLS if available" },
+                            { value: "opportunistic", label: "Always use STARTTLS" },
+                            { value: "implicit", label: "Use Implicit TLS" }
+                        ]}
+                        placeholder="Select encryption"
+                        triggerClassName="w-full"
+                    />
                     <p className="text-sm text-gray-400 mt-1">
                         In most cases, Implicit TLS uses port 465 and STARTTLS uses port 587
                     </p>

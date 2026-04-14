@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 
 function getCsrfToken(): string {
@@ -12,6 +12,8 @@ function getCsrfToken(): string {
 
 export function ResetPasswordForm({ csrfToken }: { csrfToken?: string }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const token = searchParams.get("token") ?? "";
 
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -55,7 +57,7 @@ export function ResetPasswordForm({ csrfToken }: { csrfToken?: string }) {
         const res = await fetch("/api/v1/auth/reset-password", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ password, csrf_token: csrf }),
+          body: JSON.stringify({ token, password, csrf_token: csrf }),
           credentials: "include",
         });
         const data = (await res.json()) as { ok: boolean; error?: string };
@@ -70,8 +72,24 @@ export function ResetPasswordForm({ csrfToken }: { csrfToken?: string }) {
         setLoading(false);
       }
     },
-    [password, confirm, csrf, router]
+    [token, password, confirm, csrf, router]
   );
+
+  if (!token) {
+    return (
+      <div className="space-y-4 text-center">
+        <p className="text-sm text-red-400">
+          This reset link is missing or invalid. Please request a new one.
+        </p>
+        <Link
+          href="/forgot-password"
+          className="inline-block text-sm text-gray-400 hover:text-white transition"
+        >
+          Request a new reset link
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <form className="space-y-5" onSubmit={handleSubmit} noValidate>

@@ -10,13 +10,7 @@ import { useToast } from "@/components/Providers/ToastProvider";
 import { csrfFetch } from "@/lib/csrf-client";
 import { formatDate } from "@/lib/dateFormat";
 import { swrFetcher } from "@/lib/swr-fetcher";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 import {
   getNotificationProviderMeta,
   PERSONAL_NOTIFICATION_PROVIDERS,
@@ -532,18 +526,15 @@ export function UserNotificationChannelsPanel() {
 
             <div className="space-y-1.5">
               <label className="text-xs font-semibold uppercase tracking-[0.25em] text-gray-400">Provider</label>
-              <Select value={form.type} onValueChange={(value) => setType(value as EndpointType)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select provider" />
-                </SelectTrigger>
-                <SelectContent>
-                  {PERSONAL_NOTIFICATION_PROVIDERS.map((provider) => (
-                    <SelectItem key={provider.type} value={provider.type}>
-                      {provider.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <AdaptiveSelect
+                value={form.type}
+                onValueChange={(value) => setType(value as EndpointType)}
+                options={PERSONAL_NOTIFICATION_PROVIDERS.map((provider) => ({
+                  value: provider.type,
+                  label: provider.label
+                }))}
+                placeholder="Select provider"
+              />
             </div>
           </div>
 

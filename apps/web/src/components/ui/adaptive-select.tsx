@@ -18,6 +18,8 @@ export interface SelectOption {
   disabled?: boolean;
 }
 
+const EMPTY_SENTINEL = "__adaptive_select_empty__";
+
 interface AdaptiveSelectProps {
   value?: string;
   onValueChange?: (value: string) => void;
@@ -51,6 +53,15 @@ export function AdaptiveSelect({
   "aria-label": ariaLabel,
 }: AdaptiveSelectProps) {
   const isIOS = useIsIOS();
+  const normalizedOptions = React.useMemo(
+    () => options.map((option) => (option.value === "" ? { ...option, value: EMPTY_SENTINEL } : option)),
+    [options]
+  );
+  const normalizedValue = value === "" ? EMPTY_SENTINEL : value;
+  const handleValueChange = React.useCallback(
+    (nextValue: string) => onValueChange?.(nextValue === EMPTY_SENTINEL ? "" : nextValue),
+    [onValueChange]
+  );
 
   // During SSR or before hydration, render nothing to avoid mismatch
   if (isIOS === null) {
@@ -113,7 +124,7 @@ export function AdaptiveSelect({
 
   // Desktop: Use Radix UI Select for custom styling
   return (
-    <Select value={value} onValueChange={onValueChange} disabled={disabled}>
+    <Select value={normalizedValue} onValueChange={handleValueChange} disabled={disabled}>
       <SelectTrigger
         className={cn(triggerClassName, className)}
         id={id}
@@ -122,7 +133,7 @@ export function AdaptiveSelect({
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent>
-        {options.map((option) => (
+        {normalizedOptions.map((option) => (
           <SelectItem
             key={option.value}
             value={option.value}

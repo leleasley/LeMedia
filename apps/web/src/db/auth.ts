@@ -94,6 +94,35 @@ export type UserApiTokenRecord = {
 };
 
 
+export async function getUserApiTokenById(userId: number, tokenId: number): Promise<{ id: number; name: string; token: string; createdAt: string | null; updatedAt: string | null } | null> {
+  await ensureUserSchema();
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, name, token_encrypted, created_at, updated_at
+     FROM user_api_token_v2
+     WHERE user_id = $1 AND id = $2
+     LIMIT 1`,
+    [userId, tokenId]
+  );
+  if (!res.rows.length) return null;
+  const row = res.rows[0];
+  const raw = row.token_encrypted as string;
+  let token = raw;
+  try {
+    token = decryptSecret(raw);
+  } catch {
+    // stored as plain text
+  }
+  return {
+    id: Number(row.id),
+    name: row.name as string,
+    token,
+    createdAt: row.created_at ?? null,
+    updatedAt: row.updated_at ?? null,
+  };
+}
+
+
 export async function listUserApiTokens(userId: number): Promise<UserApiTokenRecord[]> {
   await ensureUserSchema();
   const p = getPool();

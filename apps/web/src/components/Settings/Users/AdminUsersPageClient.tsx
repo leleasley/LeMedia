@@ -23,13 +23,7 @@ import { JellyfinImportModal } from "@/components/Settings/Jellyfin/JellyfinImpo
 import { useToast } from "@/components/Providers/ToastProvider";
 import { getAvatarAlt, getAvatarSrc, shouldBypassNextImage } from "@/lib/avatar";
 import { Modal } from "@/components/Common/Modal";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 import { csrfFetch } from "@/lib/csrf-client";
 import { GROUP_DEFINITIONS, formatGroupLabel, normalizeGroupList } from "@/lib/groups";
 
@@ -375,21 +369,12 @@ export function AdminUsersPageClient() {
         <div className="flex items-center gap-3 w-full sm:w-auto">
             <span className="text-sm text-gray-400 whitespace-nowrap hidden sm:inline">Sort by:</span>
             <div className="w-full sm:w-56 z-20">
-              <Select
+              <AdaptiveSelect
                 value={currentSort}
                 onValueChange={(value) => setCurrentSort(value as typeof currentSort)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Sort by" />
-                </SelectTrigger>
-                <SelectContent>
-                  {SORT_OPTIONS.map((option) => (
-                    <SelectItem key={option.id} value={option.id}>
-                      {option.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                options={SORT_OPTIONS.map((option) => ({ value: option.id, label: option.name }))}
+                placeholder="Sort by"
+              />
             </div>
         </div>
       </div>

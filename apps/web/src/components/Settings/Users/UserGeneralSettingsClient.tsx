@@ -9,13 +9,7 @@ import { logger } from "@/lib/logger";
 import { RequestLimitSelector } from "@/components/Common/RequestLimitSelector";
 import { AuthResetModal } from "@/components/Settings/Users/AuthResetModal";
 import { ConfirmModal, useConfirm } from "@/components/Common/ConfirmModal";
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
+import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 
 interface User {
     id: number;
@@ -376,19 +370,17 @@ export function UserGeneralSettingsClient() {
                 {/* Account Type */}
                 <div>
                     <label className="block text-sm font-medium text-white mb-2">Account Type</label>
-                    <Select
+                    <AdaptiveSelect
                         value={formData.isJellyfinUser ? "jellyfin" : "local"}
                         onValueChange={(value) => setFormData({ ...formData, isJellyfinUser: value === "jellyfin" })}
                         disabled={user?.id === 1}
-                    >
-                        <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select account type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="local">Local User</SelectItem>
-                            <SelectItem value="jellyfin">Jellyfin User</SelectItem>
-                        </SelectContent>
-                    </Select>
+                        options={[
+                            { value: "local", label: "Local User" },
+                            { value: "jellyfin", label: "Jellyfin User" }
+                        ]}
+                        placeholder="Select account type"
+                        triggerClassName="w-full"
+                    />
                     {user?.id === 1 && (
                         <p className="mt-1 text-xs text-gray-400">
                             Owner account type cannot be changed

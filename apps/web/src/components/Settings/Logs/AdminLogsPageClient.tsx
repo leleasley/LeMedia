@@ -7,7 +7,7 @@ import { csrfFetch } from "@/lib/csrf-client";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { ConfirmationModal } from "@/components/Common/ConfirmationModal";
 import { logger } from "@/lib/logger";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 
 type AuditRow = {
   id: number;
@@ -432,22 +432,16 @@ export function AdminLogsPageClient({
               Sends a live test notification through endpoints assigned to the selected user.
             </p>
             <div className="mt-3 flex flex-col gap-2">
-              <Select
+              <AdaptiveSelect
                 value={String(selectedUserId)}
                 onValueChange={(value) => setSelectedUserId(Number(value))}
                 disabled={reliabilityUsers.length === 0}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select user" />
-                </SelectTrigger>
-                <SelectContent>
-                  {reliabilityUsers.map((user) => (
-                    <SelectItem key={user.id} value={String(user.id)}>
-                      {user.displayName ? `${user.displayName} (${user.username})` : user.username}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                options={reliabilityUsers.map((user) => ({
+                  value: String(user.id),
+                  label: user.displayName ? `${user.displayName} (${user.username})` : user.username
+                }))}
+                placeholder="Select user"
+              />
               <button
                 type="button"
                 onClick={() => void runReliabilityTest()}

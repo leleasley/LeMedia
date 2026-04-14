@@ -26,17 +26,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Invalid request." }, { status: 403 });
   }
 
-  // Token is stored in an HttpOnly cookie set by the exchange endpoint — never in the URL or request body.
-  const token = req.cookies.get("rp_token")?.value ?? "";
-  if (!token) {
-    return NextResponse.json({ ok: false, error: "Reset session missing. Please use the link from your email." }, { status: 400 });
-  }
-
+  let token: string;
   let password: string;
   let csrfToken: string;
 
   try {
     const body = await req.json();
+    token = String(body.token ?? "").trim();
     password = String(body.password ?? "");
     csrfToken = String(body.csrf_token ?? "");
   } catch {
@@ -45,6 +41,10 @@ export async function POST(req: NextRequest) {
 
   if (!isValidCsrfToken(req, csrfToken)) {
     return NextResponse.json({ ok: false, error: "Invalid CSRF token." }, { status: 403 });
+  }
+
+  if (!token) {
+    return NextResponse.json({ ok: false, error: "Reset token is missing." }, { status: 400 });
   }
 
   if (!password || password.length < MIN_PASSWORD_LENGTH) {
@@ -64,12 +64,6 @@ export async function POST(req: NextRequest) {
   // Atomically consume the token — returns userId or null if invalid/expired/used.
   const userId = await consumePasswordResetToken(token);
   if (!userId) {
-    await logAuditEvent({
-      action: "user.password_reset_failed",
-      actor: "unknown",
-      ip,
-      metadata: { reason: "invalid_or_expired_token" },
-    });
     return NextResponse.json(
       { ok: false, error: "This reset link is invalid or has expired. Please request a new one." },
       { status: 400 }
@@ -92,7 +86,5 @@ export async function POST(req: NextRequest) {
     ip,
   });
 
-  const res = NextResponse.json({ ok: true });
-  res.cookies.set("rp_token", "", { maxAge: 0, path: "/", httpOnly: true, sameSite: "lax" });
-  return res;
+  return NextResponse.json({ ok: true });
 }

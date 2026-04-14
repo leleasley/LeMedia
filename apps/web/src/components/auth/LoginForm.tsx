@@ -20,7 +20,7 @@ export function LoginForm({
     from,
     csrfToken,
     formId,
-    action = "/api/login",
+    action = "/api/v1/login",
     submitLabel = "Sign In",
     onTurnstileTokenChange
 }: LoginFormProps) {
@@ -28,6 +28,7 @@ export function LoginForm({
     const toast = useToast();
     const [turnstileToken, setTurnstileToken] = useState<string>("");
     const [mounted, setMounted] = useState(false);
+    const [inlineError, setInlineError] = useState<string | null>(null);
     const isTurnstileEnabled = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
 
     useEffect(() => {
@@ -41,7 +42,7 @@ export function LoginForm({
         const success = searchParams.get("success");
 
         if (error) {
-            toast.error(error);
+            setInlineError(error);
         }
         if (success) {
             toast.success(success);
@@ -81,6 +82,8 @@ export function LoginForm({
                     required
                     placeholder="Enter your username"
                     autoComplete="username"
+                    autoFocus
+                    onChange={() => setInlineError(null)}
                 />
             </div>
 
@@ -89,13 +92,16 @@ export function LoginForm({
                     Password
                 </label>
                 <input
-                    className="w-full px-4 py-3 rounded-lg bg-black/20 border border-white/10 text-white placeholder:text-gray-500 focus:bg-black/40 focus:border-white/20 focus:ring-2 focus:ring-white/10 outline-none transition-all duration-200"
+                    className={`w-full px-4 py-3 rounded-lg bg-black/20 border text-white placeholder:text-gray-500 focus:bg-black/40 focus:ring-2 focus:ring-white/10 outline-none transition-all duration-200 ${
+                        inlineError ? "border-red-500/60 focus:border-red-500/60" : "border-white/10 focus:border-white/20"
+                    }`}
                     id="password"
                     type="password"
                     name="password"
                     required
                     placeholder="Enter your password"
                     autoComplete="current-password"
+                    onChange={() => setInlineError(null)}
                 />
             </div>
 
@@ -106,6 +112,15 @@ export function LoginForm({
                         onError={handleTurnstileError}
                         onExpire={handleTurnstileExpire}
                     />
+                </div>
+            )}
+
+            {inlineError && (
+                <div className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3.5 py-2.5 text-sm text-red-300">
+                    <svg className="h-4 w-4 shrink-0 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
+                    </svg>
+                    {inlineError}
                 </div>
             )}
 
@@ -129,6 +144,8 @@ export function LoginForm({
                 <Link href="/cookies" className="text-gray-400 hover:text-gray-300 transition">
                     Cookies
                 </Link>
+                <span className="text-gray-600">·</span>
+                <span className="text-gray-500">© leleasley</span>
             </div>
         </form>
     );

@@ -606,7 +606,7 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
           <div className="space-y-5 pt-2 md:pt-3">
             <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
               <div className="flex flex-wrap items-center gap-2">
-                <p className="text-sm font-medium text-slate-400">{nowLine}</p>
+                <p className="text-sm font-medium text-slate-400" suppressHydrationWarning>{nowLine}</p>
                 {services.length > 0 && (
                   <div className="flex flex-wrap items-center gap-1.5">
                     {services.map((svc) => (
@@ -639,7 +639,7 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
             <div>
               <p className="text-xs uppercase tracking-[0.28em] text-slate-500">Home base</p>
               <h1 className="mt-2 text-3xl font-bold tracking-tight text-white md:text-4xl">
-                {greeting},{" "}
+                <span suppressHydrationWarning>{greeting}</span>,{" "}
                 <span className="bg-gradient-to-r from-sky-300 via-cyan-200 to-amber-200 bg-clip-text text-transparent">{name}</span>
               </h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300/80">

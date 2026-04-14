@@ -23,6 +23,7 @@ export function MediaActionMenu(props: {
   manageBaseUrl?: string | null;
   requestStatus?: string | null;
   prowlarrEnabled?: boolean;
+  onTrailerClick?: (url: string) => void;
 }) {
   const {
     title,
@@ -38,7 +39,8 @@ export function MediaActionMenu(props: {
     manageSlug,
     manageBaseUrl,
     requestStatus,
-    prowlarrEnabled = false
+    prowlarrEnabled = false,
+    onTrailerClick
   } = props;
   const [reportOpen, setReportOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
@@ -65,7 +67,7 @@ export function MediaActionMenu(props: {
 
   return (
     <>
-      <PlayButton links={links} />
+      <PlayButton links={links} onTrailerClick={onTrailerClick} />
 
       {showReport ? (
         <Button

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUserWithHash, createMfaSession, deleteMfaSessionsForUser, getSetting, getSettingInt } from "@/db";
-import { createUserSession } from "@/db/sessions";
+import { getUserWithHash, createMfaSession, deleteMfaSessionsForUser, getSetting, getSettingInt, createUserSession } from "@/db";
 import { verifyPassword } from "@/lib/auth-utils";
 import { createSessionToken } from "@/lib/session";
 import { ensureCsrfCookie, getCookieBase, getRequestContext, isSameOriginRequest, sanitizeRelativePath } from "@/lib/proxy";
@@ -140,16 +139,13 @@ export async function POST(req: NextRequest) {
 
   const jti = randomUUID();
   const token = await createSessionToken({ username: user.username, groups, maxAgeSeconds: sessionMaxAge, jti });
-  const deviceId = req.cookies.get("lemedia_device_id")?.value || randomUUID();
   await createUserSession(user.id, jti, new Date(Date.now() + sessionMaxAge * 1000), {
     userAgent,
     deviceLabel,
-    ipAddress: ip,
-    deviceId
+    ipAddress: ip
   });
   const res = NextResponse.redirect(new URL(from || "/", base), { status: 303 });
   res.cookies.set("lemedia_session", token, { ...cookieBase, maxAge: sessionMaxAge });
-  res.cookies.set("lemedia_device_id", deviceId, { ...cookieBase, maxAge: 60 * 60 * 24 * 365 });
     // Clear any old flash cookies first, then set the new one
     res.cookies.set("lemedia_flash", "", { ...cookieBase, maxAge: 0 });
     res.cookies.set("lemedia_flash_error", "", { ...cookieBase, maxAge: 0 });

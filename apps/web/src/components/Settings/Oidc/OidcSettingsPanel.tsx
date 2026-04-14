@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState, useId } from "react";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { AnimatedCheckbox } from "@/components/Common/AnimatedCheckbox";
 import { csrfFetch } from "@/lib/csrf-client";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 import { Modal } from "@/components/Common/Modal";
 
 const DEFAULT_SCOPES = "openid profile email";
@@ -320,18 +320,15 @@ export function OidcSettingsPanel() {
                 <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-1 text-sm">
                         <label className="font-semibold text-white">Provider</label>
-                        <Select value={selectedProvider.id} onValueChange={setSelectedProviderId}>
-                            <SelectTrigger>
-                                <SelectValue placeholder="Select provider" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {settings.providers.map((provider) => (
-                                    <SelectItem key={provider.id} value={provider.id}>
-                                        {provider.name || provider.id}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
+                        <AdaptiveSelect
+                            value={selectedProvider.id}
+                            onValueChange={setSelectedProviderId}
+                            options={settings.providers.map((provider) => ({
+                                value: provider.id,
+                                label: provider.name || provider.id
+                            }))}
+                            placeholder="Select provider"
+                        />
                         <p className="text-xs text-muted">Pick which provider to edit.</p>
                     </div>
                     <div className="space-y-1 text-sm">

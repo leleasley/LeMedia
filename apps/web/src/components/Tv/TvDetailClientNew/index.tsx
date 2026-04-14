@@ -14,6 +14,7 @@ import { MediaInfoBox } from "@/components/Media/MediaInfoBox";
 import { MediaCastScroller } from "@/components/Media/MediaCastScroller";
 import { MediaActionMenu } from "@/components/Media/MediaActionMenu";
 import { MediaListButtons } from "@/components/Media/MediaListButtons";
+import { TvTrailerPickerModal } from "@/components/Tv/TvTrailerPickerModal";
 import { SeriesRequestModal } from "@/components/Requests/SeriesRequestModal";
 import ButtonWithDropdown from "@/components/Common/ButtonWithDropdown";
 import { ArrowDownTrayIcon } from "@heroicons/react/24/outline";
@@ -214,6 +215,8 @@ export function TvDetailClientNew({
     reviewPromptEligible,
     prefetchedAggregate,
     requestedBy = null,
+    initialWatchedSeasonNumbers = [],
+    tvTrailerPreference = "series",
     children
 }: {
     tv: TvDetail;
@@ -254,6 +257,8 @@ export function TvDetailClientNew({
     reviewPromptEligible?: boolean | null;
     prefetchedAggregate?: unknown;
     requestedBy?: RequestedBy | null;
+    initialWatchedSeasonNumbers?: number[];
+    tvTrailerPreference?: "series" | "latest-season" | "best-available";
     children?: React.ReactNode;
 }) {
     const cast = useMemo<CastMember[]>(() => (tv.aggregate_credits?.cast ?? tv.credits?.cast ?? []), [tv]);
@@ -328,6 +333,8 @@ export function TvDetailClientNew({
     const [selectedPriority, setSelectedPriority] = useState<"low" | "normal" | "high">("normal");
     const [status, setStatus] = useState<string>("");
     const [submitState, setSubmitState] = useState<"idle" | "loading" | "success" | "error">("idle");
+    const [trailerPickerOpen, setTrailerPickerOpen] = useState(false);
+    const [watchedSeasonNumbers, setWatchedSeasonNumbers] = useState<number[]>(initialWatchedSeasonNumbers);
 
     // Track view
     useTrackView({
@@ -389,6 +396,30 @@ export function TvDetailClientNew({
         },
         { refreshInterval: 5000, revalidateOnFocus: true }
     );
+
+    useEffect(() => {
+        setWatchedSeasonNumbers(initialWatchedSeasonNumbers);
+    }, [initialWatchedSeasonNumbers]);
+
+    useEffect(() => {
+        let active = true;
+        fetch(`/api/v1/media-list/tv-seasons?tmdbId=${tv.id}`, { credentials: "include" })
+            .then((res) => (res.ok ? res.json() : null))
+            .then((data) => {
+                if (!active || !data || !Array.isArray(data.seasonNumbers)) return;
+                setWatchedSeasonNumbers(
+                    data.seasonNumbers
+                        .map((seasonNumber: unknown) => Number(seasonNumber))
+                        .filter((seasonNumber: number) => Number.isInteger(seasonNumber) && seasonNumber > 0)
+                        .sort((left: number, right: number) => left - right)
+                );
+            })
+            .catch(() => {});
+
+        return () => {
+            active = false;
+        };
+    }, [tv.id]);
 
     useEffect(() => {
         if (aggregate !== undefined) {
@@ -559,6 +590,7 @@ export function TvDetailClientNew({
             manageBaseUrl={manageBaseUrlState ?? null}
             requestStatus={manageItemIdState != null ? requestStatusState ?? null : null}
             prowlarrEnabled={prowlarrEnabledState}
+            onTrailerClick={() => setTrailerPickerOpen(true)}
         />
     );
 
@@ -1238,7 +1270,7 @@ export function TvDetailClientNew({
                             </div>
                         )}
                         {showRequestBadge && requestLabel && (
-                            <div className="inline-flex h-7 items-center gap-1.5 rounded-full border border-sky-400 bg-sky-500 px-3 text-xs font-semibold text-white shadow-sm">
+                            <div className="hidden h-7 items-center gap-1.5 rounded-full border border-sky-400 bg-sky-500 px-3 text-xs font-semibold text-white shadow-sm sm:inline-flex">
                                 <CheckCircle className="h-4 w-4" />
                                 {requestLabel}
                             </div>
@@ -1296,6 +1328,25 @@ export function TvDetailClientNew({
                         ))}
                     </span>
 
+                    {watchedSeasonOptions.length > 0 ? (
+                        <div className="media-season-progress">
+                            <div className="media-season-progress-label">Season Progress</div>
+                            <div className="media-season-progress-list">
+                                {watchedSeasonOptions.map((season) => {
+                                    const isWatchedSeason = watchedSeasonNumbers.includes(season.seasonNumber);
+                                    return (
+                                        <span
+                                            key={season.seasonNumber}
+                                            className={isWatchedSeason ? "is-watched" : undefined}
+                                        >
+                                            S{season.seasonNumber}
+                                        </span>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    ) : null}
+
                     {/* Action Buttons */}
                     <div className="media-actions">
                         <div className="media-primary-row">
@@ -1312,7 +1363,7 @@ export function TvDetailClientNew({
                                         text={
                                             <>
                                                 <ArrowDownTrayIcon />
-                                                <span>Request</span>
+                                                <span>{requestLabel ?? "Request"}</span>
                                             </>
                                         }
                                         onClick={() => setRequestModalOpen(true)}
@@ -1358,6 +1409,14 @@ export function TvDetailClientNew({
                             />
                             {actionMenu}
                         </div>
+                        <TvTrailerPickerModal
+                            open={trailerPickerOpen}
+                            onClose={() => setTrailerPickerOpen(false)}
+                            tvId={tv.id}
+                            title={tv.name ?? tv.title ?? "TV Show"}
+                            seriesTrailerUrl={trailerUrl ?? null}
+                            preferredMode={tvTrailerPreference}
+                        />
                         <MediaListButtons
                             tmdbId={tv.id}
                             mediaType="tv"
@@ -1369,6 +1428,7 @@ export function TvDetailClientNew({
                             reviewPromptEligible={reviewPromptEligible}
                             title={tv.name ?? tv.title ?? "TV Show"}
                             tvSeasonOptions={watchedSeasonOptions}
+                            onWatchedSeasonsChange={setWatchedSeasonNumbers}
                         />
                     </div>
                 </div>

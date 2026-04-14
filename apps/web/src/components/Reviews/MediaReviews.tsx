@@ -14,6 +14,7 @@ import { logger } from "@/lib/logger";
 import { swrFetcher } from "@/lib/swr-fetcher";
 import { getAvatarAlt, getAvatarSrc, shouldBypassNextImage } from "@/lib/avatar";
 import { ReviewCommentsThread } from "@/components/Reviews/ReviewCommentsThread";
+import { triggerSocialFeedRefresh } from "@/lib/social-feed-refresh";
 
 interface MediaReviewsProps {
   tmdbId: number;
@@ -200,6 +201,7 @@ export function MediaReviews({ tmdbId, mediaType, title, posterPath, releaseYear
       window.dispatchEvent(new CustomEvent("media-review-state-changed", {
         detail: { mediaType, tmdbId, hasReview: true },
       }));
+      triggerSocialFeedRefresh();
     } catch (err) {
       logger.error("[Reviews] Error saving review", err);
       toast.error("Failed to save review");

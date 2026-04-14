@@ -183,7 +183,7 @@ export function UserSessionsPanel() {
 
   return (
     <div className="rounded-2xl md:rounded-3xl glass-strong p-6 md:p-10 border border-white/10 shadow-xl">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <div>
           <h2 className="text-2xl font-bold text-white">Active Sessions</h2>
           <p className="text-sm text-gray-400 mt-1">
@@ -194,7 +194,7 @@ export function UserSessionsPanel() {
           type="button"
           onClick={revokeOtherSessions}
           disabled={revokingAll || !currentJti || sessions.length <= 1}
-          className="rounded-lg bg-white/10 hover:bg-white/20 px-4 py-2 text-sm font-semibold text-white transition-colors disabled:opacity-50"
+          className="w-full rounded-lg border border-red-500/35 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-100 transition-colors hover:bg-red-500/20 hover:text-red-50 disabled:opacity-50 sm:w-auto"
         >
           {revokingAll ? "Signing out..." : "Sign out other sessions"}
         </button>
@@ -252,17 +252,20 @@ export function UserSessionsPanel() {
                     {session.ipAddress ? <div>IP: {session.ipAddress}</div> : null}
                     {session.trustedAt ? <div>Trusted since: {formatWhen(session.trustedAt)}</div> : null}
                   </div>
-                  <div className="flex items-center gap-2">
-                    {session.trustedAt && (
-                      <span className="rounded-lg bg-emerald-500/15 px-3 py-2 text-xs font-semibold text-emerald-200">
-                        trusted
-                      </span>
-                    )}
-                    {session.suspiciousNetwork && (
-                      <span className="rounded-lg bg-amber-500/15 px-3 py-2 text-xs font-semibold text-amber-200">
-                        new network
-                      </span>
-                    )}
+                  <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end">
+                    <div className="flex flex-wrap gap-2 sm:justify-end">
+                      {session.trustedAt && (
+                        <span className="rounded-lg bg-emerald-500/15 px-3 py-2 text-xs font-semibold text-emerald-200">
+                          trusted
+                        </span>
+                      )}
+                      {session.suspiciousNetwork && (
+                        <span className="rounded-lg bg-amber-500/15 px-3 py-2 text-xs font-semibold text-amber-200">
+                          new network
+                        </span>
+                      )}
+                    </div>
+                    <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
                     {session.deviceId && !session.revokedAt && (
                       <button
                         type="button"
@@ -271,7 +274,7 @@ export function UserSessionsPanel() {
                           setDeviceNickname(session.deviceNickname ?? "");
                         }}
                         disabled={savingDeviceId === session.deviceId}
-                        className="rounded-lg bg-white/10 hover:bg-white/20 px-4 py-2 text-sm font-semibold text-white transition-colors disabled:opacity-50"
+                        className="w-full rounded-lg bg-white/10 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/20 disabled:opacity-50 sm:w-auto"
                       >
                         Rename
                       </button>
@@ -281,7 +284,7 @@ export function UserSessionsPanel() {
                         type="button"
                         onClick={() => saveDevice(session.deviceId!, !session.trustedAt)}
                         disabled={savingDeviceId === session.deviceId}
-                        className="rounded-lg bg-white/10 hover:bg-white/20 px-4 py-2 text-sm font-semibold text-white transition-colors disabled:opacity-50"
+                        className="w-full rounded-lg bg-white/10 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/20 disabled:opacity-50 sm:w-auto"
                       >
                         {savingDeviceId === session.deviceId ? "Saving..." : session.trustedAt ? "Untrust" : "Trust"}
                       </button>
@@ -291,7 +294,7 @@ export function UserSessionsPanel() {
                         type="button"
                         onClick={() => revokeSession(session.jti)}
                         disabled={revoking === session.jti}
-                        className="rounded-lg bg-red-500/20 hover:bg-red-500/30 px-4 py-2 text-sm font-semibold text-red-200 transition-colors disabled:opacity-50"
+                        className="w-full rounded-lg border border-red-500/35 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-100 transition-colors hover:bg-red-500/20 hover:text-red-50 disabled:opacity-50 sm:w-auto"
                       >
                         {revoking === session.jti ? "Revoking..." : "Revoke"}
                       </button>
@@ -301,11 +304,12 @@ export function UserSessionsPanel() {
                         type="button"
                         onClick={() => deleteRevokedSession(session.jti)}
                         disabled={deleting === session.jti}
-                        className="rounded-lg bg-white/10 hover:bg-white/20 px-4 py-2 text-sm font-semibold text-white transition-colors disabled:opacity-50"
+                        className="w-full rounded-lg border border-red-500/35 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-100 transition-colors hover:bg-red-500/20 hover:text-red-50 disabled:opacity-50 sm:w-auto"
                       >
                         {deleting === session.jti ? "Deleting..." : "Delete"}
                       </button>
                     )}
+                    </div>
                     {isValidating ? (
                       <span className="text-xs text-gray-500">Refreshing...</span>
                     ) : null}
@@ -328,7 +332,7 @@ export function UserSessionsPanel() {
                       type="button"
                       onClick={() => saveDevice(session.deviceId!)}
                       disabled={savingDeviceId === session.deviceId}
-                      className="rounded-lg bg-white/10 hover:bg-white/20 px-4 py-2 text-sm font-semibold text-white transition-colors disabled:opacity-50"
+                      className="w-full rounded-lg bg-white/10 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/20 disabled:opacity-50 sm:w-auto"
                     >
                       Save name
                     </button>
@@ -338,7 +342,7 @@ export function UserSessionsPanel() {
                         setEditingDeviceId(null);
                         setDeviceNickname("");
                       }}
-                      className="rounded-lg bg-transparent px-4 py-2 text-sm font-semibold text-gray-300 transition-colors hover:text-white"
+                      className="w-full rounded-lg border border-red-500/35 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-100 transition-colors hover:bg-red-500/20 hover:text-red-50 sm:w-auto"
                     >
                       Cancel
                     </button>

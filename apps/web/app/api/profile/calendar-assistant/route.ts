@@ -7,6 +7,7 @@ import {
   setCalendarAssistantPreference,
 } from "@/db";
 import { requireCsrf } from "@/lib/csrf";
+import { getAppTimezone } from "@/lib/app-timezone";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +31,8 @@ export async function GET() {
   }
 
   const preference = await getCalendarAssistantPreference(dbUser.id);
-  return NextResponse.json(preference);
+  const serverTimezone = await getAppTimezone();
+  return NextResponse.json({ ...preference, serverTimezone });
 }
 
 export async function POST(req: NextRequest) {

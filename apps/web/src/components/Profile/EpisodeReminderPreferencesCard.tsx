@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { useToast } from "@/components/Providers/ToastProvider";
+import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 
 type LinkStatus = {
   linked: boolean;
@@ -350,20 +351,17 @@ export function EpisodeReminderPreferencesCard() {
                 disabled={isLoading || saving}
               />
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_auto]">
-                <select
+                <AdaptiveSelect
                   id="episode-reminder-timezone"
                   value={timezoneValue}
-                  onChange={(event) => setTimezoneDraft(event.target.value)}
-                  className="w-full rounded-lg border border-white/15 bg-slate-900/70 px-3 py-2 text-sm text-white outline-none transition focus:border-[#229ED9]"
+                  onValueChange={(value) => setTimezoneDraft(value)}
+                  options={[
+                    { value: "", label: "Use app default timezone" },
+                    ...filteredTimezones.map((zone) => ({ value: zone, label: zone }))
+                  ]}
+                  triggerClassName="w-full rounded-lg border border-white/15 bg-slate-900/70 px-3 py-2 text-sm text-white outline-none transition focus:border-[#229ED9]"
                   disabled={isLoading || saving}
-                >
-                  <option value="">Use app default timezone</option>
-                  {filteredTimezones.map((zone) => (
-                    <option key={zone} value={zone}>
-                      {zone}
-                    </option>
-                  ))}
-                </select>
+                />
                 <button
                   type="button"
                   onClick={() => {

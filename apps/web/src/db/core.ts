@@ -358,6 +358,23 @@ export async function ensureMediaListSchema() {
   return ensureMediaListSchemaPromise;
 }
 
+let ensureUserMediaPreferenceSchemaPromise: Promise<void> | null = null;
+export async function ensureUserMediaPreferenceSchema() {
+  if (ensureUserMediaPreferenceSchemaPromise) return ensureUserMediaPreferenceSchemaPromise;
+  ensureUserMediaPreferenceSchemaPromise = (async () => {
+    const p = getPool();
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS user_media_preference (
+        user_id BIGINT PRIMARY KEY REFERENCES app_user(id) ON DELETE CASCADE,
+        tv_trailer_preference TEXT NOT NULL DEFAULT 'series' CHECK (tv_trailer_preference IN ('series','latest-season','best-available')),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+  })();
+  return ensureUserMediaPreferenceSchemaPromise;
+}
+
 let ensureSchemaPromise: Promise<void> | null = null;
 export async function ensureSchema() {
   if (ensureSchemaPromise) return ensureSchemaPromise;
@@ -589,6 +606,17 @@ export async function ensureSchema() {
       ON CONFLICT (name) DO NOTHING;
     `);
     await p.query(`DELETE FROM jobs WHERE name = 'calendar-notifications';`);
+
+    // calendar-assistant must poll every hour so that per-user day/hour preferences
+    // are honoured precisely. Enforce this in case an admin changed the cron or
+    // run_on_start via the jobs panel (the INSERT above uses ON CONFLICT DO NOTHING
+    // so it never resets an existing row).
+    await p.query(`
+      UPDATE jobs
+      SET schedule = '0 * * * *', interval_seconds = 3600, run_on_start = FALSE, type = 'user_managed'
+      WHERE name = 'calendar-assistant'
+        AND (schedule != '0 * * * *' OR interval_seconds != 3600 OR run_on_start = TRUE OR type != 'user_managed')
+    `);
   })();
   return ensureSchemaPromise;
 }

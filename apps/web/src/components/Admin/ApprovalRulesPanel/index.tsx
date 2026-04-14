@@ -13,13 +13,7 @@ import {
 } from "lucide-react";
 import { ConfirmModal, useConfirm } from "@/components/Common/ConfirmModal";
 import { useToast } from "@/components/Providers/ToastProvider";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 
 interface Rule {
   id: number;
@@ -271,21 +265,15 @@ function RuleForm({
           <label className="block text-sm font-medium text-gray-300 mb-2">
             Rule Type *
           </label>
-          <Select
+          <AdaptiveSelect
             value={form.ruleType || "user_trust"}
             onValueChange={(value) => setForm({ ...form, ruleType: value, conditions: {} })}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select rule type" />
-            </SelectTrigger>
-            <SelectContent>
-              {Object.entries(RULE_TYPE_DESCRIPTIONS).map(([key, desc]) => (
-                <SelectItem key={key} value={key}>
-                  {key.replace(/_/g, " ").toUpperCase()} - {desc}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            options={Object.entries(RULE_TYPE_DESCRIPTIONS).map(([key, desc]) => ({
+              value: key,
+              label: `${key.replace(/_/g, " ").toUpperCase()} - ${desc}`
+            }))}
+            placeholder="Select rule type"
+          />
         </div>
 
         <div className="flex items-end">

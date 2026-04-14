@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { HeartIcon, StarIcon, ListBulletIcon, BellIcon, EyeIcon } from "@heroicons/react/24/outline";
 import { HeartIcon as HeartIconSolid, StarIcon as StarIconSolid, BellIcon as BellIconSolid, EyeIcon as EyeIconSolid } from "@heroicons/react/24/solid";
+import { Loader2, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { csrfFetch } from "@/lib/csrf-client";
 import { useToast } from "@/components/Providers/ToastProvider";
+import { triggerSocialFeedRefresh } from "@/lib/social-feed-refresh";
 import Button from "@/components/Common/Button";
 import { AddToListModal } from "@/components/Lists";
 import { Modal } from "@/components/Common/Modal";
@@ -29,6 +30,7 @@ export function MediaListButtons({
   reviewPromptEligible,
   title,
   tvSeasonOptions,
+  onWatchedSeasonsChange,
 }: {
   tmdbId: number;
   mediaType: MediaType;
@@ -40,6 +42,7 @@ export function MediaListButtons({
   reviewPromptEligible?: boolean | null;
   title?: string;
   tvSeasonOptions?: TvSeasonOption[];
+  onWatchedSeasonsChange?: (seasonNumbers: number[]) => void;
 }) {
   const [favorite, setFavorite] = useState(Boolean(initialFavorite));
   const [watchlist, setWatchlist] = useState(Boolean(initialWatchlist));
@@ -50,11 +53,16 @@ export function MediaListButtons({
   const [saving, setSaving] = useState(false);
   const [listModalOpen, setListModalOpen] = useState(false);
   const [reviewPromptOpen, setReviewPromptOpen] = useState(false);
+  const [reviewComposerOpen, setReviewComposerOpen] = useState(false);
   const [seasonModalOpen, setSeasonModalOpen] = useState(false);
   const [seasonDataLoaded, setSeasonDataLoaded] = useState(false);
   const [selectedWatchedSeasons, setSelectedWatchedSeasons] = useState<number[]>([]);
+  const [savedWatchedSeasons, setSavedWatchedSeasons] = useState<number[]>([]);
+  const [reviewRating, setReviewRating] = useState(0);
+  const [reviewText, setReviewText] = useState("");
+  const [reviewSpoiler, setReviewSpoiler] = useState(false);
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const toast = useToast();
-  const router = useRouter();
 
   const availableTvSeasonOptions = useMemo(
     () => (tvSeasonOptions ?? [])
@@ -68,6 +76,13 @@ export function MediaListButtons({
   useEffect(() => {
     setHasReview(Boolean(initialHasReview));
   }, [initialHasReview]);
+
+  useEffect(() => {
+    if (hasReview) {
+      setReviewComposerOpen(false);
+      setReviewPromptOpen(false);
+    }
+  }, [hasReview]);
 
   useEffect(() => {
     const handleReviewStateChanged = (event: Event) => {
@@ -120,6 +135,7 @@ export function MediaListButtons({
     if (!isMultiSeasonTv) {
       setSeasonDataLoaded(false);
       setSelectedWatchedSeasons([]);
+      setSavedWatchedSeasons([]);
       return;
     }
 
@@ -137,10 +153,17 @@ export function MediaListButtons({
 
         if (savedSeasonNumbers.length > 0) {
           setSelectedWatchedSeasons(savedSeasonNumbers);
+          setSavedWatchedSeasons(savedSeasonNumbers);
+          onWatchedSeasonsChange?.(savedSeasonNumbers);
         } else if (watched) {
-          setSelectedWatchedSeasons(availableTvSeasonOptions.map((season) => season.seasonNumber));
+          const allSeasonNumbers = availableTvSeasonOptions.map((season) => season.seasonNumber);
+          setSelectedWatchedSeasons(allSeasonNumbers);
+          setSavedWatchedSeasons(allSeasonNumbers);
+          onWatchedSeasonsChange?.(allSeasonNumbers);
         } else {
           setSelectedWatchedSeasons([]);
+          setSavedWatchedSeasons([]);
+          onWatchedSeasonsChange?.([]);
         }
       })
       .catch(() => {})
@@ -151,7 +174,7 @@ export function MediaListButtons({
     return () => {
       active = false;
     };
-  }, [isMultiSeasonTv, tmdbId, watched, availableTvSeasonOptions]);
+  }, [isMultiSeasonTv, tmdbId, watched, availableTvSeasonOptions, onWatchedSeasonsChange]);
 
   const toggleFollow = async () => {
     if (saving) return;
@@ -228,10 +251,15 @@ export function MediaListButtons({
         const nextWatched = !isActive;
         setWatched(nextWatched);
         if (isSingleSeasonTv && nextWatched) {
-          setSelectedWatchedSeasons(availableTvSeasonOptions.map((season) => season.seasonNumber));
+          const allSeasonNumbers = availableTvSeasonOptions.map((season) => season.seasonNumber);
+          setSelectedWatchedSeasons(allSeasonNumbers);
+          setSavedWatchedSeasons(allSeasonNumbers);
+          onWatchedSeasonsChange?.(allSeasonNumbers);
         }
         if (isSingleSeasonTv && !nextWatched) {
           setSelectedWatchedSeasons([]);
+          setSavedWatchedSeasons([]);
+          onWatchedSeasonsChange?.([]);
         }
         toast.success(
           nextWatched ? "Marked as watched" : "Marked as unwatched",
@@ -266,6 +294,7 @@ export function MediaListButtons({
     setSaving(true);
     try {
       const sortedSeasonNumbers = Array.from(new Set(selectedWatchedSeasons)).sort((left, right) => left - right);
+      const newlyAddedSeason = sortedSeasonNumbers.some((seasonNumber) => !savedWatchedSeasons.includes(seasonNumber));
       const seasonRes = await csrfFetch("/api/v1/media-list/tv-seasons", {
         method: "POST",
         credentials: "include",
@@ -282,6 +311,8 @@ export function MediaListButtons({
       }
 
       setWatched(isFullyWatched);
+      setSavedWatchedSeasons(sortedSeasonNumbers);
+      onWatchedSeasonsChange?.(sortedSeasonNumbers);
       setSeasonModalOpen(false);
 
       if (sortedSeasonNumbers.length === 0) {
@@ -292,13 +323,63 @@ export function MediaListButtons({
         toast.success("Updated watched seasons", { timeoutMs: 3000 });
       }
 
-      if (isFullyWatched && !hasReview) {
+      if (newlyAddedSeason && !hasReview) {
         setReviewPromptOpen(true);
       }
     } catch {
       toast.error("Failed to update watched seasons", { timeoutMs: 3000 });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const submitReview = async () => {
+    if (reviewSubmitting) return;
+    if (reviewRating <= 0) {
+      toast.error("Pick a star rating before posting.");
+      return;
+    }
+
+    setReviewSubmitting(true);
+    try {
+      const response = await csrfFetch("/api/v1/reviews", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          mediaType,
+          tmdbId,
+          rating: reviewRating,
+          reviewText: reviewText.trim() || null,
+          spoiler: reviewSpoiler,
+          title: title ?? "Unknown",
+          posterPath: null,
+          releaseYear: null,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => null);
+        toast.error(error?.error || "Failed to save review");
+        return;
+      }
+
+      setHasReview(true);
+      setReviewComposerOpen(false);
+      setReviewPromptOpen(false);
+      setReviewRating(0);
+      setReviewText("");
+      setReviewSpoiler(false);
+      window.dispatchEvent(new CustomEvent("media-review-state-changed", {
+        detail: { mediaType, tmdbId, hasReview: true },
+      }));
+      triggerSocialFeedRefresh();
+      toast.success("Review posted.");
+    } catch {
+      toast.error("Failed to save review");
+    } finally {
+      setReviewSubmitting(false);
     }
   };
 
@@ -438,7 +519,9 @@ export function MediaListButtons({
       >
         <div className="space-y-4">
           <p className="text-sm leading-6 text-gray-300">
-            You marked {title ?? "this title"} as watched. Want to leave a quick review now?
+            {mediaType === "tv"
+              ? `You marked watched progress for ${title ?? "this series"}. Want to leave a quick series review now?`
+              : `You marked ${title ?? "this title"} as watched. Want to leave a quick review now?`}
           </p>
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <button
@@ -452,11 +535,90 @@ export function MediaListButtons({
               type="button"
               onClick={() => {
                 setReviewPromptOpen(false);
-                router.push(`/${mediaType}/${tmdbId}#reviews`);
+                setReviewComposerOpen(true);
               }}
               className="inline-flex items-center justify-center rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-amber-400"
             >
               Review now
+            </button>
+          </div>
+        </div>
+      </Modal>
+      <Modal
+        open={reviewComposerOpen}
+        onClose={() => {
+          if (reviewSubmitting) return;
+          setReviewComposerOpen(false);
+        }}
+        title={mediaType === "tv" ? "Leave a Series Review" : "Leave a Review"}
+        forceCenter
+      >
+        <div className="space-y-4">
+          <p className="text-sm leading-6 text-gray-300">
+            {mediaType === "tv"
+              ? `Leave a quick review for ${title ?? "this series"} without leaving the page.`
+              : `Leave a quick review for ${title ?? "this title"} without leaving the page.`}
+          </p>
+
+          <div className="flex items-center gap-1">
+            {Array.from({ length: 5 }).map((_, idx) => {
+              const value = idx + 1;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  className="rounded-md p-1"
+                  onClick={() => setReviewRating(value)}
+                  aria-label={`Rate ${value} stars`}
+                >
+                  <Star
+                    className={cn(
+                      "h-5 w-5",
+                      value <= reviewRating ? "fill-amber-400 text-amber-400" : "text-gray-500"
+                    )}
+                  />
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="rounded-xl border border-white/10 bg-white/5 transition-colors focus-within:border-white/20">
+            <textarea
+              value={reviewText}
+              onChange={(event) => setReviewText(event.target.value)}
+              placeholder="Write a short review (optional)"
+              disabled={reviewSubmitting}
+              className="min-h-[120px] w-full resize-none bg-transparent p-3 text-sm text-white placeholder:text-gray-500 focus:outline-none"
+            />
+          </div>
+
+          <label className="flex items-center gap-2 text-xs text-gray-300">
+            <input
+              type="checkbox"
+              checked={reviewSpoiler}
+              onChange={(event) => setReviewSpoiler(event.target.checked)}
+              className="accent-amber-400"
+            />
+            Contains spoilers
+          </label>
+
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={() => setReviewComposerOpen(false)}
+              disabled={reviewSubmitting}
+              className="inline-flex items-center justify-center rounded-xl border border-white/10 px-4 py-2 text-sm font-medium text-gray-300 transition-colors hover:border-white/20 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={submitReview}
+              disabled={reviewSubmitting || reviewRating <= 0}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {reviewSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Post review
             </button>
           </div>
         </div>

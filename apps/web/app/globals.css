@@ -649,6 +649,31 @@
     @apply transition duration-300 hover:text-white hover:underline;
   }
 
+  .media-season-progress {
+    @apply mt-3 w-full;
+  }
+
+  .media-season-progress-label {
+    @apply mb-2 text-xs font-bold uppercase text-white/55;
+    letter-spacing: 0.16em;
+  }
+
+  .media-season-progress-list {
+    @apply flex flex-wrap gap-2;
+  }
+
+  .media-season-progress-list > span {
+    @apply inline-flex min-w-[2.75rem] items-center justify-center rounded-full border px-3 py-1.5 text-xs font-semibold text-white/70;
+    border-color: rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .media-season-progress-list > span.is-watched {
+    border-color: rgba(16, 185, 129, 0.45);
+    background: rgba(16, 185, 129, 0.16);
+    color: #d1fae5;
+  }
+
   .media-tagline {
     @apply mt-2 text-sm italic text-gray-400 sm:text-base xl:text-lg;
   }
@@ -864,6 +889,20 @@
 
     #media-social-info {
       width: 100%;
+    }
+
+    .media-season-progress {
+      margin-top: 0.25rem;
+    }
+
+    .media-season-progress-list {
+      gap: 0.4rem;
+    }
+
+    .media-season-progress-list > span {
+      min-width: 2.6rem;
+      padding: 0.4rem 0.65rem;
+      font-size: 0.78rem;
     }
 
     /* Mobile action area — 3-row hierarchy */

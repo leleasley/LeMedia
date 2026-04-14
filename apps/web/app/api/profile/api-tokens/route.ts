@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/auth";
-import { createUserApiToken, getUserWithHash, listUserApiTokens, revokeUserApiTokenById } from "@/db";
+import { createUserApiToken, getUserApiTokenById, getUserWithHash, listUserApiTokens, revokeUserApiTokenById } from "@/db";
 import { generateUserApiToken } from "@/lib/api-tokens";
 import { requireCsrf } from "@/lib/csrf";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
@@ -101,4 +101,52 @@ export async function DELETE(req: NextRequest) {
   });
 
   return NextResponse.json({ revoked });
+}
+
+export async function PATCH(req: NextRequest) {
+  const user = await requireUser();
+  if (user instanceof NextResponse) return user;
+  const csrf = requireCsrf(req);
+  if (csrf) return csrf;
+
+  let payload: { id?: number; password?: string } = {};
+  try {
+    payload = await req.json();
+  } catch {
+    // ignore
+  }
+
+  const dbUser = await getUserWithHash(user.username);
+  if (!dbUser) return NextResponse.json({ error: "User not found" }, { status: 404 });
+
+  const password = typeof payload.password === "string" ? payload.password : "";
+  if (!password) return NextResponse.json({ error: "Password is required" }, { status: 400 });
+  if (!dbUser.password_hash || !(await verifyPassword(password, dbUser.password_hash))) {
+    return NextResponse.json({ error: "Current password is incorrect" }, { status: 400 });
+  }
+
+  const id = parseId(payload?.id);
+  if (!id) return NextResponse.json({ error: "Invalid token" }, { status: 400 });
+
+  const token = await getUserApiTokenById(user.id, id);
+  if (!token) {
+    return NextResponse.json({ error: "Token not found" }, { status: 404 });
+  }
+
+  await logAuditEvent({
+    action: "user.updated",
+    actor: user.username,
+    metadata: { operation: "api_token_revealed", tokenId: id },
+    ip: getClientIp(req)
+  });
+
+  return NextResponse.json({
+    token: token.token,
+    tokenInfo: {
+      id: token.id,
+      name: token.name,
+      createdAt: token.createdAt,
+      updatedAt: token.updatedAt,
+    }
+  });
 }

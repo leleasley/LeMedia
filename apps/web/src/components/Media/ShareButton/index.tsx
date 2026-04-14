@@ -20,11 +20,11 @@ export function ShareButton({ mediaType, tmdbId, title, backdropPath, posterUrl 
     <>
       <Button
         buttonType="ghost"
-        buttonSize="sm"
+        buttonSize="md"
         onClick={() => setIsModalOpen(true)}
         className="media-action-button"
       >
-        <Share2 className="h-4 w-4" />
+        <Share2 className="mr-2 h-4 w-4" />
         <span>Share</span>
       </Button>
 

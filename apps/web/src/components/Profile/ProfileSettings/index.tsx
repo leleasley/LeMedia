@@ -40,6 +40,7 @@ type ProfileResponse = {
     originalLanguage?: string | null;
     watchlistSyncMovies?: boolean;
     watchlistSyncTv?: boolean;
+    tvTrailerPreference?: "series" | "latest-season" | "best-available";
     requestLimitMovie?: number | null;
     requestLimitMovieDays?: number | null;
     requestLimitSeries?: number | null;
@@ -59,6 +60,7 @@ type UpdateResponse = {
     originalLanguage?: string | null;
     watchlistSyncMovies?: boolean;
     watchlistSyncTv?: boolean;
+    tvTrailerPreference?: "series" | "latest-season" | "best-available";
   };
   requireLogout: boolean;
 };
@@ -76,6 +78,7 @@ type FormState = {
   originalLanguage: string | null;
   watchlistSyncMovies: boolean;
   watchlistSyncTv: boolean;
+  tvTrailerPreference: "series" | "latest-season" | "best-available";
 };
 
 type ApiTokenInfo = {
@@ -83,6 +86,7 @@ type ApiTokenInfo = {
   name: string;
   createdAt: string | null;
   updatedAt: string | null;
+  token?: string | null;
 };
 
 const initialForm: FormState = {
@@ -98,6 +102,7 @@ const initialForm: FormState = {
   originalLanguage: null,
   watchlistSyncMovies: false,
   watchlistSyncTv: false,
+  tvTrailerPreference: "series",
 };
 
 type ProfileSettingsSection = "all" | "general" | "linked" | "security";
@@ -245,6 +250,30 @@ export function ProfileSettings({
     });
   };
 
+  const handleRevealApiToken = async (id: number) => {
+    requestTokenPassword(async (password) => {
+      if (!password) throw new Error("Password is required");
+      setApiTokenError(null);
+      const res = await csrfFetch("/api/profile/api-tokens", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, password })
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || "Failed to reveal API token");
+      }
+      const data = await res.json();
+      const token = data?.token ?? null;
+      if (!token) {
+        throw new Error("No token returned");
+      }
+      setApiTokens(prev => prev.map(item => item.id === id ? { ...item, token } : item));
+      setTokenPasswordPromptOpen(false);
+      toast.success("API token revealed");
+    });
+  };
+
   const { data, error: profileError, isLoading, mutate } = useSWR<ProfileResponse>("/api/v1/profile", fetcher);
 
   useEffect(() => {
@@ -261,6 +290,7 @@ export function ProfileSettings({
       originalLanguage: data.user.originalLanguage ?? null,
       watchlistSyncMovies: data.user.watchlistSyncMovies ?? false,
       watchlistSyncTv: data.user.watchlistSyncTv ?? false,
+      tvTrailerPreference: data.user.tvTrailerPreference ?? "series",
     }));
     setJellyfinLinked(Boolean(data.user.jellyfinUserId));
     setJellyfinUsername(data.user.jellyfinUsername ?? null);
@@ -298,6 +328,7 @@ export function ProfileSettings({
         originalLanguage: data.user.originalLanguage ?? null,
         watchlistSyncMovies: data.user.watchlistSyncMovies ?? false,
         watchlistSyncTv: data.user.watchlistSyncTv ?? false,
+        tvTrailerPreference: data.user.tvTrailerPreference ?? prev.tvTrailerPreference,
         currentPassword: "",
         newPassword: "",
         confirmPassword: ""
@@ -360,6 +391,9 @@ export function ProfileSettings({
     }
     if (form.watchlistSyncTv !== initialData.watchlistSyncTv) {
         payload.watchlistSyncTv = form.watchlistSyncTv;
+    }
+    if (form.tvTrailerPreference !== (initialData.tvTrailerPreference ?? "series")) {
+      payload.tvTrailerPreference = form.tvTrailerPreference;
     }
 
     if (form.newPassword || form.confirmPassword) {
@@ -432,6 +466,7 @@ export function ProfileSettings({
   const showGeneral = section === "all" || section === "general";
   const showLinked = section === "all" || section === "linked";
   const watchlistLinked = jellyfinLinked || traktLinked;
+  const roleLabelLower = String(roleLabel ?? "").toLowerCase();
 
   return (
     <div className="space-y-6">
@@ -474,11 +509,13 @@ export function ProfileSettings({
                 setPendingPasswordPayload(null);
               }}
               disabled={saving}
+              className="w-full rounded-lg border border-red-500/35 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-100 hover:bg-red-500/20 hover:text-red-50 sm:w-auto"
             >
               Cancel
             </Button>
             <Button
               type="button"
+              className="w-full sm:w-auto"
               onClick={async () => {
                 if (!pendingPasswordPayload) return;
                 if (mfaPromptCode.length < 6) {
@@ -679,6 +716,25 @@ export function ProfileSettings({
                     />
                 </div>
 
+                <div className="mt-6 rounded-xl border border-white/10 bg-white/[0.03] p-4 md:p-5">
+                  <label className="mb-2 block text-sm font-semibold text-foreground" htmlFor="profile-tv-trailer-preference">
+                    TV Trailer Preference
+                  </label>
+                  <p className="mb-3 text-sm text-foreground/65">
+                    Choose which trailer type should be selected first on TV pages.
+                  </p>
+                  <select
+                    id="profile-tv-trailer-preference"
+                    value={form.tvTrailerPreference}
+                    onChange={(e) => updateField("tvTrailerPreference", e.target.value as FormState["tvTrailerPreference"])}
+                    className="w-full rounded-xl border border-white/20 bg-white/5 px-4 py-3 text-sm text-foreground outline-none transition-all focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/50"
+                  >
+                    <option value="series">Series trailer first</option>
+                    <option value="latest-season">Latest season trailer first</option>
+                    <option value="best-available">Best available trailer first</option>
+                  </select>
+                </div>
+
                 <div className="border-t border-white/10 my-6"></div>
                 <h3 className="text-lg font-bold text-foreground mb-4">Cookie Preferences</h3>
                 <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 md:p-5">
@@ -789,7 +845,7 @@ export function ProfileSettings({
                                     <h3 className="text-lg font-bold text-foreground">Watchlist Sync</h3>
                                     <p className="text-sm text-foreground/60 mt-0.5">
                                         Auto-request from your {jellyfinLinked && traktLinked ? "Jellyfin & Trakt" : jellyfinLinked ? "Jellyfin" : "Trakt"} watchlists
-                                        {!roleLabel?.toLowerCase().includes("admin") && !roleLabel?.toLowerCase().includes("owner") && (
+                                        {!roleLabelLower.includes("admin") && !roleLabelLower.includes("owner") && (
                                             <span className="text-amber-400 block mt-1">Requests will require admin approval unless already available.</span>
                                         )}
                                     </p>
@@ -1160,7 +1216,7 @@ export function ProfileSettings({
                   />
                 </div>
 
-                <div className="flex justify-end gap-3 pt-2">
+                <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
                   <Button
                     type="button"
                     variant="outline"
@@ -1169,14 +1225,14 @@ export function ProfileSettings({
                       updateField("newPassword", "");
                       updateField("confirmPassword", "");
                     }}
-                    className="px-4 py-2 rounded-lg text-sm font-medium border-white/10 hover:bg-white/5"
+                    className="w-full px-4 py-2 rounded-lg text-sm font-medium border-white/10 hover:bg-white/5 sm:w-auto"
                   >
                     Clear
                   </Button>
                   <Button
                     type="submit"
                     disabled={saving || (!form.currentPassword && !form.newPassword && !form.confirmPassword)}
-                    className="px-5 py-2 rounded-lg text-sm font-medium bg-purple-600 hover:bg-purple-500 text-white transition-colors disabled:opacity-50"
+                    className="w-full px-5 py-2 rounded-lg text-sm font-medium bg-purple-600 hover:bg-purple-500 text-white transition-colors disabled:opacity-50 sm:w-auto"
                   >
                     {saving ? (
                       <>
@@ -1233,7 +1289,7 @@ export function ProfileSettings({
                       <Button
                         type="button"
                         variant="outline"
-                        className="border-emerald-500/40 text-emerald-200 hover:bg-emerald-500/20"
+                        className="w-full border-emerald-500/40 text-emerald-200 hover:bg-emerald-500/20 sm:w-auto"
                         onClick={() => {
                           void navigator.clipboard?.writeText(newApiToken);
                           toast.success("Token copied");
@@ -1256,21 +1312,41 @@ export function ProfileSettings({
                     <div className="text-xs text-white/50">Loading tokens...</div>
                   ) : apiTokens.length ? (
                     apiTokens.map(token => (
-                      <div key={token.id} className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/20 px-4 py-3">
+                      <div key={token.id} className="flex flex-col gap-3 rounded-lg border border-white/10 bg-black/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                           <div className="text-sm font-semibold text-white">{token.name}</div>
                           <div className="text-xs text-white/50">
                             Created {token.createdAt ? formatDate(token.createdAt) : "Unknown"}
                           </div>
+                          {token.token ? (
+                            <code className="mt-2 block break-all rounded-md bg-black/40 px-3 py-2 text-xs text-emerald-100">{token.token}</code>
+                          ) : null}
                         </div>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="border-red-500/40 text-red-200 hover:bg-red-500/20"
-                          onClick={() => handleRevokeApiToken(token.id)}
-                        >
-                          Revoke
-                        </Button>
+                        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="w-full border-emerald-500/35 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/20 hover:text-emerald-50 sm:w-auto"
+                            onClick={async () => {
+                              if (!token.token) {
+                                await handleRevealApiToken(token.id);
+                                return;
+                              }
+                              await navigator.clipboard?.writeText(token.token);
+                              toast.success("Token copied");
+                            }}
+                          >
+                            {token.token ? "Copy token" : "Reveal token"}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="w-full border-red-500/40 bg-red-500/10 text-red-200 hover:bg-red-500/20 hover:text-red-50 sm:w-auto"
+                            onClick={() => handleRevokeApiToken(token.id)}
+                          >
+                            Revoke
+                          </Button>
+                        </div>
                       </div>
                     ))
                   ) : (

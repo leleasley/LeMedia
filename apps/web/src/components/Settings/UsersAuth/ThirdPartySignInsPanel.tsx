@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { csrfFetch } from "@/lib/csrf-client";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 
 type OAuthProviderState = {
   enabled: boolean;
@@ -186,16 +186,16 @@ export function ThirdPartySignInsPanel() {
 
       <div className="space-y-1 text-sm max-w-md">
         <label className="font-semibold text-white">Provider</label>
-        <Select value={selectedProvider} onValueChange={(value) => setSelectedProvider(value as ProviderKey)}>
-          <SelectTrigger>
-            <SelectValue placeholder="Select provider" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="google">Google</SelectItem>
-            <SelectItem value="github">GitHub</SelectItem>
-            <SelectItem value="telegram">Telegram</SelectItem>
-          </SelectContent>
-        </Select>
+        <AdaptiveSelect
+          value={selectedProvider}
+          onValueChange={(value) => setSelectedProvider(value as ProviderKey)}
+          options={[
+            { value: "google", label: "Google" },
+            { value: "github", label: "GitHub" },
+            { value: "telegram", label: "Telegram" }
+          ]}
+          placeholder="Select provider"
+        />
       </div>
 
       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-4">

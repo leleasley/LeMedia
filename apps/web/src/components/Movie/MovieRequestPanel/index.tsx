@@ -28,7 +28,8 @@ export function MovieRequestPanel({
   title,
   posterUrl,
   backdropUrl,
-  year
+  year,
+  requestStatus
 }: {
   tmdbId: number;
   prefetched?: MovieInfo | null;
@@ -37,6 +38,7 @@ export function MovieRequestPanel({
   posterUrl?: string | null;
   backdropUrl?: string | null;
   year?: string | number | null;
+  requestStatus?: string | null;
 }) {
   const [modalOpen, setModalOpen] = useState(false);
   const router = useRouter();
@@ -46,6 +48,15 @@ export function MovieRequestPanel({
     { fallbackData: prefetched ?? undefined }
   );
   const info = prefetched ?? data ?? null;
+  const requestLabel = requestStatus === "queued"
+    ? "Queued"
+    : requestStatus === "pending"
+      ? "Pending"
+      : requestStatus === "submitted"
+        ? "Submitted"
+        : requestStatus === "downloading"
+          ? "Downloading"
+          : "Request";
 
   if (error) {
     return (
@@ -116,7 +127,7 @@ export function MovieRequestPanel({
         text={
           <>
             <ArrowDownTrayIcon />
-            <span>Request</span>
+            <span>{requestLabel}</span>
           </>
         }
         onClick={() => setModalOpen(true)}

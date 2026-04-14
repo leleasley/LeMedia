@@ -10,6 +10,11 @@ export async function GET(req: NextRequest) {
     const languages = await getLanguages();
     return jsonResponseWithETag(req, { languages });
   } catch (e) {
-    return jsonResponseWithETag(req, { error: "Failed to load languages" }, { status: 500 });
+    // Fail open so profile/general can still render when TMDB is temporarily unavailable.
+    return jsonResponseWithETag(req, {
+      languages: [],
+      degraded: true,
+      error: "Failed to load languages",
+    });
   }
 }

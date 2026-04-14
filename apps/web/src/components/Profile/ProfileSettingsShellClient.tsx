@@ -3,13 +3,7 @@
 import { ReactNode, useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { ProfileHeader } from "@/components/Profile/ProfileHeader";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AdaptiveSelect } from "@/components/ui/adaptive-select";
 
 interface ProfileSettingsShellClientProps {
   user: {
@@ -62,18 +56,14 @@ export function ProfileSettingsShellClient({ user, isAdmin, children }: ProfileS
       <div className="mt-6">
         <div className="sm:hidden relative z-10">
           <label htmlFor="settings-tabs" className="sr-only">Select a tab</label>
-          <Select value={activeTab} onValueChange={(value) => setTab(value as SettingsTabKey)}>
-            <SelectTrigger className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-white shadow-inner focus:border-indigo-500">
-              <SelectValue placeholder="Select settings tab" />
-            </SelectTrigger>
-            <SelectContent>
-              {tabOrder.map((tab) => (
-                <SelectItem key={tab.key} value={tab.key}>
-                  {tab.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <AdaptiveSelect
+            value={activeTab}
+            onValueChange={(value) => setTab(value as SettingsTabKey)}
+            options={tabOrder.map((tab) => ({ value: tab.key, label: tab.label }))}
+            placeholder="Select settings tab"
+            id="settings-tabs"
+            triggerClassName="w-full rounded-xl border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-white shadow-inner focus:border-indigo-500"
+          />
         </div>
 
         <div className="hidden sm:block">

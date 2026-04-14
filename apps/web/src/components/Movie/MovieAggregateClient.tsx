@@ -179,6 +179,7 @@ export function MovieActionButtons({
             posterUrl={posterUrl}
             backdropUrl={backdropUrl}
             year={year}
+            requestStatus={requestStatus}
           />
         ) : null}
       </div>
