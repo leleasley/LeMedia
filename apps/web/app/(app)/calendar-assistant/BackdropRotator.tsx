@@ -11,19 +11,16 @@ type BackdropRotatorProps = {
 export default function BackdropRotator({ images, intervalMs = 10000 }: BackdropRotatorProps) {
   const uniqueImages = useMemo(() => Array.from(new Set(images.filter(Boolean))), [images]);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [mounted, setMounted] = useState(false);
+
+
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (!mounted || uniqueImages.length <= 1) return;
+    if (uniqueImages.length <= 1) return;
     const timer = window.setInterval(() => {
       setActiveIndex((prev) => (prev + 1) % uniqueImages.length);
     }, intervalMs);
     return () => window.clearInterval(timer);
-  }, [mounted, intervalMs, uniqueImages.length]);
+  }, [intervalMs, uniqueImages.length]);
 
   if (uniqueImages.length === 0) return null;
 

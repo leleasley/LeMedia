@@ -2,7 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { CsrfTokenInput } from "@/components/Common/CsrfTokenInput";
 import { TurnstileWidget } from "@/components/Common/TurnstileWidget";
@@ -31,21 +31,21 @@ export function LoginForm({
     const [inlineError, setInlineError] = useState<string | null>(null);
     const isTurnstileEnabled = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
 
-    useEffect(() => {
-        if (mounted) return;
-        const id = window.requestAnimationFrame(() => setMounted(true));
-        return () => window.cancelAnimationFrame(id);
-    }, [mounted]);
 
+
+    // Avoid calling setState synchronously in effect
+    const prevError = useRef<string | null>(null);
+    const prevSuccess = useRef<string | null>(null);
     useEffect(() => {
         const error = searchParams.get("error");
         const success = searchParams.get("success");
-
-        if (error) {
-            setInlineError(error);
+        if (error && error !== prevError.current) {
+            queueMicrotask(() => setInlineError(error));
+            prevError.current = error;
         }
-        if (success) {
-            toast.success(success);
+        if (success && success !== prevSuccess.current) {
+            queueMicrotask(() => toast.success(success));
+            prevSuccess.current = success;
         }
     }, [searchParams, toast]);
 
@@ -68,7 +68,7 @@ export function LoginForm({
         <form id={formId} className="space-y-5" method="post" action={action}>
             <input type="hidden" name="from" value={from} />
             <CsrfTokenInput value={csrfToken} />
-            {mounted && isTurnstileEnabled && (
+            {isTurnstileEnabled && (
                 <input type="hidden" name="turnstile_token" value={turnstileToken} />
             )}
             <div className="space-y-1.5">
@@ -105,7 +105,7 @@ export function LoginForm({
                 />
             </div>
 
-            {mounted && isTurnstileEnabled && (
+            {isTurnstileEnabled && (
                 <div className="pt-2">
                     <TurnstileWidget
                         onSuccess={handleTurnstileSuccess}
