@@ -123,7 +123,7 @@ class ImageProxy {
     return 0;
   }
 
-  private axios;
+  private axios: ReturnType<typeof axios.create>;
   private cacheVersion;
   private key;
 
