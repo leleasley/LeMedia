@@ -20,7 +20,7 @@ export function LoginForm({
     from,
     csrfToken,
     formId,
-    action = "/api/v1/login",
+    action = "/api/login",
     submitLabel = "Sign In",
     onTurnstileTokenChange
 }: LoginFormProps) {
@@ -65,7 +65,7 @@ export function LoginForm({
     }, [onTurnstileTokenChange]);
 
     return (
-        <form id={formId} className="space-y-5" method="post" action={action}>
+        <form id={formId} className="space-y-3" method="post" action={action}>
             <input type="hidden" name="from" value={from} />
             <CsrfTokenInput value={csrfToken} />
             {isTurnstileEnabled && (
@@ -76,7 +76,7 @@ export function LoginForm({
                     Username
                 </label>
                 <input
-                    className="w-full px-4 py-3 rounded-lg bg-black/20 border border-white/10 text-white placeholder:text-gray-500 focus:bg-black/40 focus:border-white/20 focus:ring-2 focus:ring-white/10 outline-none transition-all duration-200"
+                    className="w-full px-3.5 py-2.5 rounded-lg bg-black/20 border border-white/10 text-white placeholder:text-gray-500 focus:bg-black/40 focus:border-white/20 focus:ring-2 focus:ring-indigo-500/25 outline-none transition-all duration-200"
                     id="username"
                     name="username"
                     required
@@ -92,7 +92,7 @@ export function LoginForm({
                     Password
                 </label>
                 <input
-                    className={`w-full px-4 py-3 rounded-lg bg-black/20 border text-white placeholder:text-gray-500 focus:bg-black/40 focus:ring-2 focus:ring-white/10 outline-none transition-all duration-200 ${
+                    className={`w-full px-3.5 py-2.5 rounded-lg bg-black/20 border text-white placeholder:text-gray-500 focus:bg-black/40 focus:ring-2 focus:ring-indigo-500/25 outline-none transition-all duration-200 ${
                         inlineError ? "border-red-500/60 focus:border-red-500/60" : "border-white/10 focus:border-white/20"
                     }`}
                     id="password"
@@ -127,12 +127,12 @@ export function LoginForm({
             <button
                 type="submit"
                 disabled={mounted && isTurnstileEnabled && !turnstileToken}
-                className="w-full mt-2 bg-white text-black hover:bg-gray-100 py-3.5 text-sm font-bold uppercase tracking-wide rounded-lg shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
+                className="w-full mt-1 bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 text-sm font-semibold rounded-lg shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
             >
                 {submitLabel}
             </button>
 
-            <div className="mt-4 pt-4 border-t border-white/10 flex justify-center gap-3 text-[10px]">
+            <div className="mt-3 pt-3 border-t border-white/10 flex justify-center gap-3 text-[10px]">
                 <Link href="/forgot-password" className="text-gray-400 hover:text-gray-300 transition">
                     Forgot Password?
                 </Link>

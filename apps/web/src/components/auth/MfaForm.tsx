@@ -17,7 +17,7 @@ export function MfaForm({ csrfToken }: { csrfToken?: string }) {
     }, [searchParams, toast]);
 
     return (
-        <form className="space-y-5" method="post" action="/api/v1/mfa/verify">
+        <form className="space-y-5" method="post" action="/api/mfa/verify">
             <CsrfTokenInput value={csrfToken} />
             <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider ml-1" htmlFor="code">

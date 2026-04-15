@@ -14,7 +14,7 @@ export function CsrfTokenInput({ value }: { value?: string }) {
   useEffect(() => {
     if (token) return;
     let active = true;
-    fetch("/api/v1/csrf", { credentials: "include" })
+    fetch("/api/csrf", { credentials: "include" })
       .then(res => (res.ok ? res.json() : null))
       .then(data => {
         if (!active) return;

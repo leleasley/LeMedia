@@ -19,7 +19,7 @@ type MediaIssue = {
 
 export function AdminIssuesTableClient({ initialIssues }: { initialIssues: MediaIssue[] }) {
   const { data } = useSWR<{ issues: MediaIssue[] }>(
-    "/api/v1/issues",
+    "/api/issues",
     {
       refreshInterval: 30000,
       revalidateOnFocus: true,

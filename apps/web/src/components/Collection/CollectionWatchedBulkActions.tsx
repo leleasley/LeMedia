@@ -49,7 +49,7 @@ export function CollectionWatchedBulkActions({ items }: Props) {
         const chunk = uniqueIds.slice(index, index + chunkSize);
         await Promise.all(
           chunk.map(async (tmdbId) => {
-            const res = await csrfFetch("/api/v1/media-list", {
+            const res = await csrfFetch("/api/media-list", {
               method,
               credentials: "include",
               headers: { "Content-Type": "application/json" },

@@ -146,9 +146,9 @@ export function DiscoverFilterBar({
       try {
         const region = providerRegion || defaultRegion;
         const [genreRes, langRes, providerRes] = await Promise.all([
-          fetch(`/api/v1/tmdb/genres?type=${type}`),
-          fetch("/api/v1/tmdb/languages"),
-          fetch(`/api/v1/tmdb/watch-providers?type=${type}&region=${encodeURIComponent(region)}`),
+          fetch(`/api/tmdb/genres?type=${type}`),
+          fetch("/api/tmdb/languages"),
+          fetch(`/api/tmdb/watch-providers?type=${type}&region=${encodeURIComponent(region)}`),
         ]);
         if (cancelled) return;
 
@@ -183,7 +183,7 @@ export function DiscoverFilterBar({
         setStudioResults([]);
         return;
       }
-      const res = await fetch(`/api/v1/tmdb/company-search?query=${encodeURIComponent(query)}`);
+      const res = await fetch(`/api/tmdb/company-search?query=${encodeURIComponent(query)}`);
       const data = await res.json();
       setStudioResults(data.results ?? []);
     }, 250);

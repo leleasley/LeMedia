@@ -18,7 +18,7 @@ export function AdminIssueActions({ issueId, status }: Props) {
 
   const markResolved = async () => {
     setError(null);
-    const res = await csrfFetch(`/api/v1/issues/${issueId}`, {
+    const res = await csrfFetch(`/api/issues/${issueId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: "resolved" }),
@@ -36,7 +36,7 @@ export function AdminIssueActions({ issueId, status }: Props) {
     setError(null);
     const ok = await confirm("Delete this issue? This cannot be undone.", { title: "Delete Issue", destructive: true, confirmLabel: "Delete" });
     if (!ok) return;
-    const res = await csrfFetch(`/api/v1/issues/${issueId}`, {
+    const res = await csrfFetch(`/api/issues/${issueId}`, {
       method: "DELETE",
       credentials: "include"
     });

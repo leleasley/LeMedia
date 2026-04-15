@@ -19,6 +19,7 @@ import { UserNotificationChannelsPanel } from "@/components/Profile/UserNotifica
 import { EpisodeReminderPreferencesCard } from "@/components/Profile/EpisodeReminderPreferencesCard";
 import { GlobalChannelSubscriptionsPanel } from "@/components/Profile/GlobalChannelSubscriptionsPanel";
 import { AdaptiveSelect } from "@/components/ui/adaptive-select";
+import { Bell, CalendarDays, Link2, Mail } from "lucide-react";
 
 interface AssignedEndpoint {
   id: number;
@@ -522,7 +523,7 @@ export function ProfileSettingsPageClient({
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <div className="flex items-center gap-3 rounded-xl bg-black/20 border border-white/5 p-4">
                   <div className={`flex items-center justify-center w-10 h-10 rounded-full ${pushEnabled ? 'bg-emerald-500/20' : 'bg-white/10'}`}>
-                    <span className="text-lg">{pushEnabled ? '✓' : '○'}</span>
+                    <Bell className={`w-5 h-5 ${pushEnabled ? 'text-emerald-300' : 'text-gray-500'}`} />
                   </div>
                   <div>
                     <div className="text-xs text-white/50 uppercase tracking-wider">Push</div>
@@ -534,7 +535,7 @@ export function ProfileSettingsPageClient({
 
                 <div className="flex items-center gap-3 rounded-xl bg-black/20 border border-white/5 p-4">
                   <div className={`flex items-center justify-center w-10 h-10 rounded-full ${user.weeklyDigestOptIn ? 'bg-emerald-500/20' : 'bg-white/10'}`}>
-                    <span className="text-lg">{user.weeklyDigestOptIn ? '📬' : '○'}</span>
+                    <Mail className={`w-5 h-5 ${user.weeklyDigestOptIn ? 'text-emerald-300' : 'text-gray-500'}`} />
                   </div>
                   <div>
                     <div className="text-xs text-white/50 uppercase tracking-wider">Digest</div>
@@ -546,7 +547,7 @@ export function ProfileSettingsPageClient({
 
                 <div className="flex items-center gap-3 rounded-xl bg-black/20 border border-white/5 p-4">
                   <div className="flex items-center justify-center w-10 h-10 rounded-full bg-white/10">
-                    <span className="text-lg">🔗</span>
+                    <Link2 className="w-5 h-5 text-gray-400" />
                   </div>
                   <div>
                     <div className="text-xs text-white/50 uppercase tracking-wider">Channels</div>
@@ -558,7 +559,7 @@ export function ProfileSettingsPageClient({
 
                 <div className="flex items-center gap-3 rounded-xl bg-black/20 border border-white/5 p-4">
                   <div className={`flex items-center justify-center w-10 h-10 rounded-full ${calendarAssistantEnabled ? 'bg-emerald-500/20' : 'bg-white/10'}`}>
-                    <span className="text-lg">🗓</span>
+                    <CalendarDays className={`w-5 h-5 ${calendarAssistantEnabled ? 'text-emerald-300' : 'text-gray-500'}`} />
                   </div>
                   <div>
                     <div className="text-xs text-white/50 uppercase tracking-wider">Calendar</div>
@@ -672,7 +673,7 @@ function WeeklyDigestSettings({
     <div className="rounded-2xl md:rounded-3xl border border-white/10 bg-white/[0.02] p-6 md:p-8">
       <div className="flex items-center gap-4 mb-6">
         <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 ring-1 ring-white/10">
-          <span className="text-xl">📬</span>
+          <Mail className="w-6 h-6 text-amber-300" />
         </div>
         <div className="flex-1">
           <h3 className="text-xl font-bold text-white">Weekly Digest</h3>
@@ -836,7 +837,7 @@ function CalendarAssistantSettings({
     <div className="rounded-2xl md:rounded-3xl border border-white/10 bg-white/[0.02] p-6 md:p-8 space-y-5">
       <div className="flex items-center gap-4">
         <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 ring-1 ring-white/10">
-          <span className="text-xl">🗓</span>
+          <CalendarDays className="w-6 h-6 text-cyan-300" />
         </div>
         <div className="flex-1">
           <h3 className="text-xl font-bold text-white">Calendar Assistant</h3>

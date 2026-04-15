@@ -12,7 +12,7 @@ export async function fetchAvailabilityBatched(
 
   const results = await Promise.all(
     chunks.map(async (chunk) => {
-      const url = new URL("/api/v1/availability", window.location.origin);
+      const url = new URL("/api/availability", window.location.origin);
       url.searchParams.set("type", type);
       url.searchParams.set("ids", chunk.join(","));
       const res = await fetch(url.toString(), { credentials: "include" });
@@ -41,7 +41,7 @@ export async function fetchAvailabilityStatusBatched(
 
   const results = await Promise.all(
     chunks.map(async (chunk) => {
-      const url = new URL("/api/v1/availability", window.location.origin);
+      const url = new URL("/api/availability", window.location.origin);
       url.searchParams.set("type", type);
       url.searchParams.set("ids", chunk.join(","));
       url.searchParams.set("includeStatus", "1");

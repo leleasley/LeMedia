@@ -32,7 +32,7 @@ export function MfaSetupForm({ csrfToken }: MfaSetupFormProps) {
   }, []);
 
   return (
-    <form className="space-y-6" method="post" action="/api/v1/mfa/setup">
+    <form className="space-y-6" method="post" action="/api/mfa/setup">
       <CsrfTokenInput value={csrfToken} />
       {mounted && isTurnstileEnabled && (
         <input type="hidden" name="turnstile_token" value={turnstileToken} />

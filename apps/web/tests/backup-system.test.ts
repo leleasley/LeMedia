@@ -24,7 +24,7 @@ test("backup delete route is admin + csrf protected", () => {
 });
 
 test("backup scheduler job is seeded and has a handler", () => {
-  const dbSource = fs.readFileSync(path.join(rootDir, "src", "db.ts"), "utf8");
+  const dbSource = fs.readFileSync(path.join(rootDir, "src", "db", "core.ts"), "utf8");
   const defsSource = fs.readFileSync(path.join(rootDir, "src", "lib", "jobs", "definitions.ts"), "utf8");
 
   assert.ok(dbSource.includes("('backup-snapshot', '30 2 * * *', 86400, 'system', FALSE)"), "backup job seed missing");

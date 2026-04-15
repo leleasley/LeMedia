@@ -98,7 +98,7 @@ export function ToastProvider(props: { children: React.ReactNode; initialToasts?
       for (const t of toEnqueue) push(t);
 
       // Server-provided flash cookies are one-shot; clear them after consuming.
-      csrfFetch("/api/v1/flash/clear", { method: "POST", credentials: "include" }).catch(() => {});
+      csrfFetch("/api/flash/clear", { method: "POST", credentials: "include" }).catch(() => {});
     }, 100); // Small delay to ensure DOM is ready
     return () => window.clearTimeout(timeout);
   }, [props.initialToasts, push]);

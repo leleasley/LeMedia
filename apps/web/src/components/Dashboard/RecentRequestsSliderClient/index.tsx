@@ -26,7 +26,7 @@ export function RecentRequestsSliderClient({
   take?: number;
 }) {
   const { data, error, isLoading } = useSWR<{ items: RecentRequestItem[] }>(
-    `/api/v1/requests/recent?take=${take}`,
+    `/api/requests/recent?take=${take}`,
     {
       refreshInterval: 20000,
       fallbackData: initialItems.length ? { items: initialItems } : undefined,

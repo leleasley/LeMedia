@@ -274,7 +274,7 @@ export function ProfileSettings({
     });
   };
 
-  const { data, error: profileError, isLoading, mutate } = useSWR<ProfileResponse>("/api/v1/profile", fetcher);
+  const { data, error: profileError, isLoading, mutate } = useSWR<ProfileResponse>("/api/profile", fetcher);
 
   useEffect(() => {
     if (!data?.user) return;
@@ -304,7 +304,7 @@ export function ProfileSettings({
   async function submitProfile(payload: any): Promise<boolean> {
     setSaving(true);
     try {
-      const res = await csrfFetch("/api/v1/profile", {
+      const res = await csrfFetch("/api/profile", {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json"
@@ -1054,7 +1054,7 @@ export function ProfileSettings({
                       setJellyfinLoading(true);
                       setJellyfinError(null);
                       try {
-                        const res = await csrfFetch("/api/v1/profile/jellyfin", { method: "DELETE" });
+                        const res = await csrfFetch("/api/profile/jellyfin", { method: "DELETE" });
                         if (!res.ok) {
                           const body = await res.json().catch(() => ({}));
                           throw new Error(body?.error || "Failed to unlink");
@@ -1082,7 +1082,7 @@ export function ProfileSettings({
                     setJellyfinError(null);
                     setJellyfinLoading(true);
                     try {
-                      const res = await csrfFetch("/api/v1/profile/jellyfin", {
+                      const res = await csrfFetch("/api/profile/jellyfin", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify(jellyfinForm)

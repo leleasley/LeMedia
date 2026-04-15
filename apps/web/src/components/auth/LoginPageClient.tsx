@@ -59,7 +59,7 @@ function ProviderButton({ onClick, disabled, logo, label, isLastUsed, loading }:
       type="button"
       onClick={onClick}
       disabled={disabled || loading}
-      className="relative w-full flex items-center gap-3 px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white hover:bg-white/10 hover:border-white/25 active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+      className="relative w-full flex items-center gap-3 px-4 py-2.5 rounded-lg bg-white/5 border border-white/10 text-white hover:bg-white/10 hover:border-white/25 active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
     >
       <span className="flex-shrink-0 w-5 h-5 flex items-center justify-center">
         {loading ? <Loader2 className="w-4 h-4 animate-spin text-white/60" /> : logo}
@@ -116,6 +116,7 @@ export function LoginPageClient({
   const [redirectingToSso, setRedirectingToSso] = useState(false);
   const [ssoPopupActive, setSsoPopupActive] = useState(false);
   const [lastUsedProvider, setLastUsedProvider] = useState<string | null>(null);
+  const [hasCheckedHistory, setHasCheckedHistory] = useState(false);
   const [loadingProvider, setLoadingProvider] = useState<string | null>(null);
   const [oauthVisibility, setOauthVisibility] = useState({
     google: googleOauthEnabled,
@@ -130,6 +131,7 @@ export function LoginPageClient({
 
   useEffect(() => {
     setLastUsedProvider(getLastUsedProvider());
+    setHasCheckedHistory(true);
   }, []);
 
   const handlePasskeyLogin = async () => {
@@ -310,7 +312,7 @@ export function LoginPageClient({
   const hasAnyProvider = oauthVisibility.google || oauthVisibility.github || oauthVisibility.telegram || oidcEnabled;
 
   return (
-    <main className="relative flex min-h-[100dvh] items-center justify-center overflow-auto bg-gray-900 px-4 py-6 sm:py-12">
+    <main className="relative flex min-h-[100dvh] items-center justify-center overflow-auto bg-gray-900 px-4 py-6">
       <SessionResetModal />
       <ImageFader backgroundImages={backgroundImages} className="absolute inset-0 z-0" />
       <CookieConsentBanner />
@@ -318,15 +320,12 @@ export function LoginPageClient({
       <div className="relative z-10 w-full max-w-[460px]">
         {/* Logo — smaller, pushed closer to the card */}
         <div className="flex justify-center mb-3">
-          <div className="relative h-16 w-36 sm:h-20 sm:w-44">
+          <div className="relative h-14 w-32">
             <Image src="/login-logo.png" alt="LeMedia Logo" fill className="object-contain" priority />
           </div>
         </div>
 
-        <div
-          className="rounded-lg bg-gray-800/50 p-6 sm:p-8 shadow-lg sm:mx-auto sm:w-full sm:max-w-md"
-          style={{ backdropFilter: "blur(5px)" }}
-        >
+        <div className="rounded-xl bg-gray-900/85 backdrop-blur-2xl border border-white/10 p-5 sm:p-6 shadow-2xl">
           {showJellyfinLogin ? (
             <>
               <div className="mb-6 flex items-center justify-between">
@@ -352,12 +351,14 @@ export function LoginPageClient({
           ) : (
             <>
               <div className="mb-5 text-center">
-                <div className="text-2xl font-semibold text-white">Log into LeMedia</div>
+                <h1 className="text-xl font-bold text-white tracking-tight">
+                  {hasCheckedHistory && lastUsedProvider ? "Welcome back!" : "Sign in to LeMedia"}
+                </h1>
               </div>
 
               {/* Third-party provider buttons */}
               {hasAnyProvider && (
-                <div className="space-y-2.5 mb-5">
+                <div className="space-y-2 mb-4">
                   {oauthVisibility.google && (
                     <ProviderButton
                       onClick={() => {
@@ -422,7 +423,7 @@ export function LoginPageClient({
 
               {/* Divider */}
               {hasAnyProvider && (
-                <div className="relative flex items-center gap-3 mb-5">
+                <div className="relative flex items-center gap-3 mb-4">
                   <div className="flex-1 h-px bg-white/10" />
                   <span className="text-xs text-gray-500 uppercase tracking-wider">or</span>
                   <div className="flex-1 h-px bg-white/10" />

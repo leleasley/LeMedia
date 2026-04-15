@@ -4,6 +4,7 @@ import { ReactNode, useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { ProfileHeader } from "@/components/Profile/ProfileHeader";
 import { AdaptiveSelect } from "@/components/ui/adaptive-select";
+import { Bell, Eye, Key, Link2, Lock, Send, User } from "lucide-react";
 
 interface ProfileSettingsShellClientProps {
   user: {
@@ -33,6 +34,16 @@ const tabOrder: Array<{ key: SettingsTabKey; label: string }> = [
   { key: "bot", label: "Telegram Bot" }
 ];
 
+const TAB_ICONS: Record<SettingsTabKey, ReactNode> = {
+  general: <User className="w-[15px] h-[15px] shrink-0" />,
+  security: <Lock className="w-[15px] h-[15px] shrink-0" />,
+  linked: <Link2 className="w-[15px] h-[15px] shrink-0" />,
+  notifications: <Bell className="w-[15px] h-[15px] shrink-0" />,
+  permissions: <Key className="w-[15px] h-[15px] shrink-0" />,
+  privacy: <Eye className="w-[15px] h-[15px] shrink-0" />,
+  bot: <Send className="w-[15px] h-[15px] shrink-0" />,
+};
+
 export function ProfileSettingsShellClient({ user, isAdmin, children }: ProfileSettingsShellClientProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -54,7 +65,8 @@ export function ProfileSettingsShellClient({ user, isAdmin, children }: ProfileS
       <ProfileHeader user={user} isSettingsPage={true} isAdmin={isAdmin} />
 
       <div className="mt-6">
-        <div className="sm:hidden relative z-10">
+        {/* Mobile dropdown */}
+        <div className="sm:hidden relative z-10 px-4 pb-2">
           <label htmlFor="settings-tabs" className="sr-only">Select a tab</label>
           <AdaptiveSelect
             value={activeTab}
@@ -66,9 +78,10 @@ export function ProfileSettingsShellClient({ user, isAdmin, children }: ProfileS
           />
         </div>
 
+        {/* Desktop tab bar */}
         <div className="hidden sm:block">
-          <div className="hide-scrollbar overflow-x-auto border-b border-gray-600">
-            <nav className="flex" aria-label="Profile settings">
+          <div className="hide-scrollbar overflow-x-auto border-b border-white/[0.08] bg-black/20">
+            <nav className="flex items-center gap-0.5 px-4 min-w-max" aria-label="Profile settings">
               {tabOrder.map((tab) => {
                 const isActive = tab.key === activeTab;
                 return (
@@ -76,14 +89,15 @@ export function ProfileSettingsShellClient({ user, isAdmin, children }: ProfileS
                     key={tab.key}
                     type="button"
                     onClick={() => setTab(tab.key)}
-                    className={`whitespace-nowrap border-b-2 px-1 py-4 ml-8 text-sm font-medium leading-5 transition duration-300 first:ml-0 ${
+                    className={`inline-flex items-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 my-2 text-sm font-medium transition-all duration-200 ${
                       isActive
-                        ? "border-indigo-500 text-indigo-500"
-                        : "border-transparent text-gray-500 hover:border-gray-400 hover:text-gray-300 focus:border-gray-400 focus:text-gray-300"
+                        ? "bg-indigo-500/15 text-indigo-300 ring-1 ring-indigo-500/25 shadow-sm"
+                        : "text-gray-400 hover:bg-white/[0.06] hover:text-gray-200"
                     }`}
                     aria-current={isActive ? "page" : undefined}
                   >
-                    {tab.label}
+                    {TAB_ICONS[tab.key]}
+                    <span>{tab.label}</span>
                   </button>
                 );
               })}

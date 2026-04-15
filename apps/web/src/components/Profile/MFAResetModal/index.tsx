@@ -18,7 +18,7 @@ export function MFAResetModal() {
         }
         setIsLoading(true);
         try {
-            const res = await csrfFetch("/api/v1/profile/mfa/reset", {
+            const res = await csrfFetch("/api/profile/mfa/reset", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ password })
