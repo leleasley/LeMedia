@@ -65,6 +65,7 @@ export function AddToListModal({
 
   useEffect(() => {
     if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting selection and search state when modal opens; not a data fetch
       setAddedTo(new Set());
       setSearchQuery("");
       void fetchLists();
@@ -73,6 +74,7 @@ export function AddToListModal({
 
   useEffect(() => {
     if (!open) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing display title from prop; async title resolution follows
     setDisplayTitle(title);
     if (title && title !== "Unknown") return;
 

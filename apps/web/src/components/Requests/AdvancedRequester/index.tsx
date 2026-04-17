@@ -1,7 +1,5 @@
 "use client";
 
-/* eslint-disable react-hooks/set-state-in-effect */
-
 import { useEffect, useMemo, useState } from "react";
 import Select from "react-select";
 import useSWR from "swr";
@@ -65,6 +63,7 @@ function AdvancedRequester({
 
   useEffect(() => {
     if (defaultOverrides?.server != null) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- initializing server selection from prop overrides; not a data fetch
       setSelectedServer(defaultOverrides.server);
     }
     if (defaultOverrides?.language != null) {
@@ -79,6 +78,7 @@ function AdvancedRequester({
     if (selectedServer !== null || !filteredServers.length) return;
     const defaultServer = filteredServers.find(server => server.isDefault) ?? filteredServers[0];
     if (defaultServer) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- selecting default server from filtered list; derived from SWR data, not a raw fetch
       setSelectedServer(defaultServer.id);
     }
   }, [filteredServers, selectedServer]);
@@ -91,6 +91,7 @@ function AdvancedRequester({
       serverData.languageProfiles.length &&
       selectedLanguage === null
     ) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- setting defaults from SWR server data; useSWR onSuccess would have identical semantics
       setSelectedLanguage(serverData.languageProfiles[0]?.id ?? null);
     }
     if (!defaultOverrides?.tags?.length && serverData.tags && serverData.tags.length) {

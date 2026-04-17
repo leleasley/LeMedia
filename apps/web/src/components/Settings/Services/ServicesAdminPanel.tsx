@@ -245,6 +245,7 @@ export function ServicesAdminPanel({ initialServices }: { initialServices: Media
 
     useEffect(() => {
         const cfg = traktData?.config ?? {};
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- form field initialization from SWR data; useSWR onSuccess would have identical semantics
         setTraktConfig({
             enabled: !!cfg.enabled,
             clientId: cfg.clientId ?? "",

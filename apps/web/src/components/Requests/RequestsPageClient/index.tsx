@@ -4,10 +4,20 @@ import { useState } from "react";
 import React from "react";
 import Image from "next/image";
 import useSWR from "swr";
+import { formatDistanceToNow } from "date-fns";
 import { MessageSquare, ChevronDown, ChevronUp } from "lucide-react";
 import { formatDate } from "@/lib/dateFormat";
 import { CommentsListForm } from "@/components/Requests/CommentsListForm";
 import { UpvoteButton } from "@/components/Requests/UpvoteButton";
+
+type RequestTimelineEntry = {
+  id: string;
+  type: string;
+  label: string;
+  detail?: string;
+  createdAt: string;
+  exact: boolean;
+};
 
 type RequestItem = {
   id: string;
@@ -20,6 +30,7 @@ type RequestItem = {
   created_at: string;
   posterUrl?: string | null;
   tmdb_id: number;
+  timeline?: RequestTimelineEntry[];
 };
 
 interface DownloadProgress {
@@ -202,6 +213,40 @@ function EmptyState() {
   );
 }
 
+function RequestTimeline({ timeline }: { timeline?: RequestTimelineEntry[] }) {
+  if (!timeline?.length) return null;
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/45">Timeline</p>
+      <div className="mt-3 space-y-3">
+        {timeline.map((entry, index) => (
+          <div key={entry.id} className="flex gap-3">
+            <div className="flex w-4 flex-col items-center">
+              <span className="mt-1 h-2.5 w-2.5 rounded-full bg-indigo-300/80" />
+              {index < timeline.length - 1 ? <span className="mt-1 h-full w-px bg-white/10" /> : null}
+            </div>
+            <div className="min-w-0 flex-1 pb-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm font-medium text-white">{entry.label}</p>
+                <span className="text-[11px] text-white/35" title={new Date(entry.createdAt).toLocaleString()}>
+                  {formatDistanceToNow(new Date(entry.createdAt), { addSuffix: true })}
+                </span>
+                {!entry.exact ? (
+                  <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.16em] text-amber-100">
+                    inferred
+                  </span>
+                ) : null}
+              </div>
+              {entry.detail ? <p className="mt-1 text-xs leading-5 text-white/55">{entry.detail}</p> : null}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function RequestsPageClient({
   initialRequests,
   currentUsername,
@@ -345,6 +390,7 @@ export function RequestsPageClient({
                               📅 {formatDate(r.created_at)}
                             </p>
                           )}
+                          <RequestTimeline timeline={r.timeline} />
                           <div className="flex items-center gap-2 mt-1">
                             <UpvoteButton requestId={r.id} compact />
                             <button
@@ -440,6 +486,7 @@ export function RequestsPageClient({
                                   ) : null}
                                 </div>
                               ) : null}
+                              <RequestTimeline timeline={r.timeline} />
                             </div>
                           </td>
                           <td className="p-4 text-right">

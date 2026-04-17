@@ -56,10 +56,9 @@ export function MediaReactionsPanel({
   const [saving, setSaving] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
-  const summaryText = useMemo(() => {
-    if (!data?.summary?.length) return "No reactions yet";
-    return data.summary.slice(0, 3).map((item) => `${item.emoji} ${item.count}`).join("  ");
-  }, [data?.summary]);
+  const summaryText = !data?.summary?.length
+    ? "No reactions yet"
+    : data.summary.slice(0, 3).map((item) => `${item.emoji} ${item.count}`).join("  ");
 
   const me = data?.me ?? null;
 

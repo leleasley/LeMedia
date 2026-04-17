@@ -19,6 +19,7 @@ export function NotificationsSettingsPage({ initialEnabled }: NotificationsSetti
   // Sync with initialEnabled prop
   useEffect(() => {
     if (initialEnabled !== undefined && initialEnabled !== null) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing enabled flag from parent prop; not a data fetch
       setIsEnabled(initialEnabled);
     }
   }, [initialEnabled]);
@@ -26,6 +27,7 @@ export function NotificationsSettingsPage({ initialEnabled }: NotificationsSetti
   // Check for iOS on mount
   useEffect(() => {
     if (isIOSSafari()) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- browser API detection on mount; not a data fetch
       setIsIOS(true);
     }
   }, []);

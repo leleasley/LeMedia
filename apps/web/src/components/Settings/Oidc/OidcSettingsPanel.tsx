@@ -116,6 +116,7 @@ export function OidcSettingsPanel() {
 
     useEffect(() => {
         let active = true;
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- loading OIDC settings from API; complex multi-provider form initialization
         setLoading(true);
         fetch("/api/v1/admin/settings/oidc", { credentials: "include" })
             .then(async res => {
@@ -167,6 +168,7 @@ export function OidcSettingsPanel() {
     useEffect(() => {
         if (!settings.providers.length) return;
         if (settings.providers.some((provider) => provider.id === selectedProviderId)) return;
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- selecting first available OIDC provider when none is selected; derived from fetched data
         setSelectedProviderId(settings.providers[0].id);
     }, [selectedProviderId, settings.providers]);
 

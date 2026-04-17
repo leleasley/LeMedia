@@ -482,6 +482,7 @@ export function WatchPartyRoomClient({ partyId }: { partyId: string }) {
   }, [allMessages.length]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- derived UI state from party status; opening modal is not a data fetch
     if (partyStatus && partyStatus !== "active") setReviewModalOpen(true);
   }, [partyStatus]);
 
@@ -502,6 +503,7 @@ export function WatchPartyRoomClient({ partyId }: { partyId: string }) {
     const incoming = data?.messages;
     if (!incoming || incoming.length === 0) return;
     const maxId = Math.max(...incoming.map((m) => m.id));
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- accumulating SWR poll deltas into local message history; SWR cannot accumulate history across refreshes
     setAllMessages((prev) => {
       const ids = new Set(prev.map((m) => m.id));
       const newOnes = incoming.filter((m) => !ids.has(m.id));
@@ -555,6 +557,7 @@ export function WatchPartyRoomClient({ partyId }: { partyId: string }) {
     if (playbackUpdatedAt && playbackUpdatedAt !== prevPlaybackUpdatedAtRef.current) {
       prevPlaybackUpdatedAtRef.current = playbackUpdatedAt;
       if (!isPartyPaused) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- triggering iframe reload in response to host playback state change; not a data fetch
         setIframeKey((k) => k + 1);
       }
     }

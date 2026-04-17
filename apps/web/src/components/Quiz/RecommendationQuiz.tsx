@@ -40,7 +40,7 @@ export function RecommendationQuiz({ onComplete, onSkip }: RecommendationQuizPro
     fetchQuiz();
   }, []);
 
-  const fetchQuiz = async () => {
+  async function fetchQuiz() {
     try {
       setLoading(true);
       const res = await fetch("/api/v1/quiz", { credentials: "include" });
@@ -54,7 +54,7 @@ export function RecommendationQuiz({ onComplete, onSkip }: RecommendationQuizPro
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   const saveProgress = async (questionId: string, answer: string | string[] | number) => {
     try {

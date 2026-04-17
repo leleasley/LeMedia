@@ -84,6 +84,7 @@ export function SocialFeedClient() {
   }, [feedType, toast]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- loading social feed on mount and tab change; paginated fetch managed in callback
     fetchFeed(true);
   }, [fetchFeed]);
 

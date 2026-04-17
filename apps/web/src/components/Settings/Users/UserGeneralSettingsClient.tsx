@@ -88,6 +88,7 @@ export function UserGeneralSettingsClient() {
     // Update form when user data loads
     useEffect(() => {
         if (user) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- form field initialization from SWR user data; useSWR onSuccess would have identical semantics
             setFormData({
                 displayName: user.displayName || "",
                 email: user.email || "",
@@ -98,6 +99,7 @@ export function UserGeneralSettingsClient() {
     }, [user]);
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting limits-initialized flag when userId changes; not a data fetch
         setLimitsInitialized(false);
     }, [userId]);
 
@@ -108,6 +110,7 @@ export function UserGeneralSettingsClient() {
         const hasSeriesOverride =
             user.requestLimitSeries !== null || user.requestLimitSeriesDays !== null;
 
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- initializing request limit form from SWR user data; useSWR onSuccess would have identical semantics
         setRequestLimits({
             movieOverride: hasMovieOverride,
             movieLimit: user.requestLimitMovie ?? (defaultLimits?.movie.limit ?? 0),

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getActiveOidcProvider, getSetting } from "@/db";
 import { revokeSessionByJti } from "@/db/sessions";
 import { getCookieBase, getRequestContext, isSameOriginRequest } from "@/lib/proxy";
+import { ensureCsrfCookie } from "@/lib/proxy";
 import { isValidCsrfToken } from "@/lib/csrf";
 import { verifySessionToken } from "@/lib/session";
 import { logger } from "@/lib/logger";
@@ -188,6 +189,8 @@ export async function POST(req: NextRequest) {
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, private");
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
+
+  ensureCsrfCookie(req, res, ctx);
 
   logger.debug("[LOGOUT] Set-Cookie headers being sent", { cookies: res.headers.getSetCookie() });
 

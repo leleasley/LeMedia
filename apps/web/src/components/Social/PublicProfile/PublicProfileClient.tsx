@@ -123,6 +123,7 @@ export function PublicProfileClient({
   }, [toast, username]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- loading public profile data on username change; callback sets profile data
     fetchProfile();
   }, [fetchProfile]);
 

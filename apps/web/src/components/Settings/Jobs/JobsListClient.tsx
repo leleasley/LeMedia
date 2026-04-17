@@ -463,6 +463,7 @@ function ExecutionLog({
     const currentIds = new Set(data.entries.map((e) => e.id));
     let clearHighlightTimer: ReturnType<typeof setTimeout> | undefined;
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- timer-based highlight state for new job entries; SWR cannot model this accumulation pattern
     setSeenIds((previousSeenIds) => {
       if (previousSeenIds.size > 0) {
         const fresh = new Set<number>();
@@ -820,6 +821,7 @@ export function JobsListClient() {
   const [activeTab, setActiveTab] = useState<"jobs" | "logs">("jobs");
   const [logJobFilter, setLogJobFilter] = useState<string | null>(null);
   const [runningOverdue, setRunningOverdue] = useState(false);
+  const [nowMs] = useState(() => Date.now());
 
   const openLogsFor = (jobName: string | null) => {
     setLogJobFilter(jobName);
@@ -936,7 +938,6 @@ export function JobsListClient() {
 
   const metricsByName = new Map((runtimeData?.metrics ?? []).map((item) => [item.name, item]));
   const serverRunningSet = new Set(runtimeData?.runningJobs ?? []);
-  const nowMs = Date.now();
   const overdueJobs = (jobs ?? []).filter((job) => {
     if (!job.enabled || !job.nextRun) return false;
     if (serverRunningSet.has(job.name)) return false;

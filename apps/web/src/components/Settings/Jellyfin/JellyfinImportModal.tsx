@@ -29,6 +29,7 @@ export function JellyfinImportModal({ open, onClose, onComplete }: JellyfinImpor
 
   useEffect(() => {
     if (!open) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- loading Jellyfin users when modal opens; fetch sets users list
     setLoading(true);
     setError(null);
     fetch("/api/v1/admin/jellyfin/users", { credentials: "include" })

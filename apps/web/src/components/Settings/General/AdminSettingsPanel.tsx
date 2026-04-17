@@ -75,6 +75,7 @@ export function AdminSettingsPanel() {
         if (settings) {
             const seconds = Number(settings.session_max_age) || 0;
             if (!sessionDirty) {
+                // eslint-disable-next-line react-hooks/set-state-in-effect -- form field initialization from SWR data; dirty-flag guard prevents clobbering user edits
                 setSessionDays(seconds ? Math.round(seconds / (60 * 60 * 24)) : "");
             }
             if (typeof settings.image_proxy_enabled === "boolean") {
@@ -125,11 +126,13 @@ export function AdminSettingsPanel() {
 
         const supported = (Intl as any)?.supportedValuesOf?.("timeZone");
         const zones = Array.isArray(supported) && supported.length ? supported : fallbackZones;
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- browser timezone API; not a data fetch
         setTimezoneOptions(zones);
     }, []);
 
     useEffect(() => {
         if (maintenanceData?.state) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- form field initialization from SWR maintenance data; useSWR onSuccess would have identical semantics
             setMaintenanceEnabled(!!maintenanceData.state.enabled);
             setMaintenanceMessage(maintenanceData.state.message || "");
         }
@@ -137,12 +140,14 @@ export function AdminSettingsPanel() {
 
     useEffect(() => {
         if (apiKeyData) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing API key from SWR data; useSWR onSuccess would have identical semantics
             setApiKey(apiKeyData.apiKey ?? null);
         }
     }, [apiKeyData]);
 
     useEffect(() => {
         if (typeof window === "undefined") return;
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- reading window.location.origin client-side; not a data fetch
         setBaseUrl(window.location.origin);
     }, []);
 

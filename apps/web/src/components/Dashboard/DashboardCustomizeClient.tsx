@@ -41,6 +41,7 @@ export default function DashboardCustomizeClient({ sliderComponents, initialSlid
   // Sync state when data loads or when editing stops
   useEffect(() => {
     if (dashboardData && !isEditing) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing SWR data to editable local copy only when not in edit mode
       setSliders(dashboardData);
     }
   }, [dashboardData, isEditing]);

@@ -65,6 +65,7 @@ export function CollectionRequestModal(props: {
 
   useEffect(() => {
     if (!props.open) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting selection state and fetching collection status when modal opens
     setSelected({});
     setResult("");
     setSubmitState("idle");

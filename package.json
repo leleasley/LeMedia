@@ -6,7 +6,9 @@
   ],
   "scripts": {
     "dev": "npm --workspace apps/web run dev",
-    "build": "npm --workspace apps/web run build",
+    "build:web": "npm --workspace apps/web run build",
+    "build:bot": "npm --workspace apps/bot run build",
+    "build": "npm run build:web && npm run build:bot",
     "lint": "npm --workspace apps/web run lint",
     "test": "npm --workspace apps/web run test"
   },

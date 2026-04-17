@@ -198,6 +198,7 @@ export function ReleaseSearchModal(props: {
 
   useEffect(() => {
     if (!open) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting paginated release state when modal opens; SWR cannot model append-on-scroll pagination
     setReleases([]);
     setReleaseTotal(0);
     setReleaseOffset(0);

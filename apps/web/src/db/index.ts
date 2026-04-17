@@ -27,3 +27,6 @@ export * from "./users";
 export * from "./lists";
 export * from "./sessions";
 export * from "./watch-party";
+export * from "./discover-presets";
+export * from "./tonight-queue";
+export * from "./request-timeline";

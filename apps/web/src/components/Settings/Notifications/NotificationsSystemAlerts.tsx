@@ -63,6 +63,7 @@ export default function NotificationsSystemAlerts() {
 
   useEffect(() => {
     let active = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- loading flag before system alerts fetch; synchronous state update before async operation
     setLoading(true);
     fetch("/api/admin/notifications/system-alerts", { credentials: "include" })
       .then(async (res) => {

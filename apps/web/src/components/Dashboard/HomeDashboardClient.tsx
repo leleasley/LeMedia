@@ -33,6 +33,7 @@ import { PrefetchLink } from "@/components/Layout/PrefetchLink";
 import { Modal } from "@/components/Common/Modal";
 import CachedImage from "@/components/Common/CachedImage";
 import { useToast } from "@/components/Providers/ToastProvider";
+import { csrfFetch } from "@/lib/csrf-client";
 import { cn } from "@/lib/utils";
 import { MediaStatus, statusToMediaStatus } from "@/lib/media-status";
 import { HoverMediaCard } from "@/components/Media/HoverMediaCard";
@@ -129,7 +130,18 @@ type TonightQueueItem = {
   reason: string;
   score: number;
   source: "continue" | "discover";
+  genreIds?: number[];
   progress?: number | null;
+};
+
+type TonightQueuePreferences = {
+  mood: "comfort" | "focused" | "wildcard";
+  hideHorror: boolean;
+};
+
+type TonightQueueResponse = {
+  items: TonightQueueItem[];
+  preferences?: TonightQueuePreferences;
 };
 
 type FriendActivity = {
@@ -294,7 +306,7 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
     { refreshInterval: 3600000, revalidateOnFocus: false }
   );
 
-  const { data: tonightQueueData } = useSWR<{ items: TonightQueueItem[] }>(
+  const { data: tonightQueueData, mutate: mutateTonightQueue } = useSWR<TonightQueueResponse>(
     "/api/v1/my-activity/tonight-queue",
     { refreshInterval: 300000, revalidateOnFocus: true }
   );
@@ -328,6 +340,8 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
   const [surpriseGenres, setSurpriseGenres] = useState<TmdbGenre[]>([]);
   const [surpriseGenresLoading, setSurpriseGenresLoading] = useState(false);
   const [surprisePicking, setSurprisePicking] = useState(false);
+  const [queueItemBusyId, setQueueItemBusyId] = useState<string | null>(null);
+  const [queueSettingsBusy, setQueueSettingsBusy] = useState<string | null>(null);
   const surpriseStepTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const requestPageRaw = requestPageByFilter[requestFilter] ?? 0;
@@ -383,6 +397,7 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
     if (!surpriseWizardOpen || surpriseStep !== "genre" || !surpriseMediaType) return;
 
     let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- loading flag for wizard genre fetch; conditional on multiple state values
     setSurpriseGenresLoading(true);
 
     fetch(`/api/tmdb/genres?type=${surpriseMediaType}`, { credentials: "include" })
@@ -500,6 +515,93 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
     const items = tonightQueueData?.items;
     return Array.isArray(items) ? items : [];
   }, [tonightQueueData]);
+
+  const tonightQueuePreferences = useMemo<TonightQueuePreferences>(
+    () => tonightQueueData?.preferences ?? { mood: "wildcard", hideHorror: false },
+    [tonightQueueData]
+  );
+
+  const sendTonightQueueFeedback = useCallback(async (payload: Record<string, unknown>) => {
+    const response = await csrfFetch("/api/v1/my-activity/tonight-queue/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(String((body as { error?: string })?.error ?? "Failed to update tonight queue"));
+    }
+    await mutateTonightQueue();
+  }, [mutateTonightQueue]);
+
+  const handleNotTonight = useCallback(async (item: TonightQueueItem) => {
+    setQueueItemBusyId(item.id);
+    try {
+      await sendTonightQueueFeedback({
+        action: "not_tonight",
+        mediaType: item.mediaType,
+        tmdbId: item.tmdbId,
+      });
+      toast.success("Skipped for tonight.");
+    } catch {
+      toast.error("Could not skip this pick.");
+    } finally {
+      setQueueItemBusyId(null);
+    }
+  }, [sendTonightQueueFeedback, toast]);
+
+  const handleMoreLikeThis = useCallback(async (item: TonightQueueItem) => {
+    setQueueItemBusyId(item.id);
+    try {
+      await sendTonightQueueFeedback({
+        action: "more_like_this",
+        mediaType: item.mediaType,
+        tmdbId: item.tmdbId,
+        genreIds: item.genreIds ?? [],
+      });
+      toast.success("We will tune more picks like this.");
+    } catch {
+      toast.error("Could not save that preference.");
+    } finally {
+      setQueueItemBusyId(null);
+    }
+  }, [sendTonightQueueFeedback, toast]);
+
+  const handleSetMood = useCallback(async (mood: TonightQueuePreferences["mood"]) => {
+    setQueueSettingsBusy(`mood:${mood}`);
+    try {
+      await sendTonightQueueFeedback({ action: "set_mood", mood });
+      toast.success(`Mood set to ${mood}.`);
+    } catch {
+      toast.error("Could not update mood.");
+    } finally {
+      setQueueSettingsBusy(null);
+    }
+  }, [sendTonightQueueFeedback, toast]);
+
+  const handleToggleHideHorror = useCallback(async () => {
+    setQueueSettingsBusy("hide_horror");
+    try {
+      await sendTonightQueueFeedback({ action: "hide_horror", enabled: !tonightQueuePreferences.hideHorror });
+      toast.success(!tonightQueuePreferences.hideHorror ? "Horror hidden." : "Horror allowed again.");
+    } catch {
+      toast.error("Could not update horror filter.");
+    } finally {
+      setQueueSettingsBusy(null);
+    }
+  }, [sendTonightQueueFeedback, toast, tonightQueuePreferences.hideHorror]);
+
+  const handleSurpriseMeAgain = useCallback(async () => {
+    setQueueSettingsBusy("surprise");
+    try {
+      await sendTonightQueueFeedback({ action: "surprise_me_again" });
+      toast.success("Refreshed your queue.");
+    } catch {
+      toast.error("Could not refresh tonight queue.");
+    } finally {
+      setQueueSettingsBusy(null);
+    }
+  }, [sendTonightQueueFeedback, toast]);
 
   // Derived stats
   const requestStats = recentRequests.reduce(
@@ -991,39 +1093,107 @@ export default function HomeDashboardClient({ isAdmin, username, displayName }: 
           </span>
         </div>
 
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.04] p-1">
+            {(["comfort", "focused", "wildcard"] as const).map((mood) => (
+              <button
+                key={mood}
+                type="button"
+                onClick={() => void handleSetMood(mood)}
+                disabled={queueSettingsBusy !== null}
+                className={cn(
+                  "rounded-md px-2.5 py-1 text-xs capitalize transition-colors",
+                  tonightQueuePreferences.mood === mood
+                    ? "bg-indigo-500/25 text-indigo-100"
+                    : "text-slate-300 hover:bg-white/10",
+                  queueSettingsBusy !== null && "opacity-60"
+                )}
+              >
+                {mood}
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => void handleToggleHideHorror()}
+            disabled={queueSettingsBusy !== null}
+            className={cn(
+              "rounded-lg border px-2.5 py-1 text-xs transition-colors",
+              tonightQueuePreferences.hideHorror
+                ? "border-rose-400/30 bg-rose-500/15 text-rose-100"
+                : "border-white/10 bg-white/[0.04] text-slate-200 hover:bg-white/[0.08]",
+              queueSettingsBusy !== null && "opacity-60"
+            )}
+          >
+            {tonightQueuePreferences.hideHorror ? "Horror hidden" : "Hide horror"}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => void handleSurpriseMeAgain()}
+            disabled={queueSettingsBusy !== null}
+            className="rounded-lg border border-sky-400/30 bg-sky-500/10 px-2.5 py-1 text-xs text-sky-100 transition-colors hover:bg-sky-500/20 disabled:opacity-60"
+          >
+            Surprise me again
+          </button>
+        </div>
+
         {tonightQueue.length > 0 ? (
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {tonightQueue.slice(0, 4).map((item) => (
-              <PrefetchLink
-                key={item.id}
-                href={`/${item.mediaType}/${item.tmdbId}`}
-                className="group rounded-xl border border-white/10 bg-white/[0.04] p-3 transition hover:bg-white/[0.08]"
-              >
-                <div className="flex gap-3">
-                  <div className="relative h-20 w-14 shrink-0 overflow-hidden rounded-lg border border-white/10 bg-white/5">
-                    {item.posterPath ? (
-                      <CachedImage
-                        type="tmdb"
-                        src={item.posterPath}
-                        alt={item.title}
-                        fill
-                        className="object-cover"
-                        sizes="56px"
-                        loading="eager"
-                      />
-                    ) : null}
+            {tonightQueue.slice(0, 8).map((item) => (
+              <div key={item.id} className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
+                <PrefetchLink
+                  href={`/${item.mediaType}/${item.tmdbId}`}
+                  className="group block rounded-lg transition hover:bg-white/[0.04]"
+                >
+                  <div className="flex gap-3">
+                    <div className="relative h-20 w-14 shrink-0 overflow-hidden rounded-lg border border-white/10 bg-white/5">
+                      {item.posterPath ? (
+                        <CachedImage
+                          type="tmdb"
+                          src={item.posterPath}
+                          alt={item.title}
+                          fill
+                          className="object-cover"
+                          sizes="56px"
+                          loading="eager"
+                        />
+                      ) : null}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-white">{item.title}</p>
+                      <p className="mt-1 text-xs text-slate-400 line-clamp-2">{item.reason}</p>
+                      {item.progress !== null && item.progress !== undefined ? (
+                        <p className="mt-2 text-[11px] text-sky-300">{Math.round(item.progress)}% watched</p>
+                      ) : (
+                        <p className="mt-2 text-[11px] text-indigo-300">Score {item.score.toFixed(0)}</p>
+                      )}
+                    </div>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-white">{item.title}</p>
-                    <p className="mt-1 text-xs text-slate-400 line-clamp-2">{item.reason}</p>
-                    {item.progress !== null && item.progress !== undefined ? (
-                      <p className="mt-2 text-[11px] text-sky-300">{Math.round(item.progress)}% watched</p>
-                    ) : (
-                      <p className="mt-2 text-[11px] text-indigo-300">Score {item.score.toFixed(0)}</p>
-                    )}
-                  </div>
+                </PrefetchLink>
+                <div className="mt-3 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleMoreLikeThis(item)}
+                    disabled={queueItemBusyId !== null || queueSettingsBusy !== null}
+                    className="rounded-md border border-emerald-400/25 bg-emerald-500/10 px-2 py-1 text-[11px] text-emerald-100 transition-colors hover:bg-emerald-500/20 disabled:opacity-60"
+                  >
+                    More like this
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleNotTonight(item)}
+                    disabled={queueItemBusyId !== null || queueSettingsBusy !== null}
+                    className="rounded-md border border-white/15 bg-white/[0.04] px-2 py-1 text-[11px] text-slate-200 transition-colors hover:bg-white/[0.08] disabled:opacity-60"
+                  >
+                    Not tonight
+                  </button>
+                  {queueItemBusyId === item.id ? (
+                    <span className="text-[11px] text-slate-400">Saving...</span>
+                  ) : null}
                 </div>
-              </PrefetchLink>
+              </div>
             ))}
           </div>
         ) : (

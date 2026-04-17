@@ -1,16 +1,28 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
+import useSWR from "swr";
 import { useLockBodyScroll } from "@/hooks/useLockBodyScroll";
 import { AdaptiveSelect } from "@/components/ui/adaptive-select";
+import { useToast } from "@/components/Providers/ToastProvider";
+import { csrfFetch } from "@/lib/csrf-client";
 import { logger } from "@/lib/logger";
 
 type Genre = { id: number; name: string };
 type Language = { iso_639_1: string; english_name: string; name: string };
 type Provider = { provider_id: number; provider_name: string; logo_path?: string | null };
 type Company = { id: number; name: string };
+
+type DiscoverPreset = {
+  id: string;
+  mediaType: "movie" | "tv";
+  name: string;
+  filters: DiscoverFiltersState;
+  alertsEnabled: boolean;
+  pinned: boolean;
+};
 
 type SortValue =
   | "popularity_desc"
@@ -103,6 +115,15 @@ export function DiscoverFilterBar({
   const [studioQuery, setStudioQuery] = useState(filters.studio?.name ?? "");
   const [studioResults, setStudioResults] = useState<Company[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [presetBusyId, setPresetBusyId] = useState<string | null>(null);
+  const [savingPreset, setSavingPreset] = useState(false);
+  const toast = useToast();
+
+  const { data: presetsData, mutate: mutatePresets } = useSWR<{ presets: DiscoverPreset[] }>(
+    `/api/discover-presets?mediaType=${type}`,
+    { revalidateOnFocus: false }
+  );
+  const presets = Array.isArray(presetsData?.presets) ? presetsData!.presets : [];
 
   // Lock body scroll when filter panel is open
   useLockBodyScroll(panelOpen);
@@ -134,6 +155,73 @@ export function DiscoverFilterBar({
     setStudioQuery(filters.studio?.name ?? "");
     setPanelOpen(true);
   };
+
+  const applyPreset = useCallback((preset: DiscoverPreset) => {
+    const nextFilters = { ...filters, ...(preset.filters ?? {}) };
+    setDraftFilters(nextFilters);
+    setStudioQuery(nextFilters.studio?.name ?? "");
+    onChange(nextFilters);
+    setPanelOpen(false);
+  }, [filters, onChange]);
+
+  const savePreset = useCallback(async () => {
+    if (savingPreset) return;
+    const name = window.prompt("Name this preset");
+    const trimmedName = name?.trim();
+    if (!trimmedName) return;
+
+    setSavingPreset(true);
+    try {
+      const response = await csrfFetch("/api/discover-presets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mediaType: type,
+          name: trimmedName,
+          filters: draftFilters,
+        }),
+      });
+
+      if (!response.ok) throw new Error("Failed to save preset");
+      await mutatePresets();
+      toast.success("Preset saved.");
+    } catch {
+      toast.error("Could not save this preset.");
+    } finally {
+      setSavingPreset(false);
+    }
+  }, [draftFilters, mutatePresets, savingPreset, toast, type]);
+
+  const patchPreset = useCallback(async (presetId: string, patch: { alertsEnabled?: boolean; pinned?: boolean }) => {
+    setPresetBusyId(presetId);
+    try {
+      const response = await csrfFetch(`/api/discover-presets/${presetId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (!response.ok) throw new Error("Failed to update preset");
+      await mutatePresets();
+    } catch {
+      toast.error("Could not update this preset.");
+    } finally {
+      setPresetBusyId(null);
+    }
+  }, [mutatePresets, toast]);
+
+  const deletePreset = useCallback(async (presetId: string) => {
+    setPresetBusyId(presetId);
+    try {
+      const response = await csrfFetch(`/api/discover-presets/${presetId}`, { method: "DELETE" });
+      if (!response.ok) throw new Error("Failed to delete preset");
+      await mutatePresets();
+      toast.success("Preset removed.");
+    } catch {
+      toast.error("Could not remove this preset.");
+    } finally {
+      setPresetBusyId(null);
+    }
+  }, [mutatePresets, toast]);
 
   useEffect(() => {
     if (!panelOpen) return;
@@ -246,6 +334,15 @@ export function DiscoverFilterBar({
       <div className="sm:hidden">
         <div className="flex items-center justify-between mb-3">
           <h1 className="text-xl font-bold text-white">{title}</h1>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="rounded-full border border-indigo-400/30 bg-indigo-500/10 px-3 py-1.5 text-xs font-medium text-indigo-100 transition-all hover:bg-indigo-500/15 disabled:opacity-60"
+              onClick={() => void savePreset()}
+              disabled={savingPreset}
+            >
+              {savingPreset ? "Saving..." : "Save view"}
+            </button>
             <button
               type="button"
               className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/90 hover:bg-white/10 active:scale-95 transition-all"
@@ -260,8 +357,23 @@ export function DiscoverFilterBar({
                 {activeFilterCount}
               </span>
             )}
-          </button>
+            </button>
+          </div>
         </div>
+        {presets.length > 0 ? (
+          <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
+            {presets.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => applyPreset(preset)}
+                className="shrink-0 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/85 transition-colors hover:bg-white/10"
+              >
+                {preset.pinned ? "Pinned" : "Saved"} · {preset.name}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <AdaptiveSelect
           value={filters.sort}
           onValueChange={(value) => onChange({ ...filters, sort: value as SortValue })}
@@ -273,9 +385,33 @@ export function DiscoverFilterBar({
 
       {/* Desktop Header - Original design */}
       <div className="hidden sm:flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-bold text-white">{title}</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-white">{title}</h1>
+          {presets.length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {presets.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => applyPreset(preset)}
+                  className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/85 transition-colors hover:bg-white/10"
+                >
+                  {preset.pinned ? "Pinned" : "Saved"} · {preset.name}{preset.alertsEnabled ? " · Alerts" : ""}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void savePreset()}
+            disabled={savingPreset}
+            className="rounded border border-indigo-400/30 bg-indigo-500/10 px-3 py-2 text-sm text-indigo-100 hover:bg-indigo-500/15 disabled:opacity-60"
+          >
+            {savingPreset ? "Saving..." : "Save view"}
+          </button>
           <AdaptiveSelect
             value={filters.sort}
             onValueChange={(value) => onChange({ ...filters, sort: value as SortValue })}
@@ -351,6 +487,74 @@ export function DiscoverFilterBar({
               ) : (
                 <div className="flex-1 overflow-y-auto px-4 py-4">
                   <div className="space-y-5">
+                  {presets.length > 0 ? (
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-medium uppercase tracking-wider text-gray-400">Saved Presets</p>
+                          <p className="mt-1 text-xs text-gray-500">Pin a filter to surface it on Discover and the dashboard, or flag it for alerts later.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void savePreset()}
+                          disabled={savingPreset}
+                          className="rounded-lg border border-indigo-400/30 bg-indigo-500/10 px-3 py-2 text-xs font-medium text-indigo-100 hover:bg-indigo-500/15 disabled:opacity-60"
+                        >
+                          {savingPreset ? "Saving..." : "Save current"}
+                        </button>
+                      </div>
+                      <div className="mt-3 space-y-2">
+                        {presets.map((preset) => (
+                          <div key={preset.id} className="rounded-xl border border-white/10 bg-black/20 p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <button
+                                type="button"
+                                onClick={() => applyPreset(preset)}
+                                className="min-w-0 text-left"
+                              >
+                                <p className="truncate text-sm font-semibold text-white">{preset.name}</p>
+                                <p className="mt-1 text-xs text-gray-400">
+                                  {preset.pinned ? "Pinned" : "Saved"}
+                                  {preset.alertsEnabled ? " · Alerts on" : " · Alerts off"}
+                                </p>
+                              </button>
+                              <div className="flex shrink-0 items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => void patchPreset(preset.id, { pinned: !preset.pinned })}
+                                  disabled={presetBusyId === preset.id}
+                                  className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-white/80 hover:bg-white/10 disabled:opacity-50"
+                                >
+                                  {preset.pinned ? "Unpin" : "Pin"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void patchPreset(preset.id, { alertsEnabled: !preset.alertsEnabled })}
+                                  disabled={presetBusyId === preset.id}
+                                  className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-white/80 hover:bg-white/10 disabled:opacity-50"
+                                >
+                                  {preset.alertsEnabled ? "Alerts on" : "Alert me"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void deletePreset(preset.id)}
+                                  disabled={presetBusyId === preset.id}
+                                  className="rounded-md border border-rose-500/20 bg-rose-500/10 px-2 py-1 text-[11px] text-rose-100 hover:bg-rose-500/15 disabled:opacity-50"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-3 text-xs text-gray-500">
+                      Save combinations like late-night horror, new sci-fi, or short comfort rewatches and pin them here.
+                    </div>
+                  )}
+
                   {genres.length > 0 && (
                     <div>
                       <label className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-gray-400">Genres</label>

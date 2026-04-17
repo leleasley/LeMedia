@@ -275,25 +275,6 @@ export default function AppLayoutClient({
     }, [profile]);
 
     useEffect(() => {
-        if (pathname?.startsWith("/settings/profile")) return;
-        let cancelled = false;
-        const checkSession = async () => {
-            try {
-                const res = await fetch("/api/v1/auth/me", { credentials: "include" });
-                if (!cancelled && res.status === 401) {
-                    window.location.href = "/login";
-                }
-            } catch {
-                // Ignore transient network errors; rely on server redirects.
-            }
-        };
-        void checkSession();
-        return () => {
-            cancelled = true;
-        };
-    }, [pathname]);
-
-    useEffect(() => {
         if (!pathname) return;
         const timers: number[] = [];
         timers.push(window.setTimeout(() => {

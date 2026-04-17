@@ -185,6 +185,7 @@ export function ProfileSettings({
 
   useEffect(() => {
     if (showPassword) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- triggering API token load when section expands; async function sets token list
       void loadApiTokens();
     }
   }, [showPassword, loadApiTokens]);
@@ -274,10 +275,11 @@ export function ProfileSettings({
     });
   };
 
-  const { data, error: profileError, isLoading, mutate } = useSWR<ProfileResponse>("/api/profile", fetcher);
+  const { data, error: profileError, isLoading, mutate } = useSWR<ProfileResponse>("/api/v1/profile", fetcher);
 
   useEffect(() => {
     if (!data?.user) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- form field initialization from SWR data; useSWR onSuccess would have identical semantics
     setInitialData(data.user);
     setForm(prev => ({
       ...prev,
@@ -304,7 +306,7 @@ export function ProfileSettings({
   async function submitProfile(payload: any): Promise<boolean> {
     setSaving(true);
     try {
-      const res = await csrfFetch("/api/profile", {
+      const res = await csrfFetch("/api/v1/profile", {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json"
@@ -1054,7 +1056,7 @@ export function ProfileSettings({
                       setJellyfinLoading(true);
                       setJellyfinError(null);
                       try {
-                        const res = await csrfFetch("/api/profile/jellyfin", { method: "DELETE" });
+                        const res = await csrfFetch("/api/v1/profile/jellyfin", { method: "DELETE" });
                         if (!res.ok) {
                           const body = await res.json().catch(() => ({}));
                           throw new Error(body?.error || "Failed to unlink");
@@ -1082,7 +1084,7 @@ export function ProfileSettings({
                     setJellyfinError(null);
                     setJellyfinLoading(true);
                     try {
-                      const res = await csrfFetch("/api/profile/jellyfin", {
+                      const res = await csrfFetch("/api/v1/profile/jellyfin", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify(jellyfinForm)

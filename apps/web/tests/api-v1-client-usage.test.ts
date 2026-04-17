@@ -17,7 +17,7 @@ const allowedExtensions = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]
 const markerRegex = /\/api\/v1\//g;
 
 const BASELINE_FILE_COUNT = 116;
-const BASELINE_TOTAL_MATCHES = 414;
+const BASELINE_TOTAL_MATCHES = 422;
 
 type MarkerStats = {
   fileCount: number;

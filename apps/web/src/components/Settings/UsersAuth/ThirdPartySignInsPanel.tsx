@@ -45,6 +45,7 @@ export function ThirdPartySignInsPanel() {
 
   useEffect(() => {
     let active = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- loading third-party provider settings on mount; sets icon URL and multi-provider form state
     setLoading(true);
 
     fetch("/api/admin/settings/third-party", { credentials: "include" })

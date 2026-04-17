@@ -283,11 +283,13 @@ export function ListDetailPageClient({
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- browser origin is only available client-side; not a data fetch
     setShareOrigin(window.location.origin);
   }, []);
 
   useEffect(() => {
     if (!editOpen) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- form field initialization from props when edit modal opens; not a data fetch
     setEditName(list.name);
     setEditDescription(list.description ?? "");
     setEditIsPublic(list.isPublic);

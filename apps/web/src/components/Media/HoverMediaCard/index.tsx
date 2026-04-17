@@ -82,6 +82,7 @@ export function HoverMediaCard(props: HoverMediaCardProps) {
     useEffect(() => {
         if (!showDetail || listFetched) return;
         let active = true;
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- lazy hover-triggered fetch guard; prevents 100+ parallel requests on page load
         setListFetched(true);
         const mediaType = props.mediaType ?? "movie";
         fetch(`/api/v1/media-list?tmdbId=${props.id}&mediaType=${mediaType}`, { credentials: "include" })

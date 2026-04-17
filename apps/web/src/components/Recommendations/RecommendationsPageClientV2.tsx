@@ -170,6 +170,7 @@ export function RecommendationsPageClientV2() {
 
   const rowCount = Math.ceil(items.length / columns);
   const useVirtual = items.length > 60;
+  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual v3 is not yet React Compiler-compatible
   const rowVirtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => parentRef.current ?? document.scrollingElement,

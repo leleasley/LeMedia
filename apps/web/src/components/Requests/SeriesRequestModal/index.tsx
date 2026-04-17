@@ -177,6 +177,7 @@ export function SeriesRequestModal({
   // Reset state when modal closes
   useEffect(() => {
     if (!open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting modal state on close; not a data fetch
       setExpandedSeason(null);
       setSeasonEpisodes({});
       setCheckedEpisodes({});
@@ -191,6 +192,7 @@ export function SeriesRequestModal({
 
   useEffect(() => {
     if (!open) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initializing form defaults when modal opens; not a data fetch
     setSelectedMonitoringOption(toMonitoringOption(defaultMonitoringOption));
     setSelectedPriority("normal");
   }, [open, defaultMonitoringOption]);

@@ -85,6 +85,7 @@ export function FriendsPageClient() {
   }, [tab, toast]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- loading friends/requests/blocked data on tab change; callback sets the appropriate list state
     fetchData();
   }, [fetchData]);
 

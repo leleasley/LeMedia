@@ -20,6 +20,7 @@ export function ForgotPasswordForm({ csrfToken }: { csrfToken?: string }) {
     if (!csrf) {
       const fromCookie = getCsrfToken();
       if (fromCookie) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- CSRF token bootstrap from cookie; not a standard data fetch
         setCsrf(fromCookie);
         return;
       }

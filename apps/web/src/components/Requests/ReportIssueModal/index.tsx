@@ -35,6 +35,7 @@ export function ReportIssueModal(props: {
 
   useEffect(() => {
     if (!open) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting form state when modal opens; not a data fetch
     setCategory("video");
     setMessage("");
     setError(null);

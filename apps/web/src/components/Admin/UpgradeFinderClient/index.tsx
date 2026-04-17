@@ -706,6 +706,7 @@ export function UpgradeFinderClient({ initialItems }: { initialItems: UpgradeFin
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- building hint map from items array; computed state derived from props, not a data fetch
     setHintMap(prev => {
       const next = { ...prev };
       for (const item of items) {

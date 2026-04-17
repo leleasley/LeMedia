@@ -28,6 +28,7 @@ export function GenreFilterDropdown({
 
   useEffect(() => {
     let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- loading flag before parallel genre fetch; complex multi-type pattern not suitable for useSWR
     setIsLoading(true);
 
     async function loadGenres() {

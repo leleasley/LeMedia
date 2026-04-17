@@ -169,6 +169,7 @@ export function ListsPageClient({ imageProxyEnabled }: { imageProxyEnabled: bool
   }, [imageProxyEnabled]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- complex paginated list fetch with cover images; SWR migration would require rethinking pagination state
     fetchLists();
   }, [fetchLists]);
 

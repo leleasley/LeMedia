@@ -6,6 +6,7 @@ import { getImageProxyEnabled } from "@/lib/app-settings";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
 import { getActiveDownloadTmdbIds, shouldForceDownloading } from "@/lib/download-status";
 import { getAvailabilityStatusByTmdbIds } from "@/lib/library-availability";
+import { attachRequestTimelines } from "@/lib/request-timeline";
 
 export async function GET(req: NextRequest) {
   try {
@@ -86,7 +87,9 @@ export async function GET(req: NextRequest) {
       })
     );
 
-    return cacheableJsonResponseWithETag(req, { requests: detailed }, { maxAge: 0, sMaxAge: 0, private: true });
+    const requestsWithTimelines = await attachRequestTimelines(detailed);
+
+    return cacheableJsonResponseWithETag(req, { requests: requestsWithTimelines }, { maxAge: 0, sMaxAge: 0, private: true });
   } catch {
     return new NextResponse("Unauthorized", { status: 401 });
   }

@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { withCache } from "@/lib/local-cache";
 import { logger } from "@/lib/logger";
 import { normalizeGroupList } from "@/lib/groups";
+import { logRequestLifecycleEvent } from "./request-timeline";
 import { getPool, ACTIVE_REQUEST_STATUSES, ActiveRequestExistsError, ensureSchema, ensureUserSchema } from "./core";
 
 
@@ -98,7 +99,15 @@ export async function createRequest(input: {
   if (!res.rows.length) {
     throw new Error(`Failed to create media request for tmdbId ${input.tmdbId}`);
   }
-  return { id: res.rows[0].id as string };
+  const requestId = res.rows[0].id as string;
+  await logRequestLifecycleEvent({ requestId, eventType: "requested" });
+  if (input.status === "queued") {
+    await logRequestLifecycleEvent({ requestId, eventType: "auto_approved" });
+  }
+  if (input.status === "submitted") {
+    await logRequestLifecycleEvent({ requestId, eventType: "submitted_to_service" });
+  }
+  return { id: requestId };
 }
 
 
@@ -190,6 +199,13 @@ export async function createRequestWithItemsTransaction(input: {
     }
 
     await client.query("COMMIT");
+    await logRequestLifecycleEvent({ requestId, eventType: "requested" });
+    if (requestStatus === "queued") {
+      await logRequestLifecycleEvent({ requestId, eventType: "auto_approved" });
+    }
+    if (input.finalStatus === "submitted") {
+      await logRequestLifecycleEvent({ requestId, eventType: "submitted_to_service" });
+    }
     return { id: requestId };
   } catch (err: any) {
     // Rollback transaction on any error
@@ -1087,6 +1103,8 @@ export async function markRequestStatus(
   deniedByUserId?: number | null
 ) {
   const p = getPool();
+  const beforeRes = await p.query(`SELECT status FROM media_request WHERE id = $1 LIMIT 1`, [requestId]);
+  const previousStatus = (beforeRes.rows[0]?.status as string | undefined) ?? null;
   await p.query(
     `
     UPDATE media_request
@@ -1098,6 +1116,40 @@ export async function markRequestStatus(
     `,
     [requestId, status, statusReason ?? null, deniedByUserId ?? null]
   );
+
+  if (previousStatus === status) return;
+
+  if (status === "queued") {
+    await logRequestLifecycleEvent({ requestId, eventType: "auto_approved" });
+    return;
+  }
+
+  const eventType =
+    status === "submitted"
+      ? "submitted_to_service"
+      : status === "downloading"
+        ? "downloading"
+        : status === "partially_available"
+          ? "partially_available"
+          : status === "available"
+            ? "available"
+            : status === "already_exists"
+              ? "already_exists"
+              : status === "denied"
+                ? "denied"
+                : status === "failed"
+                  ? "failed"
+                  : status === "removed"
+                    ? "removed"
+                    : null;
+
+  if (eventType) {
+    await logRequestLifecycleEvent({
+      requestId,
+      eventType,
+      metadata: statusReason ? { reason: statusReason } : undefined,
+    });
+  }
 }
 
 

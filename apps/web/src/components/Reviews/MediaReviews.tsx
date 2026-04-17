@@ -137,6 +137,7 @@ export function MediaReviews({ tmdbId, mediaType, title, posterPath, releaseYear
 
   useEffect(() => {
     if (userReview) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- form field sync from parent review data; not a data fetch
       setRating(userReview.rating);
       setReviewText(userReview.reviewText ?? "");
       setSpoiler(userReview.spoiler ?? false);
@@ -163,10 +164,7 @@ export function MediaReviews({ tmdbId, mediaType, title, posterPath, releaseYear
     };
   }, []);
 
-  const averageDisplay = useMemo(() => {
-    if (!data?.stats?.total) return null;
-    return data.stats.average.toFixed(1);
-  }, [data?.stats?.average, data?.stats?.total]);
+  const averageDisplay = data?.stats?.total ? data.stats.average.toFixed(1) : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

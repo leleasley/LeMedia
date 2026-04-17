@@ -70,11 +70,13 @@ export function ManageMediaModal(props: {
   ];
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- clearing raw-open flag when modal closes; not a data fetch
     if (!open) setRawOpen(false);
   }, [open]);
 
   useEffect(() => {
     if (!open || !serviceItemId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting media info state when modal closes; not a data fetch
       setCurrentInfo(null);
       setCurrentInfoError(null);
       setCurrentInfoLoading(false);

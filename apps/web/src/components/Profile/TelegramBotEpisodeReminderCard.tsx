@@ -22,6 +22,7 @@ export function TelegramBotEpisodeReminderCard() {
 
   useEffect(() => {
     if (!data) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- form field initialization from SWR data; useSWR onSuccess would have identical semantics
     setEnabled(Boolean(data.episodeReminderTelegramEnabled ?? true));
   }, [data]);
 

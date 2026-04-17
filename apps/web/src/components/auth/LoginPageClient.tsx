@@ -130,6 +130,7 @@ export function LoginPageClient({
   });
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reading localStorage for last-used auth provider; not a data fetch
     setLastUsedProvider(getLastUsedProvider());
     setHasCheckedHistory(true);
   }, []);
@@ -189,6 +190,7 @@ export function LoginPageClient({
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing OAuth visibility flags from props; not a data fetch
     setOauthVisibility({
       google: googleOauthEnabled,
       github: githubOauthEnabled,

@@ -99,6 +99,7 @@ export function EpisodeReminderPreferencesCard() {
 
   useEffect(() => {
     if (!data) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- form field initialization from SWR data; useSWR onSuccess would have identical semantics
     setEnabled(Boolean(data.episodeReminderEnabled ?? true));
     setPrimaryMinutes(Math.max(1, Number(data.episodeReminderPrimaryMinutes ?? 1440) || 1440));
     setSecondEnabled(Boolean(data.episodeReminderSecondEnabled ?? true));

@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import useSWR from "swr";
+import { swrFetcher, FetchError } from "@/lib/swr-fetcher";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { csrfFetch } from "@/lib/csrf-client";
@@ -36,35 +38,17 @@ export default function NotificationsPushbullet({
     const router = useRouter();
     const toast = useToast();
     const [form, setForm] = useState<PushbulletNotificationSettings>(initialState);
-    const [loading, setLoading] = useState(mode === "edit");
     const [saving, setSaving] = useState(false);
     const [testing, setTesting] = useState(false);
 
-    useEffect(() => {
-        if (mode === "create") return;
-        if (!endpointId) {
-            toast.error("No endpoint ID provided");
-            return;
-        }
-
-        let active = true;
-        setLoading(true);
-        fetch(`/api/v1/admin/notifications/pushbullet/${endpointId}`, { credentials: "include" })
-            .then(async (res) => {
-                if (!active) return;
-                if (!res.ok) {
-                    if (res.status === 404) {
-                        toast.error("Notification endpoint not found");
-                        router.push("/admin/settings/notifications/pushbullet");
-                        return;
-                    }
-                    if (res.status === 401 || res.status === 403) {
-                        toast.error("You must be an admin to view notification settings");
-                        return;
-                    }
-                    throw new Error("Failed to load Pushbullet notification settings");
-                }
-                const data = await res.json();
+    const { isLoading: loading } = useSWR(
+        mode === "edit" && endpointId
+            ? `/api/v1/admin/notifications/pushbullet/${endpointId}`
+            : null,
+        swrFetcher,
+        {
+            revalidateOnFocus: false,
+            onSuccess: (data: any) => {
                 setForm({
                     name: data.name ?? "",
                     enabled: data.enabled ?? false,
@@ -72,15 +56,19 @@ export default function NotificationsPushbullet({
                     accessToken: "",
                     channelTag: data.config?.channelTag ?? "",
                 });
-            })
-            .catch(() => {
-                toast.error("Unable to load Pushbullet notification settings");
-            })
-            .finally(() => active && setLoading(false));
-        return () => {
-            active = false;
-        };
-    }, [mode, endpointId, toast, router]);
+            },
+            onError: (error: FetchError) => {
+                if (error.status === 404) {
+                    toast.error("Notification endpoint not found");
+                    router.push("/admin/settings/notifications/pushbullet");
+                } else if (error.status === 401 || error.status === 403) {
+                    toast.error("You must be an admin to view notification settings");
+                } else {
+                    toast.error("Unable to load Pushbullet notification settings");
+                }
+            },
+        }
+    );
 
     const updateForm = (patch: Partial<PushbulletNotificationSettings>) => {
         setForm((prev) => ({ ...prev, ...patch }));

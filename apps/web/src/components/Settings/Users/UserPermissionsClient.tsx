@@ -60,6 +60,7 @@ export function UserPermissionsClient({ userId: userIdProp, editable, variant }:
     // Load permissions when data is available
     useEffect(() => {
         if (permissions) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- initializing permission checkboxes from SWR data; useSWR onSuccess would have identical semantics
             setPermAdmin(permissions.permAdmin || false);
             setPermManageUsers(permissions.permManageUsers || false);
             setPermManageRequests(permissions.permManageRequests || false);

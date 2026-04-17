@@ -103,6 +103,7 @@ export function ListSocialBar({
   }, [listId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- loading reactions and save status for list; two separate async callbacks
     fetchReactions();
     checkSaved();
   }, [fetchReactions, checkSaved]);

@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import useSWR from "swr";
+import { swrFetcher, FetchError } from "@/lib/swr-fetcher";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { csrfFetch } from "@/lib/csrf-client";
@@ -52,36 +54,17 @@ export default function NotificationsEmail({
     const router = useRouter();
     const toast = useToast();
     const [form, setForm] = useState<EmailNotificationSettings>(initialState);
-    const [smtpConfigured, setSmtpConfigured] = useState(false);
-    const [loading, setLoading] = useState(mode === "edit");
     const [saving, setSaving] = useState(false);
     const [testing, setTesting] = useState(false);
 
-    useEffect(() => {
-        if (mode === "create") return;
-        if (!endpointId) {
-            toast.error("No endpoint ID provided");
-            return;
-        }
-
-        let active = true;
-        setLoading(true);
-        fetch(`/api/v1/admin/notifications/email/${endpointId}`, { credentials: "include" })
-            .then(async (res) => {
-                if (!active) return;
-                if (!res.ok) {
-                    if (res.status === 404) {
-                        toast.error("Notification endpoint not found");
-                        router.push("/admin/settings/notifications/email");
-                        return;
-                    }
-                    if (res.status === 401 || res.status === 403) {
-                        toast.error("You must be an admin to view notification settings");
-                        return;
-                    }
-                    throw new Error("Failed to load email notification settings");
-                }
-                const data = await res.json();
+    const { isLoading: loading } = useSWR(
+        mode === "edit" && endpointId
+            ? `/api/v1/admin/notifications/email/${endpointId}`
+            : null,
+        swrFetcher,
+        {
+            revalidateOnFocus: false,
+            onSuccess: (data: any) => {
                 setForm({
                     name: data.name ?? "",
                     enabled: data.enabled ?? false,
@@ -103,25 +86,28 @@ export default function NotificationsEmail({
                     senderName: data.config?.senderName ?? "",
                     hasAuthPass: data.config?.hasAuthPass ?? false,
                 });
-            })
-            .catch(() => {
-                toast.error("Unable to load email notification settings");
-            })
-            .finally(() => active && setLoading(false));
-        return () => {
-            active = false;
-        };
-    }, [mode, endpointId, toast, router]);
+            },
+            onError: (error: FetchError) => {
+                if (error.status === 404) {
+                    toast.error("Notification endpoint not found");
+                    router.push("/admin/settings/notifications/email");
+                } else if (error.status === 401 || error.status === 403) {
+                    toast.error("You must be an admin to view notification settings");
+                } else {
+                    toast.error("Unable to load email notification settings");
+                }
+            },
+        }
+    );
 
     const updateForm = (patch: Partial<EmailNotificationSettings>) => {
         setForm((prev) => ({ ...prev, ...patch }));
     };
 
-    useEffect(() => {
-        const hasPassword = Boolean(form.authPass?.trim() || form.hasAuthPass);
-        const ready = Boolean(form.smtpHost?.trim() && form.smtpPort && form.emailFrom?.trim() && hasPassword);
-        setSmtpConfigured(ready);
-    }, [form.smtpHost, form.smtpPort, form.emailFrom, form.authPass, form.hasAuthPass]);
+    const smtpConfigured = Boolean(
+        form.smtpHost?.trim() && form.smtpPort && form.emailFrom?.trim() &&
+        (form.authPass?.trim() || form.hasAuthPass)
+    );
 
     const handleSave = async (event: React.FormEvent) => {
         event.preventDefault();

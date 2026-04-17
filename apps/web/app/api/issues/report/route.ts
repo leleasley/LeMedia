@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/auth";
-import { createMediaIssue, countMediaIssuesByTmdb, getUserWithHash } from "@/db";
+import { createMediaIssue, countMediaIssuesByTmdb, getUserWithHash, logIssueReportedForMatchingRequests } from "@/db";
 import { notifyIssueEvent } from "@/notifications/issue-events";
 import { requireCsrf } from "@/lib/csrf";
 
@@ -42,6 +42,14 @@ export async function POST(req: NextRequest) {
       category: body.category,
       description: body.description,
       reporterId: dbUser.id
+    });
+
+    await logIssueReportedForMatchingRequests({
+      mediaType: body.mediaType,
+      tmdbId: body.tmdbId,
+      issueId: issue.id,
+      category: body.category,
+      createdAt: issue.created_at,
     });
 
     const base = process.env.APP_BASE_URL?.trim();

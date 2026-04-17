@@ -74,11 +74,13 @@ export function MediaListButtons({
   const isSingleSeasonTv = mediaType === "tv" && availableTvSeasonOptions.length === 1;
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing review presence from parent prop; not a data fetch
     setHasReview(Boolean(initialHasReview));
   }, [initialHasReview]);
 
   useEffect(() => {
     if (hasReview) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- closing composer UI when review exists; pure UI state, not a data fetch
       setReviewComposerOpen(false);
       setReviewPromptOpen(false);
     }
@@ -100,6 +102,7 @@ export function MediaListButtons({
 
   useEffect(() => {
     if (initialFavorite != null && initialWatchlist != null && initialWatched != null) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clearing loading flag when initial data provided via props; not a data fetch
       setLoading(false);
       return;
     }
@@ -133,6 +136,7 @@ export function MediaListButtons({
 
   useEffect(() => {
     if (!isMultiSeasonTv) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting season data state when media type changes; not a data fetch
       setSeasonDataLoaded(false);
       setSelectedWatchedSeasons([]);
       setSavedWatchedSeasons([]);

@@ -3,6 +3,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const monorepoRoot = path.resolve(__dirname, "..", "..");
 const rootEnvPath = path.resolve(__dirname, "..", "..", ".env");
 
 function loadRootEnv() {
@@ -33,6 +34,9 @@ loadRootEnv();
 const nextConfig = {
   output: "standalone",
   poweredByHeader: false,
+  turbopack: {
+    root: monorepoRoot,
+  },
   compress: true, // Enable gzip compression
   productionBrowserSourceMaps: false, // Reduce payload
   env: {
@@ -67,19 +71,19 @@ const nextConfig = {
       "'unsafe-inline'",
       "https://challenges.cloudflare.com",
       "https://*.cloudflare.com",
-      "https://unpkg.com",
       ...(process.env.NODE_ENV !== "production" ? ["'unsafe-eval'"] : []),
     ].join(" ");
 
     const csp = [
       "default-src 'self'",
       `script-src ${scriptSources}`,
-      "style-src 'self' 'unsafe-inline' https://challenges.cloudflare.com https://unpkg.com",
+      "style-src 'self' 'unsafe-inline' https://challenges.cloudflare.com",
       "img-src 'self' data: blob: https://image.tmdb.org https://artworks.thetvdb.com https://gravatar.com https://plex.tv https://api.qrserver.com",
       "font-src 'self' data:",
       "connect-src 'self' https://api.themoviedb.org https://www.omdbapi.com https://challenges.cloudflare.com https://*.cloudflare.com",
       "frame-src 'self' https://www.youtube-nocookie.com https://challenges.cloudflare.com https://*.cloudflare.com",
       "frame-ancestors 'none'",
+      "object-src 'none'",
       "base-uri 'self'",
       "form-action 'self'",
       "upgrade-insecure-requests"

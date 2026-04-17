@@ -761,6 +761,7 @@ function CalendarAssistantSettings({
 
   useEffect(() => {
     if (!initialData) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- form field initialization from parent prop; not a data fetch
     setEnabled(initialData.enabled);
     setDayOfWeek(initialData.dayOfWeek);
     setHourOfDay(initialData.hourOfDay);

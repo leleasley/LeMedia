@@ -398,6 +398,7 @@ export function TvDetailClientNew({
     );
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing watched seasons from parent prop; not a data fetch
         setWatchedSeasonNumbers(initialWatchedSeasonNumbers);
     }, [initialWatchedSeasonNumbers]);
 
@@ -423,6 +424,7 @@ export function TvDetailClientNew({
 
     useEffect(() => {
         if (aggregate !== undefined) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- setting data-loaded flag when SWR aggregate resolves; not a data fetch
             setRequestInfoLoaded(true);
         }
     }, [aggregate]);
@@ -432,6 +434,7 @@ export function TvDetailClientNew({
         const sonarr = aggregate.sonarr ?? {};
 
         if (Array.isArray(sonarr.qualityProfiles)) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing quality profiles from SWR aggregate data; useSWR onSuccess would have identical semantics
             setQualityProfilesState(sonarr.qualityProfiles);
         }
         if (typeof sonarr.requestsBlocked === "boolean") {

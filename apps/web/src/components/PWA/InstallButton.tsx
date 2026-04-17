@@ -21,6 +21,7 @@ export function PWAInstallButton({ mobileMenu = false }: { mobileMenu?: boolean 
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- mounting flag and browser capability detection; not a data fetch
     setMounted(true);
     // Check if device is iOS
     const isiOS = /iPad|iPhone|iPod/.test(navigator.userAgent);

@@ -48,6 +48,27 @@ type ReminderWindow = {
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_EPISODE_TIMEZONE = "Europe/London";
 
+function getAppBaseUrl(): string | null {
+  const candidates = [
+    process.env.APP_BASE_URL,
+    process.env.NEXT_PUBLIC_APP_URL,
+    process.env.NEXT_PUBLIC_SITE_URL,
+    process.env.NEXT_PUBLIC_VERCEL_URL ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` : null,
+  ];
+  for (const raw of candidates) {
+    const base = raw?.trim();
+    if (!base) continue;
+    return base.replace(/\/+$/, "");
+  }
+  return null;
+}
+
+function episodeHref(tmdbId: number): string {
+  const path = `/tv/${tmdbId}`;
+  const base = getAppBaseUrl();
+  return base ? `${base}${path}` : path;
+}
+
 function clampWhole(value: number, min: number, max: number, fallback: number) {
   if (!Number.isFinite(value)) return fallback;
   return Math.min(Math.max(Math.floor(value), min), max);
@@ -606,7 +627,7 @@ export async function sendEpisodeAirRemindersJob(): Promise<string> {
       const episodeCode = formatEpisodeCode(episode.seasonNumber, episode.episodeNumber);
       const title = `${episode.seriesName} ${episodeCode} airs ${label}`;
       const body = `${episode.episodeName} is expected around ${airMoment}.`;
-      const link = `/tv/${episode.tmdbId}`;
+      const link = episodeHref(episode.tmdbId);
 
       try {
         await createNotification({
@@ -665,7 +686,7 @@ export async function sendEpisodeAirRemindersJob(): Promise<string> {
           await sendTelegramMessage({
             botToken,
             chatId: target.telegramId,
-            text: `📺 ${title}\n${body}`,
+            text: `📺 ${title}\n${body}\n${link}`,
           });
           telegramSent += 1;
         }

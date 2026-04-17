@@ -95,79 +95,151 @@ export async function generateMetadata({ params }: { params: ParamsInput }) {
   }
 }
 
+async function loadMoviePageData(params: ParamsInput) {
+  const { id } = Params.parse(await resolveParams(params));
+
+  const detailsPromise = getMovieDetailAggregateFast(id);
+  const userIdPromise = resolveUserId();
+  const ratingsPromise = fetchRatings("movie", id);
+  const activeRequestPromise = findActiveRequestByTmdb({ requestType: "movie", tmdbId: id }).catch(() => null);
+
+  const [details, userId, initialRatings, activeRequest] = await Promise.all([
+    detailsPromise,
+    userIdPromise,
+    ratingsPromise,
+    activeRequestPromise
+  ]);
+
+  const movie = details.movie;
+  const [listStatus, reviews, reviewStats, userReview] = await Promise.all([
+    userId ? getUserMediaListStatus({ userId, mediaType: "movie", tmdbId: id }).catch(() => null) : Promise.resolve(null),
+    getReviewsForMedia("movie", id, 50).catch(() => []),
+    getReviewStatsForMedia("movie", id).catch(() => ({ total: 0, average: 0 })),
+    userId ? getUserReviewForMedia(userId, "movie", id).catch(() => null) : Promise.resolve(null)
+  ]);
+  const imageProxyEnabled = details.imageProxyEnabled;
+  const streamingProviders = details.streamingProviders;
+  const watchProviders = details.watchProviders;
+  const releaseDates = details.releaseDates;
+  const digitalReleaseDate = getDigitalReleaseDate(releaseDates);
+  const keywords = details.keywords;
+  const imdbId = details.imdbId;
+
+  const poster = tmdbImageUrl(movie.poster_path, "w600_and_h900_bestv2", imageProxyEnabled);
+  const backdrop = tmdbImageUrl(movie.backdrop_path, "w1920_and_h800_multi_faces", imageProxyEnabled);
+  const backdropImage = backdrop ?? poster;
+  const trailerUrl = pickTrailerUrl(movie);
+  const cast: any[] = (movie?.credits?.cast ?? []).slice(0, 50);
+  const crew: any[] = (movie?.credits?.crew ?? []).slice(0, 6);
+  const fullCrew: any[] = movie?.credits?.crew ?? [];
+
+  const releaseYear = movie.release_date ? new Date(movie.release_date).getFullYear() : "";
+  const collection = movie.belongs_to_collection ?? null;
+  const collectionBackdrop = tmdbImageUrl(collection?.backdrop_path, "w1440_and_h320_multi_faces", imageProxyEnabled);
+
+  // Movie attributes for display
+  const movieAttributes: string[] = [];
+  if (movie.runtime > 0) {
+    const hours = Math.floor(movie.runtime / 60);
+    const mins = movie.runtime % 60;
+    movieAttributes.push(hours > 0 ? `${hours}h ${mins}m` : `${mins}m`);
+  }
+  if (movie.genres && movie.genres.length > 0) {
+    movieAttributes.push(...movie.genres.map((g: any) => g.name));
+  }
+  if (digitalReleaseDate) {
+    movieAttributes.push(`Digital ${formatShortDate(digitalReleaseDate)}`);
+  }
+
+  const trailers = (movie.videos?.results ?? [])
+    .filter((v: any) => {
+      const isSiteYouTube = String(v?.site || "").toLowerCase() === "youtube" && v?.key;
+      const videoType = String(v?.type || "").toLowerCase();
+      // Only show actual trailers, teasers, and clips - filter out featurettes, behind-the-scenes, etc
+      const isTrailerType = ["trailer", "teaser", "clip"].includes(videoType);
+      return isSiteYouTube && isTrailerType;
+    })
+    .slice(0, 6)
+    .map((v: any) => ({
+      name: String(v?.name || "Trailer"),
+      url: `https://www.youtube.com/watch?v=${v.key}`
+    }));
+
+  return {
+    movie,
+    initialRatings,
+    activeRequest,
+    listStatus,
+    reviews,
+    reviewStats,
+    userReview,
+    imageProxyEnabled,
+    streamingProviders,
+    watchProviders,
+    releaseDates,
+    digitalReleaseDate,
+    keywords,
+    imdbId,
+    poster,
+    backdropImage,
+    trailerUrl,
+    cast,
+    crew,
+    fullCrew,
+    releaseYear,
+    collection,
+    collectionBackdrop,
+    movieAttributes,
+    trailers,
+  };
+}
+
 export default async function MoviePage({ params }: { params: ParamsInput }) {
+  let data: Awaited<ReturnType<typeof loadMoviePageData>>;
   try {
-    const { id } = Params.parse(await resolveParams(params));
-
-    const detailsPromise = getMovieDetailAggregateFast(id);
-    const userIdPromise = resolveUserId();
-    const ratingsPromise = fetchRatings("movie", id);
-    const activeRequestPromise = findActiveRequestByTmdb({ requestType: "movie", tmdbId: id }).catch(() => null);
-
-    const [details, userId, initialRatings, activeRequest] = await Promise.all([
-      detailsPromise,
-      userIdPromise,
-      ratingsPromise,
-      activeRequestPromise
-    ]);
-
-    const movie = details.movie;
-    const [listStatus, reviews, reviewStats, userReview] = await Promise.all([
-      userId ? getUserMediaListStatus({ userId, mediaType: "movie", tmdbId: id }).catch(() => null) : Promise.resolve(null),
-      getReviewsForMedia("movie", id, 50).catch(() => []),
-      getReviewStatsForMedia("movie", id).catch(() => ({ total: 0, average: 0 })),
-      userId ? getUserReviewForMedia(userId, "movie", id).catch(() => null) : Promise.resolve(null)
-    ]);
-    const imageProxyEnabled = details.imageProxyEnabled;
-    const streamingProviders = details.streamingProviders;
-    const watchProviders = details.watchProviders;
-    const releaseDates = details.releaseDates;
-    const digitalReleaseDate = getDigitalReleaseDate(releaseDates);
-    const keywords = details.keywords;
-    const imdbId = details.imdbId;
-
-    const poster = tmdbImageUrl(movie.poster_path, "w600_and_h900_bestv2", imageProxyEnabled);
-    const backdrop = tmdbImageUrl(movie.backdrop_path, "w1920_and_h800_multi_faces", imageProxyEnabled);
-    const backdropImage = backdrop ?? poster;
-    const trailerUrl = pickTrailerUrl(movie);
-    const cast: any[] = (movie?.credits?.cast ?? []).slice(0, 50);
-    const crew: any[] = (movie?.credits?.crew ?? []).slice(0, 6);
-    const fullCrew: any[] = movie?.credits?.crew ?? [];
-
-    const releaseYear = movie.release_date ? new Date(movie.release_date).getFullYear() : "";
-    const collection = movie.belongs_to_collection ?? null;
-    const collectionBackdrop = tmdbImageUrl(collection?.backdrop_path, "w1440_and_h320_multi_faces", imageProxyEnabled);
-
-    // Movie attributes for display
-    const movieAttributes = [];
-    if (movie.runtime > 0) {
-      const hours = Math.floor(movie.runtime / 60);
-      const mins = movie.runtime % 60;
-      movieAttributes.push(hours > 0 ? `${hours}h ${mins}m` : `${mins}m`);
-    }
-    if (movie.genres && movie.genres.length > 0) {
-      movieAttributes.push(...movie.genres.map((g: any) => g.name));
-    }
-    if (digitalReleaseDate) {
-      movieAttributes.push(`Digital ${formatShortDate(digitalReleaseDate)}`);
-    }
-
-    const trailers = (movie.videos?.results ?? [])
-      .filter((v: any) => {
-        const isSiteYouTube = String(v?.site || "").toLowerCase() === "youtube" && v?.key;
-        const videoType = String(v?.type || "").toLowerCase();
-        // Only show actual trailers, teasers, and clips - filter out featurettes, behind-the-scenes, etc
-        const isTrailerType = ["trailer", "teaser", "clip"].includes(videoType);
-        return isSiteYouTube && isTrailerType;
-      })
-      .slice(0, 6)
-      .map((v: any) => ({
-        name: String(v?.name || "Trailer"),
-        url: `https://www.youtube.com/watch?v=${v.key}`
-      }));
-
+    data = await loadMoviePageData(params);
+  } catch (e: any) {
     return (
-      <div className="media-page">
+      <div className="flex h-[50vh] items-center justify-center p-4">
+        <div className="glass-strong rounded-2xl p-8 text-center max-w-md">
+          <div className="mx-auto w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center mb-4">
+            <Film className="h-6 w-6 text-red-500" />
+          </div>
+          <h1 className="text-xl font-bold text-white mb-2">Unable to load movie</h1>
+          <p className="text-sm text-gray-400">{e?.message ?? "Unknown error from TMDB."}</p>
+        </div>
+      </div>
+    );
+  }
+  const {
+    movie,
+    initialRatings,
+    activeRequest,
+    listStatus,
+    reviews,
+    reviewStats,
+    userReview,
+    imageProxyEnabled,
+    streamingProviders,
+    watchProviders,
+    releaseDates,
+    digitalReleaseDate,
+    keywords,
+    imdbId,
+    poster,
+    backdropImage,
+    trailerUrl,
+    cast,
+    crew,
+    fullCrew,
+    releaseYear,
+    collection,
+    collectionBackdrop,
+    movieAttributes,
+    trailers,
+  } = data;
+  return (
+    <div className="media-page">
       <RecentlyViewedTracker
         mediaType="movie"
         tmdbId={movie.id}
@@ -448,18 +520,5 @@ export default async function MoviePage({ params }: { params: ParamsInput }) {
 
       <div className="extra-bottom-space relative" />
       </div>
-    );
-  } catch (e: any) {
-    return (
-      <div className="flex h-[50vh] items-center justify-center p-4">
-        <div className="glass-strong rounded-2xl p-8 text-center max-w-md">
-          <div className="mx-auto w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center mb-4">
-            <Film className="h-6 w-6 text-red-500" />
-          </div>
-          <h1 className="text-xl font-bold text-white mb-2">Unable to load movie</h1>
-          <p className="text-sm text-gray-400">{e?.message ?? "Unknown error from TMDB."}</p>
-        </div>
-      </div>
-    );
-  }
+  );
 }

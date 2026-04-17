@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import useSWR from "swr";
-import { Link2, Mail, Cloud } from "lucide-react";
+import { Link2, Mail, Cloud, Radio, Users } from "lucide-react";
 import { useToast } from "@/components/Providers/ToastProvider";
 import { csrfFetch } from "@/lib/csrf-client";
 import { swrFetcher } from "@/lib/swr-fetcher";
@@ -74,22 +74,46 @@ export function GlobalChannelSubscriptionsPanel() {
   }
 
   return (
-    <div className="rounded-2xl md:rounded-3xl border border-white/10 bg-white/[0.02] p-6 md:p-8">
-      <div className="flex items-center gap-4 mb-6">
-        <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500/20 to-violet-500/20 ring-1 ring-white/10">
-          <span className="text-xl">📡</span>
-        </div>
-        <div className="flex-1">
-          <h3 className="text-xl font-bold text-white">Global Channels</h3>
-          <p className="text-sm text-gray-400 mt-1">
-            Subscribe to admin-managed notification channels. When you&apos;re subscribed, delivery events will be routed to you through that channel.
-          </p>
-        </div>
-        {subscribedCount > 0 && (
-          <div className="rounded-full px-3 py-1 text-xs font-semibold bg-indigo-500/20 text-indigo-200">
-            {subscribedCount} subscribed
+    <div className="overflow-hidden rounded-2xl md:rounded-3xl border border-indigo-400/12 bg-[#101826]">
+      <div className="border-b border-white/[0.06] px-6 py-5">
+        <div className="flex items-center gap-4">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-indigo-400/20 bg-indigo-500/12 text-indigo-200">
+            <Users className="h-5 w-5" />
           </div>
-        )}
+          <div className="flex-1">
+            <h3 className="text-lg font-semibold text-white">Shared Channels</h3>
+            <p className="mt-1 text-sm text-gray-400">
+              Admin-managed delivery routes you can opt into without creating your own endpoints.
+            </p>
+          </div>
+          {subscribedCount > 0 && (
+            <div className="rounded-full border border-indigo-400/20 px-3 py-1 text-xs font-semibold bg-indigo-500/12 text-indigo-200">
+              {subscribedCount} subscribed
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="p-6">
+      <div className="grid gap-3 sm:grid-cols-2 mb-6">
+        <div className="flex items-center gap-3 rounded-xl border border-indigo-400/10 bg-indigo-500/[0.07] p-4">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-500/14 text-indigo-200">
+            <Radio className="h-4.5 w-4.5" />
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-wider text-white/45">Available</div>
+            <div className="text-sm font-semibold text-white">{endpoints.length} shared routes</div>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 rounded-xl border border-indigo-400/10 bg-indigo-500/[0.07] p-4">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-500/14 text-indigo-200">
+            <Users className="h-4.5 w-4.5" />
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-wider text-white/45">Subscribed</div>
+            <div className="text-sm font-semibold text-white">{subscribedCount} active subscriptions</div>
+          </div>
+        </div>
       </div>
 
       {endpoints.length === 0 ? (
@@ -100,14 +124,14 @@ export function GlobalChannelSubscriptionsPanel() {
           </p>
         </div>
       ) : (
-        <div className="divide-y divide-white/5 rounded-xl border border-white/10 overflow-hidden">
+        <div className="divide-y divide-white/5 rounded-xl border border-indigo-400/10 overflow-hidden bg-[#141d30]">
           {endpoints.map((endpoint) => (
             <div
               key={endpoint.id}
-              className="flex items-center justify-between gap-4 px-4 py-3.5 hover:bg-white/[0.02] transition-colors"
+              className="flex items-center justify-between gap-4 px-4 py-3.5 transition-colors hover:bg-white/[0.03]"
             >
               <div className="flex items-center gap-3 min-w-0">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-black/20">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-indigo-400/12 bg-indigo-500/10">
                   <ProviderIcon type={endpoint.type} />
                 </span>
                 <div className="min-w-0">
@@ -143,6 +167,7 @@ export function GlobalChannelSubscriptionsPanel() {
           notifications to that channel on your behalf when your account is targeted.
         </p>
       )}
+      </div>
     </div>
   );
 }

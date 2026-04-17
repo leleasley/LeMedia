@@ -90,6 +90,7 @@ export function AdminSharesPageClient() {
   }, [fetchTitlesForShares]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- loading shares list on mount; async callback sets shares and fetches titles
     loadShares();
   }, [loadShares]);
 

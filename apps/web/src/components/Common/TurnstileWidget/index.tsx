@@ -26,6 +26,7 @@ export function TurnstileWidget({ onSuccess, onError, onExpire }: TurnstileWidge
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- mounting flag for SSR/client hydration; not a data fetch
     setMounted(true);
   }, []);
 

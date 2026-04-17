@@ -61,6 +61,7 @@ export function PlexSettingsPanel() {
 
     useEffect(() => {
         if (data) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- form field initialization from SWR data; useSWR onSuccess would have identical semantics
             setForm({
                 enabled: Boolean(data.enabled),
                 name: data.name ?? "",

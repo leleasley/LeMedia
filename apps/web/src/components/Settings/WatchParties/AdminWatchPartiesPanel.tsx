@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import useSWR from "swr";
 import Link from "next/link";
 import { useToast } from "@/components/Providers/ToastProvider";
@@ -57,10 +57,14 @@ export function AdminWatchPartiesPanel() {
     refreshInterval: 30000,
   });
 
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- updating display timestamp when SWR data refreshes; equivalent to useSWR onSuccess
+  useEffect(() => { setNowMs(Date.now()); }, [data]);
+
   function isLikelyInactive(party: AdminWatchParty) {
     if (party.status !== "active") return false;
     const baseline = party.lastMessageAt || party.updatedAt || party.createdAt;
-    const ageMs = Date.now() - new Date(baseline).getTime();
+    const ageMs = nowMs - new Date(baseline).getTime();
     return ageMs > 45 * 60 * 1000;
   }
 

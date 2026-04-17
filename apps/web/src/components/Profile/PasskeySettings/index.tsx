@@ -53,6 +53,7 @@ export function PasskeySettings() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- loading passkey credentials on mount; async function sets credentials state
     fetchCredentials();
   }, []);
 

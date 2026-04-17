@@ -70,6 +70,7 @@ export function JellyfinSettingsPanel() {
 
     useEffect(() => {
         if (data) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- form field initialization from SWR data; useSWR onSuccess would have identical semantics
             setForm({
                 name: data.name ?? "",
                 hostname: data.hostname ?? "",

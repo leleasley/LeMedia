@@ -13,11 +13,7 @@ export function WebPushPrompt() {
   const [isIOS, setIsIOS] = useState(false);
   const toast = useToast();
 
-  useEffect(() => {
-    checkWebPushStatus();
-  }, []);
-
-  const checkWebPushStatus = async () => {
+  async function checkWebPushStatus() {
     try {
       // Don't show prompt for iOS users
       if (isIOSSafari()) {
@@ -66,7 +62,12 @@ export function WebPushPrompt() {
     } catch (error) {
       logger.error('[WebPush] Error checking status', error);
     }
-  };
+  }
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- browser capability + push status check on mount; sets shown flag conditionally
+    checkWebPushStatus();
+  }, []);
 
   const handleEnable = async () => {
     setIsLoading(true);

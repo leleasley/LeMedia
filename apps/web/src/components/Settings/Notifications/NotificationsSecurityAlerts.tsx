@@ -38,6 +38,7 @@ export default function NotificationsSecurityAlerts() {
 
   useEffect(() => {
     let active = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- loading flag before security alerts fetch; synchronous state update before async operation
     setLoading(true);
     fetch("/api/admin/notifications/security-alerts", { credentials: "include" })
       .then(async (res) => {

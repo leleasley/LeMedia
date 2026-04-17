@@ -11,6 +11,7 @@ import { getImageProxyEnabled } from "@/lib/app-settings";
 import { RequestsPageClient } from "@/components/Requests/RequestsPageClient";
 import { getActiveDownloadTmdbIds, shouldForceDownloading } from "@/lib/download-status";
 import { getAvailabilityStatusByTmdbIds } from "@/lib/library-availability";
+import { attachRequestTimelines } from "@/lib/request-timeline";
 
 export default async function RequestsPage() {
   const user = await getUser().catch(() => null);
@@ -93,9 +94,11 @@ export default async function RequestsPage() {
     })
   );
 
+  const requestsWithTimelines = await attachRequestTimelines(detailedRequests);
+
   return (
     <RequestsPageClient
-      initialRequests={detailedRequests}
+      initialRequests={requestsWithTimelines}
       currentUsername={user.username}
       isAdmin={user.isAdmin ?? false}
     />

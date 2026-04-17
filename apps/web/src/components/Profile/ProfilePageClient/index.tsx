@@ -88,7 +88,7 @@ export function ProfilePageClient({
   const router = useRouter();
 
   // Fetch stats
-  const { data: statsData } = useSWR<{ stats: RequestStats; quota?: { movie: RequestQuotaStatus; series: RequestQuotaStatus } }>("/api/profile/stats");
+  const { data: statsData } = useSWR<{ stats: RequestStats; quota?: { movie: RequestQuotaStatus; series: RequestQuotaStatus } }>("/api/v1/profile/stats");
   const stats = statsData?.stats || null;
   
   // Fetch recent requests using SWR (like dashboard does)
@@ -213,7 +213,7 @@ export function ProfilePageClient({
     }
     setDisplayNameSaving(true);
     try {
-      const res = await csrfFetch("/api/profile", {
+      const res = await csrfFetch("/api/v1/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ displayName: trimmed })
@@ -242,7 +242,7 @@ export function ProfilePageClient({
     try {
       const form = new FormData();
       form.set("avatar", avatarFile);
-      const res = await csrfFetch("/api/profile/avatar", {
+      const res = await csrfFetch("/api/v1/profile/avatar", {
         method: "POST",
         body: form
       });
