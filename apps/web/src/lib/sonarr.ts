@@ -1,8 +1,14 @@
 import { z } from "zod";
 import { ActiveMediaService, getActiveMediaService, getMediaServiceByIdWithKey } from "./media-services";
-import { baseFetch } from "./fetch-utils";
+import { baseFetch, isServiceTimeoutError } from "./fetch-utils";
+import { logger } from "@/lib/logger";
 
 const normalizeSonarrUrl = (baseUrl: string) => baseUrl.replace(/\/+$/, "");
+const SERIES_CREATE_RECOVERY_TIMEOUT_MS = 45000;
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
 
 export function createSonarrFetcher(baseUrl: string, apiKey: string, timeoutOverride?: number) {
   const root = normalizeSonarrUrl(baseUrl);
@@ -27,6 +33,42 @@ export function listSonarrLanguageProfilesForService(baseUrl: string, apiKey: st
 
 export function lookupSeriesByTvdbForService(baseUrl: string, apiKey: string, tvdbId: number) {
   return createSonarrFetcher(baseUrl, apiKey)(`/api/v3/series/lookup?term=${encodeURIComponent(`tvdb:${tvdbId}`)}`);
+}
+
+export async function getSeriesByTvdbIdForService(
+  baseUrl: string,
+  apiKey: string,
+  tvdbId: number,
+  timeoutOverride?: number
+) {
+  try {
+    const series = await createSonarrFetcher(baseUrl, apiKey, timeoutOverride)(`/api/v3/series?tvdbId=${tvdbId}`);
+    if (Array.isArray(series) && series.length > 0) {
+      const match = series.find((item: any) => Number(item?.tvdbId ?? 0) === Number(tvdbId));
+      return match ?? null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getSeriesByTmdbIdForService(
+  baseUrl: string,
+  apiKey: string,
+  tmdbId: number,
+  timeoutOverride?: number
+) {
+  try {
+    const series = await createSonarrFetcher(baseUrl, apiKey, timeoutOverride)(`/api/v3/series?tmdbId=${tmdbId}`);
+    if (Array.isArray(series) && series.length > 0) {
+      const match = series.find((item: any) => Number(item?.tmdbId ?? 0) === Number(tmdbId));
+      return match ?? null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 type SonarrConfig = {
@@ -237,7 +279,38 @@ export async function addSeriesFromLookup(
     payload.seasons = payload.seasons.map((s: any) => ({ ...s, monitored: false }));
   }
 
-  const response = await fetcher("/api/v3/series", { method: "POST", body: JSON.stringify(payload) });
+  let response;
+  try {
+    response = await fetcher("/api/v3/series", { method: "POST", body: JSON.stringify(payload) });
+  } catch (error) {
+    if (!isServiceTimeoutError(error)) {
+      throw error;
+    }
+
+    const recoveryBaseUrl = customService?.base_url ?? cfg.baseUrl;
+    const recoveryApiKey = customService?.apiKey ?? cfg.apiKey;
+    const tvdbId = Number(lookup?.tvdbId ?? 0);
+    const tmdbId = Number(lookup?.tmdbId ?? 0);
+    const recoveredByTvdb = tvdbId > 0
+      ? await getSeriesByTvdbIdForService(recoveryBaseUrl, recoveryApiKey, tvdbId, SERIES_CREATE_RECOVERY_TIMEOUT_MS)
+      : null;
+    const recovered = recoveredByTvdb
+      ?? (tmdbId > 0
+        ? await getSeriesByTmdbIdForService(recoveryBaseUrl, recoveryApiKey, tmdbId, SERIES_CREATE_RECOVERY_TIMEOUT_MS)
+        : null);
+
+    if (recovered?.id) {
+      logger.warn("[Sonarr] Recovered series after uncertain create response", {
+        tvdbId: tvdbId > 0 ? tvdbId : null,
+        tmdbId: tmdbId > 0 ? tmdbId : null,
+        sonarrSeriesId: recovered.id,
+        reason: getErrorMessage(error)
+      });
+      response = recovered;
+    } else {
+      throw error;
+    }
+  }
 
   // If we're adding unmonitored by default, force seasons unmonitored too.
   const data = response;
@@ -288,29 +361,13 @@ export async function episodeSearch(episodeIds: number[]) {
 }
 
 export async function getSeriesByTvdbId(tvdbId: number) {
-  try {
-    const series = await sonarrFetch(`/api/v3/series?tvdbId=${tvdbId}`);
-    if (Array.isArray(series) && series.length > 0) {
-      const match = series.find((item: any) => Number(item?.tvdbId ?? 0) === Number(tvdbId));
-      return match ?? null;
-    }
-    return null;
-  } catch {
-    return null;
-  }
+  const cfg = await getSonarrConnection();
+  return getSeriesByTvdbIdForService(cfg.baseUrl, cfg.apiKey, tvdbId);
 }
 
 export async function getSeriesByTmdbId(tmdbId: number) {
-  try {
-    const series = await sonarrFetch(`/api/v3/series?tmdbId=${tmdbId}`);
-    if (Array.isArray(series) && series.length > 0) {
-      const match = series.find((item: any) => Number(item?.tmdbId ?? 0) === Number(tmdbId));
-      return match ?? null;
-    }
-    return null;
-  } catch {
-    return null;
-  }
+  const cfg = await getSonarrConnection();
+  return getSeriesByTmdbIdForService(cfg.baseUrl, cfg.apiKey, tmdbId);
 }
 
 export async function getSeries(seriesId: number) {

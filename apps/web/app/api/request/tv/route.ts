@@ -19,6 +19,7 @@ import asyncLock from "@/lib/async-lock";
 import { isAdminGroup } from "@/lib/groups";
 import { extractExternalApiKey, verifyExternalApiKey } from "@/lib/external-api";
 import { logger } from "@/lib/logger";
+import { isServiceTimeoutError } from "@/lib/fetch-utils";
 import { POST as requestPost } from "../../v1/request/route";
 
 const Body = z.object({
@@ -215,7 +216,18 @@ export async function POST(req: NextRequest) {
 
       const fetcher = createSonarrFetcher(sonarrService.base_url, sonarrService.apiKey);
       if (series?.id) {
-        await seriesSearch(series.id, fetcher);
+        try {
+          await seriesSearch(series.id, fetcher);
+        } catch (error) {
+          if (!isServiceTimeoutError(error)) {
+            throw error;
+          }
+          logger.warn("[API] Sonarr search command timed out after series add; continuing with recovered request", {
+            tmdbId: body.tmdbId,
+            tvdbId,
+            sonarrSeriesId: series.id
+          });
+        }
       }
 
       const request = await createRequestWithItemsTransaction({

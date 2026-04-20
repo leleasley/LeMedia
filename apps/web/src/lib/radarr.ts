@@ -3,8 +3,15 @@ import { getMovie, tmdbImageUrl } from "./tmdb";
 import { getImageProxyEnabled } from "@/lib/app-settings";
 import { ActiveMediaService, getActiveMediaService, getMediaServiceByIdWithKey } from "./media-services";
 import { baseFetch } from "./fetch-utils";
+import { isServiceTimeoutError } from "./fetch-utils";
+import { logger } from "@/lib/logger";
 
 const normalizeUrl = (baseUrl: string) => baseUrl.replace(/\/+$/, "");
+const MOVIE_CREATE_RECOVERY_TIMEOUT_MS = 45000;
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
 
 export function createRadarrFetcher(baseUrl: string, apiKey: string, timeoutOverride?: number) {
   const root = normalizeUrl(baseUrl);
@@ -21,6 +28,24 @@ export function listRadarrRootFoldersForService(baseUrl: string, apiKey: string)
 
 export function listRadarrTagsForService(baseUrl: string, apiKey: string) {
   return createRadarrFetcher(baseUrl, apiKey)("/api/v3/tag");
+}
+
+export async function getMovieByTmdbIdForService(
+  baseUrl: string,
+  apiKey: string,
+  tmdbId: number,
+  timeoutOverride?: number
+) {
+  try {
+    const movies = await createRadarrFetcher(baseUrl, apiKey, timeoutOverride)(`/api/v3/movie?tmdbId=${tmdbId}`);
+    if (Array.isArray(movies) && movies.length > 0) {
+      const match = movies.find((item: any) => Number(item?.tmdbId ?? 0) === Number(tmdbId));
+      return match ?? null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 type RadarrConfig = {
@@ -193,24 +218,38 @@ export async function addMovie(
     payload.tags = overrides.tags;
   }
 
-  return fetcher("/api/v3/movie", { method: "POST", body: JSON.stringify(payload) });
+  try {
+    return await fetcher("/api/v3/movie", { method: "POST", body: JSON.stringify(payload) });
+  } catch (error) {
+    if (!isServiceTimeoutError(error)) {
+      throw error;
+    }
+
+    const recoveryBaseUrl = customService?.base_url ?? cfg.baseUrl;
+    const recoveryApiKey = customService?.apiKey ?? cfg.apiKey;
+    const recovered = await getMovieByTmdbIdForService(
+      recoveryBaseUrl,
+      recoveryApiKey,
+      tmdbId,
+      MOVIE_CREATE_RECOVERY_TIMEOUT_MS
+    );
+
+    if (recovered?.id) {
+      logger.warn("[Radarr] Recovered movie after uncertain create response", {
+        tmdbId,
+        radarrMovieId: recovered.id,
+        reason: getErrorMessage(error)
+      });
+      return recovered;
+    }
+
+    throw error;
+  }
 }
 
 export async function getMovieByTmdbId(tmdbId: number) {
-  try {
-    const movies = await radarrFetch(`/api/v3/movie?tmdbId=${tmdbId}`);
-    if (Array.isArray(movies) && movies.length > 0) {
-      const match = movies.find((item: any) => Number(item?.tmdbId ?? 0) === Number(tmdbId));
-      return match ?? null;
-    }
-    return null;
-  } catch (e) {
-    // If 404 or other error, return null (assuming not found or service down, but strictly for existence check)
-    // However, if service is down, we might want to throw.
-    // For now, let's assume if it fails, we treat it as not found or handle upstream.
-    // But Radarr 404s on list endpoint? Unlikely.
-    return null;
-  }
+  const cfg = await getRadarrConfig();
+  return getMovieByTmdbIdForService(cfg.baseUrl, cfg.apiKey, tmdbId);
 }
 
 export async function getRadarrMovie(movieId: number) {

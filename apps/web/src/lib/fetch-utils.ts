@@ -76,6 +76,10 @@ export function isServiceNotFoundError(err: unknown): boolean {
   return err instanceof ServiceHttpError && err.status === 404;
 }
 
+export function isServiceTimeoutError(err: unknown): boolean {
+  return err instanceof ServiceHttpError && err.status === 504;
+}
+
 export async function readJson(res: Response) {
   const clone = res.clone();
   try {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Image from "next/image";
 import { formatDate } from "@/lib/dateFormat";
 import { useRouter } from "next/navigation";
@@ -319,10 +319,31 @@ export function AllRequestsClient({
   const [optimisticRemovals, setOptimisticRemovals] = useState<Set<string | number>>(new Set());
   const [optimisticStatusUpdates, setOptimisticStatusUpdates] = useState<Record<string | number, string>>({});
   const [searchQuery, setSearchQuery] = useState("");
-  const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
-  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
-  const [sortMode, setSortMode] = useState<SortMode>("priority");
-  const [viewMode, setViewMode] = useState<ViewMode>("grid");
+  const [filterStatus, setFilterStatus] = useState<FilterStatus>(() => {
+    try { return (localStorage.getItem("adminReq_filterStatus") as FilterStatus) ?? "all"; } catch { return "all"; }
+  });
+  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>(() => {
+    try { return (localStorage.getItem("adminReq_priorityFilter") as PriorityFilter) ?? "all"; } catch { return "all"; }
+  });
+  const [sortMode, setSortMode] = useState<SortMode>(() => {
+    try { return (localStorage.getItem("adminReq_sortMode") as SortMode) ?? "priority"; } catch { return "priority"; }
+  });
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    try { return (localStorage.getItem("adminReq_viewMode") as ViewMode) ?? "grid"; } catch { return "grid"; }
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem("adminReq_filterStatus", filterStatus); } catch { /* noop */ }
+  }, [filterStatus]);
+  useEffect(() => {
+    try { localStorage.setItem("adminReq_priorityFilter", priorityFilter); } catch { /* noop */ }
+  }, [priorityFilter]);
+  useEffect(() => {
+    try { localStorage.setItem("adminReq_sortMode", sortMode); } catch { /* noop */ }
+  }, [sortMode]);
+  useEffect(() => {
+    try { localStorage.setItem("adminReq_viewMode", viewMode); } catch { /* noop */ }
+  }, [viewMode]);
   const [isSyncing, setIsSyncing] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailsLoading, setDetailsLoading] = useState(false);

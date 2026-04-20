@@ -31,6 +31,8 @@ import { randomUUID } from "crypto";
 import asyncLock from "@/lib/async-lock";
 import { isAdminGroup } from "@/lib/groups";
 import { cacheableJsonResponseWithETag } from "@/lib/api-optimization";
+import { isServiceTimeoutError } from "@/lib/fetch-utils";
+import { logger } from "@/lib/logger";
 
 function extractApiKey(req: NextRequest) {
   return extractExternalApiKey(req);
@@ -658,7 +660,18 @@ export async function POST(req: NextRequest) {
         }
         series = await addSeriesFromLookup(lookup[0], true, undefined);
         seriesAdded = true;
-        await seriesSearch(series.id);
+        try {
+          await seriesSearch(series.id);
+        } catch (error) {
+          if (!isServiceTimeoutError(error)) {
+            throw error;
+          }
+          logger.warn("[API v1] Sonarr series search timed out after add; continuing", {
+            tmdbId: body.data.mediaId,
+            tvdbId,
+            sonarrSeriesId: series.id
+          });
+        }
       }
 
       const attempts = seriesAdded ? 4 : 1;
@@ -690,8 +703,32 @@ export async function POST(req: NextRequest) {
       }
 
       const episodeIds = wanted.map((w: any) => w.id);
-      await setEpisodeMonitored(episodeIds, true);
-      await episodeSearch(episodeIds);
+      try {
+        await setEpisodeMonitored(episodeIds, true);
+      } catch (error) {
+        if (!isServiceTimeoutError(error)) {
+          throw error;
+        }
+        logger.warn("[API v1] Sonarr monitor update timed out; continuing with request submission", {
+          tmdbId: body.data.mediaId,
+          tvdbId,
+          sonarrSeriesId: series.id,
+          episodeCount: episodeIds.length
+        });
+      }
+      try {
+        await episodeSearch(episodeIds);
+      } catch (error) {
+        if (!isServiceTimeoutError(error)) {
+          throw error;
+        }
+        logger.warn("[API v1] Sonarr episode search timed out; continuing with request submission", {
+          tmdbId: body.data.mediaId,
+          tvdbId,
+          sonarrSeriesId: series.id,
+          episodeCount: episodeIds.length
+        });
+      }
 
       const r = await createRequestWithItemsTransaction({
         requestType: "episode",

@@ -239,30 +239,35 @@ export async function getJellyfinItemIdByTmdb(kind: "movie" | "tv", tmdbId: numb
     if (cached && cached.expiresAt > now) return cached.value;
 
     const includeType = kind === "tv" ? "Series" : "Movie";
+    const matchesExpectedTmdbItem = (item: JellyfinApiItem) => {
+        const typeMatches = String(item?.Type ?? "").toLowerCase() === includeType.toLowerCase();
+        const providerMatches = Number(item?.ProviderIds?.Tmdb ?? item?.ProviderIds?.tmdb ?? 0) === Number(tmdbId);
+        return typeMatches && providerMatches;
+    };
     const byTmdbProvider = await jellyfinFetch(
         `/Items?AnyProviderIdEquals=tmdb.${tmdbId}&Recursive=true&IncludeItemTypes=${includeType}&Fields=ProviderIds,Type`
     );
     let itemId = "";
     if (Array.isArray(byTmdbProvider?.Items) && byTmdbProvider.Items.length > 0) {
-        const match = byTmdbProvider.Items.find((item: JellyfinApiItem) => {
-            const typeMatches = String(item?.Type ?? "").toLowerCase() === includeType.toLowerCase();
-            const providerMatches = Number(item?.ProviderIds?.Tmdb ?? item?.ProviderIds?.tmdb ?? 0) === Number(tmdbId);
-            return typeMatches && providerMatches;
-        });
+        const match = byTmdbProvider.Items.find(matchesExpectedTmdbItem);
         if (match?.Id) {
             itemId = String(match.Id);
         }
     }
     if (!itemId) {
-        const byTmdb = await jellyfinFetch(`/Items?ExternalId=tmdb:${tmdbId}&IncludeItemTypes=${includeType}`);
+        const byTmdb = await jellyfinFetch(`/Items?ExternalId=tmdb:${tmdbId}&IncludeItemTypes=${includeType}&Fields=ProviderIds,Type`);
         if (Array.isArray(byTmdb?.Items) && byTmdb.Items.length > 0) {
-            const match = byTmdb.Items.find((item: JellyfinApiItem) => String(item?.Type ?? "").toLowerCase() === includeType.toLowerCase());
-            itemId = String((match ?? byTmdb.Items[0])?.Id ?? "");
+            const match = byTmdb.Items.find(matchesExpectedTmdbItem);
+            if (match?.Id) {
+                itemId = String(match.Id);
+            }
         } else {
-            const fallback = await jellyfinFetch(`/Items?ExternalId=tmdb:${tmdbId}`);
+            const fallback = await jellyfinFetch(`/Items?ExternalId=tmdb:${tmdbId}&Fields=ProviderIds,Type`);
             if (Array.isArray(fallback?.Items) && fallback.Items.length > 0) {
-                const match = fallback.Items.find((item: JellyfinApiItem) => String(item?.Type ?? "").toLowerCase() === includeType.toLowerCase());
-                itemId = String((match ?? fallback.Items[0])?.Id ?? "");
+                const match = fallback.Items.find(matchesExpectedTmdbItem);
+                if (match?.Id) {
+                    itemId = String(match.Id);
+                }
             }
         }
     }
@@ -278,30 +283,35 @@ export async function getJellyfinItemIdByTvdb(tvdbId: number): Promise<string | 
     const cached = itemIdCache.get(key);
     if (cached && cached.expiresAt > now) return cached.value;
 
+    const matchesExpectedTvdbItem = (item: JellyfinApiItem) => {
+        const typeMatches = String(item?.Type ?? "").toLowerCase() === "series";
+        const providerMatches = Number(item?.ProviderIds?.Tvdb ?? item?.ProviderIds?.tvdb ?? 0) === Number(tvdbId);
+        return typeMatches && providerMatches;
+    };
     const byTvdbProvider = await jellyfinFetch(
         `/Items?AnyProviderIdEquals=tvdb.${tvdbId}&Recursive=true&IncludeItemTypes=Series&Fields=ProviderIds,Type`
     );
     let itemId = "";
     if (Array.isArray(byTvdbProvider?.Items) && byTvdbProvider.Items.length > 0) {
-        const match = byTvdbProvider.Items.find((item: JellyfinApiItem) => {
-            const typeMatches = String(item?.Type ?? "").toLowerCase() === "series";
-            const providerMatches = Number(item?.ProviderIds?.Tvdb ?? item?.ProviderIds?.tvdb ?? 0) === Number(tvdbId);
-            return typeMatches && providerMatches;
-        });
+        const match = byTvdbProvider.Items.find(matchesExpectedTvdbItem);
         if (match?.Id) {
             itemId = String(match.Id);
         }
     }
     if (!itemId) {
-        const byTvdb = await jellyfinFetch(`/Items?ExternalId=tvdb:${tvdbId}&IncludeItemTypes=Series`);
+        const byTvdb = await jellyfinFetch(`/Items?ExternalId=tvdb:${tvdbId}&IncludeItemTypes=Series&Fields=ProviderIds,Type`);
         if (Array.isArray(byTvdb?.Items) && byTvdb.Items.length > 0) {
-            const match = byTvdb.Items.find((item: JellyfinApiItem) => String(item?.Type ?? "").toLowerCase() === "series");
-            itemId = String((match ?? byTvdb.Items[0])?.Id ?? "");
+            const match = byTvdb.Items.find(matchesExpectedTvdbItem);
+            if (match?.Id) {
+                itemId = String(match.Id);
+            }
         } else {
-            const fallback = await jellyfinFetch(`/Items?ExternalId=tvdb:${tvdbId}`);
+            const fallback = await jellyfinFetch(`/Items?ExternalId=tvdb:${tvdbId}&Fields=ProviderIds,Type`);
             if (Array.isArray(fallback?.Items) && fallback.Items.length > 0) {
-                const match = fallback.Items.find((item: JellyfinApiItem) => String(item?.Type ?? "").toLowerCase() === "series");
-                itemId = String((match ?? fallback.Items[0])?.Id ?? "");
+                const match = fallback.Items.find(matchesExpectedTvdbItem);
+                if (match?.Id) {
+                    itemId = String(match.Id);
+                }
             }
         }
     }
@@ -897,7 +907,7 @@ export async function findAvailableSeriesByIds(
         return typeMatches && (tmdbMatches || tvdbMatches);
     });
     // Fall back to name matching — handles shows with no TMDB/TVDB provider tags in Jellyfin
-    // (e.g. WWE Raw stored as "WWE Monday Night RAW", live sports, shows only tagged via TVDB
+    // (e.g. WWE Raw stored as "WWE Monday Night RAW", or shows only tagged via TVDB
     // when tvdbId isn't supplied). Uses word-set containment so "WWE Raw" matches "WWE Monday Night RAW".
     if (!seriesMatch) {
         seriesMatch = items.find((item: JellyfinApiItem) => {
