@@ -321,7 +321,7 @@ export async function getJellyfinItemIdByTvdb(tvdbId: number): Promise<string | 
 
 /**
  * Fuzzy series name matching that handles alternate titles like
- * "WWE Raw" matching "WWE Monday Night RAW" by checking whether
+ * "Daily News" matching "Daily Evening News" by checking whether
  * all significant words of the shorter name appear in the longer one.
  */
 function seriesNameMatches(a: string, b: string): boolean {
@@ -361,7 +361,7 @@ export async function getJellyfinItemIdByName(kind: "movie" | "tv", name: string
             itemId = String(exactMatch.Id ?? "");
         } else {
             // Fall back to fuzzy name match — handles alternate titles like
-            // "WWE Raw" finding "WWE Monday Night RAW" via word-set containment
+            // "Daily News" finding "Daily Evening News" via word-set containment
             const partialMatch = searchResults.Items.find((item: JellyfinApiItem) => {
                 if (String(item?.Type ?? "").toLowerCase() !== includeType.toLowerCase()) return false;
                 return seriesNameMatches(name, String(item?.Name ?? ""));
@@ -473,7 +473,7 @@ export async function listAvailableSeriesEpisodes(seriesItemId: string, limit = 
     const items: JellyfinApiItem[] = Array.isArray(episodes?.Items) ? episodes.Items : [];
 
     // Exclude virtual/unaired placeholder episodes only.
-    // Do NOT filter on episodeNumber > 0 here — date-organised shows like WWE Raw
+    // Do NOT filter on episodeNumber > 0 here — date-organised shows can
     // store episodes without an IndexNumber (episodeNumber would be 0), so we
     // assign sequential numbers sorted by air date after grouping by season.
     const real = items
@@ -494,7 +494,7 @@ export async function listAvailableSeriesEpisodes(seriesItemId: string, limit = 
         });
 
     // Fill in sequential episode numbers for episodes without an IndexNumber so
-    // that date-organised shows (e.g. WWE Raw) show up in the selector.
+    // that date-organised shows still show up in the selector.
     const seasonCounters: Record<number, number> = {};
     for (const ep of real) {
         if (ep.episodeNumber === 0) {
@@ -597,8 +597,8 @@ export async function isEpisodeAvailable({
     });
 
     // Don't filter by season in the API call - Jellyfin and Sonarr often use different season numbering
-    // especially for daily series like WWE. Instead, fetch all episodes and filter in-memory.
-    // Use a large limit to ensure we get all episodes (some series like WWE Raw have 500+ episodes)
+    // for daily series. Instead, fetch all episodes and filter in-memory.
+    // Use a large limit to ensure we get all episodes for long-running series.
     const episodes = await jellyfinFetch(
         `/Shows/${seriesId}/Episodes?Fields=ProviderIds,IndexNumber,ParentIndexNumber,PremiereDate,DateCreated,Name,OriginalTitle,LocationType,MediaSources,Path,IsVirtual&Limit=4000`
     );
@@ -907,8 +907,8 @@ export async function findAvailableSeriesByIds(
         return typeMatches && (tmdbMatches || tvdbMatches);
     });
     // Fall back to name matching — handles shows with no TMDB/TVDB provider tags in Jellyfin
-    // (e.g. WWE Raw stored as "WWE Monday Night RAW", or shows only tagged via TVDB
-    // when tvdbId isn't supplied). Uses word-set containment so "WWE Raw" matches "WWE Monday Night RAW".
+    // (e.g. a title stored with an expanded name, or shows only tagged via TVDB
+    // when tvdbId isn't supplied). Uses word-set containment across both names.
     if (!seriesMatch) {
         seriesMatch = items.find((item: JellyfinApiItem) => {
             if (String(item?.Type ?? "").toLowerCase() !== "series") return false;
