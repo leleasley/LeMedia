@@ -50,3 +50,4 @@ export { syncArrService } from './mediaSync.js';
 export { syncAvailabilityDates } from './availabilitySync.js';
 export type { SyncResult } from './helpers.js';
 export { syncMissingKeywords, trackKeywordsFromDetails } from './keywordSync.js';
+export { syncDigitalReleases } from './digitalReleaseSync.js';

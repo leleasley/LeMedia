@@ -7,7 +7,6 @@ import {
   Film,
   RefreshCw,
   ScrollText,
-  Plug,
   LayoutDashboard,
   Home,
   Key,
@@ -25,6 +24,11 @@ import {
   DownloadCloud,
   Link as LinkIcon,
   type LucideIcon,
+  HardDrive,
+  MonitorPlay,
+  Boxes,
+  Radar,
+  ListPlus,
 } from 'lucide-react';
 
 /** Individual page inside a group — rendered as a sub-tab when the group has >1 entry. */
@@ -48,6 +52,11 @@ export interface AdminGroupDef {
 
 export type AdminTabId =
   | 'dashboard'
+  | 'zurg'
+  | 'arr'
+  | 'prowlarr'
+  | 'lists'
+  | 'rex'
   | 'instance'
   | 'features'
   | 'homepage'
@@ -104,6 +113,11 @@ export const ADMIN_GROUPS: AdminGroupDef[] = [
       { id: 'rules', label: 'admin.tab.rules', icon: Workflow },
       { id: 'keywords', label: 'admin.tab.keywords', icon: Tag },
       { id: 'blacklist', label: 'admin.tab.blacklist', icon: Ban },
+      { id: 'lists', label: 'admin.tab.lists', icon: ListPlus },
+      { id: 'arr', label: 'admin.tab.arr', icon: Boxes },
+      { id: 'prowlarr', label: 'admin.tab.prowlarr', icon: Radar },
+      { id: 'zurg', label: 'admin.tab.zurg', icon: HardDrive },
+      { id: 'rex', label: 'admin.tab.rex', icon: MonitorPlay },
     ],
   },
   {
@@ -130,15 +144,6 @@ export const ADMIN_GROUPS: AdminGroupDef[] = [
       { id: 'jobs', label: 'admin.tab.jobs', icon: RefreshCw },
       { id: 'logs', label: 'admin.tab.logs', icon: ScrollText },
       { id: 'danger', label: 'admin.tab.danger', icon: AlertTriangle },
-    ],
-  },
-  {
-    id: 'plugins',
-    label: 'admin.group.plugins',
-    icon: Plug,
-    description: 'admin.group.plugins_desc',
-    tabs: [
-      { id: 'plugins', label: 'admin.tab.plugins', icon: Plug },
     ],
   },
 ];

@@ -9,8 +9,8 @@ import { isInstalled, markInstalled } from '../utils/install.js';
 import { classifyTestError } from '../utils/serviceTestError.js';
 import { assertPublicUrl, SsrfBlockedError } from '../utils/ssrfGuard.js';
 import { isSensitiveKey } from '../utils/secrets.js';
+import { registerPlexDiscoveryRoutes } from '../providers/plex/discoveryRoutes.js';
 import { registerEmail } from '../providers/email/index.js';
-import { buildHelpers } from './auth.js';
 import { trimTrailingSlashes } from '../utils/trimTrailingSlashes.js';
 
 // Strength is checked once at boot by assertSetupSecretOrExit (utils/envSecret.ts), which refuses
@@ -47,6 +47,7 @@ export async function setupRoutes(app: FastifyInstance) {
     await requireNotInstalled(request, reply);
     await requireSetupSecret(request, reply);
   });
+  registerPlexDiscoveryRoutes(app);
 
   // Verify setup secret — lightweight check for the frontend.
   // Also reports whether an admin already exists: the wizard may have been interrupted between
@@ -56,65 +57,6 @@ export async function setupRoutes(app: FastifyInstance) {
   app.post('/verify-secret', async () => {
     const adminExists = (await prisma.user.count({ where: { role: 'admin' } })) > 0;
     return { ok: true, adminExists };
-  });
-
-  // ─── First admin ────────────────────────────────────────────────
-  // The instance owner is created here, not on the public /api/auth/register, so minting the
-  // one account that owns the instance requires proving possession of SETUP_SECRET (enforced by
-  // this router's preHandler). /api/auth/register refuses outright while the user table is empty.
-  //
-  // Single-flight: two concurrent calls must not both read "no users" and both create an admin.
-  // SQLite gives us no lock that spans a read-then-write, but the process is single-threaded, so
-  // chaining every attempt onto one promise is a real mutex here.
-  let bootstrapChain: Promise<unknown> = Promise.resolve();
-
-  app.post('/admin', {
-    config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
-    schema: {
-      body: {
-        type: 'object' as const,
-        required: ['email', 'password', 'displayName'],
-        properties: {
-          email: { type: 'string' },
-          password: { type: 'string' },
-          displayName: { type: 'string' },
-        },
-      },
-    },
-  }, async (request, reply) => {
-    const { email, password, displayName } = request.body as { email: string; password: string; displayName: string };
-
-    const attempt = bootstrapChain.then(async (): Promise<{ status: number; error: string } | { userId: number }> => {
-      if ((await prisma.user.count()) > 0) {
-        return { status: 409, error: 'ADMIN_EXISTS' };
-      }
-      try {
-        const result = await registerEmail(email, password, displayName);
-        const user = await prisma.user.create({
-          data: {
-            email: result.email,
-            displayName: result.displayName,
-            passwordHash: result.providerData.passwordHash as string,
-            role: 'admin',
-            providers: { create: { provider: 'email', providerId: result.email, providerUsername: result.displayName, providerEmail: result.email } },
-          },
-        });
-        logEvent('info', 'Setup', `Instance admin created during installation: ${result.displayName}`);
-        return { userId: user.id };
-      } catch (err) {
-        const msg = (err as Error).message;
-        if (msg === 'EMAIL_EXISTS') return { status: 409, error: 'EMAIL_EXISTS' };
-        if (msg === 'PASSWORD_TOO_SHORT') return { status: 400, error: 'PASSWORD_TOO_SHORT' };
-        if (msg === 'DISPLAY_NAME_REQUIRED') return { status: 400, error: 'DISPLAY_NAME_REQUIRED' };
-        throw err;
-      }
-    });
-    // Keep the chain alive whatever happens, so one failure doesn't wedge later attempts.
-    bootstrapChain = attempt.catch(() => undefined);
-
-    const outcome = await attempt;
-    if ('error' in outcome) return reply.status(outcome.status).send({ error: outcome.error });
-    return buildHelpers(app).signAndSend(reply, outcome.userId);
   });
 
   // Service schemas — used by wizard to build dynamic forms
@@ -165,7 +107,7 @@ export async function setupRoutes(app: FastifyInstance) {
   }, async (request, reply) => {
     const { url, token } = request.body as { url: string; token: string };
     // SSRF guard: admin-typed URL goes straight to axios.get. Permissive by default for
-    // self-hosted LAN setups (OSCARR_BLOCK_PRIVATE_SERVICES !== 'true'), strict mode refuses
+    // self-hosted LAN setups (LEMEDIA_BLOCK_PRIVATE_SERVICES !== 'true'), strict mode refuses
     // private ranges so a shared-hosting operator can't be tricked into probing RFC1918.
     try {
       await assertPublicUrl(url);
@@ -208,7 +150,7 @@ export async function setupRoutes(app: FastifyInstance) {
       return await def.test(config);
     } catch (err) {
       const info = classifyTestError(err);
-      logEvent('warn', 'Setup', `Service test failed (${type}): ${info.code} — ${info.message}`, err);
+      logEvent('warn', 'Setup', `Service test failed (${type}): ${info.code}, ${info.message}`, err);
       return reply.status(502).send({ error: info.code, detail: info.message });
     }
   });
@@ -237,11 +179,12 @@ export async function setupRoutes(app: FastifyInstance) {
           name: { type: 'string', description: 'Display name for the service' },
           type: { type: 'string', description: 'Service type' },
           config: { type: 'object', description: 'Service config fields', additionalProperties: { type: 'string' } },
+          serviceId: { type: 'integer', minimum: 1, description: 'Existing service to update when resuming setup' },
         },
       },
     },
   }, async (request, reply) => {
-    const { name, type, config } = request.body as { name: string; type: string; config: Record<string, string> };
+    const { name, type, config, serviceId } = request.body as { name: string; type: string; config: Record<string, string>; serviceId?: number };
     if (!name || !type || !config) {
       return reply.status(400).send({ error: 'All fields are required' });
     }
@@ -249,7 +192,10 @@ export async function setupRoutes(app: FastifyInstance) {
     // Idempotent on (type, url). The wizard keeps its services in React state only, so a page
     // refresh restarts it empty while the rows it already saved are still in the database —
     // creating unconditionally then added every service a second time.
-    const existing = await findServiceByTypeAndUrl(type, config.url);
+    const existing = serviceId
+      ? await prisma.service.findUnique({ where: { id: serviceId } })
+      : await findServiceByTypeAndUrl(type, config.url);
+    if (serviceId && (!existing || existing.type !== type)) return reply.status(404).send({ error: 'SERVICE_NOT_FOUND' });
     const data = {
       name,
       type,

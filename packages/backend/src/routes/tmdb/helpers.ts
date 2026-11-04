@@ -1,9 +1,9 @@
 import type { FastifyRequest } from 'fastify';
 import { prisma } from '../../utils/prisma.js';
-import { getNsfwKeywordIds } from '../../utils/nsfwKeywords.js';
 import { parsePage } from '../../utils/params.js';
 import { getMovieDetails, getTvDetails, isMatureRating } from '../../services/tmdb.js';
 import { trackKeywordsFromDetails } from '../../services/sync/keywordSync.js';
+import { getNsfwKeywordIds } from '../../utils/nsfwKeywords.js';
 import { mediaKey } from '../../utils/mediaKey.js';
 
 export const pageQuerySchema = {
@@ -71,7 +71,7 @@ export async function flagNsfwFromDb(
         if (kwIds.some(id => nsfwKwSet.has(id))) {
           nsfwIds.push(row.tmdbId);
         }
-      } catch { /* malformed row, skip — logged upstream on write */ }
+      } catch { /* malformed row, skip, logged upstream on write */ }
     }
     if (now - new Date(row.updatedAt).getTime() > METADATA_TTL || row.keywordIds === null) {
       stale.push({ tmdbId: row.tmdbId, mediaType: row.mediaType as 'movie' | 'tv' });
@@ -122,7 +122,7 @@ export async function fetchList(
     // NSFW flagging shouldn't 500 the list response, but a consistent failure here means
     // mature content would silently leak through to the UI — log it so a prisma outage or a
     // schema drift leaves a trail instead of degrading to zero flags without anyone noticing.
-    request.log.warn({ err }, 'NSFW flag check failed — returning empty nsfwTmdbIds');
+    request.log.warn({ err }, 'NSFW flag check failed, returning empty nsfwTmdbIds');
     return [];
   });
   return { ...data, nsfwTmdbIds };

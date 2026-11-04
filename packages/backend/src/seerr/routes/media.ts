@@ -20,7 +20,7 @@ export async function mediaRoutes(app: FastifyInstance) {
       const sort = request.query.sort === 'modified' ? 'updatedAt' : 'createdAt';
       const where: Record<string, unknown> = {};
 
-      const filterStatus = mapFilterToOscarrStatus(request.query.filter);
+      const filterStatus = mapFilterToLeMediaStatus(request.query.filter);
       if (filterStatus) where.statusCategory = { in: filterStatus };
 
       const [results, totalResults] = await Promise.all([
@@ -55,7 +55,7 @@ export async function mediaRoutes(app: FastifyInstance) {
   app.get<{ Params: { id: string } }>('/media/:id/watch_data', async (request, reply) => {
     const id = Number(request.params.id);
     if (!Number.isInteger(id) || id < 1) return reply.status(400).send({ error: 'INVALID_ID' });
-    // Oscarr doesn't track per-user playback metrics; report empty so dashboards collapse the widget.
+    // LeMedia doesn't track per-user playback metrics; report empty so dashboards collapse the widget.
     return { data: { users: [], playCount: 0, playCount7Days: 0, playCount30Days: 0 } };
   });
 
@@ -78,7 +78,7 @@ export async function mediaRoutes(app: FastifyInstance) {
 
 // Buckets must stay in lockstep with /media/count above and mapMediaStatus (adapters/statusMap.ts),
 // or count-vs-list diverge and some rows become unreachable through every filter.
-function mapFilterToOscarrStatus(filter: string | undefined): string[] | null {
+function mapFilterToLeMediaStatus(filter: string | undefined): string[] | null {
   switch (filter) {
     case 'available':           return ['AVAILABLE'];
     case 'processing':          return ['PROCESSING', 'IMPORTED'];

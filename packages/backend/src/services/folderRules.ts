@@ -5,13 +5,13 @@ import { logEvent } from '../utils/logEvent.js';
 import {
   isOperatorSupported, isRuleField, isRuleOperator, isCriterionField, criterionIdOf,
   CRITERION_OPERATORS, type RuleField, type RuleOperator,
-} from '@oscarr/shared';
+} from '@lemedia/shared';
 import { findServiceTypeForMedia } from '../providers/index.js';
 import { extractKeywords } from './tmdb.js';
 
 export interface RuleCondition {
-  field: RuleField;       // shared single source (@oscarr/shared)
-  operator: RuleOperator; // shared single source (@oscarr/shared)
+  field: RuleField;       // shared single source (@lemedia/shared)
+  operator: RuleOperator; // shared single source (@lemedia/shared)
   value: string; // Comma-separated for "in" operator
 }
 

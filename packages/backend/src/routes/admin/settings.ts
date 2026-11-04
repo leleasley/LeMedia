@@ -6,7 +6,7 @@ import { getAppSettings, ensureAppSettings, patchAppSettings, parseInstanceLangu
 import { logEvent } from '../../utils/logEvent.js';
 import { safeNotify, invalidateSiteUrl } from '../../utils/safeNotify.js';
 import { invalidateLanguageCache } from '../../services/tmdb.js';
-import { COLOR_TOKENS } from '@oscarr/shared';
+import { COLOR_TOKENS } from '@lemedia/shared';
 import { getAllServiceDefinitions } from '../../providers/index.js';
 
 // Issue #167 — admin-defined external links rendered in the home topbar.
@@ -101,7 +101,7 @@ export async function settingsRoutes(app: FastifyInstance) {
           siteUrl: { type: 'string', description: 'Public URL of the instance for notification links' },
           instanceLanguages: { type: 'array', items: { type: 'string' }, description: 'Instance languages (ISO 639-1 codes)' },
           disabledLoginMode: { type: 'string', enum: ['block', 'friendly'], description: 'How disabled accounts are rejected at login' },
-          arrUserTaggingEnabled: { type: 'boolean', description: 'When true, tag added media in Radarr/Sonarr with oscarr-<username>' },
+          arrUserTaggingEnabled: { type: 'boolean', description: 'When true, tag added media in Radarr/Sonarr with lemedia-<username>' },
         },
       },
     },

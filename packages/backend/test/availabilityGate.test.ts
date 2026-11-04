@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildAvailability, gateCategory, sourceNeedsLibrary, NO_LIBRARY_GATE, type LibraryGate } from '../src/services/availability.js';
-import { MEDIA_STATE_CATEGORIES, MEDIA_STATE_DISPLAY } from '@oscarr/shared';
+import { MEDIA_STATE_CATEGORIES, MEDIA_STATE_DISPLAY } from '@lemedia/shared';
 import { mapMediaStatus, SEERR_MEDIA_STATUS } from '../src/seerr/adapters/statusMap.js';
 
 const CONFIRMED = new Date('2026-08-08T10:00:00Z');

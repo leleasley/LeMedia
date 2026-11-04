@@ -41,27 +41,27 @@ export function classifyTestError(err: unknown): TestErrorInfo {
     return {
       code: 'WRONG_APP',
       message: found
-        ? `This looks like a ${found} instance, not ${expected} — check the URL.`
-        : `This does not look like a ${expected} instance — check the URL.`,
+        ? `This looks like a ${found} instance, not ${expected}, check the URL.`
+        : `This does not look like a ${expected} instance, check the URL.`,
     };
   }
   if (message === 'AUTH_FAILED') {
-    return { code: 'AUTH_FAILED', message: 'Authentication failed — bad username or password' };
+    return { code: 'AUTH_FAILED', message: 'Authentication failed, bad username or password' };
   }
   if (message === 'AUTH_BANNED') {
-    return { code: 'AUTH_BANNED', message: 'IP temporarily banned after too many failed attempts — wait or restart the service' };
+    return { code: 'AUTH_BANNED', message: 'IP temporarily banned after too many failed attempts, wait or restart the service' };
   }
   if (message === 'AUTH_NO_SESSION') {
     return { code: 'AUTH_NO_SESSION', message: 'Login succeeded but the service did not return a session cookie' };
   }
   if (message === 'DELUGE_DAEMON_DETACHED') {
-    return { code: 'DELUGE_DAEMON_DETACHED', message: 'Deluge Web is up but not attached to a daemon — connect a daemon in the Deluge UI first' };
+    return { code: 'DELUGE_DAEMON_DETACHED', message: 'Deluge Web is up but not attached to a daemon, connect a daemon in the Deluge UI first' };
   }
 
   if (status) {
-    if (status === 401) return { code: 'HTTP_UNAUTHORIZED', message: 'Authentication failed — check the API key' };
+    if (status === 401) return { code: 'HTTP_UNAUTHORIZED', message: 'Authentication failed, check the API key' };
     if (status === 403) return { code: 'HTTP_FORBIDDEN', message: 'Access denied (HTTP 403)' };
-    if (status === 404) return { code: 'HTTP_NOT_FOUND', message: 'Endpoint not found (HTTP 404) — check the URL path' };
+    if (status === 404) return { code: 'HTTP_NOT_FOUND', message: 'Endpoint not found (HTTP 404), check the URL path' };
     if (status >= 500) return { code: 'HTTP_SERVER_ERROR', message: `Service returned HTTP ${status}` };
     return { code: 'UNKNOWN', message: `Unexpected HTTP ${status}` };
   }

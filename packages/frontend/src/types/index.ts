@@ -1,4 +1,4 @@
-import type { MediaStateCategory } from '@oscarr/shared';
+import type { MediaStateCategory } from '@lemedia/shared';
 
 export interface UserProviderInfo {
   provider: string;
@@ -23,6 +23,9 @@ export interface User {
   disabled?: boolean;
   providers?: UserProviderInfo[];
   createdAt?: string;
+  /** Bell opt-outs — default true; undefined (pre-migration session) reads as on. */
+  notifyRequests?: boolean;
+  notifyDigital?: boolean;
 }
 
 export interface AdminUser extends User {
@@ -33,7 +36,7 @@ export interface AuthProviderConfig {
   id: string;
   label: string;
   type: 'oauth' | 'credentials';
-  /** True when the provider will auto-create new Oscarr users on first login / registration. */
+  /** True when the provider will auto-create new LeMedia users on first login / registration. */
   allowSignup?: boolean;
 }
 
@@ -48,13 +51,13 @@ export interface QualityProfile {
   name: string;
 }
 
-// TMDB response types moved to @oscarr/shared. Re-exported here so existing
+// TMDB response types moved to @lemedia/shared. Re-exported here so existing
 // `import { TmdbMedia } from '@/types'` sites keep working; new code should import directly
-// from '@oscarr/shared' where possible.
+// from '@lemedia/shared' where possible.
 export type {
   TmdbCollection, TmdbCollectionRef, TmdbMovie, TmdbTv, TmdbMedia, TmdbSeason, TmdbCast,
   TmdbCrew, TmdbPerson, TmdbVideo,
-} from '@oscarr/shared';
+} from '@lemedia/shared';
 
 export interface Media {
   id: number;
@@ -66,6 +69,7 @@ export interface Media {
   posterPath: string | null;
   backdropPath: string | null;
   releaseDate: string | null;
+  digitalReleaseDate: string | null;
   voteAverage: number | null;
   genres: string | null;
   statusCategory: MediaStateCategory;

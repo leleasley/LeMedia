@@ -6,7 +6,7 @@ import api from '@/lib/api';
 /**
  * Landing page Plex forwards the OAuth tab to after sign-in (via the `forwardUrl` on the auth URL,
  * #212). It replaces Plex's static "you can now close this window" page — the pain point on mobile,
- * where the original Oscarr tab is backgrounded/suspended and can never poll the PIN to finish.
+ * where the original LeMedia tab is backgrounded/suspended and can never poll the PIN to finish.
  *
  * We finalize the session HERE from the tab the user is actually looking at: POST the pin to the
  * login callback (idempotent — safe even when a desktop opener tab already completed via polling),

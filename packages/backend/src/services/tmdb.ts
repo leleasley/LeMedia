@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { attachAxiosRetry } from '../utils/fetchWithRetry.js';
-import { getCached, setCache } from '../utils/cache.js';
+import { getCachedEntry, setCache } from '../utils/cache.js';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 // Public read-only TMDB v4 token (scopes: api_read) — not a secret. Shipped as a fallback so
@@ -11,7 +11,7 @@ const TMDB_DEFAULT_TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJkODg0ZWJlNzE0NTU4NWI
 const TMDB_TOKEN = process.env.TMDB_API_TOKEN || TMDB_DEFAULT_TOKEN;
 if (!process.env.TMDB_API_TOKEN) {
   // eslint-disable-next-line no-console
-  console.warn('[TMDB] No TMDB_API_TOKEN set — falling back to the bundled public token. ' +
+  console.warn('[TMDB] No TMDB_API_TOKEN set, falling back to the bundled public token. ' +
     'Get your own at https://www.themoviedb.org/settings/api to avoid shared rate limits.');
 }
 
@@ -78,15 +78,15 @@ export function getTmdbApi(lang = DEFAULT_LANG) {
   return attachAxiosRetry(instance, 'TMDB');
 }
 
-// Type contracts moved to @oscarr/shared (TmdbCollection, TmdbMovie, TmdbTv, TmdbSeason,
+// Type contracts moved to @lemedia/shared (TmdbCollection, TmdbMovie, TmdbTv, TmdbSeason,
 // TmdbCast, TmdbCrew, TmdbVideo, TmdbPerson, TmdbMediaResult, TmdbCollectionRef, TmdbMedia).
 // This file re-exports them so legacy `import { TmdbMovie } from 'services/tmdb.js'` paths
-// keep working; direct @oscarr/shared imports are encouraged in new code.
+// keep working; direct @lemedia/shared imports are encouraged in new code.
 export type {
   TmdbCollection, TmdbCollectionRef, TmdbMovie, TmdbTv, TmdbSeason, TmdbCast, TmdbCrew,
   TmdbVideo, TmdbMedia, TmdbMediaResult, TmdbPerson,
-} from '@oscarr/shared';
-import type { TmdbMovie, TmdbTv, TmdbMediaResult, TmdbPerson, TmdbCollection, TmdbSeasonDetails } from '@oscarr/shared';
+} from '@lemedia/shared';
+import type { TmdbMovie, TmdbTv, TmdbMediaResult, TmdbPerson, TmdbCollection, TmdbSeasonDetails } from '@lemedia/shared';
 
 /** Extract keywords array from movie or TV details (different TMDB response shapes) */
 export function extractKeywords(details: TmdbMovie | TmdbTv): { id: number; name: string }[] {
@@ -146,21 +146,96 @@ export async function extractContentRating(details: TmdbMovie | TmdbTv): Promise
   return null;
 }
 
+/** TMDB release types — see https://developer.themoviedb.org/docs/release-types */
+const DIGITAL_RELEASE_TYPE = 4;
+const PHYSICAL_RELEASE_TYPE = 5;
+
+/** Extract the digital release date (YYYY-MM-DD) from movie details' release_dates, honouring
+ *  the instance-language country priority. Falls back to the physical release date when no
+ *  digital entry exists yet. Returns null when TMDB knows neither. */
+export async function extractDigitalRelease(details: TmdbMovie): Promise<string | null> {
+  await getInstanceLanguages();
+  const results = details.release_dates?.results;
+  if (!results?.length) return null;
+  // Release dates are regional: the viewer's region (RELEASE_REGION, default GB for this
+  // instance) wins over the language-derived country list (en → US), which would otherwise
+  // report US dates to a UK audience.
+  const countries = [...new Set([getReleaseRegion(), ...getRatingCountries()])];
+  const pick = (type: number): string | null => {
+    for (const country of countries) {
+      const earliest = results
+        .find((r) => r.iso_3166_1 === country)?.release_dates
+        ?.filter((rd) => rd.type === type && rd.release_date)
+        .sort((a, b) => a.release_date.localeCompare(b.release_date))[0];
+      if (earliest) return earliest.release_date.slice(0, 10);
+    }
+    return null;
+  };
+  return pick(DIGITAL_RELEASE_TYPE) ?? pick(PHYSICAL_RELEASE_TYPE);
+}
+
+/** Region used for release dates and "where to watch" (ISO 3166-1, e.g. GB). */
+export function getReleaseRegion(): string {
+  const r = (process.env.RELEASE_REGION || 'GB').trim().toUpperCase();
+  return /^[A-Z]{2}$/.test(r) ? r : 'GB';
+}
+
+export interface MovieWatchOptions {
+  stream: string[];
+  rent: string[];
+  buy: string[];
+}
+
+/** Where a movie can be watched in a region (TMDB / JustWatch data), provider names only. */
+export async function getMovieWatchOptions(tmdbId: number, region = getReleaseRegion()): Promise<MovieWatchOptions | null> {
+  return cachedRequest(`movie-watch:v1:${tmdbId}:${region}`, async () => {
+    const { data } = await getTmdbApi().get(`/movie/${tmdbId}/watch/providers`);
+    const entry = (data?.results ?? {})[region] as Record<string, { provider_name: string; display_priority?: number }[]> | undefined;
+    if (!entry) return null;
+    const names = (list?: { provider_name: string; display_priority?: number }[]) =>
+      [...(list ?? [])].sort((a, b) => (a.display_priority ?? 99) - (b.display_priority ?? 99)).map((p) => p.provider_name);
+    return { stream: names(entry.flatrate), rent: names(entry.rent), buy: names(entry.buy) };
+  }, 12);
+}
+
 /** Check if a content rating is considered mature/NSFW */
 export function isMatureRating(rating: string | null): boolean {
   if (!rating) return false;
   return MATURE_RATINGS.has(rating);
 }
 
-// TmdbSeason, TmdbCast, TmdbCrew, TmdbVideo, TmdbMediaResult: moved to @oscarr/shared
+// TmdbSeason, TmdbCast, TmdbCrew, TmdbVideo, TmdbReleaseDate, TmdbMediaResult: moved to @lemedia/shared
 // (re-exported at the top of this file for legacy callers).
 
+/** In-flight TMDB fetches by cache key — concurrent identical requests (several rows, users
+ *  or keystrokes asking for the same thing) share one upstream call. */
+const inflight = new Map<string, Promise<unknown>>();
+
 async function cachedRequest<T>(cacheKey: string, fetcher: () => Promise<T>, ttlHours = 24): Promise<T> {
-  const cached = await getCached<T>(cacheKey);
-  if (cached) return cached;
-  const data = await fetcher();
-  await setCache(cacheKey, data, ttlHours);
-  return data;
+  // A cache read failure must never take the endpoint down — fall through to TMDB.
+  const entry = await getCachedEntry<T>(cacheKey).catch(() => null);
+  if (entry && !entry.stale) return entry.data;
+
+  const refresh = (): Promise<T> => {
+    let pending = inflight.get(cacheKey) as Promise<T> | undefined;
+    if (!pending) {
+      pending = fetcher()
+        .then(async (data) => {
+          await setCache(cacheKey, data, ttlHours).catch(() => {});
+          return data;
+        })
+        .finally(() => inflight.delete(cacheKey));
+      inflight.set(cacheKey, pending);
+    }
+    return pending;
+  };
+
+  // Stale-while-revalidate: answer instantly from the expired copy, refresh in the background.
+  if (entry) {
+    refresh().catch(() => {});
+    return entry.data;
+  }
+  return refresh();
 }
 
 export async function getTrending(page = 1, lang?: string): Promise<{ results: TmdbMediaResult[]; total_pages: number; total_results: number }> {
@@ -214,12 +289,18 @@ export async function getUpcomingMovies(page = 1, lang?: string) {
 export async function searchMulti(query: string, page = 1, lang?: string) {
   const l = normalizeLang(lang);
   return cachedRequest(`search:${query}:${page}:${l}`, async () => {
-    const { data } = await getTmdbApi(l).get('/search/multi', { params: { query, page } });
+    let q = query.trim();
+    const { data } = await getTmdbApi(l).get('/search/multi', { params: { query: q, page } });
+    // Fallback: short queries (< 3 chars) get 0 results from TMDB. Append wildcard for prefix match.
+    if ((data.results || []).length === 0 && q.length < 3 && !q.endsWith('*')) {
+      const { data: retry } = await getTmdbApi(l).get('/search/multi', { params: { query: q + '*', page } });
+      return retry;
+    }
     return data;
   }, 1);
 }
 
-// TmdbPerson: moved to @oscarr/shared. The shared definition uses the loose `TmdbMedia`
+// TmdbPerson: moved to @lemedia/shared. The shared definition uses the loose `TmdbMedia`
 // shape in combined_credits.{cast,crew} instead of `TmdbMovie & TmdbTv & …` — more honest
 // about the fact that those entries carry mixed movie+tv rows with partial data.
 
@@ -283,6 +364,50 @@ export async function getTvRecommendations(tvId: number, lang?: string) {
     const { data } = await getTmdbApi(l).get(`/tv/${tvId}/recommendations`);
     return data;
   }, 24);
+}
+
+export interface TmdbWatchProvider {
+  provider_id: number;
+  provider_name: string;
+  logo_path: string | null;
+}
+
+export async function getWatchProviders(mediaType: 'movie' | 'tv', region = 'GB'): Promise<TmdbWatchProvider[]> {
+  const path = mediaType === 'movie' ? '/watch/providers/movie' : '/watch/providers/tv';
+  return cachedRequest(`watch-providers:v3:${mediaType}:${region}`, async () => {
+    const { data } = await getTmdbApi().get(path, { params: { watch_region: region } });
+    const results = (data.results ?? []) as TmdbWatchProvider[];
+    // Flatrate-only, with logos, most relevant first. Priority must come from the REGION's own
+    // `display_priorities[region]` — the top-level `display_priority` is TMDB's global default
+    // (US-weighted), so e.g. Shudder sits at GB priority 24 but global 53 and was sliced off
+    // before the row was built. Apple TV Store (id 2) is the transactional rental shop, not the
+    // subscription service — listing both next to Apple TV just confuses the row.
+    const STORE_ONLY_IDS = new Set([2]);
+    const priorityOf = (p: TmdbWatchProvider): number => {
+      const regionPriority = (p as { display_priorities?: Record<string, number> }).display_priorities?.[region];
+      return regionPriority ?? (p as { display_priority?: number }).display_priority ?? 99;
+    };
+    return results
+      .filter((p) => p.logo_path && !STORE_ONLY_IDS.has(p.provider_id))
+      .sort((a, b) => priorityOf(a) - priorityOf(b))
+      // Wide enough to cover a full regional catalogue (GB lists ~140) so the row's curated
+      // frontend subset and the admin provider picker both see every option.
+      .slice(0, 100)
+      .map((p) => ({ provider_id: p.provider_id, provider_name: p.provider_name, logo_path: p.logo_path }));
+  }, 168);
+}
+
+/** The franchise a movie belongs to (Marvel, Star Wars…), or null.
+ *
+ *  TMDB's search endpoints do not return `belongs_to_collection` at all, so the search grid
+ *  has to ask for it separately. The bare /movie/{id} payload (no append_to_response) is small,
+ *  and the answer rarely changes, so it is cached for a week — a repeat search costs nothing. */
+export async function getMovieCollection(tmdbId: number, lang?: string): Promise<{ id: number; name: string; poster_path: string | null } | null> {
+  const l = normalizeLang(lang);
+  return cachedRequest(`movie-collection:${tmdbId}:${l}`, async () => {
+    const { data } = await getTmdbApi(l).get(`/movie/${tmdbId}`);
+    return data.belongs_to_collection ?? null;
+  }, 168);
 }
 
 export async function getCollection(collectionId: number, lang?: string): Promise<TmdbCollection> {

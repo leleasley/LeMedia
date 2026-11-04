@@ -13,7 +13,7 @@ const MAX_TAKE = 200;
  * Overseerr user (so it can attribute the request to the right person). Mobile clients use
  * /user/:id/quota to decide whether to grey out the request button before submitting.
  *
- * Quota responses report unlimited — Oscarr's quota enforcement lives in the optional
+ * Quota responses report unlimited — LeMedia's quota enforcement lives in the optional
  * `plugin-quotas` plugin, which will own its own /quota response shape once it's wired in.
  */
 export async function userRoutes(app: FastifyInstance) {
@@ -103,7 +103,7 @@ export async function userRoutes(app: FastifyInstance) {
 function orderByForSort(sort: string | undefined): Record<string, 'asc' | 'desc'> {
   switch (sort) {
     case 'updated': return { updatedAt: 'desc' };
-    case 'requests': return { id: 'desc' }; // Oscarr can't sort by requestCount cheaply; fall back to id
+    case 'requests': return { id: 'desc' }; // LeMedia can't sort by requestCount cheaply; fall back to id
     case 'displayname': return { displayName: 'asc' };
     default: return { id: 'asc' };
   }

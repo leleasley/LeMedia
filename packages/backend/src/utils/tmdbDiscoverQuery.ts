@@ -13,6 +13,8 @@ export interface DiscoverQuery {
   language?: string;
   keywords?: string;
   region?: string;
+  watchProviders?: number[];
+  watchRegion?: string;
 }
 
 /** Return [gteField, lteField] for the given media type. */
@@ -59,6 +61,11 @@ export function buildDiscoverParams(query: DiscoverQuery): URLSearchParams {
   if (query.language) params.set('with_original_language', query.language);
   if (query.keywords) params.set('with_keywords', query.keywords);
   if (query.region) params.set('region', query.region);
+  if (query.watchProviders?.length) {
+    params.set('with_watch_providers', query.watchProviders.join('|'));
+    // watch_region defaults to the instance country so "Netflix" means "on Netflix here".
+    params.set('watch_region', query.watchRegion || 'GB');
+  }
 
   return params;
 }

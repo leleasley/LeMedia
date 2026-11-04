@@ -67,10 +67,10 @@ export async function paginate<T>(
     if (rows.length < limits.pageSize) return out;
 
     if (out.length >= limits.maxRows) {
-      throw new Error(`Seerr ${label} returned more than ${limits.maxRows} rows — refusing to keep paging`);
+      throw new Error(`Seerr ${label} returned more than ${limits.maxRows} rows, refusing to keep paging`);
     }
     skip += limits.pageSize;
   }
 
-  throw new Error(`Seerr ${label} returned more than ${limits.maxPages} pages — refusing to keep paging`);
+  throw new Error(`Seerr ${label} returned more than ${limits.maxPages} pages, refusing to keep paging`);
 }

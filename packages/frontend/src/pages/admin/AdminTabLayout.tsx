@@ -14,15 +14,17 @@ export function AdminTabLayout({ title, count, actions, children }: Readonly<Adm
   return (
     <div className="space-y-6">
       {showHeader && (
-        <div className="flex items-center justify-between min-h-[40px]">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 min-h-[40px]">
+          {/* On desktop the admin page header already names the page; keep only the count. */}
           {title ? (
-            <h2 className="text-lg font-semibold text-ndp-text">
+            <h2 className="font-display-title text-3xl text-ndp-text min-w-0 md:hidden">
               {title}{count !== undefined && ` (${count})`}
             </h2>
-          ) : (
-            <div />
+          ) : null}
+          {title && count !== undefined && (
+            <p className="hidden md:block text-sm text-ndp-text-muted tabular-nums">{count}</p>
           )}
-          {actions && <div className="flex items-center gap-2">{actions}</div>}
+          {actions && <div className="flex flex-wrap items-center gap-2 ml-auto">{actions}</div>}
         </div>
       )}
       <div className="animate-fade-in pb-20">

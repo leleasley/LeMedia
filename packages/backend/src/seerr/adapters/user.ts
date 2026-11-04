@@ -2,7 +2,7 @@ import type { User, UserProvider } from '@prisma/client';
 
 /**
  * Overseerr Permission bit flags. We only emit the few bits Seerr clients actually gate
- * features on (mostly ADMIN); the rest stay 0 because Oscarr's permission model is role-based,
+ * features on (mostly ADMIN); the rest stay 0 because LeMedia's permission model is role-based,
  * not per-flag.
  *
  * Source: github.com/sct/overseerr/src/server/lib/permissions.ts
@@ -19,7 +19,7 @@ const SEERR_PERMISSION = {
  * Overseerr `userType`:
  *   1 = Plex (federated)
  *   2 = Local (email/password)
- * We map Oscarr's primary linked provider — falling back to LOCAL when the user signed up via
+ * We map LeMedia's primary linked provider — falling back to LOCAL when the user signed up via
  * email or has no provider link, since clients otherwise refuse to render the avatar/menu.
  */
 const SEERR_USER_TYPE = { PLEX: 1, LOCAL: 2 } as const;
@@ -66,7 +66,7 @@ export function buildSeerrUser({ user, requestCount }: AdaptUserInput): SeerrUse
   const userType = plexLink ? SEERR_USER_TYPE.PLEX : SEERR_USER_TYPE.LOCAL;
 
   // Admin gets ADMIN | MANAGE_REQUESTS | REQUEST | AUTO_APPROVE; non-admin gets REQUEST only.
-  // Oscarr's per-role permission system is more granular but most third-party clients only
+  // LeMedia's per-role permission system is more granular but most third-party clients only
   // branch on ADMIN vs not, so this approximation is close enough for v0.9.0.
   const permissions = isAdmin
     ? SEERR_PERMISSION.ADMIN | SEERR_PERMISSION.MANAGE_REQUESTS | SEERR_PERMISSION.REQUEST | SEERR_PERMISSION.AUTO_APPROVE
@@ -81,7 +81,7 @@ export function buildSeerrUser({ user, requestCount }: AdaptUserInput): SeerrUse
     userType,
     permissions,
     avatar: user.avatar ?? '',
-    // Oscarr quotas live in the optional `plugin-quotas` plugin — we report no limit here so
+    // LeMedia quotas live in the optional `plugin-quotas` plugin — we report no limit here so
     // clients don't pre-emptively block requests. The plugin will own its own enforcement.
     movieQuotaLimit: null,
     movieQuotaDays: null,

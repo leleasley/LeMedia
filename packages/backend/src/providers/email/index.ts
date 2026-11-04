@@ -21,7 +21,9 @@ interface AuthResult {
 export async function registerEmail(email: string, password: string, displayName: string): Promise<AuthResult> {
   const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
   if (existing) throw new Error('EMAIL_EXISTS');
-  if (password.length < 8) throw new Error('PASSWORD_TOO_SHORT');
+  const { validatePasswordStrength } = await import('../../utils/passwordStrength.js');
+  const strength = validatePasswordStrength(password);
+  if (!strength.valid) throw new Error(strength.reason ?? 'PASSWORD_WEAK');
   if (!displayName.trim()) throw new Error('DISPLAY_NAME_REQUIRED');
 
   const passwordHash = await hashPassword(password);
@@ -60,7 +62,7 @@ const emailAuth: AuthProvider = {
         label: 'Allow new account creation',
         type: 'boolean',
         default: false,
-        help: 'Lets anyone submit the email register form and land an Oscarr account.',
+        help: 'Lets anyone submit the email register form and create a LeMedia account.',
       },
     ],
   },

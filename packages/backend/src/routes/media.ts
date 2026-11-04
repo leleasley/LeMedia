@@ -1,16 +1,17 @@
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '../utils/prisma.js';
-import { getNsfwKeywordIds, invalidateNsfwKeywordIds } from '../utils/nsfwKeywords.js';
-import { getArrClientForMedia } from '../providers/index.js';
+import { getArrClientForMedia, getServiceTypeForMedia } from '../providers/index.js';
 import { parseId, parsePage, VALID_MEDIA_TYPES } from '../utils/params.js';
 import { isMatureRating } from '../services/tmdb.js';
 import { normalizeLanguages } from '../utils/languages.js';
 import { performLiveCheckWithTimeout, cacheLanguageData, refreshMediaCategory, canSkipLiveCheck } from '../services/mediaService.js';
-import { COMPLETABLE_REQUEST_STATUSES } from '@oscarr/shared';
-import type { Availability } from '@oscarr/shared';
+import { COMPLETABLE_REQUEST_STATUSES } from '@lemedia/shared';
+import type { Availability } from '@lemedia/shared';
 import { buildAvailability, loadBlacklistedKeys, loadLibraryGate, loadFreeQualityMediaIds, loadSatisfiedQualityOptions, gateCategory, recentLibraryFilter } from '../services/availability.js';
 import { mediaKey } from '../utils/mediaKey.js';
 import { seriesCatalogRoutes } from './seriesCatalog.js';
+
+
 
 /** Normalize lastEpisodeInfo — handles both old (raw Sonarr) and new (normalized) formats */
 function parseEpisodeInfo(raw: string): { season: number; episode: number; title: string } | null {
@@ -24,6 +25,57 @@ function parseEpisodeInfo(raw: string): { season: number; episode: number; title
 }
 
 export async function mediaRoutes(app: FastifyInstance) {
+  // DELETE /media/:tmdbId — delete media from Radarr/Sonarr and/or LeMedia
+  app.delete<{ Params: { tmdbId: string }; Querystring: { deleteFromService?: string; deleteFiles?: string } }>(
+    '/:tmdbId',
+    {
+      schema: {
+        params: { type: 'object', required: ['tmdbId'], properties: { tmdbId: { type: 'string' } } },
+        querystring: {
+          type: 'object',
+          properties: {
+            deleteFromService: { type: 'string', enum: ['true', 'false'], default: 'true' },
+            deleteFiles: { type: 'string', enum: ['true', 'false'], default: 'true' },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const tmdbId = Number(request.params.tmdbId);
+      if (!Number.isFinite(tmdbId) || tmdbId <= 0) return reply.status(400).send({ error: 'Invalid TMDB ID' });
+
+      const media = await prisma.media.findFirst({ where: { tmdbId } });
+      if (!media) return reply.status(404).send({ error: 'Media not found' });
+
+      const doDeleteFromService = request.query.deleteFromService !== 'false';
+      const doDeleteFiles = request.query.deleteFiles !== 'false';
+
+      // Delete from Radarr/Sonarr if requested and *arr ID exists
+      if (doDeleteFromService) {
+        const serviceMediaId = media.mediaType === 'movie' ? media.radarrId : media.sonarrId;
+        if (serviceMediaId) {
+          try {
+            // Resolve radarr/sonarr from the media type and await the client — passing the media
+            // type and skipping the await meant this always threw and nothing was removed.
+            const client = await getArrClientForMedia(getServiceTypeForMedia(media.mediaType), media.serviceId);
+            await client.deleteMedia(serviceMediaId, doDeleteFiles);
+          } catch (err) {
+            const { logEvent } = await import('../utils/logEvent.js');
+            logEvent('warn', 'Media', `Failed to delete from ${media.mediaType === 'movie' ? 'Radarr' : 'Sonarr'}: ${err}`);
+          }
+        }
+      }
+
+      // Delete from LeMedia
+      await prisma.season.deleteMany({ where: { mediaId: media.id } });
+      await prisma.mediaRequest.deleteMany({ where: { mediaId: media.id } });
+      await prisma.media.delete({ where: { id: media.id } });
+
+      return { ok: true };
+    },
+  );
+
+
   await app.register(seriesCatalogRoutes);
   app.get('/', {
     schema: {
@@ -152,6 +204,14 @@ export async function mediaRoutes(app: FastifyInstance) {
   });
 
   // Recently added media (from Radarr/Sonarr sync)
+  // Homepage "Missing movies / episodes" rows — any signed-in user (was admin-only, which made
+  // every non-admin home load end in a 403 "access denied" toast).
+  app.get('/missing', async (request) => {
+    const { type } = request.query as { type?: string };
+    const { getMissingWanted } = await import('./admin/homepage.js');
+    return getMissingWanted(type);
+  });
+
   app.get('/recent', {
     schema: {
       querystring: {
@@ -334,10 +394,13 @@ export async function mediaRoutes(app: FastifyInstance) {
       if (isMatureRating(m.contentRating)) nsfwIds.add(m.tmdbId);
     }
 
-    const nsfwKeywordIds = await getNsfwKeywordIds();
-    if (nsfwKeywordIds.size > 0) {
+    const nsfwKeywords = await prisma.keyword.findMany({
+      where: { tag: 'nsfw' },
+      select: { tmdbId: true },
+    });
+    if (nsfwKeywords.length > 0) {
       // Integer IDs from a trusted DB column — safe to interpolate.
-      const idList = [...nsfwKeywordIds].join(',');
+      const idList = nsfwKeywords.map((k) => k.tmdbId).join(',');
       const matching = await prisma.$queryRawUnsafe<{ tmdbId: number }[]>(
         `SELECT DISTINCT m.tmdbId
          FROM Media m, json_each(m.keywordIds)
@@ -366,7 +429,6 @@ function setNsfwIdsCache(data: number[]): void {
 }
 
 export function invalidateNsfwIdsCache(): void {
-  invalidateNsfwKeywordIds();
   nsfwIdsCache = null;
 }
 
@@ -389,7 +451,7 @@ function parseLanguages(raw: string | null | undefined): string[] | null {
   return raw ? JSON.parse(raw) as string[] : null;
 }
 
-/** Media Oscarr has never tracked: the *arr may still hold it, so report what the live check saw. */
+/** Media LeMedia has never tracked: the *arr may still hold it, so report what the live check saw. */
 function buildUntrackedResponse(live: LiveCheck): Record<string, unknown> {
   const result: Record<string, unknown> = { exists: false };
   if (live.liveAvailable) {

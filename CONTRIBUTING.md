@@ -1,13 +1,12 @@
-# Contributing to Oscarr
+# Contributing to LeMedia
 
 Thanks for wanting to help! This guide covers how to propose a change, what's expected of a PR, and the patterns the codebase relies on.
 
-If you're just looking for the list of people who've worked on Oscarr, see [CONTRIBUTORS.md](./CONTRIBUTORS.md).
 
 ## Before you start
 
 - **Issue first for anything non-trivial.** Bug reports, feature requests, architecture questions — open an issue and discuss before writing code. We'd rather align on approach early than have a PR revert at review time.
-- **Check existing patterns.** Oscarr leans heavily on a few conventions (provider registry, plugin capability system, `ALL_PROVIDERS` registry, `useModal` hook, `toastApiError`…). Follow the pattern already in the code for the area you touch — don't invent a new one.
+- **Check existing patterns.** LeMedia leans heavily on a few conventions (provider registry, plugin capability system, `ALL_PROVIDERS` registry, `useModal` hook, `toastApiError`…). Follow the pattern already in the code for the area you touch — don't invent a new one.
 - **Respect the plugin / core split.** Core stays generic. Provider-specific logic (Plex, Jellyfin, Emby, Discord…) lives under `packages/backend/src/providers/<id>/`. Plugins are self-contained under `packages/plugins/<id>/`. If you catch yourself adding a provider-specific method to `PluginContext`, stop and rework.
 
 ## Using AI
@@ -67,7 +66,7 @@ npm run dev
 
 ## Testing
 
-Oscarr's test suite is nascent. If you're touching a pure function — capability gates, SSRF guards, request-status transitions — land a unit test with the change. Integration tests against the running app are appreciated for any flow that touches the DB.
+LeMedia's test suite is nascent. If you're touching a pure function — capability gates, SSRF guards, request-status transitions — land a unit test with the change. Integration tests against the running app are appreciated for any flow that touches the DB.
 
 ## Migrations
 
@@ -83,4 +82,4 @@ Oscarr's test suite is nascent. If you're touching a pure function — capabilit
 
 ## Questions
 
-Open an issue or hop on the [Discord](https://discord.gg/BKMaWhVCRr).
+Open an issue on GitHub.

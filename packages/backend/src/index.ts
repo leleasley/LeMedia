@@ -4,10 +4,13 @@ import { assertJwtSecretOrExit, assertSetupSecretOrExit } from './utils/envSecre
 loadMasterKeyOrExit();
 assertJwtSecretOrExit();
 import Fastify from 'fastify';
+import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 import { prisma } from './utils/prisma.js';
-import { runMigrateDeploy } from './utils/prismaMigrate.js';
-import { resolveTrustProxy } from './utils/trustProxy.js';
+import { BACKEND_ROOT } from './utils/paths.js';
 import { isInstalled, loadInstallState } from './utils/install.js';
+import { resolveTrustProxy } from './utils/trustProxy.js';
 import { logEvent } from './utils/logEvent.js';
 import { registerSecurity } from './bootstrap/security.js';
 import { registerDocs } from './bootstrap/docs.js';
@@ -16,9 +19,9 @@ import { registerPlugins } from './bootstrap/plugins.js';
 import { registerStatic } from './bootstrap/static.js';
 import { initNotifications, startScheduler } from './bootstrap/jobs.js';
 import { refreshVerboseRequestLogFlag, registerVerboseRequestLog } from './utils/verboseRequestLog.js';
-import { runLegacySupportExport } from './services/supportLegacyExport.js';
 import { adoptLegacyEmailProviderConfig } from './services/mailer.js';
 import { encryptSecretsAtRest } from './services/secretsMigration.js';
+import { startZurgWatcher } from './services/zurg/watcher.js';
 
 // Process-level guards: log the error to AppLog (so an admin can share it from the Logs tab)
 // then exit hard — a process that's already thrown an unhandled exception is in undefined state
@@ -34,15 +37,11 @@ process.on('unhandledRejection', (reason) => {
   exitAfterLog('UnhandledRejection', reason instanceof Error ? reason : new Error(String(reason)));
 });
 
-const trustProxy = resolveTrustProxy(process.env.TRUST_PROXY);
-if (trustProxy === false && process.env.NODE_ENV === 'production' && !process.env.TRUST_PROXY) {
-  process.stderr.write(
-    '[TRUST_PROXY] Not set — X-Forwarded-* headers are ignored and rate limits key on the direct\n'
-    + '              peer address. Correct when Oscarr is exposed directly. Behind a reverse proxy,\n'
-    + '              set TRUST_PROXY to the proxy IP/CIDR (e.g. TRUST_PROXY=172.18.0.0/16) so client\n'
-    + '              IPs are read correctly.\n',
-  );
-}
+// Default on — set TRUST_PROXY=false only when exposed directly (no reverse proxy).
+// Resolved through the validator so a malformed value can't crash Fastify at construction
+// (a silent restart loop under restart: unless-stopped) — it falls back to trusting nothing
+// with a warning instead. LeMedia runs behind the hawser proxy, so unset stays trust-all.
+const trustProxy = resolveTrustProxy(process.env.TRUST_PROXY ?? 'true');
 const app = Fastify({
   logger: {
     redact: {
@@ -66,17 +65,25 @@ const app = Fastify({
   trustProxy,
 });
 
-/** Always apply pending Prisma migrations at boot, then drop the connection the CLI raced with. */
+/** Always apply pending Prisma migrations at boot. Idempotent — zero-ops when the DB is
+ *  already current. Resolves the prisma CLI via Node's module resolution so it works both in
+ *  dev (npm workspaces hoist to <root>/node_modules) and in the prod image (deps live under
+ *  packages/backend/node_modules) — without depending on `npx`. */
 async function ensureMigrated() {
-  runMigrateDeploy();
+  const requireFn = createRequire(import.meta.url);
+  const pkgPath = requireFn.resolve('prisma/package.json');
+  const pkg = requireFn('prisma/package.json') as { bin: Record<string, string> };
+  const prismaCli = join(dirname(pkgPath), pkg.bin.prisma);
+  execFileSync(process.execPath, [prismaCli, 'migrate', 'deploy'], {
+    cwd: BACKEND_ROOT,
+    stdio: 'inherit',
+  });
   await prisma.$disconnect();
 }
 
 async function start() {
   loadInstallState();
   assertSetupSecretOrExit(isInstalled());
-  // Export legacy SupportTicket/TicketMessage rows before the drop migration removes them.
-  runLegacySupportExport();
   await ensureMigrated();
   // Runs after migrations so MailConfig exists, and before routes so the admin panel never
   // shows the pre-0.8.9 split configuration.
@@ -95,9 +102,11 @@ async function start() {
   const port = Number.parseInt(process.env.PORT || '3001', 10);
   if (Number.isNaN(port)) throw new Error('PORT environment variable must be a valid number');
   await app.listen({ port, host: process.env.HOST || '0.0.0.0' });
-  app.log.info({ port }, 'Oscarr API listening');
+  app.log.info({ port }, 'LeMedia API listening');
 
   await startScheduler();
+  // Zurg availability watcher — no-op until a Zurg service is configured.
+  startZurgWatcher();
 }
 
 start().catch((err) => {

@@ -6,7 +6,7 @@ import { logEvent } from '../src/utils/logEvent.js';
 
 // Exercise the real provider and dispatch path. Only the upstream HTTP boundary is replaced.
 const network = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn() }));
-vi.mock('axios', () => ({ default: { create: ({ baseURL }: { baseURL: string }) => ({
+vi.mock('axios', () => ({ default: { isAxiosError: (err: unknown) => !!(err as { isAxiosError?: boolean })?.isAxiosError, create: ({ baseURL }: { baseURL: string }) => ({
   get: (path: string, options?: unknown) => network.get(baseURL, path, options),
   post: (path: string, body?: unknown) => network.post(baseURL, path, body),
   put: (path: string, body?: unknown) => network.put(baseURL, path, body),
@@ -147,7 +147,7 @@ describe('Sonarr identity resolution for requests (issue #237)', () => {
 
   it('preserves a known TVDB mapping and continues dispatch while TMDB external IDs remain empty', async () => {
     const media = await prisma.media.create({ data: { tmdbId, tvdbId, mediaType: 'tv', title: 'Minimum Security' } });
-    expect(await sendToService(media, 'tv', 'Requester', requesterId)).toBe(true);
+    expect(await sendToService(media, 'tv', 'Requester', requesterId)).toBe('sent');
     expect(await storedMedia()).toMatchObject({ tmdbId, tvdbId, serviceId: targetId });
     expect(network.post).toHaveBeenCalledWith(targetUrl, '/series', expect.objectContaining({ tvdbId }));
     expect(network.get.mock.calls.some(([baseURL]) => baseURL === ignoredUrl)).toBe(false);

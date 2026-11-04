@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="LeMedia">
+  <!-- LeMedia "Coral TV" logo. The source of truth for every icon: run render-icons.py after editing. -->
+  <defs>
+    <linearGradient id="coral" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff8a70"/><stop offset=".55" stop-color="#f25f4c"/><stop offset="1" stop-color="#cf4532"/>
+    </linearGradient>
+    <radialGradient id="screen" cx=".5" cy=".42" r=".75">
+      <stop offset="0" stop-color="#22222a"/><stop offset="1" stop-color="#0b0b0f"/>
+    </radialGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity=".18"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <g stroke="url(#coral)" stroke-width="14" stroke-linecap="round" fill="none"><path d="M256 122L192 62M256 122L320 62"/></g>
+  <circle cx="190" cy="58" r="15" fill="url(#coral)"/>
+  <circle cx="322" cy="58" r="15" fill="url(#coral)"/>
+  <path d="M216 132a40 30 0 0 1 80 0z" fill="url(#coral)"/>
+  <rect x="52" y="128" width="408" height="312" rx="76" fill="url(#coral)"/>
+  <rect x="52" y="128" width="408" height="312" rx="76" fill="url(#shine)"/>
+  <rect x="92" y="166" width="328" height="236" rx="48" fill="url(#screen)"/>
+  <g fill="#f4f1ec" transform="translate(-10 10)">
+    <path d="M150 206h36v104h58v36h-94z"/>
+    <path d="M258 346V206h36l26 58 26-58h36v140h-34v-74l-20 44h-16l-20-44v74z"/>
+  </g>
+</svg>

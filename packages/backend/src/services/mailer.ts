@@ -2,8 +2,8 @@ import nodemailer from 'nodemailer';
 import { Resend } from 'resend';
 import { prisma } from '../utils/prisma.js';
 import { encryptServiceConfig, decryptServiceConfig } from '../utils/secrets.js';
-import { logEvent } from '../utils/logEvent.js';
 import { parseNotificationSettings, serializeNotificationSettings } from '../notifications/providerConfig.js';
+import { logEvent } from '../utils/logEvent.js';
 
 /**
  * Transactional mail. Distinct from the notification providers on purpose: those broadcast to one
@@ -28,7 +28,7 @@ export interface MailConfig {
   password: string;
   /** Resend */
   apiKey: string;
-  /** Both. "Oscarr <no-reply@example.com>" or a bare address. */
+  /** Both. "LeMedia <no-reply@example.com>" or a bare address. */
   fromEmail: string;
   /** True when the values above came from the environment and the panel cannot change them. */
   fromEnv: boolean;
@@ -110,7 +110,7 @@ export async function getMailConfig(): Promise<MailConfig> {
   try {
     raw = decryptServiceConfig(JSON.parse(row.config) as Record<string, string>);
   } catch (err) {
-    // An undecryptable blob (rotated OSCARR_SECRET_KEY) must disable mail, not send with blanks.
+    // An undecryptable blob (rotated LEMEDIA_SECRET_KEY) must disable mail, not send with blanks.
     logEvent('warn', 'Mail', `Mail config unreadable, transport disabled: ${(err as Error).message}`);
     return EMPTY;
   }
@@ -210,7 +210,7 @@ export async function adoptLegacyEmailProviderConfig(): Promise<void> {
     try {
       const raw = decryptServiceConfig(JSON.parse(existing.config) as Record<string, string>);
       alreadyConfigured = Boolean(raw.apiKey || raw.host);
-    } catch { /* unreadable blob — treat as unconfigured and let the legacy values seed it */ }
+    } catch { /* unreadable blob, treat as unconfigured and let the legacy values seed it */ }
   }
 
   // Never clobber a transport the admin already set up here; just clear the stale plaintext.
@@ -232,7 +232,7 @@ export async function adoptLegacyEmailProviderConfig(): Promise<void> {
   });
   logEvent('info', 'Mail', alreadyConfigured
     ? 'Removed the legacy plaintext Resend credential from the email notification provider'
-    : 'Adopted the legacy Resend credential into the shared mail transport (left disabled — review it in Admin → System → Mail)');
+    : 'Adopted the legacy Resend credential into the shared mail transport (left disabled, review it in Admin → System → Mail)');
 }
 
 function withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
@@ -244,7 +244,21 @@ function withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
   ]);
 }
 
+/** Bare address out of a possibly display-named From value (`Name <addr>` → `addr`). */
+function bareAddress(from: string): string {
+  const m = /<([^>]+)>/.exec(from);
+  return (m ? m[1] : from).trim();
+}
+
 async function deliver(config: MailConfig, message: MailMessage): Promise<void> {
+  // Transactional mail still benefits from a Reply-To (replies go to the admin, not a
+  // no-reply black hole) and a List-Unsubscribe (Gmail bulk-sender friction, spam complaints).
+  // Both derive from the configured From address — no new settings surface.
+  const replyTo = bareAddress(config.fromEmail);
+  const extraHeaders = {
+    'Reply-To': replyTo,
+    'List-Unsubscribe': `<mailto:${replyTo}>`,
+  };
   if (config.transport === 'resend') {
     const resend = new Resend(config.apiKey);
     const { error } = await withTimeout(
@@ -254,6 +268,7 @@ async function deliver(config: MailConfig, message: MailMessage): Promise<void> 
         subject: message.subject,
         html: message.html,
         text: message.text,
+        headers: extraHeaders,
       }),
       'Resend send',
     );
@@ -279,6 +294,7 @@ async function deliver(config: MailConfig, message: MailMessage): Promise<void> 
       subject: message.subject,
       html: message.html,
       text: message.text,
+      headers: extraHeaders,
     }), 'SMTP send');
   } finally {
     transporter.close();
@@ -296,10 +312,23 @@ export async function sendMail(message: MailMessage): Promise<void> {
 /** Admin "test" button. Uses the submitted config so the admin can verify before saving. */
 export async function testMailConfig(config: MailConfig, to: string): Promise<void> {
   if (!isConfigured(config)) throw new Error('Mail transport is not configured');
+  const { getAppSettings } = await import('../utils/appSettings.js');
+  const settings = await getAppSettings().catch(() => null);
+  const siteName = settings?.siteName || 'LeMedia';
+  const siteUrl = settings?.siteUrl ?? null;
+  const { buildEmailHtml } = await import('./emailLayout.js');
+  const html = buildEmailHtml({
+    siteName,
+    siteUrl,
+    title: 'It works',
+    preheader: `${siteName} can send mail`,
+    bodyHtml: `<p style="margin:0">${siteName} can send mail with this configuration.</p>`,
+    footerNote: 'If you received this, your mail transport is correctly configured.',
+  });
   await deliver(config, {
     to,
-    subject: '[Oscarr] Test email',
-    html: '<h2>It works</h2><p>Oscarr can send mail with this configuration.</p>',
-    text: 'It works. Oscarr can send mail with this configuration.',
+    subject: `[${siteName}] Test email`,
+    html,
+    text: `It works. ${siteName} can send mail with this configuration.`,
   });
 }

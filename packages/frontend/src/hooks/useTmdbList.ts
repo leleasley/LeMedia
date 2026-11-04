@@ -37,10 +37,39 @@ export function useTmdbList<T = any>(
       const res = await api.get(endpoint, { signal });
       if (signal?.aborted) return;
       const raw = res.data;
-      const items = optionsRef.current.transform
-        ? optionsRef.current.transform(raw)
-        : Array.isArray(raw) ? raw : raw.results || raw.cast || [];
-      setData(items);
+      // Defensive: a proxy/Cloudflare error page arrives as an HTML string — never pass it to
+      // a transform that expects {results, total_results}. Guard so a bad response can never
+      // crash a row (r.map is not a function) or leak characters into image URLs.
+      if (optionsRef.current.transform) {
+        // When a transform is provided, let it handle the data shape — the endpoint may
+        // return an array (e.g. /media/recent) or an object with .results. Only block
+        // obviously invalid responses (null, undefined, HTML strings).
+        if (!raw || (typeof raw !== 'object' && typeof raw !== 'string')) {
+          setData([]);
+          loadedRequest.current = requestKey;
+          return;
+        }
+        // Guard against HTML error pages from Cloudflare/proxy
+        if (typeof raw === 'string' && raw.trimStart().startsWith('<')) {
+          setData([]);
+          loadedRequest.current = requestKey;
+          return;
+        }
+        try {
+          const out = optionsRef.current.transform(raw);
+          setData((Array.isArray(out) ? out : []) as T[]);
+        } catch {
+          setData([] as T[]);
+        }
+        loadedRequest.current = requestKey;
+        return;
+      }
+      const base: unknown[] = Array.isArray(raw)
+        ? raw
+        : raw && typeof raw === 'object'
+          ? ((raw as Record<string, unknown>).results as unknown[] || (raw as Record<string, unknown>).cast as unknown[] || [])
+          : [];
+      setData((Array.isArray(base) ? base : []) as T[]);
       loadedRequest.current = requestKey;
     } catch (err: any) {
       if (err.name === 'CanceledError' || signal?.aborted) return;

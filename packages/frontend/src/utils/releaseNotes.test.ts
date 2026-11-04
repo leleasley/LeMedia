@@ -64,12 +64,12 @@ describe('parseReleaseNote', () => {
   });
 
   it('marks bold and code spans inside a paragraph', () => {
-    expect(parseReleaseNote('Set **OSCARR_SECRET_KEY** with `openssl`.')).toEqual([
+    expect(parseReleaseNote('Set **LEMEDIA_SECRET_KEY** with `openssl`.')).toEqual([
       {
         kind: 'paragraph',
         spans: [
           { text: 'Set ' },
-          { text: 'OSCARR_SECRET_KEY', bold: true },
+          { text: 'LEMEDIA_SECRET_KEY', bold: true },
           { text: ' with ' },
           { text: 'openssl', code: true },
           { text: '.' },

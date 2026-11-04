@@ -3,11 +3,11 @@ import { mkdir } from 'node:fs/promises';
 import { BACKEND_PRISMA_DIR } from './paths.js';
 
 function getDbPath(): string {
-  const url = process.env.DATABASE_URL || 'file:../data/oscarr.db';
+  const url = process.env.DATABASE_URL || 'file:../data/lemedia.db';
   const relativePath = url.replace('file:', '');
   // Prisma resolves `file:` URLs relative to the schema's directory (where schema.prisma
-  // lives), not the package root. The default `file:../data/oscarr.db` therefore lands at
-  // packages/backend/data/oscarr.db — anchoring on BACKEND_PRISMA_DIR matches that exactly.
+  // lives), not the package root. The default `file:../data/lemedia.db` therefore lands at
+  // packages/backend/data/lemedia.db — anchoring on BACKEND_PRISMA_DIR matches that exactly.
   return resolve(BACKEND_PRISMA_DIR, relativePath);
 }
 

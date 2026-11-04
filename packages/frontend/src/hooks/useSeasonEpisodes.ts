@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { TmdbSeasonDetails, SeriesEpisodes, SeriesCatalog } from '@oscarr/shared';
+import type { TmdbSeasonDetails, SeriesEpisodes, SeriesCatalog } from '@lemedia/shared';
 import api from '@/lib/api';
 import type { EpisodeInfo } from '@/utils/episodeStatus';
 import { selectSeasonEpisodes } from '@/utils/seasonEpisodes';

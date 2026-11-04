@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import { avatarSrc } from '@/utils/avatarSrc';
 import { useTranslation } from 'react-i18next';
-import { Settings } from 'lucide-react';
+import { Settings, UserRound } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useAuth } from '@/context/AuthContext';
 import AccountModal from '@/components/account/AccountModal';
@@ -10,28 +11,41 @@ interface UserClusterProps {
   viewAsRole: string | null;
   onViewAsRoleChange: (role: string | null) => void;
   variant?: 'compact' | 'expanded';
+  onOpen?: () => void;
 }
 
 export function UserCluster({
   viewAsRole,
   onViewAsRoleChange,
   variant = 'compact',
+  onOpen,
 }: UserClusterProps) {
   const { t } = useTranslation();
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
+  const [avatarFailed, setAvatarFailed] = useState(false);
 
-  const tooltipLabel = user?.displayName || user?.email || t('nav.account', 'Account');
+  // Some existing Google-linked accounts have no LeMedia display name yet. Use the linked
+  // provider's profile name before falling back to a literal question mark.
+  const accountName = user?.displayName || user?.providers?.find((p) => p.provider === 'google')?.username || user?.email || '';
+  const tooltipLabel = accountName || t('nav.account', 'Account');
+  const providerAvatar = user?.avatarSource === 'none' || user?.avatarSource === 'dicebear'
+    ? null
+    : user?.providers?.find((p) => p.provider === user?.avatarSource)?.avatar
+      || (!user?.avatarSource ? user?.providers?.find((p) => p.provider === 'google')?.avatar : null);
+  const avatarUrl = user?.avatar || providerAvatar;
 
-  const avatarEl = user?.avatar ? (
+  const avatarEl = avatarUrl && !avatarFailed ? (
     <img
-      src={user.avatar}
-      alt={user.displayName || ''}
+      src={avatarSrc(avatarUrl)}
+      alt={accountName}
+      referrerPolicy="no-referrer"
+      onError={() => setAvatarFailed(true)}
       className="w-8 h-8 rounded-full ring-2 ring-white/10 flex-shrink-0 object-cover"
     />
   ) : (
     <div className="w-8 h-8 rounded-full bg-ndp-accent/20 flex items-center justify-center text-ndp-accent text-sm font-bold flex-shrink-0">
-      {(user?.displayName || user?.email || '?')[0].toUpperCase()}
+      {accountName ? accountName[0].toUpperCase() : <UserRound className="w-4 h-4" aria-hidden="true" />}
     </div>
   );
 
@@ -40,7 +54,7 @@ export function UserCluster({
       <Tooltip label={tooltipLabel} disabled={open || variant === 'expanded'}>
         <button
           type="button"
-          onClick={() => setOpen(true)}
+          onClick={() => { onOpen?.(); setOpen(true); }}
           aria-haspopup="dialog"
           aria-expanded={open}
           className={clsx(
@@ -52,7 +66,7 @@ export function UserCluster({
           {variant === 'expanded' && (
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-ndp-text truncate">
-                {user?.displayName || user?.email}
+                {accountName || t('nav.account', 'Account')}
               </p>
               {user?.role && (
                 <p className="text-xs text-ndp-text-dim truncate capitalize">{user.role}</p>

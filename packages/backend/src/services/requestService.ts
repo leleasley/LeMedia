@@ -9,11 +9,14 @@ import { resolveServiceContext, type ServiceContext } from './requestRouting.js'
 export { resolveServiceContext } from './requestRouting.js';
 import { logEvent } from '../utils/logEvent.js';
 import { VALID_MEDIA_TYPES } from '../utils/params.js';
-import { ACTIVE_REQUEST_STATUSES, COMPLETABLE_REQUEST_STATUSES } from '@oscarr/shared';
-import type { RequestStatusKind } from '@oscarr/shared';
+import { ACTIVE_REQUEST_STATUSES, COMPLETABLE_REQUEST_STATUSES } from '@lemedia/shared';
+import type { RequestStatusKind } from '@lemedia/shared';
 import { safeNotify, safeUserNotify, buildSiteLink } from '../utils/safeNotify.js';
+import { pluginEngine } from '../plugins/engine.js';
+import type { ArrClient } from '../providers/types.js';
 import { transitionRequestStatus } from './requestStatusTransition.js';
 import { Prisma } from '@prisma/client';
+import axios from 'axios';
 import { trimTrailingSlashes } from '../utils/trimTrailingSlashes.js';
 import { checkRequestGuard, resolveRequestApproval, validateRequestCriteria } from './requestCreationPolicy.js';
 import { validateSeasonSelection } from './seriesCatalog.js';
@@ -22,6 +25,12 @@ import { resolveSeriesIdentity } from './mediaIdentity.js';
 // ---------------------------------------------------------------------------
 // Validation
 // ---------------------------------------------------------------------------
+
+/** Write transactions queue behind SQLite's single writer (connection_limit=1). Prisma's
+ *  defaults (maxWait 2s / timeout 5s) are too tight for a burst of requests: the queue is serviced
+ *  fine, but a slow head-of-line transaction would surface as a P1008 500. Give it real headroom
+ *  so a burst waits instead of failing. */
+const WRITE_TX = { maxWait: 10_000, timeout: 15_000 } as const;
 
 export function validateRequestBody(body: { tmdbId: unknown; mediaType: unknown; seasons?: unknown }): {
   valid: true; tmdbId: number; mediaType: 'movie' | 'tv'; seasons: number[] | undefined;
@@ -108,7 +117,7 @@ export async function findOrCreateMedia(tmdbId: number, mediaType: 'movie' | 'tv
     }
 
     return created;
-  }).catch(async (err) => {
+  }, WRITE_TX).catch(async (err) => {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
       const winner = await prisma.media.findUnique({ where: { tmdbId_mediaType: { tmdbId, mediaType } } });
       if (winner) return winner;
@@ -175,6 +184,52 @@ async function resolveRootFolder(
 /** Exported for tests only — sendToArrService is the sole production caller. */
 export const resolveRootFolderForTest = resolveRootFolder;
 
+/** Radarr/Sonarr reject an add with a path-validator 400 when the computed folder is
+ *  already taken by another entry — typically a TMDB duplicate (same film under two ids)
+ *  added outside LeMedia, so the external-id lookup missed it. Carries the occupant so the
+ *  caller can adopt it (same id) or explain the conflict (different id) instead of logging
+ *  a raw 500-char validation blob. */
+export class ArrPathConflictError extends Error {
+  constructor(
+    public readonly occupantTitle: string,
+    public readonly occupantExternalId: number | null,
+    public readonly path: string,
+  ) {
+    super(`Path "${path}" is already used by "${occupantTitle}"`);
+    this.name = 'ArrPathConflictError';
+  }
+}
+
+/** True when `err` is a *arr add-time path collision (Radarr MoviePathValidator /
+ *  Sonarr equivalent). Exported for tests. */
+export function isPathConflictError(err: unknown): boolean {
+  if (!axios.isAxiosError(err) || err.response?.status !== 400) return false;
+  const data = err.response.data;
+  const raw = typeof data === 'string' ? data : JSON.stringify(data);
+  return raw.includes('PathValidator') || raw.includes('already configured for an existing');
+}
+
+/** Resolve an add-time path conflict: adopt the occupant when it IS the requested title
+ *  (same external id — triggers a search on it and returns its service id), else throw
+ *  `ArrPathConflictError` naming the occupant. Rethrows the original error when it isn't
+ *  a path conflict or the connector can't list paths. Exported for tests. */
+export async function resolveAddConflict(
+  client: ArrClient,
+  err: unknown,
+  requested: { title: string; externalId: number | null; rootFolderPath: string },
+): Promise<number> {
+  if (!isPathConflictError(err)) throw err;
+  const finder = client.findByPath;
+  if (typeof finder !== 'function') throw err;
+  const occupant = await finder.call(client, requested.rootFolderPath).catch(() => null);
+  if (!occupant) throw err;
+  if (requested.externalId != null && occupant.externalId === requested.externalId) {
+    await client.searchMedia(occupant.id);
+    return occupant.id;
+  }
+  throw new ArrPathConflictError(occupant.title, occupant.externalId, requested.rootFolderPath);
+}
+
 async function sendToArrService(
   media: { tmdbId: number; tvdbId: number | null; title: string },
   mediaType: string,
@@ -236,18 +291,42 @@ async function sendToArrService(
   const profileId = ctx.targetProfileId ?? ctx.defaultProfileId
     ?? (await client.getQualityProfiles())[0]?.id ?? 1;
 
-  await client.addMedia({
+  // A path collision (TMDB duplicate sitting at the computed folder) rejects the add
+  // with a validator 400. resolveAddConflict adopts the occupant when it is the same
+  // title (returns its service id, claimed by the caller below) or throws a named
+  // conflict; anything else rethrows unchanged.
+  const adoptedId: number | null = await client.addMedia({
     title: media.title,
-    externalId,
+    externalId: externalId ?? (0 as unknown as number),
     qualityProfileId: profileId,
     rootFolderPath: folderPath,
     tags,
     seasons,
     seriesType: ctx.ruleMatch?.seriesType as string | undefined,
-  });
-  // addMedia returns void, so the new id is unknown here — the caller nulls the stale one.
+  }).then(
+    () => null,
+    (err: unknown) => resolveAddConflict(
+      client, err, { title: media.title, externalId, rootFolderPath: folderPath },
+    ),
+  );
+  if (adoptedId !== null) return adoptedId;
+  // addMedia returns void, so look the fresh record up by its external id (one call) and claim
+  // it now. Without this the id stayed null until the next *arr sync (up to 30 min), and
+  // anything keyed on it — the zurg watcher matching a finished grab — could not find the title.
+  // Best-effort: on failure the caller nulls it and the next sync claims it, as before.
+  if (externalId) {
+    const found = await client.findByExternalId(externalId).catch(() => null);
+    if (found?.id) return found.id;
+  }
   return null;
 }
+
+/** Outcome of a dispatch to the *arr.
+ *  - `sent`      : the *arr accepted it (search started).
+ *  - `failed`    : transient failure — worth retrying later.
+ *  - `conflict`  : permanent failure (the *arr holds a different title at the target folder);
+ *                   retrying can never succeed, so the request must NOT be re-dispatched. */
+export type SendOutcome = 'sent' | 'failed' | 'conflict';
 
 export async function sendToService(
   media: { tmdbId: number; tvdbId: number | null; title: string },
@@ -260,7 +339,7 @@ export async function sendToService(
   /** Last, so the three callers that have no criteria to pass stay untouched. */
   criterionValueIds: number[] = [],
   seasonNumbering?: string | null,
-): Promise<boolean> {
+): Promise<SendOutcome> {
   try {
     const ctx = await resolveServiceContext(mediaType as 'movie' | 'tv', media.tmdbId, userId, qualityOptionId, criterionValueIds);
 
@@ -277,11 +356,35 @@ export async function sendToService(
         data: { serviceId: ctx.targetService.id, [arrIdField]: arrMediaId },
       }).catch((err) => logEvent('debug', 'Request', `Failed to stamp serviceId on "${media.title}": ${err}`));
     }
-    return true;
+    return 'sent';
   } catch (err) {
-    logEvent('debug', 'Request', `Failed to send ${mediaType} "${media.title}" to service: ${err}`);
-    logEvent('error', 'Request', `Failed to send "${media.title}" to ${getServiceTypeForMedia(mediaType)}: ${String(err)}`);
-    return false;
+    // A path conflict already names the occupant — log the actionable sentence, not the
+    // 500-char validator blob. Retrying can't help until the duplicate is resolved in
+    // the *arr, so say so.
+    if (err instanceof ArrPathConflictError) {
+      const serviceType = getServiceTypeForMedia(mediaType);
+      const occupant = err.occupantExternalId
+        ? `"${err.occupantTitle}" (tmdbId ${err.occupantExternalId})`
+        : `"${err.occupantTitle}"`;
+      logEvent('error', 'Request',
+        `Cannot add "${media.title}" to ${serviceType}: folder "${err.path}" is already used by ${occupant}. `
+        + `Likely a duplicate TMDB entry, remove or merge the duplicate in ${serviceType}, then retry the request.`);
+      // Permanent: the *arr already holds a different title at that folder, so every retry would
+      // fail the same way and re-spam the log. The caller marks the request `conflict`
+      // (terminal, excluded from the retry job) instead of `failed`.
+      return 'conflict';
+    }
+    // Include the *arr's own validation body when present: a bare "status code 400"
+    // (as one Sonarr series add produced) is undiagnosable from the event log alone.
+    // Truncated — error bodies can echo the rejected payload back.
+    let detail = String(err);
+    if (axios.isAxiosError(err) && err.response) {
+      const raw = typeof err.response.data === 'string' ? err.response.data : JSON.stringify(err.response.data);
+      if (raw) detail += ` :: HTTP ${err.response.status} ${raw.slice(0, 500)}`;
+    }
+    logEvent('debug', 'Request', `Failed to send ${mediaType} "${media.title}" to service: ${detail}`);
+    logEvent('error', 'Request', `Failed to send "${media.title}" to ${getServiceTypeForMedia(mediaType)}: ${detail}`);
+    return 'failed';
   }
 }
 
@@ -441,7 +544,7 @@ export async function createUserRequest(input: CreateRequestInput): Promise<Crea
         include: { media: true, user: { select: { id: true, displayName: true, avatar: true } } },
       }),
     );
-  }).catch((err) => {
+  }, WRITE_TX).catch((err) => {
     if (err instanceof DuplicateRequestError) return null;
     throw err;
   });
@@ -452,10 +555,10 @@ export async function createUserRequest(input: CreateRequestInput): Promise<Crea
   let sendFailed = false;
   if (shouldAutoApprove) {
     const tagName = await getUserTagName(user.id);
-    const sent = await sendToService(media, mediaType, tagName, user.id, validSeasons, input.qualityOptionId, undefined, criterionValueIds, seasonNumbering);
+    const outcome = await sendToService(media, mediaType, tagName, user.id, validSeasons, input.qualityOptionId, undefined, criterionValueIds, seasonNumbering);
 
-    await recordRequestDispatch(sent, media, mediaRequest);
-    sendFailed = !sent;
+    await recordRequestDispatch(outcome, media, mediaRequest);
+    sendFailed = outcome !== 'sent';
   }
 
   const username = user.displayName || 'User';
@@ -491,15 +594,18 @@ export async function createUserRequest(input: CreateRequestInput): Promise<Crea
 }
 
 async function recordRequestDispatch(
-  sent: boolean,
+  outcome: SendOutcome,
   media: { id: number; statusCategory: string },
   request: { id: number; status: string },
 ): Promise<void> {
-  if (!sent) {
+  if (outcome !== 'sent') {
+    // `conflict` is terminal (the *arr holds a different title at the target folder) and is
+    // excluded from the retry job; `failed` stays retryable.
+    const nextStatus: RequestStatusKind = outcome === 'conflict' ? 'conflict' : 'failed';
     await transitionRequestStatus(
-      { requestId: request.id, from: request.status as RequestStatusKind, to: 'failed', why: 'dispatch-failed' },
-      () => prisma.mediaRequest.update({ where: { id: request.id }, data: { status: 'failed' } }),
-    ).catch((err) => logEvent('warn', 'Request', `Failed to mark request ${request.id} as failed after sendToService rejected: ${String(err)}`));
+      { requestId: request.id, from: request.status as RequestStatusKind, to: nextStatus, why: outcome === 'conflict' ? 'dispatch-conflict' : 'dispatch-failed' },
+      () => prisma.mediaRequest.update({ where: { id: request.id }, data: { status: nextStatus } }),
+    ).catch((err) => logEvent('warn', 'Request', `Failed to mark request ${request.id} as ${nextStatus} after sendToService rejected: ${String(err)}`));
     return;
   }
   if (media.statusCategory === 'AVAILABLE' || media.statusCategory === 'PROCESSING') return;
@@ -559,11 +665,12 @@ export async function requestCollectionMovie(
 
   if (approval.autoApprove) {
     const tagName = await getUserTagName(user.id);
-    const sent = await sendToService(media, 'movie', tagName, user.id);
-    if (!sent) {
+    const outcome = await sendToService(media, 'movie', tagName, user.id);
+    if (outcome !== 'sent') {
+      const nextStatus: RequestStatusKind = outcome === 'conflict' ? 'conflict' : 'failed';
       await transitionRequestStatus(
-        { requestId: req.id, from: collectionInitialStatus, to: 'failed', why: 'dispatch-failed' },
-        () => prisma.mediaRequest.update({ where: { id: req.id }, data: { status: 'failed' } }),
+        { requestId: req.id, from: collectionInitialStatus, to: nextStatus, why: outcome === 'conflict' ? 'dispatch-conflict' : 'dispatch-failed' },
+        () => prisma.mediaRequest.update({ where: { id: req.id }, data: { status: nextStatus } }),
       );
     }
   }
@@ -576,16 +683,24 @@ export async function requestCollectionMovie(
 // ---------------------------------------------------------------------------
 
 export async function promoteStaleStatuses(): Promise<void> {
-  await transitionRequestStatus(
-    { requestId: undefined, from: undefined, to: 'available', why: 'cascade-media-available' },
-    () => prisma.mediaRequest.updateMany({
-      where: {
-        status: { in: [...COMPLETABLE_REQUEST_STATUSES] },
-        media: { statusCategory: 'AVAILABLE' },
-      },
-      data: { status: 'available' },
-    }),
-  );
+  // Best-effort: this runs on the GET /api/requests read path, so a transient DB
+  // timeout (e.g. SQLite lock contention during a sync right after boot — P1008)
+  // must never 500 the list. Promotion retries on the next read / scheduler tick.
+  try {
+    await transitionRequestStatus(
+      { requestId: undefined, from: undefined, to: 'available', why: 'cascade-media-available' },
+      () => prisma.mediaRequest.updateMany({
+        where: {
+          status: { in: [...COMPLETABLE_REQUEST_STATUSES] },
+          media: { statusCategory: 'AVAILABLE' },
+        },
+        data: { status: 'available' },
+      }),
+    );
+  } catch (err) {
+    logEvent('warn', 'Request', `Status promotion skipped (transient DB error): ${err instanceof Error ? err.message.split('\n')[0] : String(err)}`)
+      .catch(() => { /* logging must never break the read path either */ });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -609,16 +724,23 @@ export async function retryFailedRequests(): Promise<{ retried: number; succeede
   for (const req of failed) {
     const tagName = req.user.displayName || req.user.email || `user-${req.userId}`;
     const seasons = req.seasons ? JSON.parse(req.seasons) : undefined;
-    const sent = await sendToService(
+    const outcome = await sendToService(
       req.media, req.mediaType, tagName, req.userId, seasons, req.qualityOptionId ?? undefined,
       undefined, req.criteria?.map((c) => c.valueId) ?? [], req.seasonNumbering,
     );
-    if (sent) {
+    if (outcome === 'sent') {
       await transitionRequestStatus(
         { requestId: req.id, from: req.status as RequestStatusKind, to: 'approved', why: 'scheduler-retry' },
         () => prisma.mediaRequest.update({ where: { id: req.id }, data: { status: 'approved' } }),
       );
       succeeded++;
+    } else if (outcome === 'conflict') {
+      // Permanent — the *arr holds a different title at the target folder. Mark it terminal so
+      // this job stops re-dispatching it every cycle (which only re-spammed the log).
+      await transitionRequestStatus(
+        { requestId: req.id, from: req.status as RequestStatusKind, to: 'conflict', why: 'dispatch-conflict' },
+        () => prisma.mediaRequest.update({ where: { id: req.id }, data: { status: 'conflict' } }),
+      );
     }
   }
 

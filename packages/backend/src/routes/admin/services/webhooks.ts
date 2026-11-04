@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import { prisma } from '../../../utils/prisma.js';
 import { getAppSettings, patchAppSettings } from '../../../utils/appSettings.js';
 import { getServiceDefinition } from '../../../providers/index.js';
+import { isPrivateIPv4 } from '../../../utils/ssrfGuard.js';
 import { logEvent } from '../../../utils/logEvent.js';
 import { parseId } from '../../../utils/params.js';
 import { parseServiceConfig } from '../../../utils/services.js';
@@ -46,6 +47,17 @@ function pickLanIpv4(): string | null {
 /** Replace a loopback Host header (localhost / 127.x.x.x / ::1) with a LAN-reachable IPv4 so
  *  Radarr/Sonarr can call back the webhook from a Docker container or another LAN host. Keeps
  *  the port intact. Returns the input unchanged when nothing usable is found. */
+function isPrivateTargetUrl(url: string): boolean {
+  try {
+    const hostname = new URL(url).hostname;
+    // Strip brackets for IPv6 if present
+    const clean = hostname.replace(/^\[/, '').replace(/\]$/, '');
+    if (/^\d+\.\d+\.\d+\.\d+$/.test(clean)) return isPrivateIPv4(clean);
+    // Bare hostname like localhost handled elsewhere; treat non-IP as not private (falls back to siteUrl)
+    return false;
+  } catch { return false; }
+}
+
 function swapLoopbackForLan(host: string): string {
   const { hostname, port } = extractHostname(host);
   if (!isLoopbackHostname(hostname)) return host;
@@ -67,7 +79,7 @@ async function ensureWebhookSecret(): Promise<string> {
 /** Per-service webhook registration — status probe, enable (register on the *arr server and
  *  persist the returned ID on the Service row), disable (remove on the *arr side, null the ID).
  *  The URL returned to the admin uses siteUrl when configured, otherwise derives from the
- *  incoming request's forwarded host so an *arr instance can reach Oscarr without manual config. */
+ *  incoming request's forwarded host so an *arr instance can reach LeMedia without manual config. */
 export async function servicesWebhookRoutes(app: FastifyInstance) {
   app.get('/services/:id/webhook/status', {
     schema: { params: { type: 'object', required: ['id'], properties: { id: { type: 'string' } } } },
@@ -84,12 +96,15 @@ export async function servicesWebhookRoutes(app: FastifyInstance) {
     let serviceReachable = true;
     try {
       client = def?.createClient?.(config) ?? null;
-    } catch { /* createClient failed — service type doesn't support webhooks */ }
+    } catch { /* createClient failed, service type doesn't support webhooks */ }
 
     const settings = await getAppSettings();
     const protocol = request.headers['x-forwarded-proto'] || 'http';
     const host = swapLoopbackForLan(String(request.headers['x-forwarded-host'] || request.headers.host || ''));
-    const baseUrl = settings?.siteUrl || `${protocol}://${host}`;
+    const serviceUrl = (config as Record<string, string>).url || (config as Record<string, string>).host || '';
+    const useLan = serviceUrl ? isPrivateTargetUrl(serviceUrl) : false;
+    const lanBase = (() => { const lan = pickLanIpv4(); return lan ? `http://${lan}:3456` : null; })();
+    const baseUrl = useLan && lanBase ? lanBase : (settings?.siteUrl || `${protocol}://${host}`);
 
     // Verify the webhook still exists on the *arr side; orphaned ID means the admin removed it
     // manually in Radarr/Sonarr — null it locally so the UI reflects reality.
@@ -132,14 +147,16 @@ export async function servicesWebhookRoutes(app: FastifyInstance) {
 
     const apiKey = await ensureWebhookSecret();
     const settings = await getAppSettings();
-
     const protocol = request.headers['x-forwarded-proto'] || 'http';
     const host = swapLoopbackForLan(String(request.headers['x-forwarded-host'] || request.headers.host || ''));
-    const baseUrl = settings?.siteUrl || `${protocol}://${host}`;
+    const serviceUrl2 = (config as Record<string, string>).url || (config as Record<string, string>).host || '';
+    const useLan2 = serviceUrl2 ? isPrivateTargetUrl(serviceUrl2) : false;
+    const lanBase2 = (() => { const lan = pickLanIpv4(); return lan ? `http://${lan}:3456` : null; })();
+    const baseUrl = useLan2 && lanBase2 ? lanBase2 : (settings?.siteUrl || `${protocol}://${host}`);
     const webhookUrl = `${baseUrl.replace(/\/$/, '')}/api/webhooks/${svc.type}`;
 
     try {
-      const webhookId = await client.registerWebhook('Oscarr', webhookUrl, apiKey);
+      const webhookId = await client.registerWebhook('LeMedia', webhookUrl, apiKey);
       try {
         await prisma.service.update({ where: { id: serviceId }, data: { webhookId } });
       } catch (dbErr) {
@@ -153,10 +170,39 @@ export async function servicesWebhookRoutes(app: FastifyInstance) {
     } catch (err) {
       const axiosErr = err as { response?: { status?: number; data?: unknown }; config?: { url?: string } };
       const responseBody = axiosErr.response?.data;
+      const bodyStr = typeof responseBody === 'string' ? responseBody : JSON.stringify(responseBody);
+      // Handle duplicate name — a webhook named "LeMedia" (or legacy "LeMedia") already exists.
+      // Try to adopt the existing one instead of failing.
+      if (axiosErr.response?.status === 400 && bodyStr?.includes('Should be unique')) {
+        try {
+          const { data: existing } = await (client as unknown as { api: { get: (url: string) => Promise<{ data: unknown }> } }).api.get('/notification');
+          const list = Array.isArray(existing) ? existing : [];
+          const match = list.find((n: unknown) => {
+            const rec = n as Record<string, unknown>;
+            return rec.name === 'LeMedia';
+          }) as Record<string, unknown> | undefined;
+          if (match?.id) {
+            const existingId = Number(match.id);
+            // Update the existing webhook's URL to the correct LAN-reachable one (fixes old Cloudflare URL)
+            try {
+              const fields = Array.isArray((match as Record<string, unknown>).fields) ? (match as Record<string, unknown>).fields as Array<Record<string, unknown>> : [];
+              const urlField = fields.find((f) => f.name === 'url');
+              if (urlField && urlField.value !== webhookUrl) {
+                urlField.value = webhookUrl;
+                await (client as unknown as { api: { put: (url: string, data: unknown) => Promise<unknown> } }).api.put(`/notification/${existingId}`, { ...match, fields });
+                logEvent('info', 'Webhook', `Updated webhook URL for ${svc.name} to ${webhookUrl}`);
+              }
+            } catch {}
+            await prisma.service.update({ where: { id: serviceId }, data: { webhookId: existingId } });
+            logEvent('info', 'Webhook', `Adopted existing webhook for ${svc.name} (ID: ${existingId})`);
+            return { ok: true, webhookId: existingId, adopted: true };
+          }
+        } catch {}
+      }
       const detail = err instanceof Error ? err.message : String(err);
       const bodyDump = typeof responseBody === 'string' ? responseBody : JSON.stringify(responseBody);
-      logEvent('debug', 'Webhook', `Failed to register webhook for ${svc.name} (${axiosErr.config?.url}): ${detail} — body: ${bodyDump?.slice(0, 500)}`);
-      return reply.status(502).send({ error: 'WEBHOOK_REGISTER_FAILED', detail: bodyDump ? `${detail} — ${bodyDump.slice(0, 200)}` : detail });
+      logEvent('debug', 'Webhook', `Failed to register webhook for ${svc.name} (${axiosErr.config?.url}): ${detail}, body: ${bodyDump?.slice(0, 500)}`);
+      return reply.status(502).send({ error: 'WEBHOOK_REGISTER_FAILED', detail: bodyDump ? `${detail}, ${bodyDump.slice(0, 200)}` : detail });
     }
   });
 

@@ -10,7 +10,7 @@ import { encryptSecretValue } from '../utils/secrets.js';
 // Emby and Jellyfin speak the same MediaBrowser API (Jellyfin is an Emby fork): identical
 // /Users/AuthenticateByName endpoint and X-Emby-* headers. One factory serves both.
 const MEDIA_BROWSER_HEADERS = {
-  'X-Emby-Authorization': 'MediaBrowser Client="Oscarr", Device="Server", DeviceId="oscarr-server", Version="1.0.0"',
+  'X-Emby-Authorization': 'MediaBrowser Client="LeMedia", Device="Server", DeviceId="lemedia-server", Version="1.0.0"',
 };
 
 interface MediaServerConfig {
@@ -75,7 +75,7 @@ export function createMediaServerProvider(server: MediaServerConfig): Provider {
           label: 'Allow new account creation',
           type: 'boolean',
           default: false,
-          help: `Auto-create Oscarr users for new ${label} logins.`,
+          help: `Auto-create LeMedia users for new ${label} logins.`,
         },
       ],
       requiresService: true,
@@ -118,7 +118,7 @@ export function createMediaServerProvider(server: MediaServerConfig): Provider {
             avatar,
           });
 
-          logEvent('info', 'Auth', `${result.displayName} logged in (${id})${result.isNew ? ' — new account' : ''}`);
+          logEvent('info', 'Auth', `${result.displayName} logged in (${id})${result.isNew ? ', new account' : ''}`);
           return helpers.signAndSend(reply, result.id);
         } catch (err) {
           if ((err as Error).message === 'SIGNUP_NOT_ALLOWED') {
@@ -200,7 +200,7 @@ export function createMediaServerProvider(server: MediaServerConfig): Provider {
     },
 
     // Minimal sync: these servers have no "share revoked" equivalent, so no enable/disable pass.
-    // We surface users on the server without a matching Oscarr account so the admin can
+    // We surface users on the server without a matching LeMedia account so the admin can
     // cherry-pick imports through the same review modal as Plex.
     async syncUsers(_adminUserId) {
       const cfg = await getConfig();
@@ -228,7 +228,7 @@ export function createMediaServerProvider(server: MediaServerConfig): Provider {
       label,
       icon,
       category: 'media-server',
-      requiredForInstall: true,
+      requiredForInstall: false, // optional in LeMedia: requests only need Radarr or Sonarr
       fields: [
         { key: 'url', labelKey: 'common.url', type: 'text', placeholder: 'http://localhost:8096' },
         { key: 'apiKey', labelKey: 'common.api_key', type: 'password' },

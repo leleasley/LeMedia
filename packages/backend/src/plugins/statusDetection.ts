@@ -18,7 +18,7 @@ function classifyPluginSource(args: { isSymlink: boolean; persistedSource: strin
   return args.persistedSource === 'registry' ? 'registry' : 'local';
 }
 
-/** Compatibility (engines.oscarr) is NOT checked here — that gate runs at install/update
+/** Compatibility (engines.lemedia) is NOT checked here — that gate runs at install/update
  *  preflight and inside the auto-update job. */
 export function isUpdateAvailable(installed: string, latest: string | null): boolean {
   if (!latest || latest === installed) return false;

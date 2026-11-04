@@ -13,7 +13,7 @@ function flushLastUsed(): void {
   _lastUsedQueue.clear();
   Promise.allSettled(
     ids.map((id) => prisma.userApiKey.update({ where: { id }, data: { lastUsedAt: now } })),
-  ).catch(() => { /* swallow — losing a lastUsedAt update is harmless */ });
+  ).catch(() => { /* swallow, losing a lastUsedAt update is harmless */ });
 }
 setInterval(flushLastUsed, 5_000).unref();
 
@@ -42,7 +42,7 @@ export async function authenticateUserApiKey(
 /**
  * Fastify preHandler that requires a valid user-scoped API key. Used by the Seerr-compatible
  * API layer (and any future endpoint family meant to be hit by third-party apps rather than
- * the Oscarr SPA). Sets request.user with the same { id, role } shape RBAC expects.
+ * the LeMedia SPA). Sets request.user with the same { id, role } shape RBAC expects.
  */
 export async function userApiKeyAuthHook(
   request: FastifyRequest,

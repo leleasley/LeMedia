@@ -10,7 +10,7 @@
 @layer base {
   * {
     scrollbar-width: thin;
-    scrollbar-color: #374151 transparent;
+    scrollbar-color: #2e2e35 transparent;
   }
 
   *::-webkit-scrollbar {
@@ -23,12 +23,18 @@
   }
 
   *::-webkit-scrollbar-thumb {
-    background-color: #374151;
+    background-color: #2e2e35;
     border-radius: 3px;
   }
 
   body {
     overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background: rgb(242 95 76 / 0.35);
   }
 
   /* iOS Safari auto-zooms inputs below 16px font-size. */
@@ -43,47 +49,270 @@
 
 @layer components {
   .glass {
-    @apply bg-ndp-surface/80 backdrop-blur-xl border border-white/5;
+    @apply bg-ndp-surface border border-white/[0.06];
   }
 
   .btn-primary {
-    @apply bg-ndp-accent hover:bg-ndp-accent-hover text-white font-medium px-6 py-2.5 rounded-xl transition-all duration-200 hover:shadow-lg hover:shadow-ndp-accent/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ndp-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-ndp-bg;
+    @apply bg-ndp-accent hover:bg-ndp-accent-hover text-white font-medium px-6 py-2.5 rounded-lg transition-colors duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ndp-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-ndp-bg disabled:opacity-50 disabled:pointer-events-none;
   }
 
   .btn-secondary {
-    @apply bg-ndp-surface-light hover:bg-ndp-surface-hover text-ndp-text font-medium px-6 py-2.5 rounded-xl transition-all duration-200 border border-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ndp-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-ndp-bg;
+    @apply bg-ndp-surface-light hover:bg-ndp-surface-hover text-ndp-text font-medium px-6 py-2.5 rounded-lg transition-colors duration-150 active:scale-[0.98] border border-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ndp-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-ndp-bg disabled:opacity-50 disabled:pointer-events-none;
   }
 
   .btn-danger {
-    @apply bg-ndp-danger/10 hover:bg-ndp-danger/20 text-ndp-danger font-medium px-6 py-2.5 rounded-xl transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ndp-danger/60 focus-visible:ring-offset-2 focus-visible:ring-offset-ndp-bg;
+    @apply bg-ndp-danger/10 hover:bg-ndp-danger/20 text-ndp-danger font-medium px-6 py-2.5 rounded-lg transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ndp-danger/60 focus-visible:ring-offset-2 focus-visible:ring-offset-ndp-bg disabled:opacity-50 disabled:pointer-events-none;
   }
 
   .btn-success {
-    @apply bg-ndp-success/10 hover:bg-ndp-success/20 text-ndp-success font-medium px-6 py-2.5 rounded-xl transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ndp-success/60 focus-visible:ring-offset-2 focus-visible:ring-offset-ndp-bg;
+    @apply bg-ndp-success/10 hover:bg-ndp-success/20 text-ndp-success font-medium px-6 py-2.5 rounded-lg transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ndp-success/60 focus-visible:ring-offset-2 focus-visible:ring-offset-ndp-bg disabled:opacity-50 disabled:pointer-events-none;
   }
 
   .card {
-    @apply bg-ndp-surface rounded-2xl border border-white/5 overflow-hidden;
+    @apply bg-ndp-surface rounded-xl border border-white/[0.06] overflow-hidden;
   }
 
   .input {
-    @apply bg-ndp-surface-light border border-white/10 rounded-xl px-4 py-3 text-ndp-text placeholder-ndp-text-dim focus:outline-none focus:ring-2 focus:ring-ndp-accent/50 focus:border-ndp-accent transition-all duration-200;
+    @apply bg-ndp-surface-light border border-white/[0.08] rounded-lg px-4 py-3 text-ndp-text placeholder-ndp-text-dim focus:outline-none focus:ring-2 focus:ring-ndp-accent/50 focus:border-ndp-accent transition-all duration-200;
   }
 
   .skeleton {
     @apply bg-gradient-to-r from-ndp-surface-light via-ndp-surface-hover to-ndp-surface-light bg-[length:400%_100%] animate-shimmer rounded-lg;
   }
+
+  /* Display headings — condensed cinema type for page and section titles. */
+  .font-display-title {
+    @apply font-display font-normal uppercase tracking-[0.04em] leading-none;
+  }
+
+  /* Poster frame — subtle depth + press feedback, no coloured glow. */
+  .poster-frame {
+    @apply relative overflow-hidden rounded-lg bg-ndp-surface-light shadow-[0_6px_20px_-8px_rgba(0,0,0,0.8)] ring-1 ring-inset ring-white/[0.06] transition-transform duration-200 ease-out;
+  }
+
+  /* ─── Admin / settings primitives ─────────────────────────────────── */
+  /* Small uppercase label that sits above a group of rows. */
+  .admin-group-label {
+    @apply px-1 mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-ndp-text-dim;
+  }
+  /* A grouped list container (iOS-settings style). Pair with divide-y divide-white/[0.06]. */
+  .admin-group {
+    @apply rounded-xl bg-ndp-surface ring-1 ring-inset ring-white/[0.06] overflow-hidden;
+  }
+  /* One row inside an .admin-group — min 52px tall so it is thumb-friendly. */
+  .admin-row {
+    @apply flex items-center gap-3 px-4 py-3 min-h-[52px];
+  }
+  /* Rounded square holding a row's leading icon. */
+  .admin-icon-tile {
+    @apply w-8 h-8 rounded-lg bg-white/[0.06] text-ndp-text flex items-center justify-center flex-shrink-0;
+  }
+  /* Small status / metadata pill. Colour it with bg-x-500/15 text-x-300. */
+  .admin-chip {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold leading-4 bg-white/[0.07] text-ndp-text-muted;
+  }
+  /* Short helper text under a group or field. */
+  .admin-hint {
+    @apply px-1 mt-2 text-xs text-ndp-text-dim leading-relaxed;
+  }
+
+  /* Horizontal scrollers fade at the edges so it's obvious they scroll. */
+  .edge-fade-x {
+    -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 48px), transparent 100%);
+    mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 48px), transparent 100%);
+  }
+}
+
+/* ─── Modals ────────────────────────────────────────────────────────────
+ * One look for every dialog: bottom sheet on phones (thumb-reachable, clears the
+ * home indicator), centred card on desktop. Unlayered on purpose so these win over
+ * per-modal padding utilities where the sheet needs safe-area room. */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgb(0 0 0 / 0.72);
+  animation: modalOverlayIn 0.18s ease-out;
+}
+
+.modal-panel {
+  position: relative;
+  width: 100%;
+  max-height: 92dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: #141418;
+  border: 1px solid rgb(255 255 255 / 0.07);
+  border-bottom: 0;
+  border-radius: 18px 18px 0 0;
+  box-shadow: 0 -12px 40px rgb(0 0 0 / 0.5);
+  animation: modalSheetIn 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Grab handle — visual cue that this is a sheet. */
+.modal-panel::before {
+  content: '';
+  position: absolute;
+  top: 7px;
+  left: 50%;
+  width: 36px;
+  height: 4px;
+  margin-left: -18px;
+  border-radius: 9999px;
+  background: rgb(255 255 255 / 0.16);
+  z-index: 1;
+  pointer-events: none;
+}
+
+@media (max-width: 767px) {
+  .modal-panel {
+    padding-bottom: calc(env(safe-area-inset-bottom) + 1.25rem);
+  }
+}
+
+@media (min-width: 768px) {
+  .modal-overlay {
+    align-items: center;
+    padding: 1.5rem;
+  }
+  .modal-panel {
+    max-height: 88vh;
+    border-bottom: 1px solid rgb(255 255 255 / 0.07);
+    border-radius: 14px;
+    box-shadow: 0 24px 80px -12px rgb(0 0 0 / 0.75);
+    animation: modalPopIn 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .modal-panel::before {
+    display: none;
+  }
+}
+
+@keyframes modalOverlayIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modalSheetIn {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+@keyframes modalPopIn {
+  from { opacity: 0; transform: translateY(6px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-overlay,
+  .modal-panel {
+    animation: none;
+  }
+}
+
+/* Sheet footers on phones: action rows become full-width, thumb-sized buttons. */
+@media (max-width: 767px) {
+  .modal-panel .justify-end:has(> button + button) {
+    gap: 0.5rem;
+  }
+  .modal-panel .justify-end:has(> button + button) > button {
+    flex: 1 1 0;
+    justify-content: center;
+    min-height: 46px;
+    padding-top: 0.625rem !important;
+    padding-bottom: 0.625rem !important;
+  }
+}
+
+
+/* ─── Toasts (utils/toast.ts) ──────────────────────────────────────────── */
+.lm-toasts {
+  position: fixed;
+  z-index: 9999;
+  left: 12px;
+  right: 12px;
+  /* above the phone tab bar (58px) + home indicator */
+  bottom: calc(env(safe-area-inset-bottom) + 58px + 12px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+@media (min-width: 768px) {
+  .lm-toasts { left: auto; right: 24px; bottom: 24px; align-items: flex-end; }
+}
+.lm-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  max-width: 420px;
+  padding: 10px 8px 10px 10px;
+  border-radius: 14px;
+  background: #1b1b21;
+  border: 1px solid rgb(255 255 255 / 0.08);
+  box-shadow: 0 12px 32px -8px rgb(0 0 0 / 0.7);
+  color: #f4f1ec;
+  cursor: pointer;
+  animation: lmToastIn 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.lm-toast__icon {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.lm-toast--success .lm-toast__icon { background: rgb(16 185 129 / 0.16); color: #34d399; }
+.lm-toast--error   .lm-toast__icon { background: rgb(239 68 68 / 0.16);  color: #f87171; }
+.lm-toast--info    .lm-toast__icon { background: rgb(242 95 76 / 0.16);  color: #ff7563; }
+.lm-toast__text {
+  flex: 1;
+  min-width: 0;
+  margin: 4px 0 0;
+  font-size: 14px;
+  line-height: 1.35;
+  font-weight: 500;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.lm-toast__close {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6c6a66;
+}
+.lm-toast__close:hover { color: #f4f1ec; background: rgb(255 255 255 / 0.06); }
+.lm-toast--leaving { animation: lmToastOut 0.18s ease-in forwards; }
+.lm-toast--bump { animation: lmToastBump 0.25s ease-out; }
+@keyframes lmToastIn { from { opacity: 0; transform: translateY(10px) scale(0.98); } to { opacity: 1; transform: none; } }
+@keyframes lmToastOut { to { opacity: 0; transform: translateY(6px) scale(0.98); } }
+@keyframes lmToastBump { 50% { transform: scale(1.02); } }
+@media (prefers-reduced-motion: reduce) {
+  .lm-toast, .lm-toast--leaving, .lm-toast--bump { animation: none; }
 }
 
 /* Keep plugin sections usable without shifting the centered search field. */
-.oscarr-header-grid { display: grid; grid-template-columns: minmax(0, 1fr) clamp(16rem, 34vw, 30rem) minmax(0, 1fr); align-items: center; gap: 16px; min-height: 64px; }
-.oscarr-header-start { display: flex; align-items: center; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; container: primary-nav / inline-size; }
-.oscarr-header-start > * { flex-shrink: 0; }
-.oscarr-header-start::-webkit-scrollbar { display: none; }
-.oscarr-nav-label { display: none; white-space: nowrap; }
-@container primary-nav (width >= 480px) { .oscarr-nav-label { display: inline; } }
-.oscarr-header-search { min-width: 0; }
-.oscarr-header-end { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; min-width: 0; position: relative; }
+.lemedia-header-grid { display: grid; grid-template-columns: minmax(0, 1fr) clamp(16rem, 34vw, 30rem) minmax(0, 1fr); align-items: center; gap: 16px; min-height: 64px; }
+.lemedia-header-start { display: flex; align-items: center; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; container: primary-nav / inline-size; }
+.lemedia-header-start > * { flex-shrink: 0; }
+.lemedia-header-start::-webkit-scrollbar { display: none; }
+.lemedia-nav-label { display: none; white-space: nowrap; }
+@container primary-nav (width >= 480px) { .lemedia-nav-label { display: inline; } }
+.lemedia-header-search { min-width: 0; }
+.lemedia-header-end { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; min-width: 0; position: relative; }
 
 /* Mouse panning keeps ordinary clicks and native touch scrolling available. */
 [data-drag-scroll="ready"], [data-drag-scroll="ready"] a { cursor: grab; }

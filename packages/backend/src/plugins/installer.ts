@@ -15,12 +15,9 @@ import { isPrivateIPv4, isPrivateIPv6, isPrivateAddress, normalizeHost } from '.
 import { withRetry } from '../utils/fetchWithRetry.js';
 
 const DOWNLOAD_TIMEOUT_MS = 60_000;
-// Hard cap on plugin tarballs. Oscarr plugins are small (a few hundred KB once bundled); 50 MB
+// Hard cap on plugin tarballs. LeMedia plugins are small (a few hundred KB once bundled); 50 MB
 // is generous and still keeps a misconfigured / malicious registry entry from filling /tmp.
 const MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024;
-// A sha256sum line is ~70 bytes. This is only here so a hostile or misconfigured host can't answer
-// the checksum request with a body big enough to matter.
-const MAX_CHECKSUM_BYTES = 4096;
 
 /**
  * Resolve the hostname once ourselves, pick a public address, and pin undici's connection to it.
@@ -30,7 +27,7 @@ const MAX_CHECKSUM_BYTES = 4096;
  * lookup and a private IP on the second — a classic DNS-rebind SSRF bypass. By passing an Agent
  * with a custom connect.lookup we guarantee the socket connects to the address we validated.
  *
- * Plugin install is ALWAYS guarded (not opt-in via OSCARR_BLOCK_PRIVATE_SERVICES) because the
+ * Plugin install is ALWAYS guarded (not opt-in via LEMEDIA_BLOCK_PRIVATE_SERVICES) because the
  * URL comes from an admin-typed registry entry and can legitimately only be a public GitHub
  * tarball — no reason to allow a LAN target here.
  */
@@ -80,9 +77,11 @@ function makeAgent(pinnedIp: string, family: number): Agent {
 
 const MAX_REDIRECTS = 5;
 
-/** Fetch through the pinned-agent redirect chain. Every caller must go through here — a plain
- *  `fetch` would bypass the SSRF guard this whole file exists to enforce. */
-async function fetchPinned(url: string, label: string): Promise<Awaited<ReturnType<typeof undiciFetch>>> {
+// A sha256sum line is ~70 bytes. This is only here so a hostile or misconfigured host can't answer
+// the checksum request with a body big enough to matter.
+const MAX_CHECKSUM_BYTES = 4096;
+
+async function downloadToFile(url: string, destPath: string): Promise<void> {
   // Manual redirect handling: each hop gets a freshly pinned agent for its hostname. With
   // `redirect: 'follow'` undici reuses the *initial* pinned IP across redirects, so a hop to a
   // different host (github.com → codeload.github.com) hits the wrong server and 400s.
@@ -105,7 +104,7 @@ async function fetchPinned(url: string, label: string): Promise<Awaited<ReturnTy
         throw Object.assign(new Error(`Upstream ${r.status}`), { response: { status: r.status } });
       }
       return r;
-    }, { label });
+    }, { label: 'PluginDownload' });
     if (hopRes.status >= 300 && hopRes.status < 400) {
       const location = hopRes.headers.get('location');
       if (!location) throw new Error(`Redirect ${hopRes.status} without Location header`);
@@ -116,71 +115,6 @@ async function fetchPinned(url: string, label: string): Promise<Awaited<ReturnTy
     break;
   }
   if (!res) throw new Error(`Too many redirects (>${MAX_REDIRECTS})`);
-  return res;
-}
-
-/**
- * Check the downloaded archive against the `.sha256` sidecar every Oscarr plugin release
- * publishes next to its tarball.
- *
- * Policy, deliberate: a checksum that is present and does not match **blocks** the install; a
- * checksum that is absent (404) only warns. Requiring it would break every third-party plugin
- * and the source-tarball fallback, which have no sidecar. This raises the cost of serving a
- * swapped asset — it is not a signature, and it does not help if the release itself is
- * compromised at the source.
- */
-async function verifyChecksum(archiveUrl: string, archivePath: string): Promise<void> {
-  // Echoed into the four warnings below, and it comes from a registry-supplied URL: a newline in
-  // it would forge log lines.
-  //
-  // KEEP this exact shape, copied from plugins/engine.ts because that one is accepted: two
-  // single-character `.replace()` calls, last in the chain. A `[\r\n]` character class and a
-  // trailing `.slice()` sanitize just as well at runtime, and CodeQL kept reporting all four
-  // warnings anyway — its recognition is literal about both the pattern and the position.
-  const filename = (archiveUrl.split('/').pop()?.split('?')[0] ?? '')
-    .slice(0, 120)
-    .replace(/\n/g, ' ')
-    .replace(/\r/g, ' ');
-  let res: Awaited<ReturnType<typeof undiciFetch>>;
-  try {
-    res = await fetchPinned(`${archiveUrl}.sha256`, 'PluginChecksum');
-  } catch (err) {
-    const why = String(err).slice(0, 200).replace(/\n/g, ' ').replace(/\r/g, ' ');
-    console.warn(`[PluginInstall] checksum unreachable for ${filename}: ${why} — installing unverified`);
-    return;
-  }
-  if (!res.ok) {
-    // Drain the body, or undici keeps the connection parked for the life of the process.
-    await res.body?.cancel().catch(() => { /* nothing to release */ });
-    console.warn(`[PluginInstall] no .sha256 published for ${filename} (HTTP ${res.status}) — installing unverified`);
-    return;
-  }
-
-  // A checksum file is 70-ish bytes. Anything larger is a host answering 200 with something else
-  // entirely, and `res.text()` would buffer all of it into memory before we could reject it.
-  const declared = Number(res.headers.get('content-length') ?? '0');
-  if (declared > MAX_CHECKSUM_BYTES) {
-    await res.body?.cancel().catch(() => { /* nothing to release */ });
-    console.warn(`[PluginInstall] .sha256 for ${filename} is implausibly large (${declared} bytes) — installing unverified`);
-    return;
-  }
-  const body = (await res.text()).slice(0, MAX_CHECKSUM_BYTES);
-
-  const expected = parseSha256File(body, filename);
-  if (!expected) {
-    console.warn(`[PluginInstall] .sha256 for ${filename} is not a usable checksum — installing unverified`);
-    return;
-  }
-  if (!digestMatches(await readFile(archivePath), expected)) {
-    throw new Error(
-      `Checksum mismatch for ${filename}: the archive does not match the .sha256 published with it. `
-      + 'Refusing to install.',
-    );
-  }
-}
-
-async function downloadToFile(url: string, destPath: string): Promise<void> {
-  const res = await fetchPinned(url, 'PluginDownload');
   if (!res.ok) throw new Error(`Download failed (${res.status}): ${res.statusText}`);
   if (!res.body) throw new Error('Download returned empty body');
 
@@ -196,7 +130,7 @@ async function downloadToFile(url: string, destPath: string): Promise<void> {
     transform(chunk, _enc, cb) {
       received += chunk.length;
       if (received > MAX_DOWNLOAD_BYTES) {
-        return cb(new Error(`Plugin archive exceeds ${MAX_DOWNLOAD_BYTES} bytes — aborted mid-download`));
+        return cb(new Error(`Plugin archive exceeds ${MAX_DOWNLOAD_BYTES} bytes, aborted mid-download`));
       }
       cb(null, chunk);
     },
@@ -205,6 +139,50 @@ async function downloadToFile(url: string, destPath: string): Promise<void> {
   const nodeStream = Readable.fromWeb(res.body as import('node:stream/web').ReadableStream);
   const fileStream = createWriteStream(destPath);
   await pipeline(nodeStream, sizeGate, fileStream);
+}
+
+/**
+ * Check the downloaded archive against the `.sha256` sidecar every LeMedia plugin release
+ * publishes next to its tarball.
+ *
+ * Policy, deliberate: a checksum that is present and does not match **blocks** the install; a
+ * checksum that is absent (404) only warns. Requiring it would break every third-party plugin
+ * that never published one. This is an integrity check, not a signature — it catches a swapped
+ * download, not a release compromised at the source.
+ */
+async function verifyChecksum(archiveUrl: string, archivePath: string): Promise<void> {
+  const filename = archiveUrl.split('/').pop() || 'download.tar.gz';
+  let res: Response;
+  try {
+    res = await fetch(`${archiveUrl}.sha256`, { signal: AbortSignal.timeout(15_000) });
+  } catch (err) {
+    console.warn(`[PluginInstall] checksum unreachable for ${filename}: ${String(err)}, installing unverified`);
+    return;
+  }
+  if (!res.ok) {
+    console.warn(`[PluginInstall] no .sha256 published for ${filename} (HTTP ${res.status}), installing unverified`);
+    return;
+  }
+  // A checksum file is 70-ish bytes. Anything larger is a host answering 200 with something else
+  // entirely (an HTML error page with a 200 status is depressingly common).
+  const declared = Number(res.headers.get('content-length') ?? '0');
+  if (declared > MAX_CHECKSUM_BYTES) {
+    console.warn(`[PluginInstall] .sha256 for ${filename} is implausibly large (${declared} bytes), installing unverified`);
+    return;
+  }
+  const body = (await res.text()).slice(0, MAX_CHECKSUM_BYTES);
+  const expected = parseSha256File(body, filename);
+  if (!expected) {
+    console.warn(`[PluginInstall] .sha256 for ${filename} is not a usable checksum, installing unverified`);
+    return;
+  }
+  const archive = await readFile(archivePath);
+  if (!digestMatches(archive, expected)) {
+    throw new Error(
+      `Checksum mismatch for ${filename}: the archive does not match the .sha256 published with it. ` +
+      `Refusing to install, the download may be corrupted or tampered with.`,
+    );
+  }
 }
 
 // Manifest may live either at the archive root or inside a single top-level directory
@@ -223,7 +201,7 @@ async function findManifestRoot(extractedDir: string): Promise<string> {
     throw new Error('No manifest.json found in the downloaded archive (looked at root + one level down)');
   }
   if (candidates.length > 1) {
-    throw new Error(`Archive contains multiple manifest.json files (${candidates.join(', ')}) — plugin archives must have exactly one`);
+    throw new Error(`Archive contains multiple manifest.json files (${candidates.join(', ')}), plugin archives must have exactly one`);
   }
   return join(extractedDir, candidates[0]);
 }
@@ -249,7 +227,7 @@ export async function installPluginFromUrl(url: string): Promise<InstalledPlugin
   // Stage inside the plugins dir (under a hidden name the loader ignores) so the final rename
   // stays on the same filesystem — `os.tmpdir()` is often a separate tmpfs mount in containers,
   // which makes fs.rename() throw EXDEV (cross-device link not permitted).
-  const workDir = join(getPluginsDir(), `.oscarr-plugin-install-${randomUUID()}`);
+  const workDir = join(getPluginsDir(), `.lemedia-plugin-install-${randomUUID()}`);
   const downloadPath = join(workDir, 'download.tar.gz');
   const extractDir = join(workDir, 'extracted');
 
@@ -286,7 +264,7 @@ export async function installPluginFromUrl(url: string): Promise<InstalledPlugin
     if (!existsSync(join(manifestRoot, manifest.entry))) {
       throw new Error(
         `Archive is missing its entry point "${manifest.entry}". This usually means a source `
-        + 'archive was downloaded instead of a built release asset — check that the plugin\'s '
+        + 'archive was downloaded instead of a built release asset, check that the plugin\'s '
         + 'latest GitHub release has a .tar.gz asset attached.',
       );
     }

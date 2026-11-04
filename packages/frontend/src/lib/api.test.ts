@@ -2,6 +2,8 @@ import { AxiosError, type AxiosInstance, type AxiosResponse, type InternalAxiosR
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
 vi.mock('@/i18n', () => ({ default: { language: 'fr', t: (_key: string, fallback: string) => fallback } }));
+// LeMedia shows an "Access denied" toast on a plain 403; the toast itself needs a real DOM.
+vi.mock('@/utils/toast', () => ({ showToast: vi.fn(), toastApiError: vi.fn() }));
 
 let api: AxiosInstance;
 let session: typeof import('./authSession');

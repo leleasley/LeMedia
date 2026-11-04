@@ -1,5 +1,5 @@
-/** Typed projections exposed to plugins via `PluginContext`. Kept in `@oscarr/shared` so
- *  plugin authors can import them from `@oscarr/shared` (same package the backend re-exports)
+/** Typed projections exposed to plugins via `PluginContext`. Kept in `@lemedia/shared` so
+ *  plugin authors can import them from `@lemedia/shared` (same package the backend re-exports)
  *  and stay type-safe without poking into `packages/backend/src/...` internals.
  *
  *  Design rule: these are **projections**, not pass-throughs of Prisma models. We expose

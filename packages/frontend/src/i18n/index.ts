@@ -17,18 +17,20 @@ i18n
     detection: {
       order: ['localStorage', 'navigator'],
       caches: ['localStorage'],
+      // POSIX-style tags ("en-US@posix", "en_GB.UTF-8") make Intl throw; keep only the BCP 47 part.
+      convertDetectedLanguage: (lng: string) => lng.split(/[@.]/)[0].replace('_', '-'),
     },
   });
 
 // Broadcast every language change to plugins. Plugin bundles can't share our
 // react-i18next instance (they live in a separate import graph), so they
-// subscribe to this DOM event via @oscarr/sdk's `useLanguage()` hook.
+// subscribe to this DOM event via @lemedia/sdk's `useLanguage()` hook.
 function syncLang(lng: string): void {
   if (typeof document !== 'undefined') {
     document.documentElement.setAttribute('lang', lng);
   }
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('oscarr:lang-changed', { detail: lng }));
+    window.dispatchEvent(new CustomEvent('lemedia:lang-changed', { detail: lng }));
   }
 }
 

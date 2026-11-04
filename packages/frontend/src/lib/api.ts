@@ -1,5 +1,6 @@
 import axios from 'axios';
 import i18n from '@/i18n';
+import { showToast } from '@/utils/toast';
 import { expireAuthSession, getAuthSessionVersion } from './authSession';
 
 const api = axios.create({
@@ -19,7 +20,7 @@ api.interceptors.request.use((config) => {
   requestSessions.set(config, getAuthSessionVersion());
   config.headers['Accept-Language'] = i18n.language;
   // CSRF gate — paired with the backend X-Requested-With check.
-  config.headers['X-Requested-With'] = 'oscarr';
+  config.headers['X-Requested-With'] = 'lemedia';
   // "View as role" simulation for admin testing
   const viewAsRole = sessionStorage.getItem('view-as-role');
   if (viewAsRole) {
@@ -34,30 +35,24 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Lightweight toast for global error feedback (no React dependency)
-function showErrorToast(message: string) {
-  const existing = document.getElementById('api-error-toast');
-  if (existing) existing.remove();
-
-  const toast = document.createElement('div');
-  toast.id = 'api-error-toast';
-  toast.textContent = message;
-  Object.assign(toast.style, {
-    position: 'fixed', bottom: '24px', right: '24px', zIndex: '9999',
-    padding: '12px 20px', borderRadius: '12px', fontSize: '14px', fontWeight: '500',
-    background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)',
-    color: '#ef4444', backdropFilter: 'blur(8px)', transition: 'opacity 0.3s',
-  });
-  document.body.appendChild(toast);
-  setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 4000);
-}
-
 // Global NSFW detection — any API response with nsfwTmdbIds automatically updates the filter
 let _addNsfwIds: ((ids: number[]) => void) | null = null;
 export function registerNsfwHandler(handler: (ids: number[]) => void) { _addNsfwIds = handler; }
 
 api.interceptors.response.use(
   (response) => {
+    // LeMedia's API never answers with a web page. Getting one means something else replied in
+    // its place: the reverse proxy's "Rebuilding" page during a restart, or a cached error page.
+    // Treat it as "unavailable" so no screen tries to read data out of HTML (and crashes).
+    const type = String(response.headers?.['content-type'] ?? '');
+    if (type.includes('text/html') && typeof response.data === 'string') {
+      const err = Object.assign(new Error('LeMedia is restarting, try again in a moment'), {
+        isAxiosError: true,
+        config: response.config,
+        response: { ...response, status: 503, data: { error: 'SERVICE_UNAVAILABLE' } },
+      });
+      return Promise.reject(err);
+    }
     const ids = response.data?.nsfwTmdbIds;
     if (Array.isArray(ids) && ids.length > 0 && _addNsfwIds) {
       _addNsfwIds(ids);
@@ -74,11 +69,19 @@ api.interceptors.response.use(
       || (status === 403 && code === 'ACCOUNT_DISABLED'))) {
       expireAuthSession(version);
     }
+    // 401 handling is done by AuthContext + InstallGuard, not here
+    // Only a genuine permission refusal gets the generic "access denied" toast. A 403 with its
+    // own code (CAPTCHA_FAILED, PROVIDER_DISABLED, SIGNUP_NOT_ALLOWED, ACCOUNT_DISABLED…) is
+    // handled by the screen that made the call — the sign-in page shows the real reason — and a
+    // blanket toast there wrongly told people they lacked permission when a captcha had expired.
     if (error.response?.status === 403) {
-      const translated = i18n.t('common.forbidden', 'Access denied');
-      showErrorToast(translated);
-      if (error.response.data?.error === 'FORBIDDEN' || error.response.data?.error === 'Forbidden') {
-        error.response.data.error = translated;
+      const code = error.response.data?.error;
+      const generic = !code || code === 'FORBIDDEN' || code === 'Forbidden';
+      const url: string = error.config?.url ?? '';
+      if (generic && !url.startsWith('/auth/')) {
+        const translated = i18n.t('common.forbidden', 'Access denied');
+        showToast(translated, 'error');
+        if (code) error.response.data.error = translated;
       }
     }
     return Promise.reject(error);

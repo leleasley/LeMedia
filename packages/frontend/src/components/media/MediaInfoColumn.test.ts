@@ -7,6 +7,12 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => k
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ isAdmin: false }) }));
 vi.mock('@/plugins/PluginSlot', () => ({ PluginSlot: () => null }));
 vi.mock('./CriteriaPicker', () => ({ default: () => null }));
+// LeMedia additions fetch from the API; they are not what these tests cover.
+vi.mock('@/i18n', () => ({ default: { language: 'en', t: (key: string) => key } }));
+vi.mock('@/components/media/ShareButton', () => ({ default: () => null }));
+vi.mock('@/components/media/ZurgStatus', () => ({ ZurgStatus: () => null }));
+vi.mock('@/components/media/MediaFileInfo', () => ({ MediaFileInfo: () => null }));
+vi.mock('@/components/media/PlayChooser', () => ({ PlayChooser: () => null }));
 
 function render(overrides: Partial<ComponentProps<typeof MediaInfoColumn>> = {}) {
   return renderToStaticMarkup(createElement(MediaInfoColumn, {
@@ -34,7 +40,8 @@ describe('series detail action', () => {
   ] as const)('preserves the %s state instead of offering a new series request', (buttonState, label) => {
     const html = render({ isAvailable: false, buttonState, download: { progress: 37, timeLeft: '' } });
     expect(html).toContain(label);
-    expect(html).toContain('<button disabled=""');
+    // LeMedia renders a download as a progress bar (role="progressbar"), the rest as disabled buttons.
+    expect(html).toContain(buttonState === 'downloading' ? 'role="progressbar"' : '<button disabled=""');
     expect(html).not.toContain('media.explorer.request_series');
   });
 

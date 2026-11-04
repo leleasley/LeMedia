@@ -2,11 +2,11 @@ import { prisma } from '../utils/prisma.js';
 import { getArrClientForMedia, getServiceTypeForMedia, arrIdForMedia, arrIdFieldForClient } from '../providers/index.js';
 import { normalizeLanguages } from '../utils/languages.js';
 import { logEvent } from '../utils/logEvent.js';
-import { COMPLETABLE_REQUEST_STATUSES } from '@oscarr/shared';
-import type { MediaStateCategory, RequestStatus } from '@oscarr/shared';
+import { COMPLETABLE_REQUEST_STATUSES } from '@lemedia/shared';
+import type { MediaStateCategory, RequestStatus } from '@lemedia/shared';
 import { getTvDetails } from './tmdb.js';
 import { transitionRequestStatus } from './requestStatusTransition.js';
-import { sendAvailabilityNotifications, findAvailabilityRecipients } from './sync/helpers.js';
+import { findAvailabilityRecipients, sendAvailabilityNotifications } from './sync/helpers.js';
 import { Prisma, type Media } from '@prisma/client';
 
 // ---------------------------------------------------------------------------
@@ -71,7 +71,7 @@ export interface PlaceholderMergeOpts {
 /** Request status advancement rank — higher = more progressed (kept on a per-user merge). */
 // Keyed by the shared RequestStatus union so adding a status there is a compile error here (a new
 // status must get an explicit rank, or a placeholder merge could silently drop the wrong request).
-const REQUEST_STATUS_RANK: Record<RequestStatus, number> = { declined: 0, failed: 1, pending: 2, approved: 3, processing: 4, available: 5 };
+const REQUEST_STATUS_RANK: Record<RequestStatus, number> = { deleted: -1, conflict: -1, declined: 0, failed: 1, pending: 2, approved: 3, processing: 4, available: 5 };
 const requestRank = (status: string): number => REQUEST_STATUS_RANK[status as RequestStatus] ?? -1;
 
 /** *arr-state fields the placeholder tracked that a narrow mergeData must not silently discard. */

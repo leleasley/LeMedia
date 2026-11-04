@@ -17,7 +17,7 @@ CREATE TABLE "new_AppSettings" (
     "requestsEnabled" BOOLEAN NOT NULL DEFAULT true,
     "supportEnabled" BOOLEAN NOT NULL DEFAULT true,
     "calendarEnabled" BOOLEAN NOT NULL DEFAULT true,
-    "siteName" TEXT NOT NULL DEFAULT 'Oscarr',
+    "siteName" TEXT NOT NULL DEFAULT 'LeMedia',
     "registrationEnabled" BOOLEAN NOT NULL DEFAULT true,
     "nsfwBlurEnabled" BOOLEAN NOT NULL DEFAULT true,
     "missingSearchCooldownMin" INTEGER NOT NULL DEFAULT 60,

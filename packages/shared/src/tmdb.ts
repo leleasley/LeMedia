@@ -48,6 +48,16 @@ export interface TmdbVideo {
   name: string;
 }
 
+/** Single TMDB release_dates entry. `type`: 1 premiere, 2 theatrical (limited), 3 theatrical,
+ *  4 digital, 5 physical, 6 TV. */
+export interface TmdbReleaseDate {
+  certification: string;
+  type: number;
+  release_date: string;
+  note?: string;
+  iso_639_1?: string;
+}
+
 export interface TmdbCollectionRef {
   id: number;
   name: string;
@@ -60,10 +70,18 @@ export interface TmdbCollection extends TmdbCollectionRef {
   parts: TmdbMovie[];
 }
 
+export interface TmdbProductionCompany {
+  id: number;
+  name: string;
+  logo_path: string | null;
+  origin_country: string;
+}
+
 export interface TmdbMovie {
   id: number;
   title: string;
   original_title: string;
+  original_language?: string;
   overview: string;
   poster_path: string | null;
   backdrop_path: string | null;
@@ -76,12 +94,20 @@ export interface TmdbMovie {
   runtime?: number;
   status?: string;
   tagline?: string;
+  production_companies?: TmdbProductionCompany[];
   belongs_to_collection?: TmdbCollectionRef | null;
   credits?: { cast: TmdbCast[]; crew: TmdbCrew[] };
   external_ids?: { imdb_id: string; tvdb_id: number };
   videos?: { results: TmdbVideo[] };
   keywords?: { keywords: { id: number; name: string }[] };
-  release_dates?: { results: { iso_3166_1: string; release_dates: { certification: string; type: number }[] }[] };
+  release_dates?: { results: { iso_3166_1: string; release_dates: TmdbReleaseDate[] }[] };
+}
+
+export interface TmdbNetwork {
+  id: number;
+  name: string;
+  logo_path: string | null;
+  origin_country: string;
 }
 
 export interface TmdbTv {
@@ -108,6 +134,7 @@ export interface TmdbTv {
   videos?: { results: TmdbVideo[] };
   keywords?: { results: { id: number; name: string }[] };
   content_ratings?: { results: { iso_3166_1: string; rating: string }[] };
+  networks?: TmdbNetwork[];
 }
 
 /** Loose shape for contexts that don't know movie-vs-tv upfront (grids, carousels, rows).
@@ -119,6 +146,7 @@ export interface TmdbMedia {
   name?: string;
   original_title?: string;
   original_name?: string;
+  original_language?: string;
   overview: string;
   poster_path: string | null;
   backdrop_path: string | null;
@@ -127,6 +155,8 @@ export interface TmdbMedia {
   vote_average: number;
   vote_count: number;
   media_type?: string;
+  /** Actor/director name whose known_for credit surfaced this row in search. */
+  via_person?: string | null;
   lastEpisodeInfo?: { season: number; episode: number; title: string } | null;
   genre_ids?: number[];
   genres?: { id: number; name: string }[];

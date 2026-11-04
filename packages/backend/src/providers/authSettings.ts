@@ -78,20 +78,17 @@ export async function updateProviderSettings(
   });
 }
 
+function safeParseConfig(raw: string): Record<string, unknown> {
+  return decryptSecretFields(parseRawConfig(raw));
+}
+
 /** Parse without decrypting — the write path merges at this level so it never has to round-trip
  *  a value it couldn't read. */
 function parseRawConfig(raw: string): Record<string, unknown> {
   try {
     const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
   } catch {
     return {};
   }
-}
-
-/** Parse + decrypt. The blob holds OAuth client secrets (Discord's above all), which used to sit
- *  here as plaintext JSON — readable in the database file and in every backup archive. Sensitive
- *  fields are AES-256-GCM at rest now, on the same field-name convention as Service configs. */
-function safeParseConfig(raw: string): Record<string, unknown> {
-  return decryptSecretFields(parseRawConfig(raw));
 }

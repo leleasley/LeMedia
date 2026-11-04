@@ -1,5 +1,5 @@
 -- Drop the in-core support module. Tickets + messages are now owned by the
--- Oscarr-Plugin-Support plugin which keeps its own SQLite under data/plugins/<id>/.
+-- LeMedia-Plugin-Support plugin which keeps its own SQLite under data/plugins/<id>/.
 -- The boot path runs `runLegacySupportExport` BEFORE this migration, dumping any rows
 -- to data/support-export.json so the plugin can replay them on first install.
 PRAGMA foreign_keys=OFF;
@@ -27,7 +27,7 @@ CREATE TABLE "new_AppSettings" (
     "autoApproveRequests" BOOLEAN NOT NULL DEFAULT false,
     "requestsEnabled" BOOLEAN NOT NULL DEFAULT true,
     "calendarEnabled" BOOLEAN NOT NULL DEFAULT true,
-    "siteName" TEXT NOT NULL DEFAULT 'Oscarr',
+    "siteName" TEXT NOT NULL DEFAULT 'LeMedia',
     "registrationEnabled" BOOLEAN NOT NULL DEFAULT true,
     "nsfwBlurEnabled" BOOLEAN NOT NULL DEFAULT true,
     "missingSearchCooldownMin" INTEGER NOT NULL DEFAULT 60,

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * One-shot scaffolder to add Tailwind CSS support to an Oscarr plugin.
+ * One-shot scaffolder to add Tailwind CSS support to an LeMedia plugin.
  *
- * Drops in a Tailwind config (with the Oscarr design tokens inlined so the plugin stays
+ * Drops in a Tailwind config (with the LeMedia design tokens inlined so the plugin stays
  * portable), a CSS entry that only pulls utilities (components come from the core bundle
  * already loaded in the page), patches build.js to run the Tailwind CLI after esbuild, and
  * adds tailwindcss to the plugin's devDependencies at the same version the core uses.
@@ -149,10 +149,10 @@ function main() {
 
   console.log(`→ Adding Tailwind to plugin at ${pluginDir}`);
 
-  // 1. Copy the core preset inline — plugins are ~/Oscarr/plugins/* (outside the monorepo),
+  // 1. Copy the core preset inline — plugins are ~/LeMedia/plugins/* (outside the monorepo),
   //    so we can't require from the core. A copy stays self-contained and travels with the
-  //    plugin repo. The preset is Oscarr-owned: re-running this script re-syncs it, which
-  //    means a plugin that edits its copy in-place loses those changes. Extend Oscarr's tokens
+  //    plugin repo. The preset is LeMedia-owned: re-running this script re-syncs it, which
+  //    means a plugin that edits its copy in-place loses those changes. Extend LeMedia's tokens
   //    via the plugin's tailwind.config.js `theme.extend` instead of editing the preset.
   const presetDst = join(pluginDir, 'tailwind.preset.js');
   const presetSrcContent = readFileSync(PRESET_SRC, 'utf8');
@@ -176,7 +176,7 @@ function main() {
 export default {
   presets: [preset],
   content: ['./frontend/**/*.{ts,tsx,js,jsx}'],
-  // Base + components already ship in the core CSS bundle that Oscarr loads globally — we only
+  // Base + components already ship in the core CSS bundle that LeMedia loads globally — we only
   // need utilities here. Keep this config lean to avoid bloating the plugin's CSS bundle.
   corePlugins: { preflight: false },
   plugins: [],
@@ -208,7 +208,7 @@ export default {
   console.log('  npm install       # pulls tailwindcss');
   console.log('  npm run build     # emits dist/frontend/{index.js,index.css}');
   console.log('');
-  console.log('  Oscarr\'s plugin loader injects the <link> automatically when your plugin mounts.');
+  console.log('  LeMedia\'s plugin loader injects the <link> automatically when your plugin mounts.');
 }
 
 main();

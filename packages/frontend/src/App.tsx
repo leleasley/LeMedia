@@ -1,6 +1,9 @@
-import { lazy, Suspense } from 'react';
+import { useEffect, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { showToast } from '@/utils/toast';
+import { lazyWithReload } from '@/utils/lazyWithReload';
+import { useScrollRestoration } from '@/hooks/useScrollRestoration';
 import { useAuth } from '@/context/AuthContext';
 import { useFeatures } from '@/context/FeaturesContext';
 import { useBackend } from '@/context/BackendGate';
@@ -8,23 +11,32 @@ import Layout from '@/components/Layout';
 import LoadingScreen from '@/components/LoadingScreen';
 import HomePage from '@/pages/HomePage';
 import LoginPage from '@/pages/LoginPage';
+import ForgotPasswordPage from '@/pages/ForgotPasswordPage';
+import ResetPasswordPage from '@/pages/ResetPasswordPage';
+import InvitePage from '@/pages/InvitePage';
+import PlexReturnPage from '@/pages/PlexReturnPage';
+import InstallPage from '@/pages/InstallPage';
+import SharePage from '@/pages/SharePage';
+import PrivacyPage from '@/pages/PrivacyPage';
 import MediaDetailLoading from '@/components/media/MediaDetailLoading';
 import MediaLayers from '@/components/media/MediaLayers';
 
-const AdminPage = lazy(() => import('@/pages/AdminPage'));
-const SearchPage = lazy(() => import('@/pages/SearchPage'));
-const MediaDetailPage = lazy(() => import('@/pages/MediaDetailPage'));
-const PersonPage = lazy(() => import('@/pages/PersonPage'));
-const RequestsPage = lazy(() => import('@/pages/RequestsPage'));
-const DiscoverGenrePage = lazy(() => import('@/pages/DiscoverGenrePage'));
-const CategoryPage = lazy(() => import('@/pages/CategoryPage'));
-const CalendarPage = lazy(() => import('@/pages/CalendarPage'));
-const InstallPage = lazy(() => import('@/pages/InstallPage'));
-const ForgotPasswordPage = lazy(() => import('@/pages/ForgotPasswordPage'));
-const ResetPasswordPage = lazy(() => import('@/pages/ResetPasswordPage'));
-const PlexReturnPage = lazy(() => import('@/pages/PlexReturnPage'));
-const AdminLayout = lazy(() => import('@/components/layouts/AdminLayout'));
+// Heavy / below-the-fold routes are lazy so the initial bundle stays lean
+// (Home + Login paint first; detail/search/calendar load on demand).
+// lazyWithReload: a deploy rotates hashed chunk names under a running tab —
+// a stale chunk 404s once, then we reload to the fresh bundle instead of crashing.
+const SearchPage = lazyWithReload(() => import('@/pages/SearchPage'));
+const MediaDetailPage = lazyWithReload(() => import('@/pages/MediaDetailPage'));
+const PersonPage = lazyWithReload(() => import('@/pages/PersonPage'));
+const RequestsPage = lazyWithReload(() => import('@/pages/RequestsPage'));
+
+const AdminPage = lazyWithReload(() => import('@/pages/AdminPage'));
+const AdminLayout = lazyWithReload(() => import('@/components/layouts/AdminLayout'));
 import NoAccessPage from '@/pages/NoAccessPage';
+const DiscoverGenrePage = lazyWithReload(() => import('@/pages/DiscoverGenrePage'));
+const DiscoverProviderPage = lazyWithReload(() => import('@/pages/DiscoverProviderPage'));
+const CategoryPage = lazyWithReload(() => import('@/pages/CategoryPage'));
+const CalendarPage = lazyWithReload(() => import('@/pages/CalendarPage'));
 import { PluginPage } from '@/plugins/PluginPage';
 import { NsfwFilterContext, useNsfwFilterProvider } from '@/hooks/useNsfwFilter';
 
@@ -49,9 +61,51 @@ function RequireAccess({ children }: Readonly<{ children: React.ReactNode }>) {
 
 function RequireFeature({ feature, children }: Readonly<{ feature: string; children: React.ReactNode }>) {
   const { features, loading } = useFeatures();
-  if (loading) return null;
+  if (loading) return <LoadingScreen />;
   if (!features[feature]) return <Navigate to="/" replace />;
   return <>{children}</>;
+}
+
+/** LeMedia's scroll restoration (back to any page returns to where you were, incl. PWA
+ *  swipe-back). MediaLayers adds the poster-reveal round trip on top of it. */
+function ScrollRestorer() {
+  useScrollRestoration();
+  return null;
+}
+
+/** Notification taps: the service worker (public/sw-push.js) posts the target path to an
+ *  already-open app instead of calling WindowClient.navigate(), which iOS home-screen apps
+ *  don't support reliably. Route it through the SPA router here. */
+function ServiceWorkerNavigationHandler() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+    const onMessage = (e: MessageEvent) => {
+      const data = e.data as { type?: string; url?: string } | null;
+      if (data?.type === 'lemedia:navigate' && typeof data.url === 'string' && data.url.startsWith('/')) {
+        navigate(data.url);
+      }
+    };
+    navigator.serviceWorker.addEventListener('message', onMessage);
+    return () => navigator.serviceWorker.removeEventListener('message', onMessage);
+  }, [navigate]);
+  return null;
+}
+
+function LinkedToastHandler() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { refreshUser } = useAuth();
+  const linked = searchParams.get('linked');
+  useEffect(() => {
+    if (linked) {
+      showToast(`${linked.charAt(0).toUpperCase() + linked.slice(1)} account linked!`, 'success');
+      refreshUser().catch(() => {});
+      const next = new URLSearchParams(searchParams);
+      next.delete('linked');
+      setSearchParams(next, { replace: true });
+    }
+  }, [linked, searchParams, setSearchParams, refreshUser]);
+  return null;
 }
 
 function SkipLink() {
@@ -71,24 +125,27 @@ export default function App() {
 
   if (!installed) {
     return (
-      <Suspense fallback={<LoadingScreen />}>
-        <Routes>
-          <Route path="/install" element={<InstallPage />} />
-          <Route path="*" element={<Navigate to="/install" replace />} />
-        </Routes>
-      </Suspense>
+      <Routes>
+        <Route path="/install" element={<InstallPage />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="*" element={<Navigate to="/install" replace />} />
+      </Routes>
     );
   }
 
   return (
     <>
+    <LinkedToastHandler />
+    <ServiceWorkerNavigationHandler />
     <SkipLink />
-    <Suspense fallback={<LoadingScreen />}>
     <Routes>
+      <Route path="/s/:token" element={<SharePage />} />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/privacy" element={<PrivacyPage />} />
       {/* Public by necessity: the visitor has lost the only credential they had. */}
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/invite" element={<InvitePage />} />
       <Route path="/plex-return" element={<PlexReturnPage />} />
       <Route
         path="/admin/*"
@@ -107,6 +164,8 @@ export default function App() {
         element={
           <ProtectedRoute>
             <Layout>
+              <ScrollRestorer />
+              <Suspense fallback={<LoadingScreen />}>
               <MediaLayers>
                   <Route path="/" element={<RequireAccess><HomePage /></RequireAccess>} />
                   <Route path="/search" element={<RequireAccess><SearchPage /></RequireAccess>} />
@@ -115,17 +174,18 @@ export default function App() {
                   <Route path="/person/:id" element={<RequireAccess><PersonPage /></RequireAccess>} />
                   <Route path="/requests" element={<RequireFeature feature="requestsEnabled"><RequireAccess><RequestsPage /></RequireAccess></RequireFeature>} />
                   <Route path="/discover/:mediaType/genre/:genreId" element={<RequireAccess><DiscoverGenrePage /></RequireAccess>} />
+                  <Route path="/discover/:mediaType/provider/:providerId" element={<RequireAccess><DiscoverProviderPage /></RequireAccess>} />
                   <Route path="/category/:slug" element={<RequireAccess><CategoryPage /></RequireAccess>} />
                   <Route path="/calendar" element={<RequireFeature feature="calendarEnabled"><RequireAccess><CalendarPage /></RequireAccess></RequireFeature>} />
                   <Route path="/p/:pluginId/*" element={<PluginPage />} />
                   <Route path="/install" element={<Navigate to="/" replace />} />
               </MediaLayers>
+              </Suspense>
             </Layout>
           </ProtectedRoute>
         }
       />
     </Routes>
-    </Suspense>
     </>
   );
 }

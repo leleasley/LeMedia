@@ -3,18 +3,19 @@ import { prisma } from '../utils/prisma.js';
 import { getAppSettings } from '../utils/appSettings.js';
 import { logEvent } from '../utils/logEvent.js';
 import { registerEmail, loginEmail } from '../providers/email/index.js';
+import { encryptSecretValue } from '../utils/secrets.js';
 import { getAuthProviders, getAuthProvider, getAuthProviderConfigs } from '../providers/index.js';
 import { getProviderConfig, isProviderEnabled } from '../providers/authSettings.js';
 import type { AuthHelpers } from '../providers/types.js';
 import { getPermissionsForRole } from '../middleware/rbac.js';
 import { refreshUserAvatar } from '../utils/avatarSource.js';
 import { setAuthCookie } from '../utils/authCookie.js';
+import { verifyTurnstileToken } from '../utils/turnstile.js';
 import { requestReset, consumeReset, isResetEnabled } from '../services/passwordReset.js';
-import { encryptSecretValue } from '../utils/secrets.js';
+import { getInviteByToken, acceptInvite } from '../services/userInvite.js';
+import { PUSH_TYPES, parsePushPrefs, type PushType } from '../services/pushService.js';
 
-/** Session issuing + provider find-or-create, shared by the auth routes and by the install
- *  wizard's first-admin route (`/api/setup/admin`) so both mint sessions the same way. */
-export function buildHelpers(app: FastifyInstance): AuthHelpers {
+function buildHelpers(app: FastifyInstance): AuthHelpers {
   return {
     async signAndSend(reply, userId) {
       const user = await prisma.user.findUnique({
@@ -68,24 +69,26 @@ export function buildHelpers(app: FastifyInstance): AuthHelpers {
         }
       }
 
+      const userCount = await prisma.user.count();
+      const isFirstUser = userCount === 0;
+
       if (!user) {
         // Per-provider signup gate, secure-by-default: each AuthProvider has its own
         // `allowSignup` toggle (including email). Admin opts-in explicitly per channel, no
-        // global master switch to reason about.
-        //
-        // This used to be skipped while the user table was empty, to let a fresh install
-        // bootstrap. Bootstrapping now happens on POST /api/setup/admin behind SETUP_SECRET, so
-        // the exemption only left every enabled provider wide open on an un-installed instance.
-        const providerCfg = await getProviderConfig(opts.provider);
-        if (providerCfg.allowSignup !== true) {
-          throw new Error('SIGNUP_NOT_ALLOWED');
+        // global master switch to reason about. Bootstrapping bypasses so a fresh install
+        // can create its first admin.
+        if (!isFirstUser) {
+          const providerCfg = await getProviderConfig(opts.provider);
+          if (providerCfg.allowSignup !== true) {
+            throw new Error('SIGNUP_NOT_ALLOWED');
+          }
         }
         user = await prisma.user.create({
           data: {
             email: opts.email,
             displayName: opts.displayName,
             avatar: opts.avatar,
-            role: 'user',
+            role: isFirstUser ? 'admin' : 'user',
             providers: {
               create: {
                 provider: opts.provider,
@@ -158,31 +161,32 @@ export async function authRoutes(app: FastifyInstance) {
           email: { type: 'string' },
           password: { type: 'string' },
           displayName: { type: 'string' },
+          turnstileToken: { type: 'string' },
         },
       },
     },
   }, async (request, reply) => {
     const { email, password, displayName } = request.body as { email: string; password: string; displayName: string };
 
-    // The very first account is the instance owner. Minting it here — on a public route — let
-    // anyone who could reach the port before the operator finished the wizard take the instance
-    // over. Bootstrap now lives on POST /api/setup/admin, which proves possession of
-    // SETUP_SECRET; this route never creates an admin and never creates the first user.
-    if ((await prisma.user.count()) === 0) {
-      logEvent('warn', 'Auth', `Registration refused on an empty instance (${email}) — the first account must come from the install wizard`);
-      return reply.status(403).send({ error: 'SETUP_REQUIRED' });
+    if (!(await verifyTurnstileToken((request.body as { turnstileToken?: string }).turnstileToken, request.ip))) {
+      return reply.status(403).send({ error: 'CAPTCHA_FAILED' });
     }
 
-    // Provider enablement: an admin who flips Email off should fully shut down email-based
-    // registration, not just hide the button on the login page.
-    if (!(await isProviderEnabled('email'))) {
-      return reply.status(403).send({ error: 'PROVIDER_DISABLED' });
-    }
-    // Email signup is gated by email's own allowSignup toggle (same per-provider model as
-    // Plex/Jellyfin/Emby/Discord). Admin manages it from Authentication → Email.
-    const emailCfg = await getProviderConfig('email');
-    if (emailCfg.allowSignup !== true) {
-      return reply.status(403).send({ error: 'SIGNUP_NOT_ALLOWED' });
+    const userCount = await prisma.user.count();
+    const isFirstUser = userCount === 0;
+
+    if (!isFirstUser) {
+      // Provider enablement: an admin who flips Email off should fully shut down email-based
+      // registration, not just hide the button on the login page.
+      if (!(await isProviderEnabled('email'))) {
+        return reply.status(403).send({ error: 'PROVIDER_DISABLED' });
+      }
+      // Email signup is gated by email's own allowSignup toggle (same per-provider model as
+      // Plex/Jellyfin/Emby/Discord). Admin manages it from Authentication → Email.
+      const emailCfg = await getProviderConfig('email');
+      if (emailCfg.allowSignup !== true) {
+        return reply.status(403).send({ error: 'SIGNUP_NOT_ALLOWED' });
+      }
     }
 
     try {
@@ -192,17 +196,18 @@ export async function authRoutes(app: FastifyInstance) {
           email: result.email,
           displayName: result.displayName,
           passwordHash: result.providerData.passwordHash as string,
-          role: 'user',
+          role: isFirstUser ? 'admin' : 'user',
           providers: { create: { provider: 'email', providerId: result.email, providerUsername: result.displayName, providerEmail: result.email } },
         },
       });
 
-      logEvent('info', 'Auth', `New email account created: ${result.displayName} (user)`);
+      logEvent('info', 'Auth', `New email account created: ${result.displayName} (${isFirstUser ? 'admin' : 'user'})`);
       return helpers.signAndSend(reply, user.id);
     } catch (err) {
       const msg = (err as Error).message;
       if (msg === 'EMAIL_EXISTS') return reply.status(409).send({ error: 'EMAIL_EXISTS' });
       if (msg === 'PASSWORD_TOO_SHORT') return reply.status(400).send({ error: 'PASSWORD_TOO_SHORT' });
+      if (msg === 'PASSWORD_WEAK') return reply.status(400).send({ error: 'PASSWORD_WEAK' });
       if (msg === 'DISPLAY_NAME_REQUIRED') return reply.status(400).send({ error: 'DISPLAY_NAME_REQUIRED' });
       throw err;
     }
@@ -217,12 +222,17 @@ export async function authRoutes(app: FastifyInstance) {
         properties: {
           email: { type: 'string' },
           password: { type: 'string' },
+          turnstileToken: { type: 'string' },
         },
       },
     },
   }, async (request, reply) => {
     if (!(await isProviderEnabled('email'))) {
       return reply.status(403).send({ error: 'PROVIDER_DISABLED' });
+    }
+
+    if (!(await verifyTurnstileToken((request.body as { turnstileToken?: string }).turnstileToken, request.ip))) {
+      return reply.status(403).send({ error: 'CAPTCHA_FAILED' });
     }
     const { email, password } = request.body as { email: string; password: string };
 
@@ -302,6 +312,7 @@ export async function authRoutes(app: FastifyInstance) {
       where: { id },
       select: {
         id: true, email: true, displayName: true, avatar: true, avatarSource: true, avatarConfig: true, role: true, createdAt: true,
+        notifyRequests: true, notifyDigital: true,
         providers: { select: { provider: true, providerUsername: true, providerEmail: true, providerAvatar: true } },
       },
     });
@@ -317,6 +328,27 @@ export async function authRoutes(app: FastifyInstance) {
       avatar: p.providerAvatar,
     }));
     return reply.send({ ...user, providers, permissions });
+  });
+
+  app.put('/me', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['displayName'],
+        additionalProperties: false,
+        properties: { displayName: { type: 'string', minLength: 1, maxLength: 60 } },
+      },
+    },
+  }, async (request, reply) => {
+    const displayName = (request.body as { displayName: string }).displayName.trim();
+    if (!displayName) return reply.status(400).send({ error: 'DISPLAY_NAME_REQUIRED' });
+    if (displayName.length > 60) return reply.status(400).send({ error: 'DISPLAY_NAME_TOO_LONG' });
+    const user = await prisma.user.update({
+      where: { id: request.user.id },
+      data: { displayName },
+      select: { displayName: true },
+    });
+    return reply.send(user);
   });
 
   // PUT /me/avatar-source — Issue #169. Lets the user pick which linked provider supplies their
@@ -375,10 +407,87 @@ export async function authRoutes(app: FastifyInstance) {
     }
 
     // Keep avatarConfig untouched when switching to a non-dicebear source — the user can come
-    // back to their custom avatar later (clicking the "Oscarr" tile restores it without re-editing).
+    // back to their custom avatar later (clicking the "LeMedia" tile restores it without re-editing).
     await prisma.user.update({ where: { id }, data: { avatarSource: source } });
     const resolved = await refreshUserAvatar(id);
     return reply.send({ avatarSource: source, avatar: resolved });
+  });
+
+  // PUT /me/notifications — bell opt-outs (request updates, digital dates)
+  app.put('/me/notifications', {
+    schema: {
+      body: {
+        type: 'object' as const,
+        properties: {
+          notifyRequests: { type: 'boolean' as const },
+          notifyDigital: { type: 'boolean' as const },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const { id } = request.user;
+    const { notifyRequests, notifyDigital } = request.body as {
+      notifyRequests?: boolean; notifyDigital?: boolean;
+    };
+    const data: { notifyRequests?: boolean; notifyDigital?: boolean } = {};
+    if (typeof notifyRequests === 'boolean') data.notifyRequests = notifyRequests;
+    if (typeof notifyDigital === 'boolean') data.notifyDigital = notifyDigital;
+    if (Object.keys(data).length === 0) return reply.status(400).send({ error: 'Nothing to update' });
+    const user = await prisma.user.update({ where: { id }, data });
+    return reply.send({ notifyRequests: user.notifyRequests, notifyDigital: user.notifyDigital });
+  });
+
+  // GET/PUT /me/push-prefs — which notification types reach this user's phones/browsers
+  app.get('/me/push-prefs', async (request) => {
+    const user = await prisma.user.findUnique({ where: { id: request.user.id }, select: { pushPrefs: true } });
+    return parsePushPrefs(user?.pushPrefs);
+  });
+
+  app.put('/me/push-prefs', {
+    schema: {
+      body: {
+        type: 'object' as const,
+        additionalProperties: false,
+        properties: Object.fromEntries(PUSH_TYPES.map((t) => [t, { type: 'boolean' as const }])),
+      },
+    },
+  }, async (request) => {
+    const { id } = request.user;
+    const current = await prisma.user.findUnique({ where: { id }, select: { pushPrefs: true } });
+    const next = { ...parsePushPrefs(current?.pushPrefs), ...(request.body as Partial<Record<PushType, boolean>>) };
+    await prisma.user.update({ where: { id }, data: { pushPrefs: JSON.stringify(next) } });
+    return next;
+  });
+
+  // DELETE /me/providers/:provider — let a user unlink their own OAuth account
+  app.delete('/me/providers/:provider', {
+    schema: {
+      params: {
+        type: 'object' as const,
+        required: ['provider'],
+        properties: { provider: { type: 'string' as const, minLength: 1, maxLength: 50 } },
+      },
+    },
+  }, async (request, reply) => {
+    const { provider } = request.params as { provider: string };
+    const userId = request.user.id;
+    const target = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, passwordHash: true } });
+    if (!target) return reply.status(404).send({ error: 'User not found' });
+    const links = await prisma.userProvider.findMany({ where: { userId }, select: { id: true, provider: true } });
+    const link = links.find((l) => l.provider === provider);
+    if (!link) return reply.status(404).send({ error: 'Provider link not found' });
+    const remainingLinks = links.filter((l) => l.provider !== provider).length;
+    const hasPassword = !!target.passwordHash;
+    if (remainingLinks === 0 && !hasPassword) return reply.status(400).send({ error: 'LAST_AUTH_METHOD' });
+    await prisma.userProvider.delete({ where: { id: link.id } });
+    const avatarState = await prisma.user.findUnique({ where: { id: userId }, select: { avatarSource: true } });
+    if (avatarState?.avatarSource === provider) await prisma.user.update({ where: { id: userId }, data: { avatarSource: 'none' } });
+    const { refreshUserAvatar } = await import('../utils/avatarSource.js');
+    await refreshUserAvatar(userId);
+    // Drop the cached role/disabled state so the change applies on the next request.
+    const { invalidateUserStateCache } = await import('../middleware/rbac.js');
+    invalidateUserStateCache(userId);
+    return reply.send({ ok: true });
   });
 
   app.post('/logout', async (_request, reply) => {
@@ -402,7 +511,7 @@ export async function authRoutes(app: FastifyInstance) {
     const { email } = request.body as { email: string };
     // No request-derived origin: the link's host comes from AppSettings.siteUrl only. See
     // isResetEnabled — deriving it from the Host header would make this endpoint a way to send a
-    // genuine Oscarr email carrying an attacker-controlled reset link.
+    // genuine LeMedia email carrying an attacker-controlled reset link.
     await requestReset(email);
     return reply.send({ ok: true });
   });
@@ -420,6 +529,40 @@ export async function authRoutes(app: FastifyInstance) {
     const { token, password } = request.body as { token: string; password: string };
     const error = await consumeReset(token, password);
     if (error) return reply.status(error === 'DISABLED' ? 403 : 400).send({ error });
+    return reply.send({ ok: true });
+  });
+
+  // ── Invite (admin-issued) ──
+
+  app.get('/invite/validate', {
+    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    schema: {
+      querystring: {
+        type: 'object' as const,
+        required: ['token'],
+        properties: { token: { type: 'string' } },
+      },
+    },
+  }, async (request, reply) => {
+    const { token } = request.query as { token: string };
+    const data = await getInviteByToken(token);
+    if (!data) return reply.status(400).send({ error: 'INVALID_TOKEN' });
+    return reply.send(data);
+  });
+
+  app.post('/invite/accept', {
+    config: { rateLimit: { max: 5, timeWindow: '15 minutes' } },
+    schema: {
+      body: {
+        type: 'object' as const,
+        required: ['token', 'password'],
+        properties: { token: { type: 'string' }, password: { type: 'string' }, displayName: { type: 'string' } },
+      },
+    },
+  }, async (request, reply) => {
+    const { token, password, displayName } = request.body as { token: string; password: string; displayName?: string };
+    const error = await acceptInvite(token, password, displayName);
+    if (error) return reply.status(400).send({ error });
     return reply.send({ ok: true });
   });
 }

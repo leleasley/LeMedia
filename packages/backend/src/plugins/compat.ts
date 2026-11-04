@@ -4,15 +4,15 @@ import { readFileSync } from 'node:fs';
 import { PROJECT_PACKAGE_JSON } from '../utils/paths.js';
 
 /**
- * 🟢 `verified`     — Oscarr's current version is listed in the plugin's testedAgainst.
- * 🟡 `untested`     — Oscarr's version is in engines.oscarr range but not explicitly tested.
- * 🔴 `incompatible` — Oscarr's version is outside engines.oscarr range — plugin is refused.
- * ⚪ `unknown`      — Plugin declares no engines.oscarr at all (legacy pre-L5 plugin).
+ * 🟢 `verified`     — LeMedia's current version is listed in the plugin's testedAgainst.
+ * 🟡 `untested`     — LeMedia's version is in engines.lemedia range but not explicitly tested.
+ * 🔴 `incompatible` — LeMedia's version is outside engines.lemedia range — plugin is refused.
+ * ⚪ `unknown`      — Plugin declares no engines.lemedia at all (legacy pre-L5 plugin).
  */
 export type CompatStatus = 'verified' | 'untested' | 'incompatible' | 'unknown';
 
 let cachedVersion: string | null = null;
-export function getOscarrVersion(): string {
+export function getLeMediaVersion(): string {
   if (cachedVersion) return cachedVersion;
   try {
     // Read from root package.json — the prod Docker image rewrites packages/backend/package.json
@@ -28,43 +28,43 @@ export function getOscarrVersion(): string {
 export interface CompatResult {
   status: CompatStatus;
   range?: string;
-  oscarrVersion: string;
+  lemediaVersion: string;
   reason?: string;
 }
 
-export function checkCompat(manifest: PluginManifest, oscarrVersion = getOscarrVersion()): CompatResult {
-  const range = manifest.engines?.oscarr;
+export function checkCompat(manifest: PluginManifest, lemediaVersion = getLeMediaVersion()): CompatResult {
+  const range = manifest.engines?.lemedia;
   if (!range) {
     return {
       status: 'unknown',
-      oscarrVersion,
-      reason: 'Plugin does not declare engines.oscarr — cannot verify compatibility',
+      lemediaVersion,
+      reason: 'Plugin does not declare engines.lemedia, cannot verify compatibility',
     };
   }
   if (!semver.validRange(range)) {
     return {
       status: 'incompatible',
       range,
-      oscarrVersion,
+      lemediaVersion,
       reason: `Invalid semver range: "${range}"`,
     };
   }
-  if (!semver.satisfies(oscarrVersion, range, { includePrerelease: true })) {
+  if (!semver.satisfies(lemediaVersion, range, { includePrerelease: true })) {
     return {
       status: 'incompatible',
       range,
-      oscarrVersion,
-      reason: `Oscarr ${oscarrVersion} does not satisfy ${range}`,
+      lemediaVersion,
+      reason: `LeMedia ${lemediaVersion} does not satisfy ${range}`,
     };
   }
   const tested = manifest.engines?.testedAgainst ?? [];
-  if (tested.includes(oscarrVersion)) {
-    return { status: 'verified', range, oscarrVersion };
+  if (tested.includes(lemediaVersion)) {
+    return { status: 'verified', range, lemediaVersion };
   }
   return {
     status: 'untested',
     range,
-    oscarrVersion,
-    reason: `Oscarr ${oscarrVersion} is within range but wasn't explicitly tested by the author`,
+    lemediaVersion,
+    reason: `LeMedia ${lemediaVersion} is within range but wasn't explicitly tested by the author`,
   };
 }

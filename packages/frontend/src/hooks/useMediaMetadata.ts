@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { SeriesCatalog, ServiceMetadata, TmdbMedia } from '@oscarr/shared';
+import type { SeriesCatalog, ServiceMetadata, TmdbMedia } from '@lemedia/shared';
 import api from '@/lib/api';
 import { detailWithServiceMetadata } from '@/utils/serviceMetadata';
 
 /** Resolve the hero once, so a late service response cannot swap its artwork/title mid-animation. */
-export function useMediaMetadata(id: string | undefined, type: 'movie' | 'tv') {
+/** `shareToken`: a public share link. Only the token-scoped TMDB detail is readable then; the
+ *  service metadata needs an account, so it is skipped. */
+export function useMediaMetadata(id: string | undefined, type: 'movie' | 'tv', shareToken?: string) {
   const key = `${type}:${id}`;
   const [snapshot, setSnapshot] = useState<{
     key: string; media: TmdbMedia | null; catalog: SeriesCatalog | null; metadata: ServiceMetadata | null; error: boolean;
@@ -19,7 +21,10 @@ export function useMediaMetadata(id: string | undefined, type: 'movie' | 'tv') {
     const forceRefresh = refreshKey.current === key;
     refreshKey.current = null;
     setRefreshing(true);
-    Promise.allSettled([
+    Promise.allSettled(shareToken ? [
+      api.get<TmdbMedia>(`/share/${shareToken}/detail`, { signal: controller.signal }),
+      Promise.resolve({ data: null as ServiceMetadata | null }),
+    ] : [
       api.get<TmdbMedia>(`/tmdb/${type}/${id}`, { signal: controller.signal }),
       api.get<ServiceMetadata | null>(`/media/${type}/${id}/metadata`, { signal: controller.signal, params: { refresh: forceRefresh } }),
     ]).then(([tmdbResult, serviceResult]) => {
@@ -33,7 +38,7 @@ export function useMediaMetadata(id: string | undefined, type: 'movie' | 'tv') {
       setRefreshing(false);
     });
     return () => controller.abort();
-  }, [id, type, key, revision]);
+  }, [id, type, key, revision, shareToken]);
   const current = snapshot?.key === key ? snapshot : null;
   return { media: current?.media ?? null, catalog: current?.catalog ?? null, metadata: current?.metadata ?? null,
     loading: !current, seasonsLoading: !current, seasonsError: current?.error ?? false, refreshing, refresh };

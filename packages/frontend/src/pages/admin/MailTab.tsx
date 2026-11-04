@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Info, Mail, Send } from 'lucide-react';
 import api from '@/lib/api';
+import { showToast, toastApiError } from '@/utils/toast';
 
 interface MailView {
   enabled: boolean;
@@ -32,7 +33,6 @@ export function MailTab() {
   const [password, setPassword] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [testTo, setTestTo] = useState('');
-  const [flash, setFlash] = useState<{ text: string; kind: 'ok' | 'error' } | null>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -46,17 +46,16 @@ export function MailTab() {
       setResetEnabled(Boolean(settings.passwordResetEnabled));
       setHasSiteUrl(Boolean(settings.siteUrl?.trim()));
     } catch (err) {
-      setFlash({ text: (err as Error).message, kind: 'error' });
+      toastApiError(err, t('admin.mail.load_failed'));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => { void load(); }, [load]);
 
   const save = async () => {
     setBusy(true);
-    setFlash(null);
     try {
       const { data } = await api.put('/admin/mail', {
         enabled: mail.enabled,
@@ -72,10 +71,11 @@ export function MailTab() {
       setMail(data);
       setPassword('');
       setApiKey('');
-      setFlash({ text: t('common.saved'), kind: 'ok' });
+      showToast(t('common.saved'), 'success');
     } catch (err) {
       const code = (err as { response?: { data?: { error?: string } } }).response?.data?.error;
-      setFlash({ text: code === 'MAIL_CONFIGURED_BY_ENV' ? t('admin.mail.env_locked') : (err as Error).message, kind: 'error' });
+      if (code === 'MAIL_CONFIGURED_BY_ENV') showToast(t('admin.mail.env_locked'), 'error');
+      else toastApiError(err, t('admin.mail.save_failed'));
     } finally {
       setBusy(false);
     }
@@ -83,7 +83,6 @@ export function MailTab() {
 
   const sendTest = async () => {
     setBusy(true);
-    setFlash(null);
     try {
       await api.post('/admin/mail/test', {
         to: testTo,
@@ -96,10 +95,11 @@ export function MailTab() {
         ...(password ? { password } : {}),
         ...(apiKey ? { apiKey } : {}),
       });
-      setFlash({ text: t('admin.mail.test_ok'), kind: 'ok' });
+      showToast(t('admin.mail.test_ok'), 'success');
     } catch (err) {
-      const body = (err as { response?: { data?: { message?: string } } }).response?.data;
-      setFlash({ text: body?.message ?? (err as Error).message, kind: 'error' });
+      const body = (err as { response?: { data?: { message?: string; error?: string } } }).response?.data;
+      if (body?.error) toastApiError(err, t('admin.mail.test_failed'));
+      else showToast(body?.message ?? (err as Error).message, 'error');
     } finally {
       setBusy(false);
     }
@@ -109,9 +109,10 @@ export function MailTab() {
     setResetEnabled(value);
     try {
       await api.put('/admin/settings', { passwordResetEnabled: value });
+      showToast(t('common.saved'), 'success');
     } catch (err) {
       setResetEnabled(!value);
-      setFlash({ text: (err as Error).message, kind: 'error' });
+      toastApiError(err, t('admin.mail.toggle_failed'));
     }
   };
 
@@ -120,133 +121,144 @@ export function MailTab() {
   const locked = mail.fromEnv;
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-8 max-w-2xl pb-20">
       <header>
-        <h2 className="text-lg font-semibold text-ndp-text flex items-center gap-2">
-          <Mail className="w-5 h-5" /> {t('admin.mail.title')}
+        <h2 className="font-display-title text-3xl text-ndp-text flex items-center gap-2.5">
+          <Mail className="w-6 h-6 text-ndp-text-muted" /> {t('admin.mail.title')}
         </h2>
-        <p className="text-sm text-ndp-text-dim mt-1">{t('admin.mail.desc')}</p>
-        <p className="text-xs text-ndp-text-dim mt-1">{t('admin.mail.shared_note')}</p>
+        <p className="text-sm text-ndp-text-muted mt-2 leading-relaxed">{t('admin.mail.desc')}</p>
+        <p className="text-xs text-ndp-text-dim mt-1 leading-relaxed">{t('admin.mail.shared_note')}</p>
       </header>
 
       {locked && (
-        <p className="flex items-start gap-2 rounded-lg border border-ndp-accent/30 bg-ndp-accent/10 px-3 py-2 text-sm text-ndp-text">
-          <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
+        <p className="flex items-start gap-2.5 rounded-xl ring-1 ring-inset ring-ndp-accent/25 bg-ndp-accent/[0.07] px-4 py-3 text-sm text-ndp-text leading-relaxed">
+          <Info className="w-4 h-4 mt-0.5 flex-shrink-0 text-ndp-accent" />
           {t('admin.mail.env_locked')}
         </p>
       )}
 
-      {flash && (
-        <p className={`rounded-lg px-3 py-2 text-sm ${flash.kind === 'ok' ? 'bg-ndp-success/10 text-ndp-success' : 'bg-ndp-danger/10 text-ndp-danger'}`}>
-          {flash.text}
-        </p>
-      )}
-
-      <fieldset disabled={locked} className="space-y-4 disabled:opacity-60">
-        <label className="flex items-center gap-2">
-          <input type="checkbox" checked={mail.enabled} onChange={(e) => setMail({ ...mail, enabled: e.target.checked })} />
-          <span className="text-sm text-ndp-text">{t('admin.mail.enabled')}</span>
-        </label>
-
-        <div>
-          <label className="block text-sm font-medium text-ndp-text mb-1.5">{t('admin.mail.transport')}</label>
-          <select
-            value={mail.transport}
-            onChange={(e) => setMail({ ...mail, transport: e.target.value as MailView['transport'] })}
-            className="input w-full"
-          >
-            <option value="smtp">{t('admin.mail.smtp')}</option>
-            <option value="resend">{t('admin.mail.resend')}</option>
-          </select>
+      <fieldset disabled={locked} className="space-y-4 disabled:opacity-60 min-w-0">
+        <div className="admin-group divide-y divide-white/[0.06]">
+          <label className="admin-row cursor-pointer">
+            <span className="flex-1 min-w-0 text-sm text-ndp-text">{t('admin.mail.enabled')}</span>
+            <input
+              type="checkbox"
+              checked={mail.enabled}
+              onChange={(e) => setMail({ ...mail, enabled: e.target.checked })}
+              className="w-5 h-5 accent-ndp-accent flex-shrink-0"
+            />
+          </label>
+          <div className="px-4 py-3">
+            <label className="block text-xs font-medium text-ndp-text-muted mb-1.5">{t('admin.mail.transport')}</label>
+            <select
+              value={mail.transport}
+              onChange={(e) => setMail({ ...mail, transport: e.target.value as MailView['transport'] })}
+              className="input w-full"
+            >
+              <option value="smtp">{t('admin.mail.smtp')}</option>
+              <option value="resend">{t('admin.mail.resend')}</option>
+            </select>
+          </div>
         </div>
 
-        {mail.transport === 'smtp' ? (
-          <>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="col-span-2">
-                <label className="block text-sm font-medium text-ndp-text mb-1.5">{t('admin.mail.host')}</label>
-                <input value={mail.host} onChange={(e) => setMail({ ...mail, host: e.target.value })} className="input w-full" placeholder="smtp.example.com" />
+        <div className="admin-group p-4 space-y-4">
+          {mail.transport === 'smtp' ? (
+            <>
+              <div className="grid grid-cols-[minmax(0,1fr)_6.5rem] sm:grid-cols-[minmax(0,1fr)_8rem] gap-3">
+                <div className="min-w-0">
+                  <label className="block text-xs font-medium text-ndp-text-muted mb-1.5">{t('admin.mail.host')}</label>
+                  <input value={mail.host} onChange={(e) => setMail({ ...mail, host: e.target.value })} className="input w-full" placeholder="smtp.example.com" />
+                </div>
+                <div className="min-w-0">
+                  <label className="block text-xs font-medium text-ndp-text-muted mb-1.5">{t('admin.mail.port')}</label>
+                  <input type="number" value={mail.port} onChange={(e) => setMail({ ...mail, port: Number(e.target.value) || 587 })} className="input w-full tabular-nums" />
+                </div>
+              </div>
+              <label className="flex items-center gap-3 min-h-[40px] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={mail.secure}
+                  onChange={(e) => setMail({ ...mail, secure: e.target.checked })}
+                  className="w-5 h-5 accent-ndp-accent flex-shrink-0"
+                />
+                <span className="text-sm text-ndp-text">{t('admin.mail.secure')}</span>
+              </label>
+              <div>
+                <label className="block text-xs font-medium text-ndp-text-muted mb-1.5">{t('admin.mail.user')}</label>
+                <input value={mail.user} onChange={(e) => setMail({ ...mail, user: e.target.value })} className="input w-full" autoComplete="off" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-ndp-text mb-1.5">{t('admin.mail.port')}</label>
-                <input type="number" value={mail.port} onChange={(e) => setMail({ ...mail, port: Number(e.target.value) || 587 })} className="input w-full" />
+                <label className="block text-xs font-medium text-ndp-text-muted mb-1.5">{t('admin.mail.password')}</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="input w-full"
+                  autoComplete="new-password"
+                  placeholder={mail.hasPassword ? t('admin.mail.secret_kept') : ''}
+                />
               </div>
-            </div>
-            <label className="flex items-center gap-2">
-              <input type="checkbox" checked={mail.secure} onChange={(e) => setMail({ ...mail, secure: e.target.checked })} />
-              <span className="text-sm text-ndp-text">{t('admin.mail.secure')}</span>
-            </label>
+            </>
+          ) : (
             <div>
-              <label className="block text-sm font-medium text-ndp-text mb-1.5">{t('admin.mail.user')}</label>
-              <input value={mail.user} onChange={(e) => setMail({ ...mail, user: e.target.value })} className="input w-full" autoComplete="off" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-ndp-text mb-1.5">{t('admin.mail.password')}</label>
+              <label className="block text-xs font-medium text-ndp-text-muted mb-1.5">{t('admin.mail.apiKey')}</label>
               <input
                 type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
                 className="input w-full"
                 autoComplete="new-password"
-                placeholder={mail.hasPassword ? t('admin.mail.secret_kept') : ''}
+                placeholder={mail.hasApiKey ? t('admin.mail.secret_kept') : 're_...'}
               />
             </div>
-          </>
-        ) : (
-          <div>
-            <label className="block text-sm font-medium text-ndp-text mb-1.5">{t('admin.mail.apiKey')}</label>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              className="input w-full"
-              autoComplete="new-password"
-              placeholder={mail.hasApiKey ? t('admin.mail.secret_kept') : 're_...'}
-            />
-          </div>
-        )}
+          )}
 
-        <div>
-          <label className="block text-sm font-medium text-ndp-text mb-1.5">{t('admin.mail.from')}</label>
-          <input value={mail.fromEmail} onChange={(e) => setMail({ ...mail, fromEmail: e.target.value })} className="input w-full" placeholder="Oscarr &lt;no-reply@example.com&gt;" />
+          <div>
+            <label className="block text-xs font-medium text-ndp-text-muted mb-1.5">{t('admin.mail.from')}</label>
+            <input value={mail.fromEmail} onChange={(e) => setMail({ ...mail, fromEmail: e.target.value })} className="input w-full" placeholder="LeMedia &lt;no-reply@example.com&gt;" />
+          </div>
         </div>
 
-        <button type="button" onClick={save} disabled={busy} className="btn-primary">{t('common.save')}</button>
+        <div className="flex justify-end">
+          <button type="button" onClick={save} disabled={busy} className="btn-primary w-full sm:w-auto disabled:opacity-50">{t('common.save')}</button>
+        </div>
       </fieldset>
 
-      <div className="border-t border-white/10 pt-5 space-y-3">
-        <label className="block text-sm font-medium text-ndp-text">{t('admin.mail.test')}</label>
-        <div className="flex gap-2">
-          <input
-            type="email"
-            value={testTo}
-            onChange={(e) => setTestTo(e.target.value)}
-            placeholder={t('admin.mail.test_to')}
-            className="input flex-1"
-          />
-          <button type="button" onClick={sendTest} disabled={busy || !testTo} className="btn-secondary flex items-center gap-1.5">
-            <Send className="w-4 h-4" /> {t('admin.mail.test')}
-          </button>
+      <section>
+        <label className="admin-group-label block">{t('admin.mail.test')}</label>
+        <div className="admin-group p-4">
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="email"
+              value={testTo}
+              onChange={(e) => setTestTo(e.target.value)}
+              placeholder={t('admin.mail.test_to')}
+              className="input w-full sm:flex-1 min-w-0"
+            />
+            <button type="button" onClick={sendTest} disabled={busy || !testTo} className="btn-secondary flex items-center justify-center gap-1.5 whitespace-nowrap disabled:opacity-50">
+              <Send className="w-4 h-4" /> {t('admin.mail.test')}
+            </button>
+          </div>
         </div>
-      </div>
+      </section>
 
-      <div className="border-t border-white/10 pt-5">
-        <label className="flex items-start gap-2">
-          <input
-            type="checkbox"
-            checked={resetEnabled}
-            disabled={!mail.configured || !mail.enabled || !hasSiteUrl}
-            onChange={(e) => toggleReset(e.target.checked)}
-            className="mt-1"
-          />
-          <span>
+      <div className="admin-group">
+        <label className="admin-row items-start cursor-pointer">
+          <span className="flex-1 min-w-0">
             <span className="block text-sm text-ndp-text">{t('admin.mail.reset_toggle')}</span>
-            <span className="block text-xs text-ndp-text-dim mt-0.5">
+            <span className="block text-xs text-ndp-text-dim mt-0.5 leading-relaxed">
               {!mail.configured || !mail.enabled
                 ? t('admin.mail.reset_needs_mail')
                 : !hasSiteUrl ? t('admin.mail.reset_needs_siteurl') : t('admin.mail.reset_hint')}
             </span>
           </span>
+          <input
+            type="checkbox"
+            checked={resetEnabled}
+            disabled={!mail.configured || !mail.enabled || !hasSiteUrl}
+            onChange={(e) => toggleReset(e.target.checked)}
+            className="mt-0.5 w-5 h-5 accent-ndp-accent flex-shrink-0 disabled:opacity-40"
+          />
         </label>
       </div>
     </div>

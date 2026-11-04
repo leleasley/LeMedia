@@ -1,5 +1,5 @@
 /**
- * Bidirectional mappings between Oscarr's status strings and Overseerr's numeric status enums.
+ * Bidirectional mappings between LeMedia's status strings and Overseerr's numeric status enums.
  * Source: Overseerr `server/constants/media.ts` (MediaStatus, MediaRequestStatus).
  */
 
@@ -22,15 +22,15 @@ export const SEERR_MEDIA_STATUS = {
 } as const;
 
 /**
- * Oscarr request status enum: "pending" | "approved" | "declined" | "processing" | "available" | "failed"
+ * LeMedia request status enum: "pending" | "approved" | "declined" | "processing" | "available" | "failed"
  * Overseerr only knows pending/approved/declined for the *request* itself; everything past
  * approval (processing, available, failed) is reflected on the linked media row, not the request.
- * So we collapse the post-approval Oscarr states to APPROVED at the request level — Maintainerr
+ * So we collapse the post-approval LeMedia states to APPROVED at the request level — Maintainerr
  * & co. then read the actual download/availability state via Media.statusCategory.
  */
-export function mapRequestStatus(oscarrStatus: string): number {
-  if (oscarrStatus === 'pending') return SEERR_REQUEST_STATUS.PENDING;
-  if (oscarrStatus === 'declined') return SEERR_REQUEST_STATUS.DECLINED;
+export function mapRequestStatus(lemediaStatus: string): number {
+  if (lemediaStatus === 'pending') return SEERR_REQUEST_STATUS.PENDING;
+  if (lemediaStatus === 'declined') return SEERR_REQUEST_STATUS.DECLINED;
   // approved / processing / available / failed → APPROVED for the request itself.
   return SEERR_REQUEST_STATUS.APPROVED;
 }
@@ -53,7 +53,7 @@ export function mapMediaStatus(category: string | null | undefined): number {
 
 /**
  * Reverse mapping for the `/request?filter=...` query — Overseerr's filter values map back
- * onto Oscarr's `MediaRequest.status` (and sometimes onto the linked Media).
+ * onto LeMedia's `MediaRequest.status` (and sometimes onto the linked Media).
  *
  * Returns either a Prisma `where` fragment for MediaRequest.status, or `null` to mean
  * "no status filter" (i.e. `filter=all` or unsupported value).

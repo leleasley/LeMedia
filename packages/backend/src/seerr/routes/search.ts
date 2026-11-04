@@ -11,8 +11,8 @@ interface TmdbResultLite {
 }
 
 /**
- * Mirror of Overseerr's `/search?query=...` endpoint. Wraps Oscarr's TMDB multi-search and
- * injects each result with the local `mediaInfo` block (null when the title isn't in Oscarr's
+ * Mirror of Overseerr's `/search?query=...` endpoint. Wraps LeMedia's TMDB multi-search and
+ * injects each result with the local `mediaInfo` block (null when the title isn't in LeMedia's
  * library). Apps like Doplarr / Maintainerr branch on `mediaInfo.status` to decide whether to
  * propose a request or surface availability.
  */

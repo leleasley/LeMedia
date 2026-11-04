@@ -43,18 +43,18 @@ export function usePushNotifications() {
 
   const subscribe = useCallback(async () => {
     try {
-      setState(prev => ({ ...prev, loading: true }));
-
-      // Get VAPID key from backend
-      const { data } = await api.get('/app/vapid-key');
-      if (!data.key) throw new Error('Push not configured on server');
-
-      // Request permission
+      // Ask for permission FIRST, straight from the tap. iOS only shows the prompt while the
+      // user gesture is still live — awaiting a network call beforehand can silently lose it.
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
         setState(prev => ({ ...prev, permission, loading: false }));
         return false;
       }
+      setState(prev => ({ ...prev, permission, loading: true }));
+
+      // Then fetch the server's VAPID key
+      const { data } = await api.get('/app/vapid-key');
+      if (!data.key) throw new Error('Push not configured on server');
 
       // Subscribe
       const registration = await navigator.serviceWorker.ready;

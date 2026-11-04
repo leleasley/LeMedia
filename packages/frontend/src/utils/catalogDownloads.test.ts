@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { SeriesCatalog } from '@oscarr/shared';
+import type { SeriesCatalog } from '@lemedia/shared';
 import type { DownloadItem } from '@/hooks/useDownloads';
 import { catalogDownloads } from './catalogDownloads';
 

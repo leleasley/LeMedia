@@ -13,7 +13,7 @@ export async function plexAdminRoutes(app: FastifyInstance) {
       params: {
         type: 'object',
         required: ['userId'],
-        properties: { userId: { type: 'string', description: 'Oscarr user ID' } },
+        properties: { userId: { type: 'string', description: 'LeMedia user ID' } },
       },
     },
   }, async (request, reply) => {

@@ -32,7 +32,7 @@ export const COLOR_TOKEN_CLASSES: Record<ColorToken, string> = {
   success: 'bg-ndp-success/80 text-white',
   warning: 'bg-ndp-warning/80 text-white',
   danger: 'bg-ndp-danger/80 text-white',
-  info: 'bg-purple-600/80 text-white',
+  info: 'bg-sky-600/85 text-white',
   muted: 'bg-ndp-surface-light text-ndp-text-muted',
 };
 
@@ -58,7 +58,7 @@ export interface MediaStateDisplay {
 export const MEDIA_STATE_DISPLAY: Record<MediaStateCategory, MediaStateDisplay> = {
   UNAVAILABLE: { labelKey: 'status.unavailable', colorToken: 'muted',   iconName: 'HelpCircle',    showsRequestCTA: true  },
   UPCOMING:    { labelKey: 'status.upcoming',    colorToken: 'info',    iconName: 'CalendarClock', showsRequestCTA: false },
-  SEARCHING:   { labelKey: 'status.searching',   colorToken: 'accent',  iconName: 'Search',        showsRequestCTA: false },
+  SEARCHING:   { labelKey: 'status.missing',     colorToken: 'warning', iconName: 'AlertCircle',   showsRequestCTA: true  },
   PROCESSING:  { labelKey: 'status.processing',  colorToken: 'accent',  iconName: 'Loader2',       showsRequestCTA: false },
   // The *arr has the file, the media server has not confirmed it yet. showsRequestCTA is false on
   // purpose: it is already here, so offering "request" would only produce duplicates.

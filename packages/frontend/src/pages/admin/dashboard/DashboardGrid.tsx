@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Responsive, WidthProvider, type Layout } from 'react-grid-layout/legacy';
+import { useTranslation } from 'react-i18next';
 import { Pencil, Plus, RotateCcw, Save, X } from 'lucide-react';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
@@ -36,6 +37,7 @@ function genTabId(existing: DashboardTab[]): string {
 }
 
 export function DashboardGrid() {
+  const { t } = useTranslation();
   const { layout, loading, error, save, reset } = useDashboardLayout();
   const { contributions } = usePluginUI('admin.dashboard.widget');
   const [editMode, setEditMode] = useState(false);
@@ -45,6 +47,16 @@ export function DashboardGrid() {
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
   const [editingItemI, setEditingItemI] = useState<string | null>(null);
+  // Column count the grid is currently rendering with. The saved layout is authored on the
+  // 12-column grid; on narrower breakpoints RGL clamps x/w to fit, and persisting those
+  // clamped positions would overwrite the desktop arrangement. So arranging (drag/resize and
+  // layout write-back) is only allowed at full width — phones can still add/remove/edit.
+  const [gridCols, setGridCols] = useState<number>(() => {
+    const w = typeof window !== 'undefined' ? window.innerWidth : BREAKPOINTS.lg;
+    const bp = (Object.keys(BREAKPOINTS) as (keyof typeof BREAKPOINTS)[]).find((k) => w >= BREAKPOINTS[k]) ?? 'lg';
+    return COLS[bp];
+  });
+  const canArrange = gridCols === COLS.lg;
   const renameInputRef = useRef<HTMLInputElement | null>(null);
 
   const current = editMode ? (draft ?? layout) : layout;
@@ -113,9 +125,9 @@ export function DashboardGrid() {
   };
 
   // v2 renamed the types: `Layout` is the array, `LayoutItem` the element (v1 had it the
-  // other way round). The local LayoutItem here is Oscarr's own, not RGL's.
+  // other way round). The local LayoutItem here is LeMedia's own, not RGL's.
   const onLayoutChange = (next: Layout) => {
-    if (!editMode || !draft || !activeTab) return;
+    if (!editMode || !draft || !activeTab || !canArrange) return;
     const byI = new Map(activeTab.items.map((it) => [it.i, it]));
     const items: LayoutItem[] = next.map((l) => {
       const existing = byI.get(l.i);
@@ -200,23 +212,27 @@ export function DashboardGrid() {
     if (activeTabId === id) setActiveTabId(next[0].id);
   };
 
-  if (loading) return <p className="text-sm text-ndp-text-dim">Loading dashboard…</p>;
-  if (error) return <p className="text-sm text-ndp-danger">Failed to load layout: {error}</p>;
+  if (loading) return <p className="admin-group px-4 py-6 text-center text-sm text-ndp-text-dim">Loading dashboard…</p>;
+  if (error) return <p className="rounded-xl border border-ndp-danger/20 bg-ndp-danger/5 px-4 py-3 text-sm text-ndp-danger break-words">Failed to load layout: {error}</p>;
   if (!current || !activeTab) return null;
 
   // A widget is "already on the dashboard" if it lives on ANY tab — the picker disables those
   // entries to keep widget ids unique across the whole layout.
   const alreadyOnDashboard = new Set(current.tabs.flatMap((t) => t.items.map((it) => it.i)));
+  // A lone tab ("Main") needs no strip — only show tabs once there's a choice, or while editing.
+  const showTabs = editMode || current.tabs.length > 1;
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-1.5 border-b border-white/5 pb-2">
-        <div className="flex flex-1 items-center gap-1 overflow-x-auto">
-          {current.tabs.map((t) => {
+      {/* Toolbar: tab strip scrolls on its own; in edit mode the action buttons take their own
+          row on phones so neither side gets squeezed. */}
+      <div className={`flex flex-wrap items-center gap-x-2 gap-y-2 ${showTabs ? 'border-b border-white/[0.06] pb-2' : 'justify-end -mt-2'}`}>
+        <div className={`flex min-w-0 flex-1 items-center gap-1 overflow-x-auto ${editMode ? 'order-2 basis-full sm:order-1 sm:basis-auto' : ''}`}>
+          {showTabs && current.tabs.map((t) => {
             const active = t.id === activeTab.id;
             const isRenaming = renamingTabId === t.id;
             return (
-              <div key={t.id} className="flex items-center">
+              <div key={t.id} className="flex flex-shrink-0 items-center">
                 {isRenaming ? (
                   <input
                     ref={renameInputRef}
@@ -226,14 +242,14 @@ export function DashboardGrid() {
                       if (e.key === 'Enter') renameTab(t.id, (e.target as HTMLInputElement).value);
                       if (e.key === 'Escape') setRenamingTabId(null);
                     }}
-                    className="rounded-lg border border-ndp-accent/60 bg-ndp-surface-light px-4 py-1.5 text-sm font-medium text-ndp-text outline-none"
+                    className="min-h-[40px] w-40 rounded-lg border border-ndp-accent/60 bg-ndp-surface-light px-3 py-2 text-sm font-medium text-ndp-text outline-none"
                     maxLength={50}
                   />
                 ) : (
                   <button
                     onClick={() => setActiveTabId(t.id)}
                     onDoubleClick={() => editMode && setRenamingTabId(t.id)}
-                    className={`inline-flex items-center gap-2 rounded-lg px-4 py-1.5 text-sm font-medium transition-colors ${
+                    className={`inline-flex min-h-[40px] items-center gap-2 whitespace-nowrap rounded-lg px-3.5 py-2 text-sm font-medium transition-colors ${
                       active
                         ? 'bg-ndp-accent/10 text-ndp-accent'
                         : 'text-ndp-text-muted hover:text-ndp-text hover:bg-white/5'
@@ -250,7 +266,7 @@ export function DashboardGrid() {
                     onChange={(next) => setTabIcon(t.id, next)}
                     trigger={
                       <button
-                        className="ml-0.5 rounded p-1 text-ndp-text-dim hover:bg-white/5 hover:text-ndp-text"
+                        className="inline-flex h-10 w-9 items-center justify-center rounded-lg text-ndp-text-dim hover:bg-white/5 hover:text-ndp-text"
                         title="Set icon"
                         aria-label={`Set icon for ${t.name}`}
                       >
@@ -262,11 +278,11 @@ export function DashboardGrid() {
                 {editMode && active && current.tabs.length > 1 && !isRenaming && (
                   <button
                     onClick={() => removeTab(t.id)}
-                    className="ml-0.5 rounded p-0.5 text-ndp-text-dim hover:text-ndp-danger"
+                    className="inline-flex h-10 w-9 items-center justify-center rounded-lg text-ndp-text-dim hover:bg-ndp-danger/10 hover:text-ndp-danger"
                     aria-label={`Remove ${t.name}`}
                     title="Remove tab"
                   >
-                    <X className="h-3 w-3" />
+                    <X className="h-3.5 w-3.5" />
                   </button>
                 )}
               </div>
@@ -275,7 +291,7 @@ export function DashboardGrid() {
           {editMode && (
             <button
               onClick={addTab}
-              className="ml-1 inline-flex h-8 w-8 items-center justify-center rounded-lg text-ndp-text-dim hover:bg-white/5 hover:text-ndp-text"
+              className="inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg text-ndp-text-dim hover:bg-white/5 hover:text-ndp-text"
               title="Add tab"
               aria-label="Add tab"
             >
@@ -283,27 +299,27 @@ export function DashboardGrid() {
             </button>
           )}
         </div>
-        <div className="flex items-center gap-0.5">
+        <div className={`flex flex-shrink-0 items-center gap-1 ${editMode ? 'order-1 w-full sm:order-2 sm:w-auto' : ''}`}>
           {!editMode ? (
             <button
               onClick={enterEdit}
-              className="p-2 rounded-lg text-ndp-text-muted hover:text-ndp-text hover:bg-white/5 transition-colors"
-              title="Edit"
-              aria-label="Edit"
+              className="inline-flex min-h-[40px] items-center gap-2 rounded-lg px-3 text-sm font-medium text-ndp-text-muted hover:text-ndp-text hover:bg-white/5 transition-colors"
+              title={t('admin.dashboard.customise', 'Customise')}
             >
               <Pencil className="w-4 h-4" />
+              <span className={showTabs ? 'sr-only' : ''}>{t('admin.dashboard.customise', 'Customise')}</span>
             </button>
           ) : (
             <>
               <button
                 onClick={() => setPickerOpen(true)}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-ndp-surface-light hover:bg-ndp-surface-hover px-3 py-1.5 text-xs font-medium text-ndp-text transition-colors"
+                className="mr-auto sm:mr-1 inline-flex min-h-[40px] items-center gap-1.5 rounded-lg border border-white/[0.06] bg-ndp-surface-light hover:bg-ndp-surface-hover px-3.5 py-2 text-sm font-medium text-ndp-text transition-colors"
               >
-                <Plus className="w-3.5 h-3.5" /> Add widget
+                <Plus className="w-4 h-4" /> Add widget
               </button>
               <button
                 onClick={() => setResetOpen(true)}
-                className="p-2 rounded-lg text-ndp-text-muted hover:text-ndp-danger hover:bg-ndp-danger/10 transition-colors"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-ndp-text-muted hover:text-ndp-danger hover:bg-ndp-danger/10 transition-colors"
                 title="Reset to default"
                 aria-label="Reset to default"
               >
@@ -311,7 +327,7 @@ export function DashboardGrid() {
               </button>
               <button
                 onClick={cancel}
-                className="p-2 rounded-lg text-ndp-text-muted hover:text-ndp-text hover:bg-white/5 transition-colors"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-ndp-text-muted hover:text-ndp-text hover:bg-white/5 transition-colors"
                 title="Cancel"
                 aria-label="Cancel"
               >
@@ -319,7 +335,7 @@ export function DashboardGrid() {
               </button>
               <button
                 onClick={onSave}
-                className="p-2 rounded-lg text-ndp-accent hover:bg-ndp-accent/10 transition-colors"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-ndp-accent text-white hover:bg-ndp-accent-hover transition-colors"
                 title="Save"
                 aria-label="Save"
               >
@@ -330,6 +346,12 @@ export function DashboardGrid() {
         </div>
       </div>
 
+      {editMode && !canArrange && (
+        <p className="admin-hint mb-1">
+          {t('admin.dashboard.arrange_wider', 'Add, remove and edit widgets here, drag and resize them on a wider screen.')}
+        </p>
+      )}
+
       <ResponsiveGridLayout
         className="layout"
         layouts={{ lg: renderables, md: renderables, sm: renderables, xs: renderables, xxs: renderables }}
@@ -338,10 +360,12 @@ export function DashboardGrid() {
         rowHeight={ROW_HEIGHT}
         margin={[12, 12]}
         containerPadding={[0, 8]}
-        isDraggable={editMode}
-        isResizable={editMode}
+        isDraggable={editMode && canArrange}
+        isResizable={editMode && canArrange}
         draggableHandle=".widget-drag-handle"
         onLayoutChange={onLayoutChange}
+        onBreakpointChange={(_bp: string, cols: number) => setGridCols(cols)}
+        onWidthChange={(_w: number, _margin: readonly [number, number], cols: number) => setGridCols(cols)}
         compactType="vertical"
       >
         {renderables.map((r) => {

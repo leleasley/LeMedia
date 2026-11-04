@@ -5,6 +5,7 @@ import { plexCreatePin, plexCheckPin, plexFetchMachineId } from '../../../provid
 import { parseId } from '../../../utils/params.js';
 import { classifyTestError } from '../../../utils/serviceTestError.js';
 import { assertPublicUrl, SsrfBlockedError } from '../../../utils/ssrfGuard.js';
+import { registerPlexDiscoveryRoutes } from '../../../providers/plex/discoveryRoutes.js';
 
 /** Call an *arr method via the default client; on failure answer 502 and return undefined so the
  *  handler can `return` it directly (Fastify ignores the undefined return once the reply is sent). */
@@ -25,6 +26,7 @@ async function reachArr<T>(reply: FastifyReply, serviceType: string, call: (clie
  *  service row (used by the admin's quality-mapping editor, which can map one option across
  *  several *arr installs). Both flavors stay here since they share the same provider layer. */
 export async function servicesHelperRoutes(app: FastifyInstance) {
+  registerPlexDiscoveryRoutes(app);
   app.get('/plex-token', async (request, reply) => {
     const provider = getAuthProvider('plex');
     if (!provider?.getToken) return reply.status(404).send({ error: 'Plex provider not available' });
@@ -76,7 +78,7 @@ export async function servicesHelperRoutes(app: FastifyInstance) {
   }, async (request, reply) => {
     const { url, token } = request.body as { url: string; token: string };
     // Same SSRF guard as /setup/plex-identity — admin-typed URL, permissive by default,
-    // strict mode (OSCARR_BLOCK_PRIVATE_SERVICES=true) refuses RFC1918 ranges.
+    // strict mode (LEMEDIA_BLOCK_PRIVATE_SERVICES=true) refuses RFC1918 ranges.
     try {
       await assertPublicUrl(url);
     } catch (err) {

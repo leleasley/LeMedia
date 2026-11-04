@@ -23,7 +23,7 @@ interface DiscordConfig {
 
 // Short-lived in-memory store for OAuth `state` → intent. Enough for interactive OAuth round-trips
 // (10min TTL); a server restart mid-flow drops pending states, which is acceptable for admins.
-// Node-local only: running Oscarr behind a load-balancer with >1 backend would need a shared
+// Node-local only: running LeMedia behind a load-balancer with >1 backend would need a shared
 // store (Redis etc.) so authorize and callback on different nodes can reconcile. Single-instance
 // is the supported topology today.
 interface StateRecord {
@@ -42,7 +42,7 @@ function gcStates(): void {
 interface DiscordConfigResolved {
   clientId: string;
   clientSecret: string;
-  guildId?: string; // optional — empty means no guild restriction
+  guildId?: string; // optional, empty means no guild restriction
 }
 
 async function getConfig(): Promise<DiscordConfigResolved> {
@@ -94,7 +94,7 @@ const discordAuth: AuthProvider = {
         label: 'Allow new account creation',
         type: 'boolean',
         default: false,
-        help: 'Auto-create Oscarr users for new Discord logins.',
+        help: 'Auto-create LeMedia users for new Discord logins.',
       },
     ],
   },
@@ -119,7 +119,7 @@ const discordAuth: AuthProvider = {
         } catch {
           // Plug-and-play UX: a logged-out user clicking a /link deep link (e.g. from a
           // Discord bot plugin's "Link your account" button) shouldn't get a raw 401 JSON
-          // — bounce them through Oscarr's login page with `?next=<this URL>`. After auth,
+          // — bounce them through LeMedia's login page with `?next=<this URL>`. After auth,
           // the LoginPage redirects them back here and the JWT cookie is now present, so
           // jwtVerify succeeds and the link flow completes.
           const fullUrl = request.url; // includes /api/auth/discord/authorize?action=link
@@ -221,7 +221,7 @@ const discordAuth: AuthProvider = {
           ? `https://cdn.discordapp.com/avatars/${profile.id}/${profile.avatar}.png?size=256`
           : null;
 
-        // Guild gate — applies to both login and link flows. Keeps Oscarr access scoped to a
+        // Guild gate — applies to both login and link flows. Keeps LeMedia access scoped to a
         // known community so random Discord users can't create accounts by hitting the button.
         if (cfg.guildId) {
           const member = await isGuildMember(tokenPayload.access_token, cfg.guildId).catch(() => false);
@@ -250,7 +250,7 @@ const discordAuth: AuthProvider = {
           });
           const { refreshUserAvatar } = await import('../../utils/avatarSource.js');
           await refreshUserAvatar(record.userId);
-          return reply.redirect('/profile?linked=discord');
+          return reply.redirect('/?linked=discord');
         }
 
         // Login flow — find-or-create, set the JWT cookie manually (helpers.signAndSend also

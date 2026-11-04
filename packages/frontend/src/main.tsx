@@ -8,44 +8,41 @@ import { FeaturesProvider } from './context/FeaturesContext';
 import { BackendGate } from './context/BackendGate';
 import App from './App';
 import LoadingScreen from './components/LoadingScreen';
+import UpdatePrompt from './components/UpdatePrompt';
+import { AppErrorBoundary } from './components/AppErrorBoundary';
 import './i18n';
-import '@fontsource/inter/300.css';
 import '@fontsource/inter/400.css';
 import '@fontsource/inter/500.css';
 import '@fontsource/inter/600.css';
 import '@fontsource/inter/700.css';
-import '@fontsource/inter/800.css';
+import '@fontsource/bebas-neue/400.css';
 import './index.css';
-import { registerSW } from 'virtual:pwa-register';
-import { showUpdatePrompt } from './pwa/updatePrompt';
 
 // Expose React globally for plugin ESM modules (shim pattern). `react-dom/client` only carries
 // createRoot/hydrateRoot — plugins that import { createPortal, flushSync } from 'react-dom'
-// need the full namespace, so __OSCARR_REACT_DOM__ exposes that, not the client subpath.
-(globalThis as any).__OSCARR_REACT__ = React;
-(globalThis as any).__OSCARR_REACT_DOM__ = ReactDOM;
-(globalThis as any).__OSCARR_JSX_RUNTIME__ = jsxRuntime;
+// need the full namespace, so __LEMEDIA_REACT_DOM__ exposes that, not the client subpath.
+(globalThis as any).__LEMEDIA_REACT__ = React;
+(globalThis as any).__LEMEDIA_REACT_DOM__ = ReactDOM;
+(globalThis as any).__LEMEDIA_JSX_RUNTIME__ = jsxRuntime;
 
-// A new build reaches open tabs as an offer, not as an interruption. The worker registers with
-// `registerType: 'prompt'`, so it stays in `waiting` until `updateSW(true)` lets it through —
-// the page keeps running against the assets it started with, and nothing typed into a form is
-// lost to a reload nobody asked for.
-const updateSW = registerSW({
-  onNeedRefresh() {
-    showUpdatePrompt(() => { void updateSW(true); });
-  },
-});
+// Do NOT listen for controllerchange and call location.reload(). This causes a flash-reload
+// every time a new bundle deploys (skipWaiting + clientsClaim → controllerchange → reload).
+// The SW's activate handler already clears stale caches; users get the new bundle on next
+// navigation naturally.
 
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
+    <AppErrorBoundary>
     <BrowserRouter>
       <BackendGate fallback={<LoadingScreen />}>
         <AuthProvider>
           <FeaturesProvider>
             <App />
+            <UpdatePrompt />
           </FeaturesProvider>
         </AuthProvider>
       </BackendGate>
     </BrowserRouter>
+    </AppErrorBoundary>
   </React.StrictMode>
 );

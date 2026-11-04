@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { CheckCircle, Circle, Loader2, RefreshCw, Trash2, X, XCircle } from 'lucide-react';
 import { clsx } from 'clsx';
 import { startPlexPinFlow, type PlexPinFlowHandle } from '@/providers/plex/pinFlow';
+import { PlexServerDiscovery } from '@/providers/plex/ServerDiscovery';
 import api from '@/lib/api';
 import { useServiceSchemas } from '@/hooks/useServiceSchemas';
 import { useModal } from '@/hooks/useModal';
@@ -11,6 +12,7 @@ import { extractApiError } from '@/utils/toast';
 import { WizardNav } from '../WizardNav';
 
 interface WizardService {
+  id?: number;
   type: string;
   config: Record<string, string>;
   testStatus: 'idle' | 'testing' | 'ok' | 'error';
@@ -24,7 +26,9 @@ type Category = 'media-server' | 'arr' | 'download-client' | 'indexer' | 'monito
 // "required" categories is derived at runtime from the schemas (whichever connector marks
 // `requiredForInstall: true` pulls its category into the required set), so adding a new
 // required connector backend-side automatically gates the wizard with no frontend edit.
-const CATEGORY_ORDER: Category[] = ['media-server', 'arr', 'download-client', 'indexer', 'monitoring'];
+// LeMedia's wizard only asks for Radarr and/or Sonarr; a media server, download clients and
+// indexers are optional and added later under Admin → Services.
+const CATEGORY_ORDER: Category[] = ['arr'];
 
 const CATEGORY_LABEL_KEY: Record<Category, string> = {
   'media-server': 'install.services.cat_media_server',
@@ -45,6 +49,9 @@ export default function ServicesStep({ onNext, onBack }: Readonly<Props>) {
   const [services, setServices] = useState<Record<string, WizardService>>({});
   const [editingType, setEditingType] = useState<string | null>(null);
   const [plexPolling, setPlexPolling] = useState<string | null>(null);
+  const [plexDiscoveryToken, setPlexDiscoveryToken] = useState<string | null>(null);
+  const [showPlexFields, setShowPlexFields] = useState(false);
+  const [plexManualHint, setPlexManualHint] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const flowRef = useRef<PlexPinFlowHandle | null>(null);
@@ -52,7 +59,7 @@ export default function ServicesStep({ onNext, onBack }: Readonly<Props>) {
   // A refreshed wizard used to restart from an empty form while the services it had already saved
   // were still in the database, so configuring them again produced duplicates. Reload what exists.
   useEffect(() => {
-    void api.get<{ type: string; config: Record<string, string> }[]>('/setup/services')
+    void api.get<{ id: number; type: string; config: Record<string, string> }[]>('/setup/services')
       .then(({ data }) => {
         if (data.length === 0) return;
         setServices((prev) => {
@@ -60,15 +67,21 @@ export default function ServicesStep({ onNext, onBack }: Readonly<Props>) {
           for (const svc of data) {
             // Never clobber something the user is mid-way through typing in this session.
             if (next[svc.type]) continue;
-            next[svc.type] = { type: svc.type, config: svc.config, testStatus: 'idle', saved: true };
+            next[svc.type] = { id: svc.id, type: svc.type, config: svc.config, testStatus: 'idle', saved: true };
           }
           return next;
         });
       })
-      .catch(() => { /* fresh install, or the endpoint is unreachable — start empty */ });
+      .catch(() => { /* fresh install, or the endpoint is unreachable, start empty */ });
   }, []);
 
   const closeModal = () => {
+    flowRef.current?.cancel();
+    setPlexPolling(null);
+    setPlexDiscoveryToken(null);
+    setShowPlexFields(false);
+    setPlexManualHint(false);
+    setError('');
     setServices((prev) => {
       if (!editingType) return prev;
       const next = { ...prev };
@@ -110,7 +123,7 @@ export default function ServicesStep({ onNext, onBack }: Readonly<Props>) {
       const cur = prev[type];
       if (!cur) return prev;
       const next = { ...cur, ...updates };
-      if (updates.config) next.testStatus = 'idle';
+      if (updates.config) { next.testStatus = 'idle'; next.saved = false; }
       return { ...prev, [type]: next };
     });
   };
@@ -138,32 +151,21 @@ export default function ServicesStep({ onNext, onBack }: Readonly<Props>) {
     }
   };
 
-  const autoDetectMachineId = async (type: string, token: string) => {
-    const svc = services[type];
-    if (!svc?.config.url) return;
-    try {
-      const { data } = await api.post<{ machineId: string }>('/setup/plex-identity', { url: svc.config.url, token });
-      if (data.machineId) {
-        updateService(type, { config: { ...svc.config, token, machineId: data.machineId } });
-      }
-    } catch { /* manual retry */ }
-  };
-
   const startPlexOAuth = (type: string) => {
     setPlexPolling(type);
     setError('');
     const authWindow = window.open('about:blank', 'PlexAuth', 'width=600,height=700');
+    if (!authWindow) { setPlexPolling(null); setError(t('plex.discovery.popup_blocked')); return; }
     flowRef.current?.cancel();
+    setPlexDiscoveryToken(null);
     flowRef.current = startPlexPinFlow({
       authWindow,
       pinEndpoint: '/setup/plex-pin',
       checkEndpoint: '/setup/plex-check',
       extractToken: (res) => (res as { token?: string })?.token ?? null,
-      onToken: async (token) => {
+      onToken: (token) => {
         setPlexPolling(null);
-        const cur = services[type];
-        if (cur) updateService(type, { config: { ...cur.config, token }, testStatus: 'idle' });
-        await autoDetectMachineId(type, token);
+        setPlexDiscoveryToken(token);
       },
       onError: () => {
         setPlexPolling(null);
@@ -192,8 +194,8 @@ export default function ServicesStep({ onNext, onBack }: Readonly<Props>) {
       for (const svc of Object.values(services)) {
         if (svc.saved || svc.testStatus !== 'ok') continue;
         const schema = SERVICE_SCHEMAS[svc.type];
-        await api.post('/setup/service', { name: schema?.label || svc.type, type: svc.type, config: svc.config });
-        updateService(svc.type, { saved: true });
+        const { data } = await api.post<{ service: { id: number } }>('/setup/service', { name: schema?.label || svc.type, type: svc.type, config: svc.config, ...(svc.id ? { serviceId: svc.id } : {}) });
+        updateService(svc.type, { saved: true, id: data.service.id });
       }
       onNext();
     } catch (err) {
@@ -223,7 +225,7 @@ export default function ServicesStep({ onNext, onBack }: Readonly<Props>) {
   const missingRequired = [...requiredCategories].filter((cat) =>
     !Object.values(SERVICE_SCHEMAS).some((s) => s.category === cat && okTypes.has(s.id)),
   );
-  const canContinue = missingRequired.length === 0 && requiredCategories.size > 0;
+  const canContinue = missingRequired.length === 0 && requiredCategories.size > 0 && !plexPolling && !plexDiscoveryToken;
   const editingSvc = editingType ? services[editingType] : null;
   const editingSchema = editingType ? SERVICE_SCHEMAS[editingType] : null;
 
@@ -312,7 +314,7 @@ export default function ServicesStep({ onNext, onBack }: Readonly<Props>) {
 
       {editingSvc && editingSchema && editingType && createPortal(
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in"
+          className="modal-overlay z-50"
           onMouseDown={closeModal}
         >
           <div
@@ -320,7 +322,7 @@ export default function ServicesStep({ onNext, onBack }: Readonly<Props>) {
             role="dialog"
             aria-modal="true"
             aria-labelledby={titleId}
-            className="card p-6 w-full max-w-md mx-4 shadow-2xl space-y-4"
+            className="modal-panel p-6 w-full max-w-md space-y-4"
             onMouseDown={(e) => e.stopPropagation()}
           >
           <div className="flex items-center justify-between">
@@ -348,27 +350,44 @@ export default function ServicesStep({ onNext, onBack }: Readonly<Props>) {
             </div>
           </div>
 
+          {editingType === 'plex' && <div className="space-y-2">
+            <button type="button" onClick={() => startPlexOAuth(editingType)} disabled={plexPolling === editingType} className="btn-secondary w-full text-sm flex items-center justify-center gap-2 py-2.5 disabled:opacity-60">
+              {plexPolling === editingType && <Loader2 className="w-4 h-4 animate-spin" />}
+              {plexPolling === editingType ? t('login.waiting') : t('plex.discovery.sign_in')}
+            </button>
+            {plexDiscoveryToken && <PlexServerDiscovery accountToken={plexDiscoveryToken} endpointPrefix="/setup" onCancel={() => setPlexDiscoveryToken(null)} onConnected={(connection) => {
+              setServices((prev) => {
+                const current = prev[editingType];
+                return current ? { ...prev, [editingType]: { ...current, config: { ...current.config, ...connection }, testStatus: 'ok', testError: undefined, saved: false } } : prev;
+              });
+              setPlexDiscoveryToken(null);
+              setPlexManualHint(false);
+            }} onManual={(token) => {
+              setServices((prev) => {
+                const current = prev[editingType];
+                return current ? { ...prev, [editingType]: { ...current, config: { ...current.config, token, accountToken: token }, testStatus: 'idle', saved: false } } : prev;
+              });
+              setPlexDiscoveryToken(null);
+              setShowPlexFields(true);
+              setPlexManualHint(true);
+            }} />}
+            <button type="button" onClick={() => setShowPlexFields((visible) => !visible)} className="text-xs text-ndp-text-muted hover:text-ndp-text" aria-expanded={showPlexFields}>{showPlexFields ? t('plex.discovery.hide_manual') : t('plex.discovery.show_manual')}</button>
+            {plexManualHint && <p className="text-xs text-ndp-text-muted">{t('plex.discovery.manual_hint')}</p>}
+          </div>}
+
+          <div className={editingType === 'plex' && !showPlexFields ? 'hidden' : 'space-y-4'}>
           {editingSchema.fields.map((field) => {
             const value = editingSvc.config[field.key] || '';
             if (field.helper === 'plex-oauth') {
               return (
-                <div key={field.key} className="flex gap-2">
+                <div key={field.key}>
                   <input
                     type={field.type}
                     value={value}
-                    onChange={(e) => updateService(editingType, { config: { ...editingSvc.config, [field.key]: e.target.value } })}
+                    onChange={(e) => updateService(editingType, { config: { ...editingSvc.config, [field.key]: e.target.value, accountToken: '' } })}
                     placeholder={t(field.labelKey)}
-                    className="input flex-1 text-sm"
+                    className="input w-full text-sm"
                   />
-                  <button
-                    type="button"
-                    onClick={() => startPlexOAuth(editingType)}
-                    disabled={plexPolling === editingType}
-                    className="btn-secondary text-xs flex items-center gap-1.5 px-3 whitespace-nowrap"
-                  >
-                    {plexPolling === editingType && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                    {plexPolling === editingType ? t('login.waiting') : 'OAuth'}
-                  </button>
                 </div>
               );
             }
@@ -404,12 +423,15 @@ export default function ServicesStep({ onNext, onBack }: Readonly<Props>) {
               />
             );
           })}
+          </div>
+
+          {error && <p className="text-xs text-ndp-danger">{error}</p>}
 
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => testService(editingType)}
-              disabled={editingSvc.testStatus === 'testing'}
+              disabled={editingSvc.testStatus === 'testing' || !!plexPolling || !!plexDiscoveryToken}
               className="btn-secondary text-xs flex items-center gap-1.5 px-3 py-1.5"
             >
               {editingSvc.testStatus === 'testing' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
@@ -454,7 +476,7 @@ export default function ServicesStep({ onNext, onBack }: Readonly<Props>) {
         </p>
       )}
 
-      {error && <div className="text-xs px-3 py-2 rounded-lg bg-ndp-danger/10 text-ndp-danger">{error}</div>}
+      {error && !editingType && <div className="text-xs px-3 py-2 rounded-lg bg-ndp-danger/10 text-ndp-danger">{error}</div>}
 
       <WizardNav onBack={onBack} onNext={saveAndContinue} nextDisabled={!canContinue} nextLoading={saving} />
     </div>

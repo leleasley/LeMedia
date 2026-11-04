@@ -1,7 +1,8 @@
 /** Hub for the registry doc + GitHub releases API. Pure — persistence is the route's job. */
 import { isUpdateAvailable } from './statusDetection.js';
 
-const REGISTRY_URL = 'https://raw.githubusercontent.com/arediss/Oscarr-Plugin-Registry/main/plugins.json';
+/** Optional plugin catalogue (a plugins.json URL). Unset = no catalogue to discover from. */
+const REGISTRY_URL = process.env.LEMEDIA_PLUGIN_REGISTRY_URL?.trim() || '';
 const REGISTRY_TTL_MS = 30 * 60 * 1000;
 const RELEASE_TTL_MS = 60 * 60 * 1000;
 /** Hard cap on any single GitHub call — a hung GitHub mustn't freeze boot or the admin UI. */
@@ -60,6 +61,7 @@ export async function fetchRegistry(force = false): Promise<RegistryDoc> {
   if (!force && registryCache && now - registryCache.timestamp < REGISTRY_TTL_MS) {
     return registryCache.data;
   }
+  if (!REGISTRY_URL) return { schemaVersion: 1, plugins: [] };
   const res = await fetch(REGISTRY_URL, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`Registry fetch failed: ${res.status} ${res.statusText}`);
   const data = await res.json() as RegistryDoc;
@@ -95,7 +97,7 @@ export async function fetchLatestRelease(repository: string, force = false): Pro
   if (isRateLimited(latest)) {
     throw new RateLimitError(
       'GitHub API rate limit reached (60 requests/hour for unauthenticated servers). '
-      + 'Set GITHUB_TOKEN in Oscarr\'s environment to raise it, or retry in a few minutes.',
+      + 'Set GITHUB_TOKEN in LeMedia\'s environment to raise it, or retry in a few minutes.',
     );
   }
   if (latest.status === 404) {

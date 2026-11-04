@@ -11,7 +11,7 @@ import type {
   UserMatch,
 } from './types.js';
 
-/** Try to find an existing Oscarr user that matches this canonical user.
+/** Try to find an existing LeMedia user that matches this canonical user.
  *  Returns the resolved user id + the strategy that succeeded, or null when
  *  no automatic match could be made. */
 async function autoMatchUser(u: CanonicalUser): Promise<UserMatch> {
@@ -21,14 +21,14 @@ async function autoMatchUser(u: CanonicalUser): Promise<UserMatch> {
       where: { provider: 'plex', providerId: u.plexId },
       select: { userId: true },
     });
-    if (link) return { sourceUser: u, oscarrUserId: link.userId, strategy: 'plex_id' };
+    if (link) return { sourceUser: u, lemediaUserId: link.userId, strategy: 'plex_id' };
   }
   if (u.jellyfinId) {
     const link = await prisma.userProvider.findFirst({
       where: { provider: 'jellyfin', providerId: u.jellyfinId },
       select: { userId: true },
     });
-    if (link) return { sourceUser: u, oscarrUserId: link.userId, strategy: 'jellyfin_id' };
+    if (link) return { sourceUser: u, lemediaUserId: link.userId, strategy: 'jellyfin_id' };
   }
 
   // 2. Email fallback.
@@ -37,11 +37,11 @@ async function autoMatchUser(u: CanonicalUser): Promise<UserMatch> {
       where: { email: u.email.toLowerCase() },
       select: { id: true },
     });
-    if (byEmail) return { sourceUser: u, oscarrUserId: byEmail.id, strategy: 'email' };
+    if (byEmail) return { sourceUser: u, lemediaUserId: byEmail.id, strategy: 'email' };
   }
 
   // 3. No automatic match — admin will decide in the wizard.
-  return { sourceUser: u, oscarrUserId: null, strategy: 'manual' };
+  return { sourceUser: u, lemediaUserId: null, strategy: 'manual' };
 }
 
 export async function preview(
@@ -54,8 +54,8 @@ export async function preview(
   const sourceRequests = await adapter.fetchRequests(creds);
 
   const matches = await Promise.all(sourceUsers.map(autoMatchUser));
-  const matched = matches.filter((m) => m.oscarrUserId !== null);
-  const needsDecision = matches.filter((m) => m.oscarrUserId === null);
+  const matched = matches.filter((m) => m.lemediaUserId !== null);
+  const needsDecision = matches.filter((m) => m.lemediaUserId === null);
 
   // Build a quick lookup so request-side dedup runs in O(1).
   const matchBySourceId = new Map(matches.map((m) => [m.sourceUser.sourceId, m]));
@@ -65,14 +65,14 @@ export async function preview(
 
   for (const r of sourceRequests) {
     const userMatch = matchBySourceId.get(r.requesterSourceId);
-    if (!userMatch || userMatch.oscarrUserId === null) {
+    if (!userMatch || userMatch.lemediaUserId === null) {
       conflicts.push({ sourceRequest: r, reason: 'no_user' });
       continue;
     }
     // Duplicate detection — same (tmdb, mediaType, requester) already on file.
     const existing = await prisma.mediaRequest.findFirst({
       where: {
-        userId: userMatch.oscarrUserId,
+        userId: userMatch.lemediaUserId,
         media: { tmdbId: r.tmdbId, mediaType: r.mediaType },
       },
       select: { id: true },
@@ -109,10 +109,10 @@ export async function preview(
 
 export interface UserDecision {
   sourceId: string;
-  /** "link" requires oscarrUserId. "create" makes a new user. "skip" drops
+  /** "link" requires lemediaUserId. "create" makes a new user. "skip" drops
    *  this user and any requests that depend on them. */
   action: 'link' | 'create' | 'skip';
-  oscarrUserId?: number;
+  lemediaUserId?: number;
 }
 
 export async function execute(
@@ -134,14 +134,14 @@ export async function execute(
     const decision = decisionBySourceId.get(u.sourceId);
     if (decision?.action === 'skip') continue;
 
-    if (decision?.action === 'link' && decision.oscarrUserId) {
-      resolved.set(u.sourceId, decision.oscarrUserId);
+    if (decision?.action === 'link' && decision.lemediaUserId) {
+      resolved.set(u.sourceId, decision.lemediaUserId);
       usersLinked++;
       continue;
     }
 
     if (decision?.action === 'create') {
-      const created = await createOscarrUser(u);
+      const created = await createLeMediaUser(u);
       resolved.set(u.sourceId, created);
       usersCreated++;
       continue;
@@ -149,8 +149,8 @@ export async function execute(
 
     // No explicit decision — fall back to auto-match (re-runs the cascade).
     const match = await autoMatchUser(u);
-    if (match.oscarrUserId) {
-      resolved.set(u.sourceId, match.oscarrUserId);
+    if (match.lemediaUserId) {
+      resolved.set(u.sourceId, match.lemediaUserId);
       usersLinked++;
     }
   }
@@ -202,11 +202,11 @@ export async function execute(
   return { usersCreated, usersLinked, requestsCreated, requestsSkipped };
 }
 
-/** Create a fresh Oscarr user from a canonical record + mirror provider links
+/** Create a fresh LeMedia user from a canonical record + mirror provider links
  *  so future logins (Plex/Jellyfin OAuth) attach to the same row. */
-async function createOscarrUser(u: CanonicalUser): Promise<number> {
+async function createLeMediaUser(u: CanonicalUser): Promise<number> {
   const email = u.email?.toLowerCase()
-    ?? `imported-${u.sourceId}@oscarr.local`; // synthetic email keeps email UNIQUE happy
+    ?? `imported-${u.sourceId}@lemedia.local`; // synthetic email keeps email UNIQUE happy
 
   const created = await prisma.user.create({
     data: {

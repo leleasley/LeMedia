@@ -8,7 +8,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
  * Dropping a plugin's entry from the map is enough to "unregister" all its routes — no Fastify
  * restart, no duplicate-prefix errors, no 404 fallback handlers.
  *
- * Only the surface actually used by Oscarr's plugins is supported:
+ * Only the surface actually used by LeMedia's plugins is supported:
  *   - .get/.post/.put/.delete/.patch with the Fastify handler signature
  *   - .addHook('preHandler', fn) — chained before each handler
  *   - path params via ':name' segments (no wildcards, no regex)

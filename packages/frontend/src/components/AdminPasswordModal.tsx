@@ -63,7 +63,7 @@ export function AdminPasswordModal({ open, title, description, onSubmit, onClose
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-md animate-fade-in p-4"
+      className="modal-overlay z-[60]"
       onMouseDown={handleClose}
     >
       <div
@@ -71,7 +71,7 @@ export function AdminPasswordModal({ open, title, description, onSubmit, onClose
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="card relative p-6 w-full max-w-sm border border-white/10 shadow-2xl"
+        className="modal-panel relative p-6 w-full max-w-sm"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-start gap-3 mb-4">

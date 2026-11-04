@@ -1,5 +1,4 @@
 import { join } from 'node:path';
-import { computeAssetVersion } from './assetVersion.js';
 import { pathToFileURL } from 'node:url';
 import { readFile, rm, lstat } from 'node:fs/promises';
 import type { FastifyInstance, FastifyBaseLogger } from 'fastify';
@@ -125,7 +124,6 @@ export class PluginEngine {
       dir,
       enabled: state.enabled,
       isSymlink: opts.isSymlink ?? false,
-      assetVersion: computeAssetVersion(dir),
     };
     this.plugins.set(manifest.id, loaded);
     return loaded;
@@ -147,7 +145,7 @@ export class PluginEngine {
       const undeclared = findUndeclaredWriteRoutes(manifest.id, router.listRoutes());
       if (undeclared.length > 0) {
         this.log('warn', `Plugin "${manifest.id}": ${undeclared.length} write route(s) without a declared ` +
-          `permission, falling back to admin.plugins — ${undeclared.join(', ')}`);
+          `permission, falling back to admin.plugins, ${undeclared.join(', ')}`);
       }
     } catch (err) {
       this.log('error', `Route registration failed for "${manifest.id}": ${err}`);
@@ -246,7 +244,6 @@ export class PluginEngine {
           manifest,
           registration: { manifest } as PluginRegistration,
           dir,
-          assetVersion: computeAssetVersion(dir),
           enabled: false,
           error: String(err),
           isSymlink,
@@ -263,7 +260,7 @@ export class PluginEngine {
     // Routes register first (sync-ish, mostly local), then onEnable runs in parallel.
     // Routes have to be sequential — they share the Fastify dispatcher mount — but
     // onEnable is per-plugin background work (Discord bot login, websocket clients,
-    // mailbox poll loops …) where one slow plugin would otherwise block Oscarr's boot
+    // mailbox poll loops …) where one slow plugin would otherwise block LeMedia's boot
     // for the duration of every other plugin's startup combined.
     for (const plugin of this.plugins.values()) {
       if (!plugin.enabled || plugin.error) continue;
@@ -273,7 +270,7 @@ export class PluginEngine {
     }
 
     // Boot-time onEnable parity with togglePlugin: a plugin that's already enabled in the
-    // DB needs its onEnable to run on every Oscarr restart, otherwise plugins doing
+    // DB needs its onEnable to run on every LeMedia restart, otherwise plugins doing
     // background work stay dormant until an admin toggles off+on. A plugin that does its
     // boot work inside `register()` won't have an `onEnable` hook to begin with — no-op
     // for them.
@@ -293,10 +290,9 @@ export class PluginEngine {
     await Promise.allSettled(enableTasks);
   }
 
-  getJobHandlers(pluginId?: string): Record<string, () => Promise<unknown>> {
+  getJobHandlers(): Record<string, () => Promise<unknown>> {
     const handlers: Record<string, () => Promise<unknown>> = {};
     for (const [id, plugin] of this.plugins) {
-      if (pluginId !== undefined && id !== pluginId) continue;
       if (!plugin.enabled || plugin.error || !plugin.registration.registerJobs) continue;
       try {
         const ctx = this.contextFor(plugin);
@@ -328,9 +324,7 @@ export class PluginEngine {
       if (!plugin.enabled || plugin.error) continue;
       for (const ui of plugin.manifest.hooks?.ui || []) {
         if (ui.hookPoint === hookPoint) {
-          // The page appends this to every asset URL for this plugin. Without it a redeploy done
-          // outside the browser stayed invisible behind the one-hour cache.
-          contributions.push({ ...ui, pluginId: id, assetVersion: plugin.assetVersion });
+          contributions.push({ ...ui, pluginId: id });
         }
       }
     }
@@ -380,7 +374,7 @@ export class PluginEngine {
   /**
    * Uninstall a plugin at runtime: drop its dispatcher entry, pause its jobs, remove its dir.
    * Subsequent requests to /api/plugins/<id>/* hit the dispatcher's "not found" branch. No
-   * Oscarr restart needed — the LoadedPlugin is also evicted so getPluginList stops listing it.
+   * LeMedia restart needed — the LoadedPlugin is also evicted so getPluginList stops listing it.
    */
   async uninstall(id: string): Promise<boolean> {
     const plugin = this.plugins.get(id);
@@ -462,8 +456,8 @@ export class PluginEngine {
     if (plugin.error) {
       const compat = this.compatCache.get(id);
       const reason = compat?.status === 'incompatible'
-        ? `Plugin "${id}" is incompatible with this Oscarr version: ${compat.reason}`
-        : `Plugin "${id}" failed to load — fix the error before enabling: ${plugin.error}`;
+        ? `Plugin "${id}" is incompatible with this LeMedia version: ${compat.reason}`
+        : `Plugin "${id}" failed to load, fix the error before enabling: ${plugin.error}`;
       throw new Error(reason);
     }
 
@@ -624,7 +618,7 @@ export class PluginEngine {
       },
       makeFallbackLogger: (pluginId: string) => this.makeFallbackLogger(pluginId),
       signAuthToken: (payload) => {
-        if (!this.app) throw new Error('Plugin engine not yet registered with Fastify — cannot issue auth tokens');
+        if (!this.app) throw new Error('Plugin engine not yet registered with Fastify, cannot issue auth tokens');
         return this.app.jwt.sign(payload, { expiresIn: '24h' });
       },
     };

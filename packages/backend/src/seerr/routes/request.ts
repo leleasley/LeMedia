@@ -88,7 +88,7 @@ export async function requestRoutes(app: FastifyInstance) {
     const actor = request.user;
 
     // Overseerr-compat: clients (Doplarr) can pass `X-API-User: <id>` to attribute the
-    // request to a specific user, e.g. mapping a Discord user to an Oscarr account. We honour
+    // request to a specific user, e.g. mapping a Discord user to an LeMedia account. We honour
     // this only when the caller has admin scope — otherwise a non-admin could impersonate
     // any user by spoofing the header.
     const xApiUser = request.headers['x-api-user'];

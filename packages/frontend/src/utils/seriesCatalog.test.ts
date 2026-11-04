@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { catalogSeasons, isSeasonComplete, seasonStatus } from './seriesCatalog';
-import type { SeriesCatalog, SeriesSeason, TmdbSeason } from '@oscarr/shared';
+import type { SeriesCatalog, SeriesSeason, TmdbSeason } from '@lemedia/shared';
 
 const season: SeriesSeason = { seasonNumber: 18, title: 'Sun & Moon', posterPath: null, episodeCount: 146, episodeFileCount: 3, monitored: true };
 const catalog: SeriesCatalog = { numbering: 'tvdb:official', tracked: true, seasons: [season],

@@ -1,11 +1,11 @@
 import type { FastifyRequest } from 'fastify';
 
 /**
- * Resolve Oscarr's public base URL (protocol + host, no trailing slash).
+ * Resolve LeMedia's public base URL (protocol + host, no trailing slash).
  *
  * Priority:
- *   1. OSCARR_PUBLIC_URL env var — authoritative when set. Use for deploys where the admin
- *      reaches Oscarr through a different hostname than end users, or when requests come
+ *   1. LEMEDIA_PUBLIC_URL env var — authoritative when set. Use for deploys where the admin
+ *      reaches LeMedia through a different hostname than end users, or when requests come
  *      from multiple origins and the OAuth redirect_uri must be stable.
  *   2. x-forwarded-proto + x-forwarded-host — for reverse-proxy setups.
  *   3. request.protocol + request.hostname — Fastify's fallback.
@@ -13,7 +13,7 @@ import type { FastifyRequest } from 'fastify';
  * Callers that need a full URL (e.g. OAuth callback) concatenate a path themselves.
  */
 export function resolvePublicBaseUrl(request: FastifyRequest): string {
-  const fromEnv = process.env.OSCARR_PUBLIC_URL?.trim().replace(/\/$/, '');
+  const fromEnv = process.env.LEMEDIA_PUBLIC_URL?.trim().replace(/\/$/, '');
   if (fromEnv) return fromEnv;
 
   const fwdProto = (request.headers['x-forwarded-proto'] as string | undefined)?.split(',')[0]?.trim();

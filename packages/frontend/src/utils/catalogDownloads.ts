@@ -1,4 +1,4 @@
-import type { SeriesCatalog } from '@oscarr/shared';
+import type { SeriesCatalog } from '@lemedia/shared';
 import type { DownloadItem } from '@/hooks/useDownloads';
 
 /** Episode integers are only comparable within the same configured service and numbering. */

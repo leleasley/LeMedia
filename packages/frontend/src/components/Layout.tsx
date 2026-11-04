@@ -1,19 +1,19 @@
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, X as XIcon, Eye, EyeOff, Home, Search, Film, Calendar, Menu, X, Shield, Sparkles, Bell, ChevronLeft, CheckCheck } from 'lucide-react';
+import { AlertTriangle, X as XIcon, Eye, EyeOff, Home, Film, Calendar, Menu, X, Shield, Bell, ChevronLeft, CheckCheck, Search } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 
 import { clsx } from 'clsx';
 import NotificationBell from '@/components/NotificationBell';
+import SearchAutocomplete from '@/components/SearchAutocomplete';
+import SearchOverlay from '@/components/search/SearchOverlay';
 import NotificationList from '@/components/NotificationList';
 import { AdminJumpButton } from '@/components/nav/AdminJumpButton';
-import ChangelogModal from '@/components/ChangelogModal';
-import { useChangelogNotification } from '@/hooks/useChangelogNotification';
 import { useNotifications } from '@/hooks/useNotifications';
 import { PluginSlot } from '@/plugins/PluginSlot';
-import { PluginNavItem } from '@/plugins/PluginNavItem';
+import { DynamicIcon } from '@/plugins/DynamicIcon';
 import { useFeatures } from '@/context/FeaturesContext';
 import { UserCluster } from '@/components/nav/UserCluster';
 import { LinkIcon } from '@/icons/LinkIcon';
@@ -35,15 +35,13 @@ export default function Layout({ children }: Readonly<{ children: React.ReactNod
   const [searchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
   const [banner, setBanner] = useState<string | null>(null);
-  const changelog = useChangelogNotification();
-  const [changelogOpen, setChangelogOpen] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [viewAsRole, setViewAsRoleState] = useState<string | null>(() => sessionStorage.getItem('view-as-role'));
   const { features } = useFeatures();
   const [scrolled, setScrolled] = useState(false);
   const { unreadCount, markAllRead } = useNotifications();
   const [mobileView, setMobileView] = useState<'main' | 'notifications'>('main');
-  const hasMenuBadge = unreadCount > 0 || (hasPermission('admin.*') && changelog.hasNew);
+  const hasMenuBadge = unreadCount > 0;
 
   useEffect(() => {
     if (!drawerOpen) setMobileView('main');
@@ -74,6 +72,19 @@ export default function Layout({ children }: Readonly<{ children: React.ReactNod
       setSearchQuery('');
     }
   }, [location.pathname, searchParams]);
+
+  // Phone search overlay: open state lives in the history entry, so the back gesture closes it.
+  const searchOverlayOpen = !!(location.state as { searchOverlay?: boolean } | null)?.searchOverlay;
+  const overlayInputRef = useRef<HTMLInputElement>(null);
+  const openSearch = () => {
+    overlayInputRef.current?.focus({ preventScroll: true });
+    if (!searchOverlayOpen) {
+      navigate(`${location.pathname}${location.search}`, { state: { searchOverlay: true } });
+    }
+  };
+  const closeSearch = () => {
+    if (searchOverlayOpen) navigate(-1);
+  };
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -112,7 +123,7 @@ export default function Layout({ children }: Readonly<{ children: React.ReactNod
 
       {viewAsRole && (
         <div className={clsx(
-          'fixed left-0 right-0 z-[59] bg-purple-600/90 backdrop-blur-sm text-white px-4 py-2 flex items-center justify-center gap-3',
+          'fixed left-0 right-0 z-[59] bg-amber-600 text-white px-4 py-2 flex items-center justify-center gap-3',
           hasBanner ? 'top-10' : 'top-0'
         )}>
           <Eye className="w-4 h-4 flex-shrink-0" />
@@ -129,35 +140,70 @@ export default function Layout({ children }: Readonly<{ children: React.ReactNod
         </div>
       )}
 
-      {/* Mobile bottom nav — thumb-zone friendly. Stays solid (not transparent on scroll)
-          since content scrolls behind it and a transparent bar would be unreadable. */}
+      {/* Mobile top bar, search + profile, Dynamic Island aware, no hamburger, transparent */}
       <nav
-        className="md:hidden fixed left-0 right-0 bottom-0 z-50 bg-ndp-surface/95 backdrop-blur-xl border-t border-white/5"
+        className="md:hidden fixed left-0 right-0 z-40 h-14 flex items-center gap-2 px-3"
+        style={{ top: 'calc(env(safe-area-inset-top) + 6px)' }}
+      >
+        {/* Opens the full-screen search panel. Focus happens inside the tap so iOS raises the keyboard. */}
+        <button
+          type="button"
+          onClick={openSearch}
+          className="flex-1 min-w-0 h-11 flex items-center gap-2.5 pl-3.5 pr-4 rounded-full bg-black/55 border border-white/10 text-left active:bg-black/70 transition-colors"
+        >
+          <Search className="w-4 h-4 text-white/60 flex-shrink-0" />
+          <span className={clsx('text-[15px] truncate', searchQuery ? 'text-white' : 'text-white/55')}>
+            {searchQuery || t('search.placeholder_short')}
+          </span>
+        </button>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <NotificationBell />
+          <UserCluster viewAsRole={viewAsRole} onViewAsRoleChange={setViewAsRole} />
+        </div>
+      </nav>
+
+      {/* Mobile bottom nav, docked tab bar, solid (no blur) so labels stay crisp over artwork */}
+      <nav
+        className={clsx(
+          'md:hidden fixed inset-x-0 bottom-0 z-50 bg-ndp-bg/[0.97] border-t border-white/[0.07]',
+          location.pathname.startsWith('/admin') && 'hidden'
+        )}
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
-        <div className="px-4 h-16 flex items-center gap-3">
+        <div className="h-[58px] grid grid-flow-col auto-cols-fr">
+          {navItems.map(({ path, labelKey, icon: Icon }) => {
+            const active = location.pathname === path;
+            return (
+              <Link
+                key={path}
+                to={path}
+                aria-current={active ? 'page' : undefined}
+                className={clsx(
+                  'relative flex flex-col items-center justify-center gap-1 text-[10px] font-semibold tracking-wide transition-colors active:opacity-70',
+                  active ? 'text-ndp-text' : 'text-ndp-text-dim'
+                )}
+              >
+                <span className={clsx('absolute top-0 h-[2px] w-8 rounded-b-full transition-colors', active ? 'bg-ndp-accent' : 'bg-transparent')} />
+                <Icon className={clsx('w-[22px] h-[22px]', active && 'text-ndp-accent')} strokeWidth={active ? 2.2 : 1.7} />
+                <span>{t(labelKey)}</span>
+              </Link>
+            );
+          })}
           <button
             onClick={() => setDrawerOpen(true)}
-            className="relative p-2 text-ndp-text-muted hover:text-ndp-text rounded-lg hover:bg-white/5 transition-colors flex-shrink-0"
-            aria-label={t('nav.open_menu', 'Open menu')}
-          >
-            <Menu className="w-5 h-5" />
-            {hasMenuBadge && (
-              <span className="absolute top-1 right-1 w-2 h-2 bg-ndp-accent rounded-full animate-pulse" />
+            aria-expanded={drawerOpen}
+            className={clsx(
+              'relative flex flex-col items-center justify-center gap-1 text-[10px] font-semibold tracking-wide transition-colors active:opacity-70',
+              drawerOpen ? 'text-ndp-text' : 'text-ndp-text-dim'
             )}
+          >
+            <span className={clsx('absolute top-0 h-[2px] w-8 rounded-b-full', drawerOpen ? 'bg-ndp-accent' : 'bg-transparent')} />
+            <span className="relative">
+              <Menu className={clsx('w-[22px] h-[22px]', drawerOpen && 'text-ndp-accent')} strokeWidth={drawerOpen ? 2.2 : 1.7} />
+              {hasMenuBadge && <span className="absolute -right-1 -top-0.5 w-2 h-2 rounded-full bg-ndp-accent ring-2 ring-ndp-bg" />}
+            </span>
+            <span>{t('nav.menu', 'Menu')}</span>
           </button>
-          <form onSubmit={handleSearch} className="flex-1 min-w-0">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ndp-text-dim" />
-              <input
-                type="search"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={t('search.placeholder_short')}
-                className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-xl text-sm text-ndp-text placeholder-ndp-text-dim focus:outline-none focus:ring-2 focus:ring-ndp-accent/40"
-              />
-            </div>
-          </form>
         </div>
       </nav>
 
@@ -170,8 +216,8 @@ export default function Layout({ children }: Readonly<{ children: React.ReactNod
         style={{ top: `${topOffset * 4}px` }}
       >
         <div className="max-w-[1800px] mx-auto px-4 sm:px-6">
-          <div className="oscarr-header-grid">
-            <div className="oscarr-header-start">
+          <div className="lemedia-header-grid">
+            <div className="lemedia-header-start">
               {navItems.map(({ path, labelKey, icon: Icon }) => (
                 <Link
                   key={path}
@@ -185,12 +231,27 @@ export default function Layout({ children }: Readonly<{ children: React.ReactNod
                   )}
                 >
                   <Icon className="w-4 h-4" />
-                  <span className="oscarr-nav-label">{t(labelKey)}</span>
+                  <span className="lemedia-nav-label">{t(labelKey)}</span>
                 </Link>
               ))}
               <PluginSlot
                 hookPoint="nav"
-                renderItem={(c) => <PluginNavItem key={c.pluginId} contribution={c} />}
+                renderItem={(c) => (
+                  <Link
+                    key={c.pluginId}
+                    to={c.props.path as string}
+                    aria-label={c.props.label as string}
+                    className={clsx(
+                      'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200',
+                      location.pathname.startsWith(c.props.path as string)
+                        ? 'bg-ndp-accent/10 text-ndp-accent'
+                        : 'text-ndp-text-muted hover:text-ndp-text hover:bg-white/5'
+                    )}
+                  >
+                    <DynamicIcon name={c.props.icon as string} className="w-4 h-4" />
+                    <span className="lemedia-nav-label">{c.props.label as string}</span>
+                  </Link>
+                )}
               />
               {leftLinks.map((link) => (
                 <a
@@ -202,27 +263,23 @@ export default function Layout({ children }: Readonly<{ children: React.ReactNod
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-ndp-text-muted hover:text-ndp-text hover:bg-white/5 transition-all duration-200"
                 >
                   <LinkIcon value={link.icon} className="w-4 h-4" />
-                  <span className="oscarr-nav-label">{link.label}</span>
+                  <span className="lemedia-nav-label">{link.label}</span>
                 </a>
               ))}
             </div>
 
-            <div className="oscarr-header-search">
-              <form onSubmit={handleSearch} className="w-full">
-                <div className="relative">
-                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-ndp-text-dim" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder={t('search.placeholder')}
-                    className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-xl text-sm text-ndp-text placeholder-ndp-text-dim focus:outline-none focus:ring-2 focus:ring-ndp-accent/40 focus:border-ndp-accent/40 focus:bg-white/10 transition-all"
-                  />
-                </div>
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <form onSubmit={handleSearch} className="w-full max-w-lg px-4 pointer-events-auto">
+                <SearchAutocomplete
+                  value={searchQuery}
+                  onChange={setSearchQuery}
+                  onSubmit={handleSearch}
+                  placeholder={t('search.placeholder')}
+                />
               </form>
             </div>
 
-            <div className="oscarr-header-end">
+            <div className="lemedia-header-end">
               {rightLinks.map((link) => (
                 <Tooltip key={link.id} label={link.label}>
                   <a
@@ -238,17 +295,6 @@ export default function Layout({ children }: Readonly<{ children: React.ReactNod
               ))}
 
               <PluginSlot hookPoint="header.actions" context={{ user, isAdmin: hasPermission('admin.*'), hasPermission }} />
-
-              {hasPermission('admin.*') && changelog.hasNew && (
-                <button
-                  onClick={() => { setChangelogOpen(true); changelog.dismiss(); }}
-                  className="relative p-2 rounded-xl hover:bg-white/5 transition-colors"
-                  title={t('changelog.new_version')}
-                >
-                  <Sparkles className="w-5 h-5 text-ndp-accent" />
-                  <span className="absolute top-1 right-1 w-2 h-2 bg-ndp-accent rounded-full animate-pulse" />
-                </button>
-              )}
 
               <AdminJumpButton />
               <NotificationBell />
@@ -267,18 +313,19 @@ export default function Layout({ children }: Readonly<{ children: React.ReactNod
         onClick={() => setDrawerOpen(false)}
         aria-hidden={!drawerOpen}
       />
-      {/* Bottom-up sheet drawer — slides up from the mobile nav. Header at top of the sheet
+      {/* Bottom-up sheet drawer, slides up from the mobile nav. Header at top of the sheet
           (since the trigger is at the bottom of the screen, the close affordance reads naturally
           near where the user's thumb already is on the bottom bar). */}
       <aside
         className={clsx(
-          'md:hidden fixed inset-x-0 bottom-0 top-0 z-[56] bg-ndp-surface border-t border-white/5 transform transition-transform duration-300 flex flex-col',
+          'md:hidden fixed inset-x-0 bottom-0 z-[56] bg-ndp-surface border border-white/10 rounded-t-[18px] max-h-[82vh] transform transition-transform duration-300 flex flex-col shadow-[0_-18px_60px_rgba(0,0,0,0.5)]',
           drawerOpen ? 'translate-y-0' : 'translate-y-full'
         )}
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
         aria-hidden={!drawerOpen}
       >
-        <div className="flex items-center justify-between px-4 h-14 border-b border-white/5 flex-shrink-0">
+        <div className="w-9 h-1 bg-white/20 rounded-full mx-auto mt-2.5 mb-1 flex-shrink-0" />
+        <div className="flex items-center justify-between px-5 h-14 flex-shrink-0">
           {mobileView === 'notifications' ? (
             <button
               onClick={() => setMobileView('main')}
@@ -289,7 +336,7 @@ export default function Layout({ children }: Readonly<{ children: React.ReactNod
               <span className="text-base font-bold text-ndp-text">{t('notifications.title')}</span>
             </button>
           ) : (
-            <span className="text-base font-bold text-ndp-text">Oscarr</span>
+            <span className="text-base font-bold text-ndp-text">{features.siteName}</span>
           )}
           <div className="flex items-center gap-1">
             {mobileView === 'notifications' && unreadCount > 0 && (
@@ -313,35 +360,54 @@ export default function Layout({ children }: Readonly<{ children: React.ReactNod
         </div>
 
         {mobileView === 'main' ? (
-          <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5">
-            <div className="mb-2">
+          <nav className="flex-1 overflow-y-auto px-4 pb-5 pt-1">
+            <div className="mb-4 rounded-2xl border border-white/8 bg-gradient-to-br from-white/[0.07] to-white/[0.02] p-2">
               <UserCluster
                 viewAsRole={viewAsRole}
                 onViewAsRoleChange={setViewAsRole}
                 variant="expanded"
+                onOpen={() => setDrawerOpen(false)}
               />
             </div>
-            <div className="h-px bg-white/5 my-2" />
 
+            <div className="grid grid-cols-3 gap-2 mb-4">
             {navItems.map(({ path, labelKey, icon: Icon }) => (
               <Link
                 key={path}
                 to={path}
                 onClick={() => setDrawerOpen(false)}
+                aria-current={location.pathname === path ? 'page' : undefined}
                 className={clsx(
-                  'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                  'min-h-[82px] flex flex-col items-center justify-center gap-2 px-2 py-3 rounded-2xl border text-xs font-medium text-center transition-all active:scale-[0.97]',
                   location.pathname === path
-                    ? 'bg-ndp-accent/10 text-ndp-accent'
-                    : 'text-ndp-text-muted hover:text-ndp-text hover:bg-white/5'
+                    ? 'border-ndp-accent/30 bg-ndp-accent/10 text-ndp-accent'
+                    : 'border-white/5 bg-black/10 text-ndp-text-muted hover:text-ndp-text hover:bg-white/[0.04]'
                 )}
               >
-                <Icon className="w-5 h-5 flex-shrink-0" />
-                <span className="truncate">{t(labelKey)}</span>
+                <Icon className="w-5 h-5 flex-shrink-0" strokeWidth={location.pathname === path ? 2.3 : 1.8} />
+                <span className="line-clamp-1">{t(labelKey)}</span>
               </Link>
             ))}
+            </div>
+            <div className="h-px bg-white/[0.07] mb-3" />
             <PluginSlot
               hookPoint="nav"
-              renderItem={(c) => <PluginNavItem key={c.pluginId} contribution={c} mobile onNavigate={() => setDrawerOpen(false)} />}
+              renderItem={(c) => (
+                <Link
+                  key={c.pluginId}
+                  to={c.props.path as string}
+                  onClick={() => setDrawerOpen(false)}
+                  className={clsx(
+                    'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                    location.pathname.startsWith(c.props.path as string)
+                      ? 'bg-ndp-accent/10 text-ndp-accent'
+                      : 'text-ndp-text-muted hover:text-ndp-text hover:bg-white/5'
+                  )}
+                >
+                  <DynamicIcon name={c.props.icon as string} className="w-5 h-5 flex-shrink-0" />
+                  <span className="truncate">{c.props.label as string}</span>
+                </Link>
+              )}
             />
             {leftLinks.map((link) => (
               <a
@@ -361,7 +427,7 @@ export default function Layout({ children }: Readonly<{ children: React.ReactNod
 
             <button
               onClick={() => setMobileView('notifications')}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-ndp-text-muted hover:text-ndp-text hover:bg-white/5 transition-colors"
+              className="w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl border border-white/[0.06] bg-black/10 text-sm font-medium text-ndp-text-muted hover:text-ndp-text hover:bg-white/[0.04] transition-colors"
             >
               <Bell className="w-5 h-5 flex-shrink-0" />
               <span className="flex-1 text-left truncate">{t('notifications.title')}</span>
@@ -386,17 +452,6 @@ export default function Layout({ children }: Readonly<{ children: React.ReactNod
               </a>
             ))}
 
-            {hasPermission('admin.*') && changelog.hasNew && (
-              <button
-                onClick={() => { setChangelogOpen(true); changelog.dismiss(); setDrawerOpen(false); }}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-ndp-text-muted hover:text-ndp-accent hover:bg-white/5 transition-colors"
-              >
-                <Sparkles className="w-5 h-5 flex-shrink-0 text-ndp-accent" />
-                <span className="flex-1 text-left truncate">{t('changelog.new_version')}</span>
-                <span className="w-2 h-2 bg-ndp-accent rounded-full animate-pulse" />
-              </button>
-            )}
-
             {hasPermission('admin.*') && (
               <Link
                 to="/admin"
@@ -415,20 +470,29 @@ export default function Layout({ children }: Readonly<{ children: React.ReactNod
         )}
       </aside>
 
+      <SearchOverlay
+        open={searchOverlayOpen}
+        initialQuery={location.pathname === '/search' ? searchQuery : ''}
+        inputRef={overlayInputRef}
+        onClose={closeSearch}
+      />
+
       <main
         id="main"
         tabIndex={-1}
         className={clsx(
           'min-h-dvh',
-          'pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0',
-          location.pathname !== '/' &&
-            'pt-[var(--banner-offset,0px)] md:pt-[calc(4rem+var(--banner-offset,0px))]'
+          'pb-[calc(58px+env(safe-area-inset-bottom)+24px)] md:pb-0',
+          location.pathname === '/'
+            ? 'pt-0'
+            : 'pt-[calc(3.5rem+env(safe-area-inset-top)+14px+var(--banner-offset,0px))] md:pt-[calc(4rem+var(--banner-offset,0px))]'
         )}
         style={{ ['--banner-offset' as string]: `${topOffset * 4}px` }}
       >
-        {children}
+        <div key={location.pathname} className="animate-page-in">
+          {children}
+        </div>
       </main>
-      <ChangelogModal open={changelogOpen} onClose={() => setChangelogOpen(false)} />
       <EncryptionUpgradeBanner />
     </div>
   );

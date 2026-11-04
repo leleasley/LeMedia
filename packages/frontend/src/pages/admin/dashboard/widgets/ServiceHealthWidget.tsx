@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { clsx } from 'clsx';
 import api from '@/lib/api';
 
 interface Service { id: number; name: string; type: string; enabled: boolean }
@@ -45,21 +46,23 @@ export function ServiceHealthWidget() {
   }
 
   return (
-    <div className="card p-4 h-full overflow-auto">
-      <ul className="space-y-2">
+    <div className="card h-full overflow-auto">
+      <ul className="divide-y divide-white/[0.06]">
         {sorted.map((s) => {
           const h = health[s.id];
           return (
-            <li key={s.id} className="flex items-center justify-between gap-3 rounded-md bg-white/5 px-3 py-2">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-ndp-text">{s.name}</p>
-                <p className="text-[11px] text-ndp-text-dim uppercase">{s.type}</p>
+            <li key={s.id} className="admin-row !min-h-0 !py-2.5">
+              <span className={clsx('admin-icon-tile',
+                h?.status === 'ok' && 'bg-emerald-500/15 text-emerald-400',
+                h?.status === 'error' && 'bg-red-500/15 text-red-400')}>
+                {h?.status === 'error' ? <AlertCircle className="h-4 w-4" /> : h?.status === 'ok' ? <CheckCircle2 className="h-4 w-4" /> : <Loader2 className="h-4 w-4 animate-spin text-ndp-text-dim" />}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[15px] font-medium text-ndp-text">{s.name}</p>
+                <p className="text-[11px] text-ndp-text-dim uppercase tracking-wide">{s.type}</p>
               </div>
-              <div className="flex items-center gap-2 text-xs">
-                {h?.status === 'loading' && <Loader2 className="h-3.5 w-3.5 animate-spin text-ndp-text-dim" />}
-                {h?.status === 'ok' && <><CheckCircle2 className="h-3.5 w-3.5 text-ndp-success" /><span className="text-ndp-text-dim">{h.version || 'OK'}</span></>}
-                {h?.status === 'error' && <><AlertCircle className="h-3.5 w-3.5 text-ndp-danger" /><span className="text-ndp-danger">{h.error || 'Error'}</span></>}
-              </div>
+              {h?.status === 'ok' && <span className="max-w-[9rem] truncate font-mono text-xs text-ndp-text-dim" title={h.version}>{h.version || 'OK'}</span>}
+              {h?.status === 'error' && <span className="max-w-[10rem] truncate text-xs text-red-300">{h.error || 'Error'}</span>}
             </li>
           );
         })}

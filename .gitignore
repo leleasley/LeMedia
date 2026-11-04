@@ -23,3 +23,9 @@ docs/superpowers/*
 !/packages/plugins/.gitkeep
 .superpowers/
 
+# Private to this deployment — infrastructure notes, test logs with LAN details, local backups.
+AGENTS.md
+docs/tests/
+.poster-backfill-backup-*.json
+*.tgz
+.env.bak*

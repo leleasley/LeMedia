@@ -5,6 +5,7 @@ import { getAppSettings } from '../utils/appSettings.js';
 import { trimTrailingSlashes } from '../utils/trimTrailingSlashes.js';
 import { isProviderEnabled } from '../providers/authSettings.js';
 import { isMailReady, sendMail } from './mailer.js';
+import { buildEmailHtml, escapeHtml } from './emailLayout.js';
 import { logEvent } from '../utils/logEvent.js';
 
 /**
@@ -41,10 +42,19 @@ export async function isResetEnabled(): Promise<boolean> {
   return isMailReady();
 }
 
-function resetEmail(siteName: string, link: string, displayName: string) {
-  const safeName = displayName.replaceAll(/[<>]/g, '');
+function resetEmail(siteName: string, siteUrl: string | null, link: string, displayName: string) {
+  const safeName = escapeHtml(displayName);
+  const html = buildEmailHtml({
+    siteName,
+    siteUrl,
+    title: 'Reset your password',
+    preheader: `Asked for this? Choose a new password. If not, ignore it`,
+    bodyHtml: `<p style="margin:0 0 12px">Hi ${safeName},</p><p style="margin:0 0 12px">Someone asked to reset the password for your ${escapeHtml(siteName)} account. This link works for one hour.</p>`,
+    cta: { label: 'Choose a new password', href: link },
+    footerNote: "If it wasn't you, ignore this email, your password stays as it is.",
+  });
   return {
-    subject: `[${siteName}] Reset your password`,
+    subject: `Choose a new ${siteName} password, this link ends in 1 hour`,
     text: [
       `Hi ${safeName},`,
       '',
@@ -53,16 +63,9 @@ function resetEmail(siteName: string, link: string, displayName: string) {
       '',
       link,
       '',
-      "If it wasn't you, ignore this email — your password stays as it is.",
+      "If it wasn't you, ignore this email, your password stays as it is.",
     ].join('\n'),
-    html: `
-      <div style="font-family:system-ui,sans-serif;max-width:480px">
-        <h2 style="margin:0 0 16px">Reset your password</h2>
-        <p style="margin:0 0 12px">Hi ${safeName},</p>
-        <p style="margin:0 0 16px">Someone asked to reset the password for your ${siteName} account. This link works for one hour.</p>
-        <p style="margin:0 0 24px"><a href="${link}" style="background:#6366f1;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;display:inline-block">Choose a new password</a></p>
-        <p style="margin:0;color:#6b7280;font-size:13px">If it wasn't you, ignore this email — your password stays as it is.</p>
-      </div>`,
+    html,
   };
 }
 
@@ -93,7 +96,7 @@ export async function requestReset(email: string): Promise<void> {
   ]);
 
   const settings = await getAppSettings();
-  const siteName = settings?.siteName || 'Oscarr';
+  const siteName = settings?.siteName || 'LeMedia';
   // Configuration only — isResetEnabled already refused when siteUrl is unset, and this re-read
   // keeps the guarantee local to the line that builds the link.
   const trimmed = settings?.siteUrl?.trim();
@@ -102,7 +105,7 @@ export async function requestReset(email: string): Promise<void> {
   const link = `${base}/reset-password?token=${encodeURIComponent(token)}`;
 
   try {
-    await sendMail({ to: user.email, ...resetEmail(siteName, link, user.displayName ?? user.email) });
+    await sendMail({ to: user.email, ...resetEmail(siteName, base, link, user.displayName ?? user.email) });
     logEvent('info', 'Auth', `Password reset link sent to user ${user.id}`);
   } catch (err) {
     // Swallowed deliberately: a transport failure must not change the caller's response. The admin
@@ -111,12 +114,15 @@ export async function requestReset(email: string): Promise<void> {
   }
 }
 
-export type ResetError = 'DISABLED' | 'INVALID_TOKEN' | 'PASSWORD_TOO_SHORT';
+export type ResetError = 'DISABLED' | 'INVALID_TOKEN' | 'PASSWORD_TOO_SHORT' | 'PASSWORD_WEAK';
 
 /** Consumes the token and sets the new password. Returns null on success. */
 export async function consumeReset(token: string, password: string): Promise<ResetError | null> {
   if (!(await isResetEnabled())) return 'DISABLED';
   if (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH) return 'PASSWORD_TOO_SHORT';
+  const { validatePasswordStrength } = await import('../utils/passwordStrength.js');
+  const strength = validatePasswordStrength(password);
+  if (!strength.valid) return strength.reason === 'PASSWORD_TOO_SHORT' ? 'PASSWORD_TOO_SHORT' : 'PASSWORD_WEAK';
   if (typeof token !== 'string' || token.length === 0) return 'INVALID_TOKEN';
 
   const row = await prisma.passwordResetToken.findUnique({

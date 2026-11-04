@@ -10,7 +10,7 @@ async function runPluginGuard(userId: number) {
 }
 
 /** Bulk maintenance routes — missing-episode search re-trigger (with cooldown) and the admin
- *  cleanup-by-status broom (keep / remove-oscarr-only / remove-from-service-too per bucket).
+ *  cleanup-by-status broom (keep / remove-lemedia-only / remove-from-service-too per bucket).
  *  Lives separately from per-request lifecycle because these touch many rows at once. */
 export async function requestMaintenanceRoutes(app: FastifyInstance) {
   app.post('/search-missing', {
@@ -66,7 +66,7 @@ export async function requestMaintenanceRoutes(app: FastifyInstance) {
     }
   });
 
-  // Actions per status: 'keep' | 'remove' (Oscarr only) | 'remove_with_service' (also purges
+  // Actions per status: 'keep' | 'remove' (LeMedia only) | 'remove_with_service' (also purges
   // the media from Radarr/Sonarr).
   app.post('/cleanup', {
     schema: {
@@ -83,8 +83,8 @@ export async function requestMaintenanceRoutes(app: FastifyInstance) {
     },
   }, async (request, reply) => {
     const { actions } = request.body as { actions: Record<string, 'keep' | 'remove' | 'remove_with_service'> };
-    const validStatuses = new Set(['pending', 'available', 'approved', 'declined', 'failed']);
-    let deletedFromOscarr = 0;
+    const validStatuses = new Set(['pending', 'available', 'approved', 'declined', 'failed', 'deleted', 'conflict']);
+    let deletedFromLeMedia = 0;
     let deletedFromService = 0;
 
     for (const [status, action] of Object.entries(actions)) {
@@ -113,10 +113,10 @@ export async function requestMaintenanceRoutes(app: FastifyInstance) {
       }
 
       const result = await prisma.mediaRequest.deleteMany({ where: { status } });
-      deletedFromOscarr += result.count;
+      deletedFromLeMedia += result.count;
     }
 
-    logEvent('info', 'Request', `Cleanup: ${deletedFromOscarr} requests deleted, ${deletedFromService} removed from services`);
-    return reply.send({ deletedFromOscarr, deletedFromService });
+    logEvent('info', 'Request', `Cleanup: ${deletedFromLeMedia} requests deleted, ${deletedFromService} removed from services`);
+    return reply.send({ deletedFromLeMedia, deletedFromService });
   });
 }

@@ -12,9 +12,6 @@ export interface PluginUIContribution {
   hookPoint: string;
   props: Record<string, unknown>;
   order?: number;
-  /** Changes when the plugin's frontend files change. The page appends it to every asset URL for
-   *  that plugin, so a redeploy is not served from the browser cache for another hour. */
-  assetVersion?: string;
 }
 
 /** Public plugin info as returned by `GET /api/plugins`. Consumed by the admin plugins tab,
@@ -32,7 +29,7 @@ export interface PluginInfo {
   compat?: {
     status: 'verified' | 'untested' | 'incompatible' | 'unknown';
     range?: string;
-    oscarrVersion: string;
+    lemediaVersion: string;
     reason?: string;
   };
   /** Populated by the backend from the update-check cache (GET /api/plugins/updates). */
@@ -44,7 +41,7 @@ export interface PluginInfo {
   capabilityReasons?: Partial<Record<string, string>>;
 
   // ── v0.8.0 — install source & update status ──
-  /** How the plugin reached this Oscarr instance:
+  /** How the plugin reached this LeMedia instance:
    *  - 'registry': installed via /install with a `repository` body — eligible for in-app
    *                updates and (eventually) auto-update.
    *  - 'local':    everything else (symlink dev install, raw URL install, manual drop-in).
@@ -65,7 +62,7 @@ export interface PluginUpdatePreflight {
   compat: {
     status: 'verified' | 'untested' | 'incompatible' | 'unknown';
     range?: string;
-    oscarrVersion: string;
+    lemediaVersion: string;
     reason?: string;
   };
   permissionDiff: {

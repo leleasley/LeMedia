@@ -1,4 +1,4 @@
-import type { ProviderMediaMetadata } from '@oscarr/shared';
+import type { ProviderMediaMetadata } from '@lemedia/shared';
 import type { ArrClient } from '../providers/types.js';
 import { prisma } from '../utils/prisma.js';
 

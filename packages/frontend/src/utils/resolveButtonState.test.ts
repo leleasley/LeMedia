@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { canRequest } from '@oscarr/shared';
+import { canRequest } from '@lemedia/shared';
 import { resolveButtonState, type ButtonStateInputs } from './resolveButtonState';
 
 /**
@@ -80,9 +80,15 @@ describe('resolveButtonState, the quality path against transient states', () => 
   it.each([
     ['isDownloading', 'downloading'],
     ['isUpcoming', 'upcoming'],
-    ['isSearching', 'searching'],
   ] as const)('reports %s when no option is left to offer', (flag, expected) => {
     expect(resolveButtonState(inputs({ [flag]: true }))).toBe(expected);
+  });
+
+  // LeMedia: SEARCHING means missing in Radarr/Sonarr, so with no active request it stays
+  // requestable (shown as "Missing") instead of a stuck "Searching..." button.
+  it('keeps a missing title requestable when nobody has asked for it', () => {
+    expect(resolveButtonState(inputs({ isSearching: true }))).toBe('can_request_quality');
+    expect(resolveButtonState(inputs({ isSearching: true, userHasRequest: true }))).not.toBe('can_request_quality');
   });
 
   it('ranks downloading above upcoming above searching', () => {
@@ -142,9 +148,12 @@ describe('resolveButtonState, the remaining table', () => {
  */
 describe('canRequest, the grid decision', () => {
   it('offers nothing on a category that forbids it, with no free option', () => {
-    expect(canRequest('SEARCHING', null)).toBe(false);
     expect(canRequest('AVAILABLE', null)).toBe(false);
     expect(canRequest('UPCOMING', null)).toBe(false);
+  });
+
+  it('offers a request on a missing (SEARCHING) title, LeMedia keeps those requestable', () => {
+    expect(canRequest('SEARCHING', null)).toBe(true);
   });
 
   it('offers a request on those same categories once an option is free', () => {

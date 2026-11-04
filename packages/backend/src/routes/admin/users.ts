@@ -5,6 +5,7 @@ import { logEvent } from '../../utils/logEvent.js';
 import { parseId } from '../../utils/params.js';
 import { invalidateUserStateCache } from '../../middleware/rbac.js';
 import { refreshUserAvatar } from '../../utils/avatarSource.js';
+import { createInvite, resendInvite, listInvites } from '../../services/userInvite.js';
 
 export async function usersRoutes(app: FastifyInstance) {
   // === USER MANAGEMENT ===
@@ -83,7 +84,7 @@ export async function usersRoutes(app: FastifyInstance) {
       const msg = (err as Error).message;
       // Structured codes so the frontend can i18n + tailor the CTA ("go to Services to
       // configure machineId"). `detail` carries the human fallback for log tools.
-      if (msg === 'NO_TOKEN') return reply.status(400).send({ error: 'NO_AUTH_TOKEN', detail: `No ${providerId} token — configure the service first.` });
+      if (msg === 'NO_TOKEN') return reply.status(400).send({ error: 'NO_AUTH_TOKEN', detail: `No ${providerId} token, configure the service first.` });
       if (msg === 'NO_MACHINE_ID') return reply.status(400).send({ error: 'NO_AUTH_SERVER', detail: `No ${providerId} server configured.` });
       const safeProviderId = providerId.replaceAll(/[\r\n\t]/g, '');
       logEvent('error', 'User', `${safeProviderId} sync failed: ${String(err)}`);
@@ -270,6 +271,78 @@ export async function usersRoutes(app: FastifyInstance) {
 
     logEvent('info', 'User', `${user.displayName || user.email} ${disabled ? 'disabled' : 'enabled'}`);
     return user;
+  });
+
+  // === INVITES (invite-only creation) ===
+
+  app.get('/invites', async () => {
+    const invites = await listInvites();
+    return invites.map((i) => ({
+      ...i,
+      isExpired: i.expiresAt.getTime() < Date.now() && !i.acceptedAt,
+    }));
+  });
+
+  app.post('/invites', {
+    schema: {
+      body: {
+        type: 'object' as const,
+        required: ['email'],
+        properties: {
+          email: { type: 'string' },
+          role: { type: 'string' },
+          displayName: { type: 'string' },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const { email, role } = request.body as { email: string; role?: string; displayName?: string };
+    const allowedRoles = await prisma.role.findMany({ select: { name: true } });
+    const roleName = role?.trim() || 'user';
+    if (!allowedRoles.some((r) => r.name === roleName)) {
+      return reply.status(400).send({ error: 'INVALID_ROLE' });
+    }
+    const result = await createInvite(email, roleName, request.user.id);
+    if ('error' in result) {
+      const map: Record<string, number> = { EMAIL_EXISTS: 409, MAIL_NOT_READY: 503, SITE_URL_MISSING: 400, INVALID_EMAIL: 400, EMAIL_DELIVERY_FAILED: 422, RATE_LIMITED: 429 };
+      const detail = (result as { detail?: string }).detail;
+      return reply.status(map[result.error] ?? 400).send({ error: result.error, ...(detail ? { message: detail, detail } : {}) });
+    }
+    return reply.send({ ok: true });
+  });
+
+  app.post('/invites/:id/resend', {
+    schema: {
+      params: {
+        type: 'object' as const,
+        required: ['id'],
+        properties: { id: { type: 'string' } },
+      },
+    },
+  }, async (request, reply) => {
+    const id = parseId((request.params as { id: string }).id);
+    if (!id) return reply.status(400).send({ error: 'Invalid ID' });
+    const result = await resendInvite(id, request.user.id);
+    if (result.error) {
+      const map: Record<string, number> = { EMAIL_EXISTS: 409, MAIL_NOT_READY: 503, SITE_URL_MISSING: 400, INVALID_EMAIL: 404, RATE_LIMITED: 400, EMAIL_DELIVERY_FAILED: 422 };
+      return reply.status(map[result.error] ?? 400).send({ error: result.error, ...(result.detail ? { message: result.detail, detail: result.detail } : {}) });
+    }
+    return reply.send({ ok: true });
+  });
+
+  app.delete('/invites/:id', {
+    schema: {
+      params: {
+        type: 'object' as const,
+        required: ['id'],
+        properties: { id: { type: 'string' } },
+      },
+    },
+  }, async (request, reply) => {
+    const id = parseId((request.params as { id: string }).id);
+    if (!id) return reply.status(400).send({ error: 'Invalid ID' });
+    await prisma.userInvite.delete({ where: { id } }).catch(() => null);
+    return reply.send({ ok: true });
   });
 
   app.delete('/users/:id/providers/:provider', {

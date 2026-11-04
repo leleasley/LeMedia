@@ -82,16 +82,16 @@ export function IconPicker({ value, onChange, trigger, tabs = ['lucide'] }: Read
       {open && pos && createPortal(
         <div
           ref={popRef}
-          className="fixed z-[60] w-72 rounded-lg border border-white/10 bg-ndp-surface shadow-xl shadow-black/50"
+          className="fixed z-[60] w-72 overflow-hidden rounded-xl border border-white/10 bg-ndp-surface shadow-xl shadow-black/60"
           style={{ top: pos.top, left: pos.left }}
         >
           {tabs.length > 1 && (
-            <div className="flex items-center gap-1 p-1 border-b border-white/5">
+            <div className="flex items-center gap-1 p-1.5 border-b border-white/[0.06]">
               {tabs.map((t_) => (
                 <button
                   key={t_}
                   onClick={() => setActiveTab(t_)}
-                  className={`flex-1 px-2 py-1 rounded-md text-xs font-medium transition-colors ${
+                  className={`flex-1 min-h-[34px] px-2 rounded-md text-xs font-medium transition-colors ${
                     activeTab === t_ ? 'bg-white/10 text-ndp-text' : 'text-ndp-text-dim hover:text-ndp-text hover:bg-white/5'
                   }`}
                 >
@@ -103,10 +103,10 @@ export function IconPicker({ value, onChange, trigger, tabs = ['lucide'] }: Read
 
           <div className="p-2">
             {activeTab === 'lucide' && (
-              <div className="grid grid-cols-7 gap-1 max-h-64 overflow-auto">
+              <div className="grid grid-cols-7 gap-1 max-h-64 overflow-auto overscroll-contain">
                 <button
                   onClick={() => commit(undefined)}
-                  className={`flex h-8 w-8 items-center justify-center rounded-md hover:bg-white/5 ${!value ? 'bg-ndp-accent/15 text-ndp-accent' : 'text-ndp-text-dim'}`}
+                  className={`flex h-9 w-full items-center justify-center rounded-md hover:bg-white/5 ${!value ? 'bg-ndp-accent/15 text-ndp-accent' : 'text-ndp-text-dim'}`}
                   title={t('admin.icon_picker.no_icon')}
                   aria-label={t('admin.icon_picker.no_icon')}
                 >
@@ -116,7 +116,7 @@ export function IconPicker({ value, onChange, trigger, tabs = ['lucide'] }: Read
                   <button
                     key={name}
                     onClick={() => commit(name)}
-                    className={`flex h-8 w-8 items-center justify-center rounded-md hover:bg-white/5 ${value === name ? 'bg-ndp-accent/15 text-ndp-accent' : 'text-ndp-text-dim'}`}
+                    className={`flex h-9 w-full items-center justify-center rounded-md hover:bg-white/5 hover:text-ndp-text ${value === name ? 'bg-ndp-accent/15 text-ndp-accent' : 'text-ndp-text-dim'}`}
                     title={name}
                     aria-label={name}
                   >
@@ -127,14 +127,14 @@ export function IconPicker({ value, onChange, trigger, tabs = ['lucide'] }: Read
             )}
 
             {activeTab === 'brands' && (
-              <div className="grid grid-cols-5 gap-1 max-h-64 overflow-auto">
+              <div className="grid grid-cols-5 gap-1 max-h-64 overflow-auto overscroll-contain">
                 {BRAND_ICONS.map((b) => {
                   const encoded = `brand:${b.id}`;
                   return (
                     <button
                       key={b.id}
                       onClick={() => commit(encoded)}
-                      className={`flex h-10 w-10 items-center justify-center rounded-md hover:bg-white/5 ${value === encoded ? 'bg-ndp-accent/15 ring-1 ring-ndp-accent/40' : ''}`}
+                      className={`flex h-11 w-full items-center justify-center rounded-md hover:bg-white/5 ${value === encoded ? 'bg-ndp-accent/15 ring-1 ring-ndp-accent/40' : ''}`}
                       title={b.title}
                       aria-label={b.title}
                     >
@@ -147,7 +147,7 @@ export function IconPicker({ value, onChange, trigger, tabs = ['lucide'] }: Read
 
             {activeTab === 'url' && (
               <div className="space-y-2">
-                <label className="block text-[10px] uppercase tracking-wider font-semibold text-ndp-text-dim">
+                <label className="block text-[11px] uppercase tracking-[0.12em] font-semibold text-ndp-text-dim">
                   {t('admin.icon_picker.url_label')}
                 </label>
                 <input
@@ -155,10 +155,10 @@ export function IconPicker({ value, onChange, trigger, tabs = ['lucide'] }: Read
                   value={urlDraft}
                   onChange={(e) => setUrlDraft(e.target.value)}
                   placeholder="https://example.com/icon.png"
-                  className="w-full px-2 py-1.5 rounded-md bg-white/5 border border-white/10 text-xs text-ndp-text focus:outline-none focus:ring-2 focus:ring-ndp-accent/40"
+                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs text-ndp-text focus:outline-none focus:ring-2 focus:ring-ndp-accent/40"
                 />
                 {urlDraft && urlValid && (
-                  <div className="flex items-center gap-2 p-2 rounded-md bg-white/5">
+                  <div className="flex items-center gap-2 p-2 rounded-lg bg-white/5">
                     <img src={urlDraft} alt="" className="h-8 w-8 object-contain" />
                     <span className="text-xs text-ndp-text-dim flex-1 truncate">{urlDraft}</span>
                   </div>
@@ -169,13 +169,13 @@ export function IconPicker({ value, onChange, trigger, tabs = ['lucide'] }: Read
                     {t('admin.icon_picker.https_warning')}
                   </p>
                 )}
-                <p className="text-[10px] text-ndp-text-dim">
+                <p className="text-[11px] leading-relaxed text-ndp-text-dim">
                   {t('admin.icon_picker.ip_warning')}
                 </p>
                 <button
                   onClick={() => commit(urlDraft)}
                   disabled={!urlDraft || !urlValid}
-                  className="w-full px-3 py-1.5 rounded-md text-xs font-medium bg-ndp-accent text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-ndp-accent/90 transition-colors"
+                  className="w-full min-h-[38px] px-3 py-2 rounded-lg text-xs font-medium bg-ndp-accent text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-ndp-accent-hover transition-colors"
                 >
                   {t('admin.icon_picker.use_url')}
                 </button>

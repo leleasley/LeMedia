@@ -1,20 +1,20 @@
 # Plugin Development Guide
 
-Oscarr supports plugins for extending functionality without modifying the core. Plugins can add backend routes, scheduled jobs, admin UI tabs, navigation items, full pages, feature flags, guards, custom permissions, and event-driven workflows.
+LeMedia supports plugins for extending functionality without modifying the core. Plugins can add backend routes, scheduled jobs, admin UI tabs, navigation items, full pages, feature flags, guards, custom permissions, and event-driven workflows.
 
 ## What's new in the plugin engine (v0.6.3+)
 
 Plugins now declare their capabilities explicitly for security + predictability. Three new manifest fields:
 
-- **`engines.oscarr`** — semver range your plugin supports, e.g. `">=0.6.0 <1.0.0"`. Required. Plugins outside the range are refused at load time with a clear error.
-- **`engines.testedAgainst`** — list of Oscarr versions you've explicitly tested. Plugins get a green "Verified" badge when running on one of these; otherwise an amber "Untested" badge.
+- **`engines.lemedia`** — semver range your plugin supports, e.g. `">=0.6.0 <1.0.0"`. Required. Plugins outside the range are refused at load time with a clear error.
+- **`engines.testedAgainst`** — list of LeMedia versions you've explicitly tested. Plugins get a green "Verified" badge when running on one of these; otherwise an amber "Untested" badge.
 - **`services`** — whitelist of service types (radarr / sonarr / plex / tautulli / …) whose config your plugin may read. Anything not listed returns `null` from `ctx.getServiceConfig*()`.
 - **`capabilities`** — whitelist of ctx method buckets your plugin calls. Any method outside the declared set throws at call time with a pointer at the missing entry. See the [Capabilities reference](#capabilities) section.
 - **`capabilityReasons`** — optional human-readable justification per capability, surfaced to admins when they enable the plugin.
 
 Install flow is also simpler — plugins ship a pre-built `dist/` in their GitHub release, and the admin UI's "Install" button downloads the tarball, hot-loads the plugin, and mounts its routes without a container restart.
 
-See the [Migration guide](#migration-guide) at the bottom if you're updating a plugin from a pre-v0.6.3 Oscarr.
+See the [Migration guide](#migration-guide) at the bottom if you're updating a plugin from a pre-v0.6.3 LeMedia.
 
 ## Quickstart
 
@@ -22,18 +22,18 @@ Scaffold a plugin that boots, registers one route, and appears in the admin UI �
 
 ### 1. Create the plugin directory
 
-Anywhere outside of Oscarr's source tree (so you can version it separately and later publish to its own GitHub repo):
+Anywhere outside of LeMedia's source tree (so you can version it separately and later publish to its own GitHub repo):
 
 ```bash
-mkdir -p ~/my-plugins/hello-oscarr/src
-cd ~/my-plugins/hello-oscarr
+mkdir -p ~/my-plugins/hello-lemedia/src
+cd ~/my-plugins/hello-lemedia
 ```
 
 ### 2. `package.json`
 
 ```json
 {
-  "name": "oscarr-plugin-hello-oscarr",
+  "name": "lemedia-plugin-hello-lemedia",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -49,11 +49,11 @@ cd ~/my-plugins/hello-oscarr
 }
 ```
 
-Repo name convention: `oscarr-plugin-<id>` if you plan to publish — the registry picks up repos that match this pattern.
+Repo name convention: `lemedia-plugin-<id>` if you plan to publish — the registry picks up repos that match this pattern.
 
 ### 3. `build.js`
 
-Oscarr loads your plugin as a single ESM bundle, so we build with esbuild. This file supports both one-shot (`npm run build`) and watch mode (`npm run dev`):
+LeMedia loads your plugin as a single ESM bundle, so we build with esbuild. This file supports both one-shot (`npm run build`) and watch mode (`npm run dev`):
 
 ```javascript
 import { build, context } from 'esbuild';
@@ -86,20 +86,20 @@ if (process.argv.includes('--watch')) {
 
 ```json
 {
-  "id": "hello-oscarr",
-  "name": "Hello Oscarr",
+  "id": "hello-lemedia",
+  "name": "Hello LeMedia",
   "version": "0.1.0",
   "apiVersion": "v1",
   "entry": "dist/index.js",
   "description": "A minimal example plugin.",
   "author": "Your name",
   "engines": {
-    "oscarr": ">=0.6.0 <1.0.0",
+    "lemedia": ">=0.6.0 <1.0.0",
     "testedAgainst": ["0.6.3"]
   },
   "capabilities": [],
   "hooks": {
-    "routes": { "prefix": "/api/plugins/hello-oscarr" }
+    "routes": { "prefix": "/api/plugins/hello-lemedia" }
   }
 }
 ```
@@ -125,8 +125,8 @@ export function register(ctx: PluginContext) {
   return {
     manifest,
     async registerRoutes(app: FastifyInstance) {
-      app.get('/hello', async () => ({ message: 'Hello from Oscarr!' }));
-      ctx.log.info('hello-oscarr routes registered');
+      app.get('/hello', async () => ({ message: 'Hello from LeMedia!' }));
+      ctx.log.info('hello-lemedia routes registered');
     },
   };
 }
@@ -139,23 +139,23 @@ npm install
 npm run build
 ```
 
-Now symlink the plugin into your local Oscarr (see [Dev loop](#dev-loop) for why a symlink is better than copying):
+Now symlink the plugin into your local LeMedia (see [Dev loop](#dev-loop) for why a symlink is better than copying):
 
 ```bash
-ln -s ~/my-plugins/hello-oscarr ~/Oscarr/app/packages/plugins/hello-oscarr
+ln -s ~/my-plugins/hello-lemedia ~/LeMedia/app/packages/plugins/hello-lemedia
 ```
 
-Restart Oscarr once to discover it (hot-install from the UI only applies when pulling from the Discover tab). The plugin shows up in **Admin → Plugins → Installed** — toggle it on and hit `GET /api/plugins/hello-oscarr/hello` to verify.
+Restart LeMedia once to discover it (hot-install from the UI only applies when pulling from the Discover tab). The plugin shows up in **Admin → Plugins → Installed** — toggle it on and hit `GET /api/plugins/hello-lemedia/hello` to verify.
 
 ## Releasing a plugin
 
-When an admin clicks **Install** in the Discover tab, Oscarr resolves the install URL in this order:
+When an admin clicks **Install** in the Discover tab, LeMedia resolves the install URL in this order:
 
 1. **Arch-specific Release asset** — the latest release's `.tar.gz` whose name carries an arch token matching the running container (`arm64`/`aarch64` on ARM hosts, `amd64`/`x64`/`x86_64` on x86_64 hosts). Use this when your plugin ships native modules and you need separate bundles per architecture.
 2. **Universal Release asset** — the latest release's `.tar.gz` with **no** arch token in its name. **The recommended path for ~95% of plugins**: a single self-contained bundle that runs anywhere.
 3. **Source archive** (`tarball/HEAD`) — fallback for plugins that commit `dist/` to their repo. Works but pollutes git history with build artifacts; not recommended for new plugins.
 
-`.sha256` companion files (`<name>.tar.gz.sha256`) are recognised and skipped by the resolver — keep them around, Oscarr may consume them for asset integrity in a later release.
+`.sha256` companion files (`<name>.tar.gz.sha256`) are recognised and skipped by the resolver — keep them around, LeMedia may consume them for asset integrity in a later release.
 
 ### Asset contents
 
@@ -166,18 +166,18 @@ The tarball you upload to the Release **must** include, at the archive root (no 
 - `dist/` containing the built file referenced by `manifest.entry`
 - Any other runtime asset your plugin needs (e.g. `frontend/`, static files)
 
-> Oscarr's prod image strips `npm`, `yarn` and `corepack` for security and size — `npm install` does **not** run after extraction. Anything `dist/index.js` imports at runtime must already be inside the asset.
+> LeMedia's prod image strips `npm`, `yarn` and `corepack` for security and size — `npm install` does **not** run after extraction. Anything `dist/index.js` imports at runtime must already be inside the asset.
 
 ### The bundling decision
 
-Most plugins should bundle every runtime dep into `dist/index.js` via esbuild's `bundle: true` with no `external` overrides (besides `@oscarr/shared`, which Oscarr's runtime injects). One bundle, one universal asset, install just works.
+Most plugins should bundle every runtime dep into `dist/index.js` via esbuild's `bundle: true` with no `external` overrides (besides `@lemedia/shared`, which LeMedia's runtime injects). One bundle, one universal asset, install just works.
 
 **The exception**: deps that ship native `.node` binaries or use dynamic `require()` patterns esbuild can't statically analyse. Common offenders:
 
 - `discord.js` — opt-in `zlib-sync` (faster gzip) and `@discordjs/opus` (voice) are native. The pure-JS code paths work without them; if you don't use voice, simply don't install those optionals and bundle `discord.js` normally.
 - `bcrypt` / `bcryptjs` — `bcrypt` is native; `bcryptjs` is a drop-in pure-JS replacement.
 - `better-sqlite3`, `argon2`, `node-canvas`, `sharp` — all native. No pure-JS swap, you'll need per-arch assets.
-- `prisma` — already installed in Oscarr's runtime; mark external.
+- `prisma` — already installed in LeMedia's runtime; mark external.
 
 **To find the native deps in your plugin** quickly:
 
@@ -227,7 +227,7 @@ jobs:
 
 ### Per-arch matrix — when you need native deps
 
-If your plugin genuinely needs a native dep that has no pure-JS alternative, build a separate asset per arch. Oscarr's resolver picks the right one based on `process.arch` of the running container. Asset names must contain an arch token (`amd64`, `x64`, `x86_64`, `arm64`, or `aarch64`):
+If your plugin genuinely needs a native dep that has no pure-JS alternative, build a separate asset per arch. LeMedia's resolver picks the right one based on `process.arch` of the running container. Asset names must contain an arch token (`amd64`, `x64`, `x86_64`, `arm64`, or `aarch64`):
 
 ```yaml
 name: Release
@@ -285,7 +285,7 @@ jobs:
             dist/*.sha256
 ```
 
-The asset name pattern is what the resolver matches against. As long as you keep `linux-amd64` / `linux-arm64` (or any `amd64`/`arm64` token separated by `-`/`_`/`.`), Oscarr picks the right one.
+The asset name pattern is what the resolver matches against. As long as you keep `linux-amd64` / `linux-arm64` (or any `amd64`/`arm64` token separated by `-`/`_`/`.`), LeMedia picks the right one.
 
 ### Cutting a release
 
@@ -293,7 +293,7 @@ The asset name pattern is what the resolver matches against. As long as you keep
 git tag v0.1.2 && git push origin v0.1.2
 ```
 
-The workflow runs, GitHub Release gets the asset(s), and Oscarr admins immediately see "update available" in their Plugins tab.
+The workflow runs, GitHub Release gets the asset(s), and LeMedia admins immediately see "update available" in their Plugins tab.
 
 ## Getting started
 
@@ -313,7 +313,7 @@ packages/plugins/
 
 ### Plugin discovery
 
-On startup, Oscarr scans `packages/plugins/` for directories with a `manifest.json`. You can override the scan directory with the `OSCARR_PLUGINS_DIR` environment variable.
+On startup, LeMedia scans `packages/plugins/` for directories with a `manifest.json`. You can override the scan directory with the `LEMEDIA_PLUGINS_DIR` environment variable.
 
 - Follows symlinks (useful for dev workflows: `ln -s /path/to/plugin packages/plugins/name`)
 - Skips hidden directories (starting with `.`)
@@ -333,7 +333,7 @@ On startup, Oscarr scans `packages/plugins/` for directories with a `manifest.js
   "entry": "dist/index.js",
   "frontend": "frontend/index.tsx",
   "engines": {
-    "oscarr": ">=0.6.0 <1.0.0",
+    "lemedia": ">=0.6.0 <1.0.0",
     "testedAgainst": ["0.6.3"]
   },
   "services": ["radarr"],
@@ -456,7 +456,7 @@ export function register(ctx: PluginContext): PluginRegistration {
 
 ## PluginContext API
 
-The context object provides access to Oscarr's core functionality:
+The context object provides access to LeMedia's core functionality:
 
 | Method | Description | Capability |
 |--------|-------------|-----------|
@@ -477,11 +477,11 @@ The context object provides access to Oscarr's core functionality:
 | `ctx.getServiceConfig(serviceType)` / `getServiceConfigRaw(serviceType)` | Service config for direct API access | _`services[]` ACL_ |
 | `ctx.tmdb.search(query, { page?, lang? })` | TMDB multi-search (cached) | `tmdb:read` |
 | `ctx.tmdb.movie(tmdbId, { lang? })` / `tv(tmdbId, { lang? })` | TMDB movie/TV details (cached, `lang` falls back to instance) | `tmdb:read` |
-| `ctx.media.batchStatus(items, userId?)` | Bulk Oscarr status for N TMDB ids, with user's per-item request state | `requests:read` |
+| `ctx.media.batchStatus(items, userId?)` | Bulk LeMedia status for N TMDB ids, with user's per-item request state | `requests:read` |
 | `ctx.media.getById(mediaId)` | Single-media lookup, trimmed `PluginMedia` projection | `requests:read` |
 | `ctx.requests.listForUser(userId, { limit?, status? })` | Owner-scoped request listing, default 50 / max 200 | `requests:read` |
 | `ctx.requests.create(input)` | Full create-request pipeline on behalf of a user | `requests:write` |
-| `ctx.app.internalFetch(path, { method?, headers?, body?, asUserId? })` | Escape hatch — call any Oscarr HTTP route; pass `asUserId` to authenticate | _always_ |
+| `ctx.app.internalFetch(path, { method?, headers?, body?, asUserId? })` | Escape hatch — call any LeMedia HTTP route; pass `asUserId` to authenticate | _always_ |
 | `ctx.registerRoutePermission(routeKey, rule)` | Register an RBAC rule for a route | `permissions` |
 | `ctx.registerPluginPermission(permission, description?)` | Declare a custom permission | `permissions` |
 | `ctx.events` | Event bus — see [Events](#events) | `events` |
@@ -563,7 +563,7 @@ ctx.events.emit('myplugin.sync_complete', { count: 42 });
 
 The host fires two events plugins can subscribe to without polling the DB. Payloads are versioned with a `v` field so future shape changes coexist with existing subscribers.
 
-| Event | Payload type (`@oscarr/shared`) | Fires when |
+| Event | Payload type (`@lemedia/shared`) | Fires when |
 |-------|---------------------------------|-----------|
 | `user.notification.created` | `PluginUserNotificationCreatedV1` | Every time `safeUserNotify` persists an in-app notification — auth events, request lifecycle, media availability, plugin-owned events. Replaces cron-polling `UserNotification`. |
 | `media.available` | `PluginMediaAvailableV1` | A piece of media moved to `available` and at least one user had an active request for it. Broadcast-style: includes every requester's userId so a plugin can post once to a channel instead of N times. |
@@ -571,7 +571,7 @@ The host fires two events plugins can subscribe to without polling the DB. Paylo
 Example — react to "your request was approved" with a Discord DM:
 
 ```typescript
-import type { PluginUserNotificationCreatedV1 } from '@oscarr/shared';
+import type { PluginUserNotificationCreatedV1 } from '@lemedia/shared';
 
 async registerRoutes(app, ctx) {
   ctx.events.on('user.notification.created', async (raw) => {
@@ -582,7 +582,7 @@ async registerRoutes(app, ctx) {
     const user = await ctx.getUser(ev.userId);
     if (!user) return;
 
-    // Find the Discord link for this Oscarr user
+    // Find the Discord link for this LeMedia user
     const links = await ctx.getUserProviders(ev.userId);
     const discordId = links.find(l => l.provider === 'discord')?.providerId;
     if (!discordId) return;
@@ -721,7 +721,7 @@ Plugin frontend components are wrapped in an error boundary. If a plugin compone
 ```
 
 Icon names refer to [Lucide React](https://lucide.dev/icons/), but **only icons explicitly added
-to Oscarr's curated allowlist** render — anything else falls back to a `Puzzle` placeholder (and
+to LeMedia's curated allowlist** render — anything else falls back to a `Puzzle` placeholder (and
 emits a console warning in dev). The allowlist is curated for bundle-size reasons (tree-shaking).
 
 ### Available icons
@@ -794,12 +794,12 @@ Contributes a draggable widget to the admin Dashboard tab. The plugin's frontend
 
 A malformed manifest (e.g. uppercase `id`, missing `defaultSize`) is rejected at plugin load time — the plugin is marked `error` and never reaches the dashboard.
 
-## Frontend SDK (`@oscarr/sdk`)
+## Frontend SDK (`@lemedia/sdk`)
 
 Plugins can import helpers from the SDK instead of reaching into the main app bundle:
 
 ```javascript
-import { api, apiPost, apiPut, apiDelete, formatSize, formatDate, formatRelative, storageGet, storageSet } from '@oscarr/sdk';
+import { api, apiPost, apiPut, apiDelete, formatSize, formatDate, formatRelative, storageGet, storageSet } from '@lemedia/sdk';
 ```
 
 ### API helpers
@@ -837,7 +837,7 @@ Plugins can provide a full-page React component at `/p/:pluginId`:
 ```tsx
 // packages/plugins/my-plugin/frontend/index.tsx
 import { useState, useEffect } from 'react';
-import { api } from '@oscarr/sdk';
+import { api } from '@lemedia/sdk';
 
 export default function MyPluginPage() {
   const [data, setData] = useState(null);
@@ -855,27 +855,27 @@ export default function MyPluginPage() {
 }
 ```
 
-The frontend component is lazy-loaded via ESM by Oscarr's router. See [Styling](#styling) for how to use Tailwind classes and Oscarr's design tokens in your plugin.
+The frontend component is lazy-loaded via ESM by LeMedia's router. See [Styling](#styling) for how to use Tailwind classes and LeMedia's design tokens in your plugin.
 
 ## Styling
 
 Plugins can style their UI with the same Tailwind + design tokens as the core. Two things to know:
 
-**Component classes (`card`, `btn-primary`, `btn-secondary`, `input`, …) come free.** They're defined in the core CSS bundle that Oscarr loads on every page, so just writing `<div className="card">` in your plugin works out of the box.
+**Component classes (`card`, `btn-primary`, `btn-secondary`, `input`, …) come free.** They're defined in the core CSS bundle that LeMedia loads on every page, so just writing `<div className="card">` in your plugin works out of the box.
 
-**Tailwind utility classes (`bg-sky-500`, `border-l-amber-400`, `p-4`, `flex`…) need the plugin to ship its own CSS bundle.** Tailwind's JIT purges classes the core doesn't use itself, so a plugin that wants colors or spacings not present in core would otherwise render unstyled. To fix this, plugins compile a small CSS bundle alongside their JS, which Oscarr's loader injects when the plugin mounts.
+**Tailwind utility classes (`bg-sky-500`, `border-l-amber-400`, `p-4`, `flex`…) need the plugin to ship its own CSS bundle.** Tailwind's JIT purges classes the core doesn't use itself, so a plugin that wants colors or spacings not present in core would otherwise render unstyled. To fix this, plugins compile a small CSS bundle alongside their JS, which LeMedia's loader injects when the plugin mounts.
 
 ### One-time setup (per plugin)
 
-Run the scaffolder from the Oscarr repo:
+Run the scaffolder from the LeMedia repo:
 
 ```bash
-npm run plugin:add-tailwind -- ~/Oscarr/plugins/my-plugin
+npm run plugin:add-tailwind -- ~/LeMedia/plugins/my-plugin
 ```
 
 The script is idempotent — safe to re-run. It drops in:
 
-- `tailwind.preset.js` — Oscarr's design tokens (`ndp-*` colors, animations, keyframes), copied inline so your plugin stays self-contained. **Oscarr-owned**: re-running the scaffolder re-syncs it. If you want to extend the tokens (extra colors, brand fonts), use `theme.extend` in your plugin's `tailwind.config.js` rather than editing the preset in-place.
+- `tailwind.preset.js` — LeMedia's design tokens (`ndp-*` colors, animations, keyframes), copied inline so your plugin stays self-contained. **LeMedia-owned**: re-running the scaffolder re-syncs it. If you want to extend the tokens (extra colors, brand fonts), use `theme.extend` in your plugin's `tailwind.config.js` rather than editing the preset in-place.
 - `tailwind.config.js` — wires the preset, scans `frontend/**/*.{ts,tsx}`, and disables preflight (core's reset already applies).
 - `frontend/index.css` — entry file that just emits `@tailwind utilities;`. Base + components are served by the core bundle already loaded in the page.
 - `package.json` — pins `tailwindcss` to the same version the core uses.
@@ -884,7 +884,7 @@ The script is idempotent — safe to re-run. It drops in:
 After the script runs:
 
 ```bash
-cd ~/Oscarr/plugins/my-plugin
+cd ~/LeMedia/plugins/my-plugin
 npm install
 npm run build     # emits dist/frontend/{index.js,index.css}
 ```
@@ -893,7 +893,7 @@ The plugin loader injects `<link rel="stylesheet" href="/api/plugins/<id>/fronte
 
 ### How the plugin's CSS bundle is scoped
 
-When the plugin loader injects your `dist/frontend/index.css`, it **rewrites every selector** to be scoped to a `data-oscarr-plugin="<your-id>"` attribute. So `.bg-black` in your bundle becomes `[data-oscarr-plugin="<id>"] .bg-black` at the document level. The loader auto-applies that attribute on the wrapper around any of your plugin's components, so as long as your component tree is rendered inside Oscarr's normal DOM flow, you don't have to think about it — Tailwind utilities just work.
+When the plugin loader injects your `dist/frontend/index.css`, it **rewrites every selector** to be scoped to a `data-lemedia-plugin="<your-id>"` attribute. So `.bg-black` in your bundle becomes `[data-lemedia-plugin="<id>"] .bg-black` at the document level. The loader auto-applies that attribute on the wrapper around any of your plugin's components, so as long as your component tree is rendered inside LeMedia's normal DOM flow, you don't have to think about it — Tailwind utilities just work.
 
 **Heads-up — `createPortal` to `document.body`:** if your plugin renders a modal, overlay, drawer, popover or anything else through `react-dom`'s `createPortal(..., document.body)`, the portaled subtree **escapes the auto-applied scope wrapper** and your Tailwind utilities silently stop matching. Re-apply the attribute on your portaled root:
 
@@ -901,7 +901,7 @@ When the plugin loader injects your `dist/frontend/index.css`, it **rewrites eve
 import { createPortal } from 'react-dom';
 
 createPortal(
-  <div data-oscarr-plugin="my-plugin-id" className="fixed inset-0 bg-black/80 …">
+  <div data-lemedia-plugin="my-plugin-id" className="fixed inset-0 bg-black/80 …">
     …
   </div>,
   document.body,
@@ -910,11 +910,11 @@ createPortal(
 
 ### Scoping runtime-injected custom CSS
 
-If your plugin injects raw CSS at runtime (e.g. `.plugin-communication`'s markdown typography), prefix selectors with `.oscarr-<plugin-id>-*` to avoid colliding with core or other plugins. The bundle-CSS scope rewriter only operates on `dist/frontend/index.css` — anything you `document.head.appendChild(<style>)` at runtime is up to you.
+If your plugin injects raw CSS at runtime (e.g. `.plugin-communication`'s markdown typography), prefix selectors with `.lemedia-<plugin-id>-*` to avoid colliding with core or other plugins. The bundle-CSS scope rewriter only operates on `dist/frontend/index.css` — anything you `document.head.appendChild(<style>)` at runtime is up to you.
 
 ### Tailwind version alignment
 
-The scaffolder pins `tailwindcss` to the core's exact version. Major version drift (e.g. core v3 → v4) changes syntax for some utilities (opacity, arbitrary values) and will eventually require running the scaffolder again to re-pin. Keep your plugin's `tailwindcss` in lockstep with the Oscarr you're targeting.
+The scaffolder pins `tailwindcss` to the core's exact version. Major version drift (e.g. core v3 → v4) changes syntax for some utilities (opacity, arbitrary values) and will eventually require running the scaffolder again to re-pin. Keep your plugin's `tailwindcss` in lockstep with the LeMedia you're targeting.
 
 ## Settings
 
@@ -1002,7 +1002,7 @@ if (features.myPluginEnabled) {
 
 ## Plugin lifecycle
 
-1. **Discovery**: On startup, Oscarr scans the plugins directory for directories with a `manifest.json`
+1. **Discovery**: On startup, LeMedia scans the plugins directory for directories with a `manifest.json`
 2. **Validation**: Manifest must have `id`, `name`, `version`, `entry`, and `apiVersion: "v1"`
 3. **Loading**: Entry module is dynamically imported, `register(ctx)` is called
 4. **Install**: On first load, `onInstall(ctx)` is called if defined (tracked by DB flag `onInstallRan`, never re-fires)
@@ -1115,7 +1115,7 @@ Guards return `null` to allow the action, or `{ blocked: true, error: string, st
 
 ## Permissions & RBAC
 
-Oscarr uses a centralized RBAC (Role-Based Access Control) middleware. Roles and their permissions are stored in the database and managed from the admin panel (Roles tab). Plugins can extend this system.
+LeMedia uses a centralized RBAC (Role-Based Access Control) middleware. Roles and their permissions are stored in the database and managed from the admin panel (Roles tab). Plugins can extend this system.
 
 ### Registering custom permissions
 
@@ -1222,12 +1222,12 @@ Any ctx method outside of `log` and service-bound methods (`getServiceConfig*`, 
 | `users:read`        | `getUser`, `findUserByEmail`, `findUserByProvider`, `getUserProviders` | Lookup user profile or their linked providers |
 | `users:write`       | `setUserRole`, `setUserDisabled`, `issueAuthToken`               | Change role, disable, impersonate             |
 | `settings:plugin`   | `getSetting`, `setSetting`, `getPluginDataDir`                   | Store plugin-scoped state or files            |
-| `settings:app`      | `getAppSettings`, `listFolderRules`                              | Read Oscarr-wide settings (site name, routing rules, etc.) |
+| `settings:app`      | `getAppSettings`, `listFolderRules`                              | Read LeMedia-wide settings (site name, routing rules, etc.) |
 | `notifications`     | `sendNotification`, `sendUserNotification`                       | Send alerts to users or notification channels |
 | `permissions`       | `registerRoutePermission`, `registerPluginPermission`            | Declare RBAC rules for the plugin's routes    |
 | `events`            | `events.on / off / emit`                                         | Use the cross-plugin event bus                |
 | `tmdb:read`         | `tmdb.search`, `tmdb.movie`, `tmdb.tv`                           | Fetch TMDB metadata (cached + locale-aware)   |
-| `requests:read`     | `requests.listForUser`, `media.batchStatus`, `media.getById`     | Read the user's request state + Oscarr library status |
+| `requests:read`     | `requests.listForUser`, `media.batchStatus`, `media.getById`     | Read the user's request state + LeMedia library status |
 | `requests:write`    | `requests.create`                                                | Create a media request on behalf of a user (full pipeline: validation → guard → blacklist → auto-approve → sendToService → notify) |
 
 `log` and service methods are gated separately:
@@ -1253,7 +1253,7 @@ Plugins no longer require `git clone + npm install + npm run build + restart`. I
 
 1. The plugin author tags a release on GitHub with a pre-built `dist/` committed (or attached as a release asset).
 2. Admin opens **Admin → Plugins → Discover**, finds the plugin, clicks **Install**.
-3. Oscarr downloads the tarball, validates the manifest, drops it in `packages/plugins/<id>/`, and hot-loads the plugin. No restart.
+3. LeMedia downloads the tarball, validates the manifest, drops it in `packages/plugins/<id>/`, and hot-loads the plugin. No restart.
 
 The `Install` button resolves the GitHub tarball of the plugin repo's HEAD. To install a plugin from an arbitrary URL, the admin UI exposes an "Install from URL" option (see the `POST /api/plugins/install { url }` endpoint).
 
@@ -1262,8 +1262,8 @@ The `Install` button resolves the GitHub tarball of the plugin repo's HEAD. To i
 Once the plugin is symlinked into `packages/plugins/`, the tightest iteration cycle is:
 
 1. Run `npm run dev` in your plugin dir — esbuild watches `src/` and rewrites `dist/index.js` on every save.
-2. In the Oscarr admin UI, toggle the plugin **off** then **on** to re-import the fresh bundle. The dispatcher drops the old router + ctx + RBAC state and rebuilds from the new module — no server restart needed.
-3. Watch logs via **Admin → Plugins → (your plugin) → Logs** (or tail the Oscarr server stdout). `ctx.log.info/warn/error` is persisted to the `PluginLog` table and scrubbed for secrets before display.
+2. In the LeMedia admin UI, toggle the plugin **off** then **on** to re-import the fresh bundle. The dispatcher drops the old router + ctx + RBAC state and rebuilds from the new module — no server restart needed.
+3. Watch logs via **Admin → Plugins → (your plugin) → Logs** (or tail the LeMedia server stdout). `ctx.log.info/warn/error` is persisted to the `PluginLog` table and scrubbed for secrets before display.
 
 > **Why symlink rather than copy:** the plugin loader follows symlinks so your source edits are picked up as soon as esbuild rewrites `dist/`. Copying would force a manual resync after every build.
 
@@ -1272,14 +1272,14 @@ Once the plugin is symlinked into `packages/plugins/`, the tightest iteration cy
 Plugin state (settings + `onInstallRan` flag) lives in the `PluginState` table. To force a clean install — e.g. to re-run `onInstall` — delete the row:
 
 ```sql
-DELETE FROM "PluginState" WHERE "pluginId" = 'hello-oscarr';
+DELETE FROM "PluginState" WHERE "pluginId" = 'hello-lemedia';
 ```
 
 Then toggle the plugin off/on and `onInstall(ctx)` fires again.
 
 ### Frontend-only changes
 
-If your plugin has a `frontend/` bundle, the browser caches it aggressively. After a rebuild, hard-refresh the admin page (Shift+Reload) or bump the plugin's `version` in `manifest.json` — Oscarr uses that in the module URL as a cache buster.
+If your plugin has a `frontend/` bundle, the browser caches it aggressively. After a rebuild, hard-refresh the admin page (Shift+Reload) or bump the plugin's `version` in `manifest.json` — LeMedia uses that in the module URL as a cache buster.
 
 ## Release workflow
 
@@ -1308,7 +1308,7 @@ jobs:
 
 Existing plugins need three additions to load under the new engine:
 
-1. **`engines.oscarr`** — declare the semver range of Oscarr versions you support. For a plugin that works today on 0.6.x: `{ "oscarr": ">=0.6.0 <1.0.0", "testedAgainst": ["0.6.3"] }`.
+1. **`engines.lemedia`** — declare the semver range of LeMedia versions you support. For a plugin that works today on 0.6.x: `{ "lemedia": ">=0.6.0 <1.0.0", "testedAgainst": ["0.6.3"] }`.
 2. **`services`** — if your plugin calls `ctx.getServiceConfig*()` or `ctx.getArrClient()`, list each service type. E.g. `["radarr"]` or `["plex", "tautulli"]`. Plugins that don't touch services skip this field entirely.
 3. **`capabilities`** — list the ctx method buckets you use (see the Capabilities table above). A plugin that only uses `ctx.log` needs no capabilities field — `log` is always granted.
 
@@ -1317,7 +1317,7 @@ Without these, the plugin either fails to load (missing `engines` → compat sta
 ## Current limitations
 
 - Plugins cannot modify the database schema (no Prisma migrations)
-- Plugin frontend components are lazy-loaded via ESM and cannot import from the main app bundle (use `@oscarr/sdk` instead)
+- Plugin frontend components are lazy-loaded via ESM and cannot import from the main app bundle (use `@lemedia/sdk` instead)
 - No plugin dependency system (no way to declare that plugin A requires plugin B)
 - Plugin modules stay in Node's ESM loader cache until process restart — a hot-uninstall drops routes + ctx + RBAC state but the module code itself only disappears on next boot
 - The event bus is in-process only (no persistence, no cross-restart delivery)

@@ -1,4 +1,4 @@
-import type { TmdbEpisode } from '@oscarr/shared';
+import type { TmdbEpisode } from '@lemedia/shared';
 import type { EpisodeInfo } from './episodeStatus';
 
 /** Choose one numbering scheme. Identical episode numbers never prove matching identity. */

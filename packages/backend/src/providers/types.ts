@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import type { MediaStateCategory, ServiceTag, ProviderSeasonCatalog, ProviderMediaMetadata } from '@oscarr/shared';
+import type { MediaStateCategory, ServiceTag, ProviderSeasonCatalog, ProviderMediaMetadata } from '@lemedia/shared';
 
 /** Optional capability of any service. IDs refer only to the configured instance.
  * Implementations validate upstream tag responses and add tags without removing existing ones. */
@@ -113,6 +113,13 @@ export interface ArrClient extends ServiceTagClient {
 
   // Request dispatch
   findByExternalId(externalId: number): Promise<{ id: number } | null>;
+  findByTitle?(title: string): Promise<{ id: number } | null>;
+  lookupByTitle?(title: string): Promise<unknown | null>;
+  /** Find the entry holding a library path (Radarr movie.path / Sonarr series.path).
+   *  Used to resolve add-time path conflicts: the *arr rejects with a validator error
+   *  instead of naming the occupant, so the caller looks it up to adopt-or-explain.
+   *  Optional — connectors without a path listing leave conflicts as raw errors. */
+  findByPath?(path: string): Promise<{ id: number; externalId: number | null; title: string } | null>;
   addMedia(options: ArrAddMediaOptions): Promise<void>;
   searchMedia(serviceMediaId: number): Promise<void>;
   /** Monitor and search only these seasons of an existing series. */
@@ -124,6 +131,11 @@ export interface ArrClient extends ServiceTagClient {
 
   // Episodes (TV only — optional, not implemented by movie providers)
   getEpisodesNormalized?(serviceMediaId: number, seasonNumber?: number): Promise<ArrEpisode[]>;
+  /** Monitor seasons on an already-added series (TV only). Used when requesting seasons of a
+   *  series Sonarr already holds — without this the request silently does nothing. */
+  monitorSeasons?(seriesId: number, seasons: number[]): Promise<void>;
+  /** Targeted missing-episode search for one season (TV only). Falls back to series-wide. */
+  searchSeason?(seriesId: number, seasonNumber: number): Promise<void>;
   /** Native season metadata. Numbers must never be joined to another provider by position. */
   getSeasonCatalog?(externalId: number): Promise<ProviderSeasonCatalog | null>;
   /** Resolve an exact identity, then return service metadata (including native TV numbering).
@@ -161,7 +173,7 @@ export function extractImageFromArr(images: { coverType: string; remoteUrl: stri
 
 export interface ServiceField {
   key: string;
-  labelKey: string; // i18n key — translated by the frontend
+  labelKey: string; // i18n key, translated by the frontend
   type: 'text' | 'password';
   placeholder?: string;
   helper?: string; // e.g. 'plex-oauth', 'plex-detect-machine-id'
@@ -259,7 +271,7 @@ export interface SyncPendingImport {
 export interface SyncResult {
   enabled: number;    // users re-enabled because they're back on the provider
   disabled: number;   // users disabled because they're no longer on the provider
-  pendingImports: SyncPendingImport[]; // provider users with no matching Oscarr account
+  pendingImports: SyncPendingImport[]; // provider users with no matching LeMedia account
 }
 
 export interface AuthProvider {
@@ -267,14 +279,14 @@ export interface AuthProvider {
   registerRoutes(app: FastifyInstance, helpers: AuthHelpers): Promise<void>;
   linkAccount?(pinId: number, userId: number): Promise<{ providerUsername: string }>;
   linkAccountByCredentials?(username: string, password: string, userId: number): Promise<{ providerUsername: string }>;
-  /** Pull users from the provider into Oscarr. When `filter.providerIds` is set, only users
+  /** Pull users from the provider into LeMedia. When `filter.providerIds` is set, only users
    *  whose provider-side id is in the list are imported — lets the admin cherry-pick from a
    *  sync-surfaced pendingImports list instead of importing everyone on the server. */
   importUsers?(
     adminUserId: number,
     filter?: { providerIds?: string[] },
   ): Promise<{ imported: number; skipped: number; total: number }>;
-  /** Reconcile local Oscarr users with the provider's authoritative list. Disables users who aren't on the provider anymore, re-enables returning ones, and reports unmatched provider entries for admin-confirmed import. */
+  /** Reconcile local LeMedia users with the provider's authoritative list. Disables users who aren't on the provider anymore, re-enables returning ones, and reports unmatched provider entries for admin-confirmed import. */
   syncUsers?(adminUserId: number): Promise<SyncResult>;
   getToken?(adminUserId: number): Promise<string | null>;
 }

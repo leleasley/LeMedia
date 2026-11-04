@@ -32,12 +32,12 @@ export async function backupRoutes(app: FastifyInstance) {
     },
   }, async (request, reply) => {
     const includeCache = (request.query as { includeCache?: string }).includeCache === 'true';
-    const zipPath = resolve(tmpdir(), `oscarr-download-${randomUUID()}.zip`);
+    const zipPath = resolve(tmpdir(), `lemedia-download-${randomUUID()}.zip`);
 
     try {
       const { manifest } = await createBackupZip(includeCache, zipPath);
       const stats = (manifest as { stats: Record<string, number> }).stats;
-      const filename = `oscarr-backup-${APP_VERSION}-${new Date().toISOString().slice(0, 10)}.zip`;
+      const filename = `lemedia-backup-${APP_VERSION}-${new Date().toISOString().slice(0, 10)}.zip`;
       logEvent('info', 'Backup', `Backup downloaded: ${filename} (${stats.users} users, ${stats.media} media, cache: ${includeCache})`);
 
       const zipBuffer = readFileSync(zipPath);
@@ -216,7 +216,7 @@ export async function backupRoutes(app: FastifyInstance) {
     return {
       ok: true,
       message: pluginFilesRestored > 0
-        ? 'Database and plugin data restored. Restart Oscarr so plugins reload their restored state.'
+        ? 'Database and plugin data restored. Restart LeMedia so plugins reload their restored state.'
         : 'Database restored.',
       needsRestart: pluginFilesRestored > 0,
       pluginFilesRestored,

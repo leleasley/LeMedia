@@ -4,10 +4,7 @@
  * payloads into these types so the runner stays source-agnostic.
  */
 
-/** Ombi was listed here and accepted by the route's schema, but `pickAdapter` answered
- *  "Ombi importer not implemented yet" — an option that validated and then failed. Add it back
- *  together with its adapter. */
-export type ImportSource = 'overseerr' | 'jellyseerr' | 'seerr';
+export type ImportSource = 'overseerr' | 'jellyseerr' | 'seerr' | 'ombi';
 
 export interface CanonicalUser {
   /** Stable id from the source (e.g. Overseerr user.id). Used to deduplicate
@@ -41,13 +38,13 @@ export type UserMatchStrategy = 'plex_id' | 'jellyfin_id' | 'email' | 'manual' |
 export interface UserMatch {
   sourceUser: CanonicalUser;
   /** null = needs a manual decision in the wizard. */
-  oscarrUserId: number | null;
+  lemediaUserId: number | null;
   strategy: UserMatchStrategy;
 }
 
 export interface RequestConflict {
   sourceRequest: CanonicalRequest;
-  /** "duplicate" = same (tmdbId, mediaType, requester) already exists in Oscarr.
+  /** "duplicate" = same (tmdbId, mediaType, requester) already exists in LeMedia.
    *  "no_user" = requester didn't match and isn't being created.
    *  "tmdb_missing" = TMDB lookup failed for this id. */
   reason: 'duplicate' | 'no_user' | 'tmdb_missing';

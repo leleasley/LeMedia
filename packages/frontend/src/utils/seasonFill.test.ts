@@ -62,7 +62,10 @@ describe('resolveButtonState', () => {
     expect(resolveButtonState(inputs())).toBe('can_request');
     expect(resolveButtonState(inputs({ isDownloading: true }))).toBe('downloading');
     expect(resolveButtonState(inputs({ isUpcoming: true }))).toBe('upcoming');
-    expect(resolveButtonState(inputs({ isSearching: true }))).toBe('searching');
+    // Missing-but-monitored with no request of the user's own stays requestable (never a stuck
+    // "Searching…"); with their request it shows as already requested.
+    expect(resolveButtonState(inputs({ isSearching: true }))).toBe('can_request_quality');
+    expect(resolveButtonState(inputs({ isSearching: true, userHasRequest: true }))).toBe('already_requested');
     expect(resolveButtonState(inputs({ blacklisted: true }))).toBe('blocked');
     expect(resolveButtonState(inputs({ userHasRequest: true }))).toBe('already_requested');
     expect(resolveButtonState(inputs({ isPartiallyAvailable: true }))).toBe('partially_available');

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Check, Plus, Loader2, Clock, ShieldAlert } from 'lucide-react';
 import type { ButtonState } from '@/utils/resolveButtonState';
 
@@ -12,6 +13,8 @@ interface ActionButtonProps {
   blacklistReason?: string;
   onRequest: () => void;
   onSearchMissing: () => void;
+  /** Seasons currently checked in the picker — shown as a count on the seasons CTA. */
+  selectedSeasonsCount?: number;
   t: (key: string, options?: Record<string, unknown>) => string;
 }
 
@@ -26,8 +29,22 @@ export default function ActionButton({
   blacklistReason,
   onRequest,
   onSearchMissing,
+  selectedSeasonsCount,
   t,
 }: ActionButtonProps) {
+  // Elapsed seconds in searching states — shown so a long wait reads as progress ("still
+  // looking, 1:24 in") instead of a dead button. The ticker only runs while a searching
+  // state is rendered; terminal states never pay for it (detail pages mount two buttons).
+  const isSearchingState = state === 'searching' || state === 'partially_searching';
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    setElapsed(0);
+    if (!isSearchingState) return;
+    const id = setInterval(() => setElapsed((s) => s + 1), 1000);
+    return () => clearInterval(id);
+  }, [state, isSearchingState]);
+  const elapsedLabel = `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}`;
+
   if (loading) return (
     <button disabled aria-busy="true" className="btn-secondary flex items-center gap-2 cursor-default">
       <Loader2 className="w-4 h-4 animate-spin motion-reduce:animate-none" />
@@ -61,7 +78,14 @@ export default function ActionButton({
 
     case 'downloading':
       return (
-        <button disabled className="relative overflow-hidden rounded-xl px-5 py-2.5 text-sm font-medium text-white cursor-default min-w-[180px]">
+        <div
+          role="progressbar"
+          aria-label={t('status.downloading_long')}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(download?.progress ?? 0)}
+          className="relative overflow-hidden rounded-xl px-5 py-2.5 text-sm font-medium text-white min-w-[180px]"
+        >
           <div
             className="absolute inset-0 bg-ndp-accent/80 transition-all duration-1000 ease-out"
             style={{ width: `${download?.progress ?? 0}%` }}
@@ -71,10 +95,10 @@ export default function ActionButton({
             <Loader2 className="w-4 h-4 animate-spin" />
             <span>{Math.round(download?.progress ?? 0)}%</span>
             {download?.timeLeft && download.timeLeft !== '00:00:00' && (
-              <span className="text-xs opacity-70">— {download.timeLeft.replace(/^0+:?/, '')}</span>
+              <span className="text-xs opacity-70">- {download.timeLeft.replace(/^0+:?/, '')}</span>
             )}
           </div>
-        </button>
+        </div>
       );
 
     case 'upcoming':
@@ -90,6 +114,7 @@ export default function ActionButton({
         <button disabled className="btn-secondary flex items-center gap-2 cursor-default opacity-60">
           <Loader2 className="w-4 h-4 animate-spin" />
           {t('status.searching_long')}
+          {elapsed > 5 && <span className="text-xs opacity-70 tabular-nums">{elapsedLabel}</span>}
         </button>
       );
 
@@ -106,6 +131,7 @@ export default function ActionButton({
         <button disabled className="btn-success flex items-center gap-2 cursor-default">
           <Loader2 className="w-4 h-4 animate-spin" />
           {t('media.search_missing_in_progress')}
+          {elapsed > 5 && <span className="text-xs opacity-70 tabular-nums">{elapsedLabel}</span>}
         </button>
       );
 
@@ -145,6 +171,9 @@ export default function ActionButton({
         >
           {requesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
           {t('media.request_more_seasons')}
+          {typeof selectedSeasonsCount === 'number' && selectedSeasonsCount > 0 && (
+            <span className="text-xs opacity-70 tabular-nums">({selectedSeasonsCount})</span>
+          )}
         </button>
       );
 

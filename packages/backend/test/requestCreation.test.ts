@@ -224,7 +224,7 @@ describe('season requests', () => {
 
   it('refuses a legacy season selection without numbering even when Sonarr has an official season with the same number', async () => {
     const media = await prisma.media.findUniqueOrThrow({ where: { tmdbId_mediaType: { tmdbId: 202, mediaType: 'tv' } } });
-    expect(await sendToService(media, 'tv', 'Requester', userId, [2], undefined, undefined, [], null)).toBe(false);
+    expect(await sendToService(media, 'tv', 'Requester', userId, [2], undefined, undefined, [], null)).toBe('failed');
     expect(transport.requestSeasons).not.toHaveBeenCalled();
     expect(transport.searchMedia).not.toHaveBeenCalled();
   });

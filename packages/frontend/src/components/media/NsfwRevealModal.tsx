@@ -14,8 +14,8 @@ export function NsfwRevealModal({ contentRating, onRevealOnce, onRevealAlways, o
   const { t } = useTranslation();
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-ndp-bg rounded-2xl w-full max-w-sm mx-4 shadow-2xl shadow-black/60 p-6" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-overlay z-50" onClick={onClose}>
+      <div className="modal-panel w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-3 mb-4">
           <div className="p-2 bg-orange-500/10 rounded-xl">
             <ShieldAlert className="w-5 h-5 text-orange-400" />

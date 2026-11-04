@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { ServiceTag } from '@oscarr/shared';
+import type { ServiceTag } from '@lemedia/shared';
 import api from '@/lib/api';
 
 export interface ServiceTagsState {

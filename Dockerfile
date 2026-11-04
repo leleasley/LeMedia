@@ -31,7 +31,7 @@ COPY packages/frontend packages/frontend
 # Generate Prisma client
 RUN npx prisma generate --schema=packages/backend/prisma/schema.prisma
 
-# Build shared first — backend + frontend both import @oscarr/shared compiled to JS.
+# Build shared first — backend + frontend both import @lemedia/shared compiled to JS.
 RUN npm run build --workspace=packages/shared
 
 # Bundle backend into a single dist/server.js (~2.8 MB). Natives (bcrypt, bare-*, better-sqlite3)
@@ -47,17 +47,19 @@ FROM ${WOLFI}
 # nodejs-22 pinned to the same major the bundle targets — better-sqlite3 and bcrypt ship
 # prebuilds per Node ABI, so a runtime major bump silently breaks them.
 # tini = PID 1 init (signal forwarding + zombie reaping).
-# su-exec = drop from root → oscarr in the entrypoint after chowning /data.
+# su-exec = drop from root → lemedia in the entrypoint after chowning /data.
 # wget = HEALTHCHECK binary.
-RUN apk add --no-cache nodejs-22 npm tini su-exec wget
+# openssh-client + openssh-keygen = optional host helper (Admin → Radarr & Sonarr: update and
+# restart containers on the Docker host through a forced-command SSH key).
+RUN apk add --no-cache nodejs-22 npm tini su-exec wget openssh-client openssh-keygen
 
-# Create the non-root user BEFORE any COPY so --chown=oscarr:oscarr on the COPY lines
+# Create the non-root user BEFORE any COPY so --chown=lemedia:lemedia on the COPY lines
 # bakes ownership into each layer without a 300+ MB post-copy `chown -R`.
 # UID 1001 is deliberate: it matches the previous image, so existing /data volumes keep working.
-RUN addgroup -S -g 1001 oscarr \
- && adduser -S -G oscarr -u 1001 oscarr \
+RUN addgroup -S -g 1001 lemedia \
+ && adduser -S -G lemedia -u 1001 lemedia \
  && mkdir -p /data \
- && chown oscarr:oscarr /data
+ && chown lemedia:lemedia /data
 
 WORKDIR /app
 
@@ -70,8 +72,8 @@ WORKDIR /app
 # straight into the image. ci installs the exact tree that was reviewed, and refuses outright if
 # the manifest and the lockfile drift apart.
 # Regenerate with: npm run lock:prod --workspace=packages/backend
-COPY --chown=oscarr:oscarr packages/backend/package.prod.json packages/backend/package.json
-COPY --chown=oscarr:oscarr packages/backend/package.prod-lock.json packages/backend/package-lock.json
+COPY --chown=lemedia:lemedia packages/backend/package.prod.json packages/backend/package.json
+COPY --chown=lemedia:lemedia packages/backend/package.prod-lock.json packages/backend/package-lock.json
 WORKDIR /app/packages/backend
 RUN npm ci --omit=dev --no-audit --no-fund \
  && npm install-scripts approve --allow-scripts-pin prisma @prisma/client @prisma/engines better-sqlite3 bcrypt \
@@ -88,29 +90,31 @@ RUN npm ci --omit=dev --no-audit --no-fund \
 WORKDIR /app
 
 # Bundled backend server + its sourcemap (keeps stack traces useful in prod logs).
-COPY --from=builder --chown=oscarr:oscarr /app/packages/backend/dist/server.js packages/backend/dist/server.js
-COPY --from=builder --chown=oscarr:oscarr /app/packages/backend/dist/server.js.map packages/backend/dist/server.js.map
+COPY --from=builder --chown=lemedia:lemedia /app/packages/backend/dist/server.js packages/backend/dist/server.js
+COPY --from=builder --chown=lemedia:lemedia /app/packages/backend/dist/server.js.map packages/backend/dist/server.js.map
 
 # Frontend bundle served by @fastify/static from the bundled backend.
-COPY --from=builder --chown=oscarr:oscarr /app/packages/frontend/dist packages/frontend/dist
+COPY --from=builder --chown=lemedia:lemedia /app/packages/frontend/dist packages/frontend/dist
 
 # Prisma schema + migrations: the bundled server still shells out to `prisma migrate deploy`
 # on boot, so the schema and migrations folder need to be on disk.
-COPY --chown=oscarr:oscarr packages/backend/prisma packages/backend/prisma
+COPY --chown=lemedia:lemedia packages/backend/prisma packages/backend/prisma
 
 # Prisma generated client + platform-specific engines, copied from the builder (they were
 # generated there during `prisma generate`).
-COPY --from=builder --chown=oscarr:oscarr /app/node_modules/.prisma packages/backend/node_modules/.prisma
+COPY --from=builder --chown=lemedia:lemedia /app/node_modules/.prisma packages/backend/node_modules/.prisma
 
 # Root package.json used by src/routes/app.ts + services/backupService.ts for the app version.
-COPY --chown=oscarr:oscarr package.json .
+COPY --chown=lemedia:lemedia package.json .
 
 # Entrypoint: chown /data (covers upgrade from pre-1001 volumes + host bind mounts) then
-# su-exec oscarr. Kept as root so it can chown; drops privileges before exec-ing CMD.
+# su-exec lemedia. Kept as root so it can chown; drops privileges before exec-ing CMD.
+# Served by the one-line host-helper installer (Admin → Radarr & Sonarr → Settings).
+COPY --chown=lemedia:lemedia tools/lemedia-host-helper tools/lemedia-host-helper
 COPY --chmod=0755 docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 ENV NODE_ENV=production
-ENV DATABASE_URL=file:/data/oscarr.db
+ENV DATABASE_URL=file:/data/lemedia.db
 # install.json lives next to the SQLite DB in the persisted volume — the default `./data/…` is
 # relative to the container's cwd (/app) and ends up in the ephemeral writable layer, which
 # means the flag is lost on every container recreate (image upgrade, admin restart, …) and the
@@ -124,6 +128,6 @@ EXPOSE 3456
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD wget -q --spider http://localhost:3456/api/setup/install-status || exit 1
 
-# tini → entrypoint.sh → node as oscarr. Exec-form throughout so docker stop propagates SIGTERM.
+# tini → entrypoint.sh → node as lemedia. Exec-form throughout so docker stop propagates SIGTERM.
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
 CMD ["node", "packages/backend/dist/server.js"]

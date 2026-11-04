@@ -1,7 +1,7 @@
 import type { ArrClient, ArrMediaItem, ArrAvailabilityResult, ArrHistoryEntry, ArrAddMediaOptions, ArrEpisode, ArrWebhookEvent } from '../types.js';
 import { extractImageFromArr } from '../types.js';
 import type { SonarrSeries, SonarrSeason, SonarrQueueItem, SonarrEpisode, SonarrEpisodeFile, SonarrHistoryRecord } from './types.js';
-import type { MediaStateCategory } from '@oscarr/shared';
+import type { MediaStateCategory } from '@lemedia/shared';
 import { logEvent } from '../../utils/logEvent.js';
 import { ArrClientBase } from '../arrClientBase.js';
 import { normalizeCatalog } from './catalog.js';
@@ -102,9 +102,47 @@ export class SonarrClient extends ArrClientBase implements ArrClient {
     return data;
   }
 
+  /** Sonarr's metadata lookup (`tvdb:81189`, `imdb:tt0903747` or a title). Used by list imports. */
+  async lookupSeries(term: string): Promise<Record<string, unknown>[]> {
+    const { data } = await this.api.get('/series/lookup', { params: { term } });
+    return Array.isArray(data) ? data : [];
+  }
+
+  /** Add a series from a lookup record as-is (list imports set profile, folder and addOptions). */
+  async addSeriesRecord(record: Record<string, unknown>): Promise<SonarrSeries> {
+    const { data } = await this.api.post('/series', record);
+    return data;
+  }
+
+  /** Import-list exclusions ("never add this again"). */
+  async getImportListExclusions(): Promise<{ tvdbId?: number; title?: string }[]> {
+    const { data } = await this.api.get('/importlistexclusion');
+    return Array.isArray(data) ? data : [];
+  }
+
   async lookupByTvdbId(tvdbId: number): Promise<SonarrSeries | null> {
     const { data } = await this.api.get('/series/lookup', { params: { term: `tvdb:${tvdbId}` } });
     return data[0] ?? null;
+  }
+
+  async lookupByTitle(title: string): Promise<SonarrSeries | null> {
+    const term = title.trim();
+    if (!term) return null;
+    const { data } = await this.api.get('/series/lookup', { params: { term } });
+    if (!Array.isArray(data) || data.length === 0) return null;
+    // Prefer exact title match (case-insensitive) otherwise first result; Sonarr returns
+    // relevance-ordered results so first is usually correct for an exact TMDB title.
+    const lower = term.toLowerCase();
+    const exact = (data as SonarrSeries[]).find((s) => s.title.toLowerCase() === lower);
+    return (exact ?? (data as SonarrSeries[])[0]) ?? null;
+  }
+
+  async findByTitle(title: string): Promise<{ id: number } | null> {
+    const term = title.trim().toLowerCase();
+    if (!term) return null;
+    const all = await this.getSeries();
+    const match = all.find((s) => s.title.toLowerCase() === term);
+    return match ? { id: match.id } : null;
   }
 
   async getCalendar(start: string, end: string): Promise<{ seriesId: number; seasonNumber: number; episodeNumber: number; title: string; airDateUtc: string; series: { title: string; tvdbId: number; images: { coverType: string; remoteUrl: string }[] } }[]> {
@@ -133,6 +171,37 @@ export class SonarrClient extends ArrClientBase implements ArrClient {
 
   async searchMissingEpisodes(seriesId: number): Promise<void> {
     await this.api.post('/command', { name: 'MissingEpisodeSearch', seriesId });
+  }
+
+  /** Monitor the given seasons on an existing series (PUTs the full series object back with
+   *  the flags flipped). Seasons missing from Sonarr's list (e.g. unaired when added) are
+   *  left alone — monitoring something Sonarr doesn't know would fail the PUT. */
+  async monitorSeasons(seriesId: number, seasons: number[]): Promise<void> {
+    const series = await this.getSeriesById(seriesId);
+    const wanted = new Set(seasons);
+    let changed = false;
+    for (const s of series.seasons) {
+      if (s.seasonNumber > 0 && wanted.has(s.seasonNumber) && !s.monitored) {
+        s.monitored = true;
+        changed = true;
+      }
+    }
+    if (changed) await this.api.put(`/series/${seriesId}`, series);
+  }
+
+  /** Targeted search for one season's missing episodes. Falls back to the series-wide
+   *  missing-episode search when the server doesn't know SeasonSearch (older Sonarr). */
+  async searchSeason(seriesId: number, seasonNumber: number): Promise<void> {
+    try {
+      await this.api.post('/command', { name: 'SeasonSearch', seriesId, seasonNumber });
+    } catch (err) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 400 || status === 404) {
+        await this.searchMissingEpisodes(seriesId);
+        return;
+      }
+      throw err;
+    }
   }
 
   async getHistory(since?: Date | null): Promise<SonarrHistoryRecord[]> {
@@ -167,7 +236,7 @@ export class SonarrClient extends ArrClientBase implements ArrClient {
 
   // ─── Normalized interface methods ─────────────────────────────────
 
-  /** Maps native Sonarr state to the Oscarr vocabulary. Reused for series and seasons. */
+  /** Maps native Sonarr state to the LeMedia vocabulary. Reused for series and seasons. */
   private resolveState(
     stats: { percentOfEpisodes: number; episodeFileCount: number } | undefined,
     monitored: boolean,

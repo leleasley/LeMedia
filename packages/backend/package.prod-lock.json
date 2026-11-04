@@ -1,10 +1,10 @@
 {
-  "name": "@oscarr/backend-runtime",
+  "name": "@lemedia/backend-runtime",
   "lockfileVersion": 3,
   "requires": true,
   "packages": {
     "": {
-      "name": "@oscarr/backend-runtime",
+      "name": "@lemedia/backend-runtime",
       "dependencies": {
         "@prisma/client": "^6.19.3",
         "bare-fs": "^4.7.1",

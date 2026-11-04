@@ -31,7 +31,7 @@ function isPlaceholder(value: string): boolean {
 function printFatal(name: string, reason: string): void {
   const suggested = crypto.randomBytes(32).toString('base64url');
   const line = '━'.repeat(70);
-  process.stderr.write(`\n${line}\n Oscarr — insecure ${name}\n${line}\n\n`);
+  process.stderr.write(`\n${line}\n LeMedia, insecure ${name}\n${line}\n\n`);
   process.stderr.write(` ${reason}.\n\n Replace it with a fresh random value:\n\n`);
   process.stderr.write(`   ${name}=${suggested}\n\n`);
   process.stderr.write(' • Docker:     add `-e ' + name + '=...` (or env_file in compose)\n');
@@ -53,8 +53,8 @@ function checkSecret(name: string, raw: string | undefined, enforcement: Enforce
 
   const problem =
     !value ? `${name} is not set`
-    : isPlaceholder(value) ? `${name} is still set to a placeholder value — it is public knowledge`
-    : value.length < MIN_FATAL_LENGTH ? `${name} is ${value.length} characters — too short to resist offline brute force`
+    : isPlaceholder(value) ? `${name} is still set to a placeholder value, it is public knowledge`
+    : value.length < MIN_FATAL_LENGTH ? `${name} is ${value.length} characters, too short to resist offline brute force`
     : null;
 
   if (problem) {

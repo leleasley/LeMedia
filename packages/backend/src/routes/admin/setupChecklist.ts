@@ -22,9 +22,10 @@ async function computeItems(): Promise<ChecklistItem[]> {
   const hasDefaultFolder = !!(settings?.defaultMovieFolder || settings?.defaultTvFolder || settings?.defaultAnimeFolder);
 
   return [
-    { id: 'media-server', required: true, done: mediaServer > 0, href: '/admin?tab=services' },
-    { id: 'radarr', required: true, done: radarr > 0, href: '/admin?tab=services' },
-    { id: 'sonarr', required: true, done: sonarr > 0, href: '/admin?tab=services' },
+    // LeMedia needs Radarr or Sonarr (either is enough); a media server is optional.
+    { id: 'radarr', required: radarr + sonarr === 0, done: radarr > 0, href: '/admin?tab=services' },
+    { id: 'sonarr', required: radarr + sonarr === 0, done: sonarr > 0, href: '/admin?tab=services' },
+    { id: 'media-server', required: false, done: mediaServer > 0, href: '/admin?tab=services' },
     { id: 'quality-options', required: true, done: quality > 0, href: '/admin?tab=quality' },
     { id: 'default-folders', required: true, done: hasDefaultFolder, href: '/admin?tab=paths' },
     { id: 'routing-rule', required: false, done: rules > 0, href: '/admin?tab=rules' },

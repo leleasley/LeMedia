@@ -5,6 +5,7 @@ import {
   getTvSeasonDetails,
   getPersonDetails,
   getCollection,
+  extractDigitalRelease,
 } from '../../services/tmdb.js';
 import { trackKeywordsFromDetails } from '../../services/sync/keywordSync.js';
 import { parseId } from '../../utils/params.js';
@@ -34,7 +35,10 @@ export async function detailsRoutes(app: FastifyInstance) {
     if (!movieId) return reply.status(400).send({ error: 'Invalid ID' });
     const details = await getMovieDetails(movieId, getLang(request));
     trackKeywordsFromDetails(movieId, 'movie', details).catch(() => { /* background */ });
-    return details;
+    // Digital release date inline so info pages show it even for untracked movies
+    // (no Media row yet). Never fails the request — null when TMDB knows nothing.
+    const digitalRelease = await extractDigitalRelease(details).catch(() => null);
+    return { ...details, digitalRelease };
   });
 
   app.get('/tv/:id', { schema: { params: idParamSchema } }, async (request, reply) => {

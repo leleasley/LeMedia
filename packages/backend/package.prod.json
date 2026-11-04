@@ -1,5 +1,5 @@
 {
-  "name": "@oscarr/backend-runtime",
+  "name": "@lemedia/backend-runtime",
   "private": true,
   "type": "module",
   "description": "Minimal runtime manifest for the bundled prod image — only externals esbuild left out (native + Prisma). No version field: read from root package.json.",

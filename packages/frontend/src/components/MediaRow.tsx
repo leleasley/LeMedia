@@ -1,7 +1,8 @@
 import { useRef, memo } from 'react';
 import { Link } from 'react-router-dom';
+import { ScrollArrows } from './ScrollArrows';
 import { useTranslation } from 'react-i18next';
-import { ChevronLeft, ChevronRight, ArrowRight } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import MediaCard, { MediaCardSkeleton } from './MediaCard';
 import { useMediaStatus, getStatusForMedia } from '@/hooks/useMediaStatus';
 import type { TmdbMedia } from '@/types';
@@ -26,53 +27,30 @@ function MediaRow({ title, media, loading, href, size = 'default' }: Readonly<Me
   useDragScroll(scrollRef, loading ? 0 : media.length);
   const statuses = useMediaStatus(media);
 
-  const scroll = (direction: 'left' | 'right') => {
-    if (!scrollRef.current) return;
-    const amount = scrollRef.current.clientWidth * 0.8;
-    scrollRef.current.scrollBy({
-      left: direction === 'left' ? -amount : amount,
-      behavior: 'smooth',
-    });
-  };
-
   return (
     <section className="relative group/row">
       {/* z-10 keeps the header above the scroll container's invisible padding zone
        *  (the row uses py-12 -my-12 to give cards room to scale on hover — without
        *  the z-index the header click target is swallowed by that padding). */}
-      <div className="relative z-10 flex items-center gap-2 mb-4 px-4 sm:px-8">
-        {href ? (
+      <div className="relative z-10 flex items-end justify-between gap-3 mb-3 px-4 sm:px-8">
+        <h2 className="font-display-title text-[26px] sm:text-[30px] text-ndp-text">{title}</h2>
+        {href && (
           <Link
             to={href}
-            className="flex items-center gap-2 text-ndp-text hover:text-ndp-accent transition-colors group/link"
-            title={t('home.more_info')}
-            aria-label={t('home.more_info')}
+            className="flex items-center gap-1 pb-0.5 text-sm font-medium text-ndp-text-muted hover:text-ndp-accent transition-colors group/link"
           >
-            <h2 className="text-xl font-bold">{title}</h2>
-            <ArrowRight className="w-5 h-5 text-ndp-text-dim group-hover/link:text-ndp-accent group-hover/link:translate-x-0.5 transition-all" />
+            {t('home.see_all', 'See all')}
+            <ArrowRight className="w-4 h-4 group-hover/link:translate-x-0.5 transition-transform" />
           </Link>
-        ) : (
-          <h2 className="text-xl font-bold text-ndp-text">{title}</h2>
         )}
       </div>
 
-      <div className="relative">
-        <button
-          onClick={() => scroll('left')}
-          className="absolute left-0 top-0 bottom-0 z-20 w-12 bg-gradient-to-r from-ndp-bg to-transparent flex items-center justify-center opacity-0 group-hover/row:opacity-100 transition-opacity"
-        >
-          <ChevronLeft className="w-6 h-6 text-white" />
-        </button>
-        <button
-          onClick={() => scroll('right')}
-          className="absolute right-0 top-0 bottom-0 z-20 w-12 bg-gradient-to-l from-ndp-bg to-transparent flex items-center justify-center opacity-0 group-hover/row:opacity-100 transition-opacity"
-        >
-          <ChevronRight className="w-6 h-6 text-white" />
-        </button>
+      <div className="relative group/arrows">
+        <ScrollArrows target={scrollRef} />
 
         <div
           ref={scrollRef}
-          className="flex gap-3 overflow-x-auto px-4 sm:px-8 py-12 -my-12"
+          className="edge-fade-x flex gap-3 sm:gap-4 overflow-x-auto snap-x snap-proximity scroll-px-4 sm:scroll-px-8 px-4 sm:px-8 py-12 -my-12"
           style={{ scrollbarWidth: 'none' }}
         >
           {loading

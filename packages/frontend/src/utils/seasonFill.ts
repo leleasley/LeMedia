@@ -1,4 +1,4 @@
-import type { SeriesSeason } from '@oscarr/shared';
+import type { SeriesSeason } from '@lemedia/shared';
 
 export type Fill = 'full' | 'partial' | 'empty' | 'unknown';
 

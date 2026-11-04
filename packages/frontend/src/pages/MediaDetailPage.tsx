@@ -1,10 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   EyeOff,
-  ChevronLeft,
-  ChevronRight,
   User,
   Clapperboard,
 } from 'lucide-react';
@@ -12,11 +10,13 @@ import { useAuth } from '@/context/AuthContext';
 import { useNsfwFilter } from '@/hooks/useNsfwFilter';
 import MediaRow from '@/components/MediaRow';
 import CollectionSection from '@/components/CollectionSection';
+import { ScrollArrows } from '@/components/ScrollArrows';
 import { useMediaDetailData } from '@/hooks/useMediaDetailData';
 import { useMediaRequestActions } from '@/hooks/useMediaRequestActions';
 import type { TmdbCast, TmdbCrew } from '@/types';
 import { useMediaAvailability } from '@/hooks/useMediaAvailability';
 import { NsfwRevealModal } from '@/components/media/NsfwRevealModal';
+import DeleteMediaModal from '@/components/DeleteMediaModal';
 import { MediaInfoColumn } from '@/components/media/MediaInfoColumn';
 import { MediaBackdrop } from '@/components/media/MediaHeroArt';
 import '@/components/media/media-detail.css';
@@ -30,22 +30,30 @@ import { useDragScroll } from '@/hooks/useDragScroll';
 
 interface Props {
   type: 'movie' | 'tv';
+  /** Public share link: the title id comes from the share, not the URL. */
+  shareId?: string;
+  shareToken?: string;
+  /** Share links are view-only: no requests, no season explorer (it needs an account). */
+  readOnly?: boolean;
 }
 
-export default function MediaDetailPage({ type }: Readonly<Props>) {
+export default function MediaDetailPage({ type, shareId, shareToken, readOnly }: Readonly<Props>) {
   const { t } = useTranslation();
-  const { id } = useParams<{ id: string }>();
+  const params = useParams<{ id: string }>();
+  const id = shareId ?? params.id;
+  const navigate = useNavigate();
   const { user } = useAuth();
   const { isNsfw, disableBlur } = useNsfwFilter();
   const [revealed, setRevealed] = useState(false);
   const [showNsfwModal, setShowNsfwModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   const {
     media, dbMedia, inLibrary, recommendations,
     loading, libraryLoading, qualityOptions, activeQualityOptionIds,
     audioLanguages, subtitleLanguages, download, blacklisted, refreshDbData,
     catalog, seasonsLoading, seasonsError, refreshMetadata,
-  } = useMediaDetailData(id, type);
+  } = useMediaDetailData(id, type, shareToken);
   const seasons = seasonsLoading || seasonsError ? [] : catalogSeasons(media?.seasons, catalog);
   const refreshDetail = useCallback(async () => { refreshMetadata(); await refreshDbData(); }, [refreshDbData, refreshMetadata]);
 
@@ -66,7 +74,6 @@ export default function MediaDetailPage({ type }: Readonly<Props>) {
     resetOnNavigation,
   } = useMediaRequestActions(media, id, type, refreshDetail);
 
-
   // Reset local UI state on navigation
   useEffect(() => {
     setRevealed(false);
@@ -74,7 +81,7 @@ export default function MediaDetailPage({ type }: Readonly<Props>) {
     resetOnNavigation();
   }, [id, type]);
 
-  const { isAvailable, takenQualityIds, buttonState } = useMediaAvailability({
+  const { isAvailable, takenQualityIds, userHasRequest, buttonState } = useMediaAvailability({
     dbMedia,
     type,
     inLibrary,
@@ -93,7 +100,7 @@ export default function MediaDetailPage({ type }: Readonly<Props>) {
 
   if (!media) {
     return (
-      <div className="min-h-dvh flex items-center justify-center">
+      <div className="min-h-dvh flex items-center justify-center" role="status">
         <p className="text-ndp-text-muted">{t('media.not_found')}</p>
       </div>
     );
@@ -102,12 +109,13 @@ export default function MediaDetailPage({ type }: Readonly<Props>) {
   const nsfw = !revealed && isNsfw(media.id);
 
   const { title, year, genres, trailer, cast, director } = mediaSummary(media);
+  const showExplorer = type === 'tv' && !readOnly;
 
   return (
     <div className="min-h-dvh">
       <section className="media-detail-hero" aria-labelledby="media-title">
         <MediaBackdrop backdropPath={media.backdrop_path} posterPath={media.poster_path} blurred={nsfw} />
-        <MediaBackButton />
+        {!readOnly && <MediaBackButton />}
 
         <div className="media-detail-container relative z-10">
           <div className="media-detail-copy">
@@ -118,12 +126,12 @@ export default function MediaDetailPage({ type }: Readonly<Props>) {
               </button>
             )}
             <MediaInfoColumn
-              onBrowseSeasons={type === 'tv' && seasons.length > 0 ? () => {
+              onBrowseSeasons={showExplorer && seasons.length > 0 ? () => {
                 const section = document.getElementById('season-explorer');
                 section?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
                 section?.focus({ preventScroll: true });
               } : undefined}
-              media={type === 'tv' ? { ...media, number_of_seasons: seasons.length || undefined } : media}
+              media={type === 'tv' ? { ...media, number_of_seasons: seasons.length || media.number_of_seasons || undefined } : media}
               dbMedia={dbMedia}
               type={type}
               title={title}
@@ -132,6 +140,7 @@ export default function MediaDetailPage({ type }: Readonly<Props>) {
               director={director}
               trailer={trailer}
               isAvailable={isAvailable}
+              userHasRequest={userHasRequest}
               buttonState={buttonState}
               requesting={requesting}
               justRequested={justRequested}
@@ -141,6 +150,7 @@ export default function MediaDetailPage({ type }: Readonly<Props>) {
               searchMissingError={searchMissingError}
               onRequest={handleRequest}
               onSearchMissing={handleSearchMissing}
+              onDeleteMedia={() => setShowDeleteModal(true)}
               qualityOptions={qualityOptions}
               takenQualityIds={takenQualityIds}
               selectedQuality={selectedQuality}
@@ -150,13 +160,14 @@ export default function MediaDetailPage({ type }: Readonly<Props>) {
               audioLanguages={audioLanguages}
               subtitleLanguages={subtitleLanguages}
               libraryLoading={libraryLoading}
+              readOnly={readOnly}
             />
           </div>
         </div>
       </section>
 
-      {type === 'tv' && (
-        <div className="media-detail-container">
+      {showExplorer && (
+        <div className="media-detail-container relative">
           {seasonsLoading ? <p className="py-8 text-ndp-text-muted" role="status">{t('common.loading')}</p>
             : seasonsError ? <div className="py-8 flex items-center gap-3"><p role="status">{t('media.explorer.unavailable')}</p><button className="btn-secondary" onClick={refreshMetadata}>{t('media.explorer.refresh')}</button></div>
             : seasons.length > 0 && <SeasonExplorer key={`${media.id}:${catalog?.source.token ?? 'tmdb'}`} media={media} seasons={seasons}
@@ -178,7 +189,7 @@ export default function MediaDetailPage({ type }: Readonly<Props>) {
         )}
 
         {/* Recommendations */}
-        {recommendations.length > 0 && (
+        {recommendations.length > 0 && !readOnly && (
           <div className="mt-12 -mx-4 sm:-mx-8">
             <MediaRow title={t('media.recommendations')} media={recommendations} size="large" />
           </div>
@@ -193,25 +204,28 @@ export default function MediaDetailPage({ type }: Readonly<Props>) {
           onClose={() => setShowNsfwModal(false)}
         />
       )}
+      {showDeleteModal && (
+        <DeleteMediaModal
+          title={title}
+          mediaType={type}
+          tmdbId={Number(id)}
+          onClose={() => { setShowDeleteModal(false); navigate('/', { replace: true }); }}
+        />
+      )}
     </div>
   );
 }
 
 // ─── Cast Section ───────────────────────────────────────────────────
 
+/** Round portraits (0.10 design). Drag to scroll with a mouse; LeMedia's round arrows only on
+ *  devices with a mouse and only when there is more to scroll (no full-height edge bands). */
 function CastSection({ cast, title, director }: Readonly<{ cast: TmdbCast[]; title: string; director?: TmdbCrew }>) {
-  const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
   useDragScroll(scrollRef, cast.length);
 
-  const scroll = (direction: 'left' | 'right') => {
-    if (!scrollRef.current) return;
-    const amount = scrollRef.current.clientWidth * 0.75;
-    scrollRef.current.scrollBy({ left: direction === 'left' ? -amount : amount, behavior: 'smooth' });
-  };
-
   return (
-    <div className="mt-12 relative group/cast">
+    <div className="mt-12">
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <h2 className="text-xl font-bold text-ndp-text">{title}</h2>
         {director && (
@@ -223,57 +237,46 @@ function CastSection({ cast, title, director }: Readonly<{ cast: TmdbCast[]; tit
         )}
       </div>
 
-      <button
-        onClick={() => scroll('left')}
-        aria-label={t('common.previous')}
-        className="absolute left-0 top-12 bottom-0 z-20 w-10 bg-gradient-to-r from-ndp-bg to-transparent flex items-center justify-center opacity-0 group-hover/cast:opacity-100 focus-visible:opacity-100 transition-opacity"
-      >
-        <ChevronLeft className="w-5 h-5 text-white" />
-      </button>
-      <button
-        onClick={() => scroll('right')}
-        aria-label={t('common.next')}
-        className="absolute right-0 top-12 bottom-0 z-20 w-10 bg-gradient-to-l from-ndp-bg to-transparent flex items-center justify-center opacity-0 group-hover/cast:opacity-100 focus-visible:opacity-100 transition-opacity"
-      >
-        <ChevronRight className="w-5 h-5 text-white" />
-      </button>
-
-      <div
-        ref={scrollRef}
-        className="flex gap-3 overflow-x-auto pb-2"
-        style={{ scrollbarWidth: 'none' }}
-      >
-        {cast.map((person, i) => (
-          <Link
-            to={`/person/${person.id}`}
-            key={person.id}
-            className="flex-shrink-0 w-[120px] group/card"
-            style={{ animationDelay: `${Math.min(i * 40, 400)}ms` }}
-          >
-            <div className="relative aspect-square rounded-full overflow-hidden bg-ndp-surface-light ring-1 ring-white/10">
-              {person.profile_path ? (
-                <img
-                  src={`https://image.tmdb.org/t/p/w185${person.profile_path}`}
-                  alt={person.name}
-                  className="w-full h-full object-cover object-[center_20%] transition-transform duration-300 group-hover/card:scale-105"
-                  loading="lazy"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-ndp-surface-light to-ndp-bg">
-                  <User className="w-10 h-10 text-ndp-text-dim/30" />
-                </div>
-              )}
-            </div>
-              <div className="pt-3 px-1 text-center">
-                <p className="text-xs font-semibold text-ndp-text leading-snug">{person.name}</p>
-                {person.character && (
-                  <p className="text-[11px] text-ndp-text-muted leading-snug mt-1">{person.character}</p>
+      <div className="relative group/arrows">
+        {/* Arrows on the portraits (120px circles). */}
+        <ScrollArrows target={scrollRef} top="60px" />
+        <div
+          ref={scrollRef}
+          className="flex gap-3 overflow-x-auto snap-x snap-proximity scroll-px-4 sm:scroll-px-0 -mx-4 px-4 sm:mx-0 sm:px-0 pb-2"
+          style={{ scrollbarWidth: 'none' }}
+        >
+          {cast.map((person, i) => (
+            <Link
+              to={`/person/${person.id}`}
+              key={person.id}
+              className="flex-shrink-0 w-[104px] sm:w-[120px] snap-start group/card"
+              style={{ animationDelay: `${Math.min(i * 40, 400)}ms` }}
+            >
+              <div className="relative aspect-square rounded-full overflow-hidden bg-ndp-surface-light ring-1 ring-white/10">
+                {person.profile_path ? (
+                  <img
+                    src={`https://image.tmdb.org/t/p/w185${person.profile_path}`}
+                    alt={person.name}
+                    className="w-full h-full object-cover object-[center_20%] transition-transform duration-300 group-hover/card:scale-105"
+                    loading="lazy"
+                    draggable={false}
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-ndp-surface-light to-ndp-bg">
+                    <User className="w-10 h-10 text-ndp-text-dim/30" />
+                  </div>
                 )}
               </div>
-          </Link>
-        ))}
+              <div className="pt-3 px-1 text-center">
+                <p className="text-xs font-semibold text-ndp-text leading-snug line-clamp-2">{person.name}</p>
+                {person.character && (
+                  <p className="text-[11px] text-ndp-text-muted leading-snug mt-1 line-clamp-2">{person.character}</p>
+                )}
+              </div>
+            </Link>
+          ))}
+        </div>
       </div>
     </div>
   );
 }
-

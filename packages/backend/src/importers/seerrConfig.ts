@@ -1,6 +1,6 @@
 /**
  * Pull deployment-shape info from a Seerr-family source (services + locale + region) so
- * the install wizard's Migrate path can seed Oscarr's config without re-asking the user.
+ * the install wizard's Migrate path can seed LeMedia's config without re-asking the user.
  *
  * Pure read — never writes. The Plex token is not exposed by the Seerr API surface, so
  * Plex shows up only as a `plexHint` (URL) and lands in `manualFollowUps`.
@@ -114,13 +114,13 @@ export async function deriveConfigFromSeerr(creds: SourceCreds): Promise<Derived
     rootFolder: s.activeDirectory,
   }));
 
-  if (radarr.length === 0) followUps.push('No Radarr instance found at the source — add one in Oscarr Admin > Services.');
-  if (sonarr.length === 0) followUps.push('No Sonarr instance found at the source — add one in Oscarr Admin > Services.');
+  if (radarr.length === 0) followUps.push('No Radarr instance found at the source, add one in LeMedia Admin > Services.');
+  if (sonarr.length === 0) followUps.push('No Sonarr instance found at the source, add one in LeMedia Admin > Services.');
 
   // *arr API keys are not exposed by Seerr settings endpoints — caller must re-enter them
-  // in the wizard's Services step or accept that Oscarr won't be able to talk to them.
+  // in the wizard's Services step or accept that LeMedia won't be able to talk to them.
   if (radarr.length > 0 || sonarr.length > 0) {
-    followUps.push('Radarr/Sonarr API keys are not exported by Seerr — re-enter them in Admin > Services after install.');
+    followUps.push('Radarr/Sonarr API keys are not exported by Seerr, re-enter them in Admin > Services after install.');
   }
 
   let plexHint: DerivedConfig['plexHint'];
@@ -128,7 +128,7 @@ export async function deriveConfigFromSeerr(creds: SourceCreds): Promise<Derived
     const url = plexUrl(plexSettings);
     if (url) {
       plexHint = { url };
-      followUps.push('Plex token is not exported by Seerr — re-link Plex in Admin > Services to enable Plex sync.');
+      followUps.push('Plex token is not exported by Seerr, re-link Plex in Admin > Services to enable Plex sync.');
     }
   }
 

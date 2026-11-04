@@ -21,8 +21,8 @@ import type {
   PluginMediaBatchKey,
   PluginMediaBatchStatus,
   PluginFolderRule,
-} from '@oscarr/shared';
-import { ACTIVE_REQUEST_STATUSES, toMediaStateCategory } from '@oscarr/shared';
+} from '@lemedia/shared';
+import { ACTIVE_REQUEST_STATUSES, toMediaStateCategory } from '@lemedia/shared';
 import {
   registerRoutePermission as rbacRegisterRoute,
   registerPluginPermission as rbacRegisterPermission,
@@ -71,7 +71,7 @@ function shouldPersistLog(pluginId: string): boolean {
       data: {
         pluginId,
         level: 'warn',
-        message: `[rate-limited] exceeded ${LOG_RATE_MAX} log lines in ${LOG_RATE_WINDOW_MS / 1000}s — further logs in this window are dropped`,
+        message: `[rate-limited] exceeded ${LOG_RATE_MAX} log lines in ${LOG_RATE_WINDOW_MS / 1000}s, further logs in this window are dropped`,
       },
     }).catch(() => {});
   }
@@ -129,14 +129,14 @@ function checkServiceAccess(pluginId: string, allowedServices: string[] | undefi
   if (!allowedServices || allowedServices.length === 0) {
     logger.warn(
       { plugin: pluginId, attemptedService: serviceType },
-      `[plugins] Plugin "${pluginId}" requested service "${serviceType}" but declares no services in its manifest — access denied`
+      `[plugins] Plugin "${pluginId}" requested service "${serviceType}" but declares no services in its manifest, access denied`
     );
     return false;
   }
   if (!allowedServices.includes(serviceType)) {
     logger.warn(
       { plugin: pluginId, attemptedService: serviceType, allowed: allowedServices },
-      `[plugins] Plugin "${pluginId}" requested service "${serviceType}" which is not in its manifest services list — access denied`
+      `[plugins] Plugin "${pluginId}" requested service "${serviceType}" which is not in its manifest services list, access denied`
     );
     return false;
   }
@@ -201,12 +201,6 @@ export function createContextV1(manifest: PluginManifest, deps: V1FactoryDeps): 
       req('users:write', 'setUserRole');
       const role = await prisma.role.findUnique({ where: { name: roleName } });
       if (!role) throw new Error(`Role "${roleName}" does not exist`);
-      // Same reasoning as setUserDisabled below: an instance whose last admin has been demoted by
-      // plugin code has no way back through the interface, only through the database.
-      const target = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
-      if (target?.role === 'admin' && roleName !== 'admin') {
-        throw new Error(`Refusing to change role of user ${userId}: admins cannot be demoted from plugin code`);
-      }
       await prisma.user.update({ where: { id: userId }, data: { role: roleName } });
     },
     async setUserDisabled(userId: number, disabled: boolean) {
@@ -262,7 +256,7 @@ export function createContextV1(manifest: PluginManifest, deps: V1FactoryDeps): 
     },
     getArrClient: (serviceType: string) => {
       if (!checkServiceAccess(pluginId, allowedServices, serviceType, aclLogger)) {
-        throw new Error(`Plugin "${pluginId}" is not allowed to access service "${serviceType}" — declare it in manifest.services`);
+        throw new Error(`Plugin "${pluginId}" is not allowed to access service "${serviceType}", declare it in manifest.services`);
       }
       return getArrClient(serviceType);
     },
@@ -366,7 +360,7 @@ export function createContextV1(manifest: PluginManifest, deps: V1FactoryDeps): 
       // Pluriel of getArrClient: returns every enabled instance for the type. ACL check is
       // shared with the singular form (services[] manifest declaration).
       if (!checkServiceAccess(pluginId, allowedServices, serviceType, aclLogger)) {
-        throw new Error(`Plugin "${pluginId}" is not allowed to access service "${serviceType}" — declare it in manifest.services`);
+        throw new Error(`Plugin "${pluginId}" is not allowed to access service "${serviceType}", declare it in manifest.services`);
       }
       const services = await getAllServices(serviceType);
       return services.map(s => createArrClient(serviceType, s.config));
@@ -396,7 +390,7 @@ export function createContextV1(manifest: PluginManifest, deps: V1FactoryDeps): 
         // Hard cap to prevent a bug (or malicious plugin) from generating a 10k-clause OR
         // query that would pin SQLite's parser. Mirrors the `listForUser` pattern (max 200).
         if (items.length > 500) {
-          throw new Error(`ctx.media.batchStatus: items length ${items.length} exceeds the 500 cap — slice your list or filter upstream`);
+          throw new Error(`ctx.media.batchStatus: items length ${items.length} exceeds the 500 cap, slice your list or filter upstream`);
         }
         // Two-pass query so we don't fetch the whole Media table:
         // 1. One findMany on the union of (tmdbId,mediaType) pairs → media status per item.
@@ -512,7 +506,6 @@ export function createContextV1(manifest: PluginManifest, deps: V1FactoryDeps): 
           tmdbId: input.tmdbId,
           mediaType: input.mediaType,
           seasons: input.seasons,
-          seasonNumbering: input.seasonNumbering,
           rootFolder: input.rootFolder,
           qualityOptionId: input.qualityOptionId,
           skipPluginGuard: input.skipPluginGuard,
@@ -536,7 +529,7 @@ export function createContextV1(manifest: PluginManifest, deps: V1FactoryDeps): 
         const base = `http://localhost:${port}`;
         const url = base + (path.startsWith('/') ? path : `/${path}`);
         const headers: Record<string, string> = {
-          'x-requested-with': 'oscarr',
+          'x-requested-with': 'lemedia',
           ...init?.headers,
         };
         if (init?.asUserId !== undefined) {

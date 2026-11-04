@@ -24,13 +24,14 @@ export interface ButtonStateInputs {
   hasRequestableSeasons: boolean;
   blacklisted: boolean;
   searchMissingState: 'idle' | 'searching' | 'error';
+  selectedQuality?: number | null;
 }
 
 export function resolveButtonState(inputs: ButtonStateInputs): ButtonState {
   const {
     isAvailable, isPartiallyAvailable, isDownloading, isUpcoming,
     isSearching, userHasRequest, canRequestNewQuality, hasRequestableSeasons, blacklisted,
-    searchMissingState,
+    searchMissingState, selectedQuality,
   } = inputs;
 
   // Checked before `available`: Sonarr reports percentOfEpisodes against *monitored* episodes, so
@@ -52,7 +53,9 @@ export function resolveButtonState(inputs: ButtonStateInputs): ButtonState {
   if (canRequestNewQuality) return 'can_request_quality';
   if (isDownloading) return 'downloading';
   if (isUpcoming) return 'upcoming';
-  if (isSearching) return 'searching';
+  if (canRequestNewQuality) return 'can_request_quality';
+  // SEARCHING = missing in *arr, monitored — always requestable (with default quality)
+  if (isSearching && !userHasRequest) return 'can_request_quality';
   if (userHasRequest && !isPartiallyAvailable) return 'already_requested';
   if (isPartiallyAvailable) {
     if (searchMissingState === 'searching') return 'partially_searching';

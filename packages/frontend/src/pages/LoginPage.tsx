@@ -5,6 +5,8 @@ import { useAuth } from '@/context/AuthContext';
 import { useFeatures } from '@/context/FeaturesContext';
 import { Mail, Eye, EyeOff } from 'lucide-react';
 import api, { backdropUrl } from '@/lib/api';
+import { PasswordStrengthMeter } from '@/components/PasswordStrengthMeter';
+import { showToast } from '@/utils/toast';
 import type { AuthProviderConfig } from '@/types';
 import { getProviderButtonClass } from '@/providers/colors';
 import { startPlexPinFlow, type PlexPinFlowHandle } from '@/providers/plex/pinFlow';
@@ -37,6 +39,85 @@ function resolveSafeNext(raw: string | null): string | null {
   }
 }
 
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (el: HTMLElement, opts: Record<string, unknown>) => string;
+      reset: (widgetId?: string) => void;
+      remove: (widgetId: string) => void;
+    };
+  }
+}
+
+let turnstileScriptPromise: Promise<void> | null = null;
+
+function loadTurnstileScript(): Promise<void> {
+  if (window.turnstile) return Promise.resolve();
+  if (turnstileScriptPromise) return turnstileScriptPromise;
+  turnstileScriptPromise = new Promise((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>('script[src*="challenges.cloudflare.com/turnstile"]');
+    if (existing) {
+      // Script tag already in DOM but may still be loading — wait for window.turnstile
+      if (window.turnstile) return resolve();
+      existing.addEventListener('load', () => resolve());
+      existing.addEventListener('error', () => reject(new Error('Failed to load Turnstile')));
+      // Fallback poll in case load event already fired before we attached
+      setTimeout(() => (window.turnstile ? resolve() : reject(new Error('Turnstile not ready'))), 3000);
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+    script.async = true;
+    script.defer = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('Failed to load Turnstile'));
+    document.head.appendChild(script);
+  });
+  return turnstileScriptPromise;
+}
+
+/** Cloudflare Turnstile challenge. Follows https://developers.cloudflare.com/turnstile/get-started/client-side-rendering/#explicitly-render-the-turnstile-widget */
+function TurnstileWidget({ siteKey, onToken }: { siteKey: string; onToken: (token: string) => void }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const widgetIdRef = useRef<string | null>(null);
+  const onTokenRef = useRef(onToken);
+  onTokenRef.current = onToken;
+
+  useEffect(() => {
+    let cancelled = false;
+    loadTurnstileScript()
+      .then(() => {
+        if (cancelled || !containerRef.current || !window.turnstile) return;
+        // Clean any previous explicit render in this container (nonce bumps trigger a remount)
+        if (widgetIdRef.current) {
+          try { window.turnstile.remove(widgetIdRef.current); } catch { /* ignore */ }
+          widgetIdRef.current = null;
+        }
+        // Ensure container is empty before render (prevents duplicate iframe on HMR)
+        containerRef.current.innerHTML = '';
+        widgetIdRef.current = window.turnstile.render(containerRef.current, {
+          sitekey: siteKey,
+          theme: 'dark',
+          size: 'normal',
+          callback: (token: string) => onTokenRef.current(token),
+          'expired-callback': () => onTokenRef.current(''),
+          'error-callback': () => onTokenRef.current(''),
+          'timeout-callback': () => onTokenRef.current(''),
+        });
+      })
+      .catch(() => onTokenRef.current(''));
+    return () => {
+      cancelled = true;
+      if (widgetIdRef.current && window.turnstile) {
+        try { window.turnstile.remove(widgetIdRef.current); } catch { /* already gone */ }
+        widgetIdRef.current = null;
+      }
+    };
+  }, [siteKey]);
+
+  return <div ref={containerRef} className="flex justify-center min-h-[65px] w-full" />;
+}
+
 export default function LoginPage() {
   const { t } = useTranslation();
   const { login, user } = useAuth();
@@ -55,6 +136,9 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [polling, setPolling] = useState(false);
   const flowRef = useRef<PlexPinFlowHandle | null>(null);
+  const turnstileSiteKey = typeof features.turnstileSiteKey === 'string' ? features.turnstileSiteKey : null;
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const [turnstileNonce, setTurnstileNonce] = useState(0); // bump to re-render the widget after a failure
 
   const [hero, setHero] = useState<HeroBackdrop | null>(null);
 
@@ -84,6 +168,15 @@ export default function LoginPage() {
     const next = new URLSearchParams(searchParams);
     next.delete('error');
     setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams, t]);
+
+  useEffect(() => {
+    if (searchParams.get('invited') === '1') {
+      showToast(t('invite.login_hint'), 'success');
+      const next = new URLSearchParams(searchParams);
+      next.delete('invited');
+      setSearchParams(next, { replace: true });
+    }
   }, [searchParams, setSearchParams, t]);
 
   /** `?next=` post-login redirect — supports plug-and-play link flows (e.g. a Discord bot
@@ -121,6 +214,16 @@ export default function LoginPage() {
 
   // The backend returns specific tokens (INVALID_CREDENTIALS, EXTERNAL_ACCOUNT, …) that need
   // to be translated before display. Plain English strings from other errors pass through.
+  // A failed attempt burns the Turnstile token (single-use) — clear it and remount the
+  // widget so the next submit carries a fresh one.
+  useEffect(() => {
+    if (error && turnstileSiteKey) {
+      setTurnstileToken('');
+      setTurnstileNonce((n) => n + 1);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [error]);
+
   const translateAuthError = (rawError: string | undefined): string => {
     if (!rawError) return t('login.error');
     const key = `login.errors.${rawError}`;
@@ -148,7 +251,7 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      const { data } = await api.post('/auth/login', { email, password });
+      const { data } = await api.post('/auth/login', { email, password, turnstileToken: turnstileToken || undefined });
       await login('', data.user);
       redirectAfterLogin();
     } catch (err: unknown) {
@@ -168,7 +271,7 @@ export default function LoginPage() {
     }
     setLoading(true);
     try {
-      const { data } = await api.post('/auth/register', { email, password, displayName });
+      const { data } = await api.post('/auth/register', { email, password, displayName, turnstileToken: turnstileToken || undefined });
       await login('', data.user);
       redirectAfterLogin();
     } catch (err: unknown) {
@@ -199,6 +302,10 @@ export default function LoginPage() {
         // Ask Plex to forward the auth tab back to /plex-return after sign-in — only the login
         // flow does this (the shared link flow must not, or it would hijack the session). #212
         pinPayload: { forward: true },
+        // Blocked popups fall back to full-page auth: /plex-return finalizes from the tab the
+        // user is looking at, so mobile Safari (no window.close, suspended opener tab) still
+        // completes instead of polling a dead popup for 2 minutes.
+        redirectIfPopupBlocked: true,
         // Login's /callback returns { user, token }, not { token }. The helper treats a non-null
         // return as "got a token" — we return the pinId encoded in the user object indirectly
         // by returning a sentinel string when `user` is set. Caller reads `lastResponse` below.
@@ -226,7 +333,14 @@ export default function LoginPage() {
           setError(t('login.expired'));
         },
       });
+      return;
     }
+    // Google, GitHub and any future OAuth provider use the same full-page redirect
+    // pattern as Discord (no popup): the backend resolves the callback URL, sends the
+    // browser to the identity provider, and finishes on /api/auth/:id/callback.
+    // The single-use Turnstile token rides along; the server verifies it before redirecting.
+    const ts = turnstileToken ? `?ts=${encodeURIComponent(turnstileToken)}` : '';
+    globalThis.location.href = `/api/auth/${providerId}/authorize${ts}`;
   };
 
 
@@ -242,15 +356,15 @@ export default function LoginPage() {
           />
         )}
         <div className="absolute inset-0 bg-ndp-bg/70 backdrop-blur-sm" />
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-ndp-accent/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl" />
+        <div className="absolute inset-0 bg-gradient-to-t from-ndp-bg via-ndp-bg/40 to-transparent" />
       </div>
 
       <div className="relative z-10 w-full max-w-md mx-4">
         <div className="card p-8 shadow-2xl shadow-black/50">
           {/* Logo */}
           <div className="flex flex-col items-center mb-8">
-            <h1 className="text-2xl font-bold text-ndp-text">{features.siteName}</h1>
+            <img src="/logo-v2.png" alt={features.siteName} className="w-20 h-20 rounded-2xl object-contain shadow-lg ring-1 ring-white/10" width={80} height={80} />
+            <h1 className="text-2xl font-bold text-ndp-text mt-4">{features.siteName}</h1>
             <p className="text-ndp-text-muted text-sm mt-1">
               {mode === 'register' ? t('register.title') : t('login.title')}
             </p>
@@ -258,7 +372,7 @@ export default function LoginPage() {
 
           {/* Error */}
           {error && (
-            <div className="mb-6 p-3 bg-ndp-danger/10 border border-ndp-danger/20 rounded-xl text-ndp-danger text-sm text-center">
+            <div role="alert" className="mb-6 p-3 bg-ndp-danger/10 border border-ndp-danger/20 rounded-xl text-ndp-danger text-sm text-center">
               {error}
             </div>
           )}
@@ -271,6 +385,8 @@ export default function LoginPage() {
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
                 placeholder={t('register.displayname')}
+                aria-label={t('register.displayname')}
+                autoComplete="name"
                 required
                 className="input w-full"
               />
@@ -279,6 +395,8 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder={t('login.email_placeholder')}
+                aria-label={t('login.email_placeholder')}
+                autoComplete="email"
                 required
                 className="input w-full"
               />
@@ -288,6 +406,8 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder={t('login.password_placeholder')}
+                  aria-label={t('login.password_placeholder')}
+                  autoComplete="new-password"
                   required
                   minLength={8}
                   className="input w-full pr-10"
@@ -296,16 +416,22 @@ export default function LoginPage() {
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
+              <PasswordStrengthMeter password={password} />
               <input
                 type="password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder={t('register.password_confirm')}
+                aria-label={t('register.password_confirm')}
+                autoComplete="new-password"
                 required
                 minLength={8}
                 className="input w-full"
               />
-              <button type="submit" disabled={loading} className="btn-primary w-full flex items-center justify-center gap-2">
+              {turnstileSiteKey && (
+                <TurnstileWidget key={turnstileNonce} siteKey={turnstileSiteKey} onToken={setTurnstileToken} />
+              )}
+              <button type="submit" disabled={loading || (turnstileSiteKey !== null && !turnstileToken)} className={`w-full flex items-center justify-center gap-2 py-2.5 px-6 rounded-xl text-sm font-semibold transition-all duration-200 ${loading || (turnstileSiteKey !== null && !turnstileToken) ? "bg-white/10 text-white/40 cursor-not-allowed border border-white/10" : "btn-primary"}`}>
                 {loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Mail className="w-4 h-4" />}
                 {t('register.submit')}
               </button>
@@ -331,6 +457,8 @@ export default function LoginPage() {
                       <input
                         type="text"
                         placeholder={t('login.username')}
+                        aria-label={t('login.username')}
+                        autoComplete="username"
                         value={credUsername}
                         onChange={e => setCredUsername(e.target.value)}
                         className="input w-full"
@@ -339,6 +467,8 @@ export default function LoginPage() {
                       <input
                         type="password"
                         placeholder={t('login.password_placeholder')}
+                        aria-label={t('login.password_placeholder')}
+                        autoComplete="current-password"
                         value={credPassword}
                         onChange={e => setCredPassword(e.target.value)}
                         className="input w-full"
@@ -376,6 +506,8 @@ export default function LoginPage() {
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         placeholder={t('login.email_placeholder')}
+                        aria-label={t('login.email_placeholder')}
+                        autoComplete="email"
                         required
                         className="input w-full"
                       />
@@ -385,6 +517,8 @@ export default function LoginPage() {
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
                           placeholder={t('login.password_placeholder')}
+                          aria-label={t('login.password_placeholder')}
+                          autoComplete="current-password"
                           required
                           className="input w-full pr-10"
                         />
@@ -392,7 +526,13 @@ export default function LoginPage() {
                           {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                         </button>
                       </div>
-                      <button type="submit" disabled={loading && !polling} className="btn-primary w-full flex items-center justify-center gap-2">
+                      {turnstileSiteKey && (
+                        <TurnstileWidget key={turnstileNonce} siteKey={turnstileSiteKey} onToken={setTurnstileToken} />
+                      )}
+                      {turnstileSiteKey && !turnstileToken && (
+                        <p className="text-xs text-ndp-text-dim text-center">{t('login.turnstile_wait')}</p>
+                      )}
+                      <button type="submit" disabled={(loading || (turnstileSiteKey !== null && !turnstileToken)) && !polling} className={`w-full flex items-center justify-center gap-2 py-2.5 px-6 rounded-xl text-sm font-semibold transition-all duration-200 ${(loading || (turnstileSiteKey !== null && !turnstileToken)) && !polling ? "bg-white/10 text-white/40 cursor-not-allowed border border-white/10" : "btn-primary"}`}>
                         {loading && !polling ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Mail className="w-4 h-4" />}
                         {t('login.signin')}
                       </button>
@@ -415,10 +555,18 @@ export default function LoginPage() {
                     </div>
                   )}
 
-                  {/* All external providers as buttons */}
+                  {/* No email form means no widget above, the provider buttons still need the check. */}
+                  {!hasEmailProvider && turnstileSiteKey && oauthProviders.length > 0 && (
+                    <div className="space-y-2 mb-3">
+                      <TurnstileWidget key={turnstileNonce} siteKey={turnstileSiteKey} onToken={setTurnstileToken} />
+                      {!turnstileToken && <p className="text-xs text-ndp-text-dim text-center">{t('login.turnstile_wait')}</p>}
+                    </div>
+                  )}
+
+                  {/* All external providers as buttons, white Continue with X style per screenshot */}
                   {[...oauthProviders, ...credentialProviders].map((provider) => {
-                    const buttonClass = getProviderButtonClass(provider.id);
                     const isOAuth = provider.type === 'oauth';
+                    const logoSrc = `/${provider.id}.svg`;
                     return (
                       <button
                         key={provider.id}
@@ -426,9 +574,12 @@ export default function LoginPage() {
                           if (isOAuth) handleOAuthLogin(provider.id);
                           else { setActiveCredProvider(provider.id); setCredUsername(''); setCredPassword(''); setError(''); }
                         }}
-                        disabled={loading}
-                        className={`w-full flex items-center justify-center gap-3 ${buttonClass} font-semibold py-3.5 px-6 rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed`}
+                        // OAuth sign-in waits for the Cloudflare check too (the server re-verifies
+                        // the token on /authorize); local credential forms are unaffected.
+                        disabled={loading || (isOAuth && turnstileSiteKey !== null && !turnstileToken)}
+                        className={`w-full flex items-center justify-center gap-3 font-medium py-2.5 px-6 rounded-xl border transition-all duration-200 bg-white hover:bg-gray-50 text-gray-900 border-gray-200 disabled:opacity-50 disabled:cursor-not-allowed`}
                       >
+                        <img src={logoSrc} alt="" className="w-5 h-5 flex-shrink-0" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
                         {polling && provider.id === 'plex' ? (
                           <>
                             <div className="w-5 h-5 border-2 border-black/30 border-t-black rounded-full animate-spin" />
@@ -456,6 +607,9 @@ export default function LoginPage() {
 
           <p className="text-ndp-text-dim text-xs text-center mt-6">
             {t('login.disclaimer')}
+          </p>
+          <p className="text-center mt-4">
+            <Link to="/privacy" className="text-xs text-ndp-text-dim hover:text-ndp-text underline underline-offset-4">{t('privacy.title')}</Link>
           </p>
         </div>
       </div>

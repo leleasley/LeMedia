@@ -1,12 +1,12 @@
 /**
  * Compatibility response for clients that expect an Overseerr-shaped /status payload.
  * The numeric `version` mirrors a known-good Overseerr release so clients that gate features
- * by it (Maintainerr, mobile apps) treat us as recent enough — but `appName` is `Oscarr` and
+ * by it (Maintainerr, mobile apps) treat us as recent enough — but `appName` is `LeMedia` and
  * `compatibility` makes the layer's intent explicit. This is interoperability, not impersonation;
- * Oscarr is not affiliated with Overseerr / Jellyseerr / Seerr.
+ * LeMedia is not affiliated with Overseerr / Jellyseerr / Seerr.
  */
 const COMPAT_VERSION = '1.34.0';
-const COMPAT_COMMIT_TAG = 'oscarr-seerr-compat';
+const COMPAT_COMMIT_TAG = 'lemedia-seerr-compat';
 
 export interface SeerrStatus {
   version: string;
@@ -25,7 +25,7 @@ export function buildStatusResponse(): SeerrStatus {
     updateAvailable: false,
     commitsBehind: 0,
     restartRequired: false,
-    appName: 'Oscarr',
+    appName: 'LeMedia',
     compatibility: 'overseerr',
   };
 }

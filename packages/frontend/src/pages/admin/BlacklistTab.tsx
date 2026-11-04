@@ -125,22 +125,22 @@ export function BlacklistTab() {
     <AdminTabLayout title={t('admin.blacklist.title')} count={entries.length}>
 
       {/* Search bar */}
-      <div ref={searchRef} className="relative mb-6">
+      <div ref={searchRef} className="relative mb-5">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ndp-text-dim" />
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-ndp-text-dim pointer-events-none" />
           <input
             value={query}
             onChange={(e) => handleSearch(e.target.value)}
             onFocus={() => results.length > 0 && setShowResults(true)}
             placeholder={t('admin.blacklist.search_placeholder')}
-            className="input w-full text-sm pl-10"
+            className="input w-full text-sm py-2.5 pl-10 pr-10"
           />
-          {searching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ndp-text-dim animate-spin" />}
+          {searching && <Loader2 className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-ndp-text-dim animate-spin" />}
         </div>
 
         {/* Results dropdown */}
         {showResults && results.length > 0 && (
-          <div className="absolute top-full left-0 right-0 mt-1 bg-ndp-surface border border-white/10 rounded-xl shadow-2xl z-20 overflow-hidden">
+          <div className="absolute top-full left-0 right-0 mt-1.5 bg-ndp-surface border border-white/[0.08] rounded-xl shadow-[0_16px_40px_rgba(0,0,0,0.6)] z-20 overflow-hidden divide-y divide-white/[0.06]">
             {results.map(r => {
               const title = r.title || r.name || 'Unknown';
               const year = (r.release_date || r.first_air_date || '').slice(0, 4);
@@ -157,11 +157,11 @@ export function BlacklistTab() {
                   }}
                   disabled={blocked}
                   className={clsx(
-                    'w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors',
-                    blocked ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ndp-surface-light',
+                    'w-full flex items-center gap-3 px-4 py-2.5 min-h-[56px] text-left transition-colors',
+                    blocked ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white/[0.04] active:bg-white/[0.06]',
                   )}
                 >
-                  <div className="w-8 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-ndp-surface-light">
+                  <div className="w-8 h-12 rounded-md overflow-hidden flex-shrink-0 bg-ndp-surface-light ring-1 ring-inset ring-white/[0.06]">
                     {r.poster_path ? (
                       <img src={posterUrl(r.poster_path, 'w92')} alt="" className="w-full h-full object-cover" />
                     ) : (
@@ -184,39 +184,39 @@ export function BlacklistTab() {
 
       {/* Confirm modal */}
       {confirmMedia && createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in" onClick={() => setConfirmMedia(null)}>
+        <div className="modal-overlay z-50" onClick={() => setConfirmMedia(null)}>
           <div
             ref={confirmDialogRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby={confirmTitleId}
-            className="bg-ndp-surface border border-white/10 rounded-2xl p-6 w-full max-w-sm mx-4 shadow-2xl"
+            className="modal-panel px-5 pt-6 pb-5 sm:p-6 w-full max-w-sm"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between mb-4">
-              <h3 id={confirmTitleId} className="text-base font-bold text-ndp-text flex items-center gap-2">
-                <ShieldBan className="w-4 h-4 text-ndp-danger" />
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <h3 id={confirmTitleId} className="text-base font-semibold text-ndp-text flex items-center gap-2 min-w-0">
+                <ShieldBan className="w-4 h-4 text-ndp-danger flex-shrink-0" />
                 {t('admin.blacklist.confirm_title')}
               </h3>
               <button
                 onClick={() => setConfirmMedia(null)}
-                className="text-ndp-text-dim hover:text-ndp-text"
+                className="w-10 h-10 -mr-2 flex items-center justify-center flex-shrink-0 rounded-lg text-ndp-text-dim hover:text-ndp-text hover:bg-white/[0.06] transition-colors"
                 aria-label={t('common.close')}
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="flex items-center gap-4 mb-4 p-3 rounded-xl bg-ndp-surface-light">
-              <div className="w-14 h-20 rounded-lg overflow-hidden flex-shrink-0 bg-ndp-surface">
+            <div className="flex items-center gap-3 mb-4 p-3 rounded-xl bg-ndp-surface-light border border-white/[0.06]">
+              <div className="w-12 h-[72px] rounded-md overflow-hidden flex-shrink-0 bg-ndp-surface ring-1 ring-inset ring-white/[0.06]">
                 {confirmMedia.poster_path ? (
                   <img src={posterUrl(confirmMedia.poster_path, 'w185')} alt="" className="w-full h-full object-cover" />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center"><Film className="w-5 h-5 text-ndp-text-dim" /></div>
                 )}
               </div>
-              <div>
-                <p className="text-sm font-semibold text-ndp-text">{confirmMedia.title || confirmMedia.name}</p>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-ndp-text break-words">{confirmMedia.title || confirmMedia.name}</p>
                 <p className="text-xs text-ndp-text-dim mt-0.5">
                   {confirmMedia.media_type === 'tv' ? 'Series' : 'Movie'}
                   {(confirmMedia.release_date || confirmMedia.first_air_date) && ` · ${(confirmMedia.release_date || confirmMedia.first_air_date || '').slice(0, 4)}`}
@@ -234,10 +234,10 @@ export function BlacklistTab() {
             />
 
             <div className="flex justify-end gap-2">
-              <button onClick={() => setConfirmMedia(null)} className="btn-secondary text-sm">
+              <button onClick={() => setConfirmMedia(null)} className="btn-secondary text-sm px-4 py-2">
                 {t('common.cancel')}
               </button>
-              <button onClick={handleAdd} disabled={adding} className="btn-danger text-sm flex items-center gap-1.5">
+              <button onClick={handleAdd} disabled={adding} className="btn-danger text-sm px-4 py-2 flex items-center gap-1.5">
                 {adding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldBan className="w-3.5 h-3.5" />}
                 {t('admin.blacklist.block')}
               </button>
@@ -249,46 +249,40 @@ export function BlacklistTab() {
 
       {/* List */}
       {entries.length === 0 ? (
-        <div className="text-center py-12">
-          <ShieldBan className="w-12 h-12 text-ndp-text-dim mx-auto mb-3" />
-          <p className="text-ndp-text-muted">{t('admin.blacklist.empty')}</p>
+        <div className="admin-group px-6 py-10 text-center">
+          <div className="admin-icon-tile w-10 h-10 mx-auto mb-3 text-ndp-text-dim">
+            <ShieldBan className="w-5 h-5" />
+          </div>
+          <p className="text-sm text-ndp-text-muted">{t('admin.blacklist.empty')}</p>
         </div>
       ) : (
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3">
+        <div className="admin-group divide-y divide-white/[0.06]">
           {entries.map(entry => (
-            <div key={entry.id} className="group relative aspect-[2/3] rounded-xl overflow-hidden bg-ndp-surface-light">
-              {entry.posterPath ? (
-                <img src={posterUrl(entry.posterPath, 'w185')} alt="" className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center"><Film className="w-8 h-8 text-ndp-text-dim" /></div>
-              )}
-
-              {/* Fixed gradient */}
-              <div className="absolute bottom-0 left-0 right-0 h-2/3 bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none" />
-
-              {/* Text + button — text slides up on hover to make room */}
-              <div className="absolute bottom-0 left-0 right-0 p-2.5 flex flex-col justify-end">
-                <div className="transition-transform duration-300 ease-out group-hover:-translate-y-9">
-                  <p className="text-xs font-semibold text-white line-clamp-2">{entry.title}</p>
-                  {entry.reason && <p className="text-[10px] text-white/50 line-clamp-1 mt-0.5">{entry.reason}</p>}
-                </div>
+            <div key={entry.id} className="flex items-center gap-3 px-4 py-3">
+              <div className="relative w-10 h-[60px] rounded-md overflow-hidden flex-shrink-0 bg-ndp-surface-light ring-1 ring-inset ring-white/[0.06]">
+                {entry.posterPath ? (
+                  <img src={posterUrl(entry.posterPath, 'w185')} alt="" className="w-full h-full object-cover" loading="lazy" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center"><Film className="w-4 h-4 text-ndp-text-dim" /></div>
+                )}
               </div>
 
-              <div className="absolute bottom-0 left-0 right-0 p-2.5 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out">
-                <button
-                  onClick={() => handleDelete(entry.id)}
-                  disabled={deleting === entry.id}
-                  className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-ndp-danger/90 hover:bg-ndp-danger text-white text-xs font-medium transition-colors backdrop-blur-sm"
-                >
-                  {deleting === entry.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
-                  {t('admin.blacklist.unblock')}
-                </button>
+              <div className="flex-1 min-w-0">
+                <p className="flex items-center gap-1.5 text-sm font-medium text-ndp-text min-w-0">
+                  <ShieldBan className="w-3.5 h-3.5 text-ndp-danger flex-shrink-0" />
+                  <span className="line-clamp-2 break-words">{entry.title}</span>
+                </p>
+                {entry.reason && <p className="text-xs text-ndp-text-dim truncate mt-0.5">{entry.reason}</p>}
               </div>
 
-              {/* Ban icon — always visible */}
-              <div className="absolute top-1.5 right-1.5 bg-ndp-danger/80 rounded-full p-1">
-                <ShieldBan className="w-3 h-3 text-white" />
-              </div>
+              <button
+                onClick={() => handleDelete(entry.id)}
+                disabled={deleting === entry.id}
+                className="btn-danger flex-shrink-0 flex items-center justify-center gap-1.5 px-3 py-2 min-h-[40px] text-xs disabled:opacity-60"
+              >
+                {deleting === entry.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                {t('admin.blacklist.unblock')}
+              </button>
             </div>
           ))}
         </div>

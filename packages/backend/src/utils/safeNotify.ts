@@ -3,8 +3,9 @@ import { sendUserNotification as _sendUserNotification } from '../services/userN
 import { getAppSettings, parseInstanceLanguages } from './appSettings.js';
 import { pluginEventBus } from '../plugins/eventBus.js';
 import { logEvent } from './logEvent.js';
-import type { PluginUserNotificationCreatedV1, NotificationLocale } from '@oscarr/shared';
-import { renderNotificationTemplate, toNotificationLocale } from '@oscarr/shared';
+import { sendPushToUsers } from '../services/pushService.js';
+import type { PluginUserNotificationCreatedV1, NotificationLocale } from '@lemedia/shared';
+import { renderNotificationTemplate, toNotificationLocale } from '@lemedia/shared';
 
 let _siteUrl: string | null = null;
 let _siteUrlFetched = false;
@@ -83,6 +84,19 @@ export function safeUserNotify(userId: number, payload: Parameters<typeof _sendU
       metadata: payload.metadata ?? {},
       createdAt: new Date().toISOString(),
     };
+    // Phone/web push for request decisions (media_available pushes are sent by the sync
+    // helpers, which also handle digests — don't double up here).
+    if (payload.type === 'request_approved' || payload.type === 'request_declined') {
+      const meta = (payload.metadata ?? {}) as { tmdbId?: number; mediaType?: string };
+      const url = meta.tmdbId && meta.tmdbId > 0 && meta.mediaType ? `/${meta.mediaType}/${meta.tmdbId}` : '/requests';
+      const locale = toNotificationLocale(lang);
+      const typeLabel = renderNotificationTemplate(meta.mediaType === 'tv' ? 'notifications.type.tv' : 'notifications.type.movie', locale, {});
+      sendPushToUsers([userId], {
+        title: renderNotificationTemplate(`notifications.push.${payload.type}.title`, locale, { ...params, type: typeLabel }),
+        body: renderNotificationTemplate(`notifications.push.${payload.type}.body`, locale, params),
+        url,
+      }, payload.type).catch((err) => logEvent('warn', 'WebPush', `push for ${payload.type} failed: ${String(err)}`));
+    }
     return pluginEventBus.emit('user.notification.created', event);
   }).catch(err => {
     logEvent('error', 'PluginEvent', `Subscriber of 'user.notification.created' threw: ${String(err)}`);

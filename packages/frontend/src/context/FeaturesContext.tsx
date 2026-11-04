@@ -19,6 +19,7 @@ interface Features {
   importedStateColor?: string | null;
   siteName: string;
   instanceLanguage?: string;
+  turnstileSiteKey?: string | null;
   customLinks?: CustomLink[];
   [key: string]: boolean | string | CustomLink[] | undefined | null;
 }
@@ -32,7 +33,7 @@ interface FeaturesContextType {
 const defaultFeatures: Features = {
   requestsEnabled: true,
   calendarEnabled: true,
-  siteName: 'Oscarr',
+  siteName: 'LeMedia',
 };
 
 const FeaturesContext = createContext<FeaturesContextType | null>(null);

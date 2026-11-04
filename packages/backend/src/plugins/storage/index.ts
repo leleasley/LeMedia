@@ -27,7 +27,7 @@ export async function openPluginDb(
   // `name` becomes a filename inside the plugin's data dir. Refuse anything that could
   // escape it (`..`, `/`, dots, spaces) — keeps path traversal off the table.
   if (!DB_NAME_PATTERN.test(name)) {
-    throw new Error(`Invalid db name "${name}" — must match ${DB_NAME_PATTERN}`);
+    throw new Error(`Invalid db name "${name}", must match ${DB_NAME_PATTERN}`);
   }
   let perPlugin = dbByPlugin.get(pluginId);
   if (!perPlugin) {
@@ -53,7 +53,7 @@ export function closePluginStorage(pluginId: string): void {
   const perPlugin = dbByPlugin.get(pluginId);
   if (perPlugin) {
     for (const db of perPlugin.values()) {
-      try { db.close(); } catch { /* ignore — best effort */ }
+      try { db.close(); } catch { /* ignore, best effort */ }
     }
     dbByPlugin.delete(pluginId);
   }

@@ -149,7 +149,7 @@ const ALLOWED_EXTENSIONS = new Set(['.js', '.mjs', '.css', '.json', '.map', '.sv
 export async function pluginRoutes(app: FastifyInstance) {
 
   // ── Resolved plugins directory ──────────────────────────────────
-  // Surfaces the absolute path the engine actually reads from — respects OSCARR_PLUGINS_DIR
+  // Surfaces the absolute path the engine actually reads from — respects LEMEDIA_PLUGINS_DIR
   // and falls back to <project-root>/plugins otherwise. UI uses this to show the correct
   // hint instead of hardcoding `packages/plugins/` (wrong on Docker + self-hosted layouts).
   app.get('/dir', async () => {
@@ -489,15 +489,7 @@ export async function pluginRoutes(app: FastifyInstance) {
       '.map': 'application/json',
     };
     reply.header('content-type', contentTypes[ext] || 'text/plain');
-    // A URL carrying ?v= is unique to one build, so it can be cached hard: the page asks for a
-    // different URL the moment the files change. Without the token the answer may be stale at any
-    // moment, and an hour of blind caching is what made a redeploy invisible until a hard refresh.
-    const versioned = typeof (request.query as Record<string, unknown>)?.v === 'string';
-    const production = process.env.NODE_ENV === 'production';
-    reply.header(
-      'cache-control',
-      !production ? 'no-cache' : versioned ? 'public, max-age=31536000, immutable' : 'no-cache',
-    );
+    reply.header('cache-control', process.env.NODE_ENV === 'production' ? 'public, max-age=3600' : 'no-cache');
     return reply.send(createReadStream(fullPath));
   });
 
@@ -558,7 +550,7 @@ export async function pluginRoutes(app: FastifyInstance) {
                 downloads += a.download_count ?? 0;
               }
             }
-          } catch { /* ignore — downloads stay at 0 */ }
+          } catch { /* ignore, downloads stay at 0 */ }
 
           return {
             id: manifest.id,
@@ -574,12 +566,12 @@ export async function pluginRoutes(app: FastifyInstance) {
             stars: repoMeta.stargazers_count ?? 0,
             downloads,
             updatedAt: repoMeta.pushed_at || null,
-            // Compat status computed server-side against the running Oscarr version so the
+            // Compat status computed server-side against the running LeMedia version so the
             // admin sees the badge + a disabled Install button before downloading anything.
             // Avoids the "download → loadSingle throws on incompat → cryptic error toast" loop.
             compat: checkCompat(manifest as unknown as PluginManifest),
             // Permission surface the plugin will request — surfaced pre-install so the admin can
-            // review what they're about to grant before Oscarr downloads any code.
+            // review what they're about to grant before LeMedia downloads any code.
             services: Array.isArray(manifest.services) ? manifest.services : undefined,
             capabilities: Array.isArray(manifest.capabilities) ? manifest.capabilities : undefined,
             capabilityReasons: (manifest.capabilityReasons && typeof manifest.capabilityReasons === 'object')

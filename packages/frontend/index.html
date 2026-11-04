@@ -1,24 +1,30 @@
 <!DOCTYPE html>
-<html lang="fr" class="dark">
+<html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/logo.png" />
+    <!-- Warm the TMDB image connection early: posters/backdrops are the bulk of first paint. -->
+    <link rel="preconnect" href="https://image.tmdb.org" />
+    <link rel="dns-prefetch" href="https://image.tmdb.org" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-v2-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-v2-16.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#0a0e17" />
+    <meta name="theme-color" content="#0b0b0f" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="Oscarr" />
-    <link rel="apple-touch-icon" href="/logo.png" />
-    <meta name="description" content="Media request management for Plex, Jellyfin, Radarr & Sonarr" />
-    <title>Oscarr</title>
+    <meta name="apple-mobile-web-app-title" content="LeMedia" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon-v2.png" />
+    <meta name="description" content="Ask for a film. Watch it tonight. Requests for Radarr and Sonarr." />
+    <title>LeMedia</title>
     <script type="importmap">
       {
         "imports": {
           "react": "/_plugin-runtime/react.js",
           "react/jsx-runtime": "/_plugin-runtime/react-jsx-runtime.js",
           "react-dom": "/_plugin-runtime/react-dom.js",
-          "@oscarr/sdk": "/_plugin-runtime/oscarr.js"
+          "@lemedia/sdk": "/_plugin-runtime/lemedia.js"
         }
       }
     </script>

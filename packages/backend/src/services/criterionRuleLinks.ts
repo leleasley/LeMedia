@@ -1,5 +1,5 @@
 import { prisma } from '../utils/prisma.js';
-import { criterionField } from '@oscarr/shared';
+import { criterionField } from '@lemedia/shared';
 
 /**
  * Rules that would stop matching if a criterion disappeared.

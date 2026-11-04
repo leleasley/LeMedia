@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '../../utils/prisma.js';
 import { pluginEngine } from '../../plugins/engine.js';
-import { getOscarrVersion } from '../../plugins/compat.js';
+import { getLeMediaVersion } from '../../plugins/compat.js';
 
 const ALLOWED_SECTIONS = new Set(['tech', 'plugins', 'logs']);
 const LOG_LINE_LIMIT = 50;
@@ -33,14 +33,14 @@ export async function feedbackRoutes(app: FastifyInstance) {
     );
 
     const result: {
-      tech?: { oscarrVersion: string; nodeVersion: string; platform: string; arch: string };
+      tech?: { lemediaVersion: string; nodeVersion: string; platform: string; arch: string };
       plugins?: Array<{ id: string; version: string; enabled: boolean }>;
       logs?: Array<{ createdAt: string; level: string; label: string; body: string }>;
     } = {};
 
     if (requested.has('tech')) {
       result.tech = {
-        oscarrVersion: getOscarrVersion(),
+        lemediaVersion: getLeMediaVersion(),
         nodeVersion: process.version,
         platform: process.platform,
         arch: process.arch,

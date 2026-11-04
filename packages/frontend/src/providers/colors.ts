@@ -12,7 +12,7 @@ export interface ProviderColor {
 }
 
 const DEFAULT: ProviderColor = {
-  hex: '#7c5cff',
+  hex: '#94a3b8',
   badgeClass: 'bg-ndp-accent/15 text-ndp-accent',
   buttonClass: 'bg-ndp-accent hover:bg-ndp-accent-hover text-white',
 };

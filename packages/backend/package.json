@@ -1,5 +1,5 @@
 {
-  "name": "@oscarr/backend",
+  "name": "@lemedia/backend",
   "version": "0.10.0",
   "private": true,
   "type": "module",
@@ -27,8 +27,10 @@
     "@fastify/static": "^10.1.4",
     "@fastify/swagger": "^9.9.0",
     "@fastify/swagger-ui": "^6.1.1",
-    "@oscarr/shared": "*",
+    "@lemedia/shared": "*",
     "@prisma/client": "^6.19.3",
+    "@types/archiver": "^8.0.0",
+    "@types/tar": "^6.1.13",
     "archiver": "^8.0.0",
     "axios": "^1.17.0",
     "better-sqlite3": "^12.9.0",
@@ -45,9 +47,9 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@types/archiver": "^8.0.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.20.4",
+    "@types/node-cron": "^3.0.11",
     "@types/nodemailer": "^8.0.1",
     "@types/semver": "^7.7.1",
     "dotenv-cli": "^11.0.0",

@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import api from '@/lib/api';
 import { invalidateMediaStatus } from '@/hooks/useMediaStatus';
 import type { TmdbMedia } from '@/types';
-import { extractApiError } from '@/utils/toast';
+import { extractApiError, showToast } from '@/utils/toast';
 
 export function useMediaRequestActions(
   media: TmdbMedia | null,
@@ -49,6 +49,9 @@ export function useMediaRequestActions(
         setTimeout(() => setRequestError(''), 8000);
       } else {
         setJustRequested(true);
+        // Toast so the confirmation is visible wherever the user is on the page, and so
+        // successive requests don't require waiting on an inline state change.
+        showToast(t('status.request_sent'), 'success');
       }
       invalidateMediaStatus(media.id, type);
       // A failed refresh must not turn a successfully created request into a retryable error.

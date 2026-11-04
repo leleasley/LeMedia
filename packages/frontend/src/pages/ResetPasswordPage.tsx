@@ -3,6 +3,8 @@ import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, CheckCircle2, Eye, EyeOff, KeyRound } from 'lucide-react';
 import api from '@/lib/api';
+import { PasswordStrengthMeter } from '@/components/PasswordStrengthMeter';
+import { checkPasswordStrength } from '@/utils/passwordStrength';
 
 const MIN_LENGTH = 8;
 
@@ -23,6 +25,8 @@ export default function ResetPasswordPage() {
     e.preventDefault();
     if (password !== confirm) return setError(t('register.password_mismatch'));
     if (password.length < MIN_LENGTH) return setError(t('errors.PASSWORD_TOO_SHORT'));
+    const { valid, reason } = checkPasswordStrength(password);
+    if (!valid) return setError(t(`errors.${reason}`, { defaultValue: t('errors.PASSWORD_WEAK') }));
 
     setError(null);
     setLoading(true);
@@ -83,6 +87,7 @@ export default function ResetPasswordPage() {
                   {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
+              <PasswordStrengthMeter password={password} />
               <input
                 type="password"
                 value={confirm}

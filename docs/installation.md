@@ -1,32 +1,30 @@
 # Installation Guide
 
-The recommended way to run Oscarr is with Docker — see the README's *Quick Start* section. This document covers the manual install for development or bare-metal production.
+The recommended way to run LeMedia is with Docker — see the README's *Quick Start* section. This document covers the manual install for development or bare-metal production.
 
 ## Prerequisites
 
-- Node.js 22 LTS (22.19.0 or newer in the 22.x series, as used by CI and Docker)
-- npm 11
+- Node.js 20+
+- npm 9+
 - A media server (Plex, Jellyfin, or Emby — optional, can be added later)
 - A TMDB API key (optional — a built-in read-access token is provided)
 
 ## Installation
 
 ```bash
-git clone https://github.com/arediss/Oscarr.git
-cd Oscarr
-npm ci
+git clone https://github.com/leleasley/LeMedia.git
+cd LeMedia/app
+npm install --legacy-peer-deps
 ```
 
 ## Configuration
 
-Run all commands in this guide from the repository root (the directory containing `package.json`).
-
-Create a `.env` file at the repository root. `OSCARR_SECRET_KEY`, `JWT_SECRET` and `SETUP_SECRET` are
-required — Oscarr refuses to start on a placeholder or a value under 16 characters. Generate them
+Create a `.env` file at `app/.env`. `LEMEDIA_SECRET_KEY`, `JWT_SECRET` and `SETUP_SECRET` are
+required — LeMedia refuses to start on a placeholder or a value under 16 characters. Generate them
 with `openssl rand -hex 32` for the first and `openssl rand -base64 32` for the other two:
 
 ```env
-OSCARR_SECRET_KEY=
+LEMEDIA_SECRET_KEY=
 JWT_SECRET=
 SETUP_SECRET=
 DATABASE_URL=file:./dev.db
@@ -35,22 +33,24 @@ FRONTEND_URL=http://localhost:5173
 
 # Optional
 # TMDB_API_TOKEN=your_own_key
-# OSCARR_BLOCK_PRIVATE_SERVICES=true
-# OSCARR_PLUGINS_DIR=/custom/plugins
+# LEMEDIA_BLOCK_PRIVATE_SERVICES=true
+# LEMEDIA_PLUGINS_DIR=/custom/plugins
 # FORCE_HTTPS=true
-# TRUST_PROXY=172.18.0.0/16   # proxy IP/CIDR — unset means X-Forwarded-* is ignored
+# TRUST_PROXY=false
 # VAPID_PUBLIC_KEY=…
 # VAPID_PRIVATE_KEY=…
 # VAPID_SUBJECT=mailto:admin@example.com
+# SEERR_IMPORT_MAX_ROWS=200000
+# SEERR_IMPORT_MAX_PAGES=5000
 ```
 
-Generate `OSCARR_SECRET_KEY` (32-byte hex):
+Generate `LEMEDIA_SECRET_KEY` (32-byte hex):
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-> Lose `OSCARR_SECRET_KEY` and stored service credentials become unrecoverable — back it up like a password.
+> Lose `LEMEDIA_SECRET_KEY` and stored service credentials become unrecoverable — back it up like a password.
 
 ## Database
 
@@ -76,13 +76,6 @@ npm run build
 NODE_ENV=production node packages/backend/dist/index.js
 ```
 
-The build generates Prisma Client automatically before checking and compiling the backend. It does
-not connect to or modify your database. Keep the repository's TypeScript configuration; disabling
-strict checks does not fix missing generated types and can introduce additional errors.
-
-After updating Oscarr, run `npm ci` and `npm run build` again before restarting it. Keep your existing
-`.env`, secrets, database and install state.
-
 ## First launch
 
 Open the app and follow the setup wizard — create an admin account, connect Radarr/Sonarr and (optionally) a media server, then kick off the first sync. Setup routes unmount automatically once install completes.
@@ -90,7 +83,7 @@ Open the app and follow the setup wizard — create an admin account, connect Ra
 ## Project structure
 
 ```
-oscarr/
+lemedia/
 ├── packages/
 │   ├── backend/          # Fastify API server
 │   │   └── src/

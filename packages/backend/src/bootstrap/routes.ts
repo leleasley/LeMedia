@@ -22,12 +22,12 @@ import { getInstanceLanguages } from '../services/tmdb.js';
  */
 export async function registerRoutes(app: FastifyInstance) {
   // TMDB is a third party — treat cache hydration as a best-effort warm-up, not a gate on
-  // boot. A 500 / network blip / bad key should not prevent Oscarr from coming up; the lazy
+  // boot. A 500 / network blip / bad key should not prevent LeMedia from coming up; the lazy
   // path inside tmdb.ts will retry on first use.
   try {
     await getInstanceLanguages();
   } catch (err) {
-    app.log.warn({ err }, 'TMDB language cache warm-up failed — will lazy-load on first request');
+    app.log.warn({ err }, 'TMDB language cache warm-up failed, will lazy-load on first request');
   }
 
   await app.register(authRoutes, { prefix: '/api/auth' });
@@ -43,6 +43,9 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(appRoutes, { prefix: '/api/app' });
   await app.register(notificationRoutes, { prefix: '/api/notifications' });
   await app.register(pushRoutes, { prefix: '/api/push' });
+  await app.register((await import('../routes/share.js')).shareRoutes, { prefix: '/api/share' });
   await app.register((await import('../routes/webhooks.js')).webhookRoutes, { prefix: '/api/webhooks' });
+  await app.register((await import('../routes/zurg.js')).zurgRoutes, { prefix: '/api/zurg' });
+  await app.register((await import('../routes/play.js')).playRoutes, { prefix: '/api/play' });
   await app.register(seerrRoutes, { prefix: '/api/v1' });
 }

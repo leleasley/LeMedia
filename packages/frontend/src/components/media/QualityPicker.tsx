@@ -21,7 +21,7 @@ export function QualityPicker({ options, takenIds, selected, onSelect }: Readonl
 
   return (
     <div className="mt-6">
-      <h3 className="text-sm font-semibold text-ndp-text-muted uppercase tracking-wider mb-3">{t('media.quality')}</h3>
+      <h3 className="font-display-title text-2xl text-ndp-text mb-3">{t('media.quality')}</h3>
       <div className="flex flex-wrap gap-2">
         {options.map((q) => {
           const taken = takenIds.has(q.id);
@@ -32,7 +32,7 @@ export function QualityPicker({ options, takenIds, selected, onSelect }: Readonl
               key={q.id}
               onClick={() => !taken && onSelect((prev) => (prev === q.id ? null : q.id))}
               className={clsx(
-                'px-4 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-1.5',
+                'px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5',
                 taken && 'bg-ndp-success/10 text-ndp-success border border-ndp-success/20 cursor-default',
                 !taken && isSelected && 'bg-ndp-accent text-white',
                 !taken && !isSelected && 'bg-white/5 text-ndp-text-muted hover:bg-white/10',

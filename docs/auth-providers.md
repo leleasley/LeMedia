@@ -1,6 +1,6 @@
 # Authentication Providers
 
-Oscarr uses a modular authentication system. Users can sign in via email/password, credentials-based providers (Jellyfin/Emby), or full OAuth providers (Plex PIN flow, Discord OAuth 2.0). Each provider is part of a unified [Provider](./providers.md) which can optionally define a matching media service.
+LeMedia uses a modular authentication system. Users can sign in via email/password, credentials-based providers (Jellyfin/Emby), or full OAuth providers (Plex PIN flow, Discord OAuth 2.0). Each provider is part of a unified [Provider](./providers.md) which can optionally define a matching media service.
 
 ## Architecture
 
@@ -61,10 +61,10 @@ Before v0.6.3, enablement was coupled to the `Service` table — which worked fo
 
 1. Create an application at <https://discord.com/developers/applications>.
 2. Under **OAuth2**, copy the **Client ID** and **Client Secret**.
-3. Add a redirect URI pointing at your Oscarr instance:
-   `https://<oscarr-host>/api/auth/discord/callback`
+3. Add a redirect URI pointing at your LeMedia instance:
+   `https://<lemedia-host>/api/auth/discord/callback`
 
-### Oscarr config
+### LeMedia config
 
 In the Discord card on the Authentication tab:
 
@@ -76,13 +76,13 @@ Save, toggle on. A "Continue with Discord" button appears on the login page.
 
 ### Linking an existing account to Discord
 
-An Oscarr user who registered via email or another provider can attach Discord to their existing account without creating a duplicate:
+An LeMedia user who registered via email or another provider can attach Discord to their existing account without creating a duplicate:
 
 1. While logged in, navigate to `/api/auth/discord/authorize?action=link`.
 2. Complete the Discord OAuth flow.
-3. `UserProvider` gains a `provider: 'discord'` row tied to the current Oscarr user; the user lands on `/profile?linked=discord`.
+3. `UserProvider` gains a `provider: 'discord'` row tied to the current LeMedia user; the user lands on `/profile?linked=discord`.
 
-Plugins (e.g. a Discord bot) can DM this URL after a `/login` slash-command so users click through once to pair their Discord identity with their Oscarr account.
+Plugins (e.g. a Discord bot) can DM this URL after a `/login` slash-command so users click through once to pair their Discord identity with their LeMedia account.
 
 ## Adding a provider
 
@@ -170,14 +170,14 @@ Providers receive `helpers` in `registerRoutes()`:
 | `providerId` | Yes | External user ID from the provider |
 | `providerToken` | No | OAuth token — stored for future API calls. Leave empty for providers that keep a separate bot/admin token. |
 | `providerUsername` | No | Username from the provider |
-| `providerEmail` | No | Email from the provider (shown in admin if different from the Oscarr user's email) |
+| `providerEmail` | No | Email from the provider (shown in admin if different from the LeMedia user's email) |
 | `email` | Yes | Used for account matching when no provider link exists yet |
 | `displayName` | Yes | Used when creating a new user |
 | `avatar` | No | Avatar URL |
 
 ## UserProvider table
 
-Each external identity attached to an Oscarr user is stored in `UserProvider`:
+Each external identity attached to an LeMedia user is stored in `UserProvider`:
 
 | Column | Description |
 |---|---|
@@ -189,14 +189,14 @@ Each external identity attached to an Oscarr user is stored in `UserProvider`:
 | `providerEmail` | Email from the provider |
 
 Unique constraints:
-- `(provider, providerId)` — one external account maps to one Oscarr user
-- `(userId, provider)` — an Oscarr user has at most one link per provider
+- `(provider, providerId)` — one external account maps to one LeMedia user
+- `(userId, provider)` — an LeMedia user has at most one link per provider
 
 A user can have multiple providers linked simultaneously (e.g. email + plex + discord).
 
 ## Plugin integration
 
-Plugins that receive events from an external system (Discord bot webhooks, Telegram updates, …) resolve the Oscarr user behind an external id via the context:
+Plugins that receive events from an external system (Discord bot webhooks, Telegram updates, …) resolve the LeMedia user behind an external id via the context:
 
 ```typescript
 // Capability required: users:read
@@ -212,7 +212,7 @@ if (user) {
 
 - **Link provider**: `POST /api/auth/link-provider` (authenticated) to attach another credentials-based provider to the current user. For OAuth providers, use `/api/auth/<id>/authorize?action=link` instead — state-bound to the caller's JWT.
 - **Import users**: `POST /api/admin/users/import/:provider` — calls `provider.importUsers()` if implemented.
-- **Provider badges**: the admin Users tab shows provider badges per user, with the provider email if different from the Oscarr email.
+- **Provider badges**: the admin Users tab shows provider badges per user, with the provider email if different from the LeMedia email.
 
 ## Admin API
 

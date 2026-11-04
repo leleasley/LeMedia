@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ProviderMediaMetadata } from '@oscarr/shared';
+import type { ProviderMediaMetadata } from '@lemedia/shared';
 import { prisma } from '../src/utils/prisma.js';
 
 const edge = vi.hoisted(() => ({ lookup: vi.fn(), routing: vi.fn(), client: vi.fn() }));

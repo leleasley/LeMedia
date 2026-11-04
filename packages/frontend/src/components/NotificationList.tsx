@@ -28,6 +28,9 @@ const TYPE_VISUALS: Record<string, TypeVisual> = {
   request_declined: { icon: '✗', color: 'text-red-400', bg: 'bg-red-500/10' },
   request_pending_review: { icon: '⏳', color: 'text-amber-400', bg: 'bg-amber-500/10' },
   media_available: { icon: '▶', color: 'text-ndp-accent', bg: 'bg-ndp-accent/10' },
+  digital_release_discovered: { icon: '📅', color: 'text-sky-400', bg: 'bg-sky-500/10' },
+  acquisition_stalled: { icon: '⚠', color: 'text-amber-400', bg: 'bg-amber-500/10' },
+  digital_release_day: { icon: '💿', color: 'text-teal-300', bg: 'bg-teal-500/10' },
   support_reply: { icon: '💬', color: 'text-blue-400', bg: 'bg-blue-500/10' },
 };
 
@@ -52,17 +55,16 @@ function getNotifAction(notif: UserNotification): NotifAction | null {
   if (notif.type === 'request_pending_review') {
     return { href: '/admin?tab=requests', labelKey: 'notifications.action.review', fallback: 'Gérer', icon: 'shield' };
   }
-  if (notif.type === 'request_approved' || notif.type === 'request_declined' || notif.type === 'media_available') {
+  if (notif.type === 'request_approved' || notif.type === 'request_declined' || notif.type === 'media_available' || notif.type === 'digital_release_discovered' || notif.type === 'digital_release_day' || notif.type === 'acquisition_stalled') {
+    // Digest notifications cover several titles — deep-linking one would be wrong.
+    if (md.digest === true) {
+      return { href: '/requests', labelKey: 'notifications.action.view', fallback: 'Voir', icon: 'eye' };
+    }
     const tmdbId = md.tmdbId;
     const mediaType = md.mediaType;
     if (typeof tmdbId === 'number' && (mediaType === 'movie' || mediaType === 'tv')) {
       return { href: `/${mediaType}/${tmdbId}`, labelKey: 'notifications.action.view', fallback: 'Voir', icon: 'eye' };
     }
-  }
-  if (notif.type === 'support_reply') {
-    // Support module shipped as a plugin since 0.8 — Oscarr-Plugin-Support owns this notif
-    // type via ctx.sendUserNotification. Route stays generic on the plugin's `/p/<id>` URL.
-    return { href: '/p/arediss__oscarr-plugin-support', labelKey: 'notifications.action.reply', fallback: 'Répondre', icon: 'reply' };
   }
   return null;
 }

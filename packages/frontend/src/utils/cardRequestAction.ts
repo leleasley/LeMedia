@@ -1,4 +1,4 @@
-import { canRequest, MEDIA_STATE_DISPLAY } from '@oscarr/shared';
+import { canRequest, MEDIA_STATE_DISPLAY } from '@lemedia/shared';
 import type { MediaStatus } from './mediaStatusCache';
 
 /** Unknown availability is still loading, never permission to create a request. */

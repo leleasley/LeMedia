@@ -1,5 +1,6 @@
 import { useMemo, useState, useId, useEffect, useRef } from 'react';
 import { startPlexPinFlow, type PlexPinFlowHandle } from '@/providers/plex/pinFlow';
+import { PlexServerDiscovery } from '@/providers/plex/ServerDiscovery';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { Combobox, ComboboxButton, ComboboxInput, ComboboxOption, ComboboxOptions } from '@headlessui/react';
@@ -37,6 +38,9 @@ export function ServiceModal({ service, onClose, onSaved }: ServiceModalProps) {
   const [saving, setSaving] = useState(false);
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
   const [fetchingPlexToken, setFetchingPlexToken] = useState(false);
+  const [plexDiscoveryToken, setPlexDiscoveryToken] = useState<string | null>(null);
+  const [plexConnected, setPlexConnected] = useState(false);
+  const [showPlexFields, setShowPlexFields] = useState(false);
   const [detectingMachineId, setDetectingMachineId] = useState(false);
   const [modalError, setModalError] = useState('');
   const [typeQuery, setTypeQuery] = useState('');
@@ -51,7 +55,8 @@ export function ServiceModal({ service, onClose, onSaved }: ServiceModalProps) {
   }, [typeQuery, SERVICE_SCHEMAS]);
 
   const handleConfigChange = (key: string, value: string) => {
-    setConfig((prev) => ({ ...prev, [key]: value }));
+    if (type === 'plex') setPlexConnected(false);
+    setConfig((prev) => ({ ...prev, [key]: value, ...(type === 'plex' && key === 'token' ? { accountToken: '' } : {}) }));
   };
 
   // Secret-revealing actions go through AdminPasswordModal — `pwdPrompt` tracks which field we
@@ -113,14 +118,22 @@ export function ServiceModal({ service, onClose, onSaved }: ServiceModalProps) {
     setFetchingPlexToken(true);
     // Popup must open synchronously on the user gesture or Safari blocks it.
     const authWindow = window.open('about:blank', 'PlexAuth', 'width=600,height=700');
+    if (!authWindow) {
+      setFetchingPlexToken(false);
+      setModalError(t('plex.discovery.popup_blocked'));
+      return;
+    }
+    flowRef.current?.cancel();
+    setPlexDiscoveryToken(null);
+    setPlexConnected(false);
     flowRef.current = startPlexPinFlow({
       authWindow,
       pinEndpoint: '/admin/plex-pin',
       checkEndpoint: '/admin/plex-check',
       extractToken: (res) => (res as { token?: string })?.token ?? null,
       onToken: (token) => {
-        handleConfigChange('token', token);
         setFetchingPlexToken(false);
+        setPlexDiscoveryToken(token);
       },
       onError: () => {
         setFetchingPlexToken(false);
@@ -160,26 +173,30 @@ export function ServiceModal({ service, onClose, onSaved }: ServiceModalProps) {
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onMouseDown={onClose}>
+    <div className="modal-overlay z-50" onMouseDown={onClose}>
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="card p-6 w-full max-w-md border border-white/10 shadow-2xl animate-fade-in"
+        className="modal-panel px-5 pt-6 pb-5 sm:p-6 w-full max-w-md"
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <h2 id={titleId} className="text-lg font-bold text-ndp-text mb-5">{isEdit ? t('admin.services.edit_title') : t('admin.services.add_title')}</h2>
+        <h2 id={titleId} className="text-lg font-semibold text-ndp-text mb-5">{isEdit ? t('admin.services.edit_title') : t('admin.services.add_title')}</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           {!isEdit && (
             <div>
-              <label htmlFor={`${fieldId}-type`} className="text-sm text-ndp-text mb-1.5 block">{t('admin.services.service_type')}</label>
+              <label htmlFor={`${fieldId}-type`} className="text-xs font-medium text-ndp-text-muted mb-1.5 block">{t('admin.services.service_type')}</label>
               <Combobox
                 value={type}
                 onChange={(v: string | null) => {
                   if (!v) return;
                   setType(v);
                   setConfig({});
+                  setPlexDiscoveryToken(null);
+                  setPlexConnected(false);
+                  flowRef.current?.cancel();
+                  setFetchingPlexToken(false);
                   setTypeQuery('');
                 }}
                 immediate
@@ -201,11 +218,11 @@ export function ServiceModal({ service, onClose, onSaved }: ServiceModalProps) {
                     onFocus={(e) => e.currentTarget.select()}
                     placeholder={t('admin.services.service_picker_search')}
                   />
-                  <ComboboxButton className="absolute right-2 top-1/2 -translate-y-1/2 text-ndp-text-muted hover:text-ndp-text">
+                  <ComboboxButton className="absolute right-1 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-md text-ndp-text-muted hover:text-ndp-text">
                     <ChevronsUpDown size={16} aria-hidden />
                   </ComboboxButton>
                   <ComboboxOptions
-                    className="absolute z-50 mt-1 w-full max-h-72 overflow-auto rounded-md border border-white/10 bg-ndp-surface shadow-2xl focus:outline-none"
+                    className="absolute z-50 mt-1 w-full max-h-72 overflow-auto rounded-lg border border-white/[0.08] bg-ndp-surface py-1 shadow-[0_12px_32px_rgba(0,0,0,0.6)] focus:outline-none"
                   >
                     {filteredSchemas.length === 0 ? (
                       <div className="px-3 py-2 text-sm text-ndp-text-muted">
@@ -216,12 +233,12 @@ export function ServiceModal({ service, onClose, onSaved }: ServiceModalProps) {
                         <ComboboxOption
                           key={key}
                           value={key}
-                          className="group flex items-center gap-2.5 px-3 py-2 cursor-pointer text-sm data-[focus]:bg-white/5"
+                          className="group flex items-center gap-2.5 px-3 py-2.5 min-h-[44px] cursor-pointer text-sm data-[focus]:bg-white/[0.06]"
                         >
                           <img src={s.icon} alt="" aria-hidden className="w-5 h-5 shrink-0" />
-                          <span className="flex-1 text-ndp-text">{s.label}</span>
+                          <span className="flex-1 min-w-0 truncate text-ndp-text">{s.label}</span>
                           {s.untested && (
-                            <span className="text-[10px] uppercase tracking-wide font-medium px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300/90 border border-amber-500/30">
+                            <span className="admin-chip bg-amber-500/15 text-amber-300 uppercase tracking-wide text-[10px] flex-shrink-0">
                               {t('admin.services.untested_pill')}
                             </span>
                           )}
@@ -233,48 +250,65 @@ export function ServiceModal({ service, onClose, onSaved }: ServiceModalProps) {
                 </div>
               </Combobox>
               {schema?.untested && (
-                <p className="mt-2 text-xs text-amber-300/90 bg-amber-500/10 border border-amber-500/30 rounded px-2.5 py-1.5">
-                  {t('admin.services.untested_notice')}{' '}
-                  <a
-                    href={`https://github.com/arediss/Oscarr/issues/new?title=${encodeURIComponent(`[connector] ${schema.label} feedback`)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="underline hover:text-amber-200"
-                  >
-                    {t('admin.services.untested_report')}
-                  </a>
+                <p className="mt-2 text-xs leading-relaxed text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
+                  {t('admin.services.untested_notice')}
                 </p>
               )}
             </div>
           )}
 
           <div>
-            <label htmlFor={`${fieldId}-name`} className="text-sm text-ndp-text mb-1.5 block">{t('common.name')}</label>
+            <label htmlFor={`${fieldId}-name`} className="text-xs font-medium text-ndp-text-muted mb-1.5 block">{t('common.name')}</label>
             <input id={`${fieldId}-name`} type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder={`${schema?.label || type} Principal`} className="input w-full" required />
           </div>
 
+          {type === 'plex' && (
+            <div className="space-y-2">
+              <button type="button" onClick={fetchPlexToken} disabled={fetchingPlexToken} className="btn-secondary w-full flex items-center justify-center gap-2 text-sm py-2.5 disabled:opacity-60">
+                {fetchingPlexToken ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plug className="w-4 h-4" />}
+                {fetchingPlexToken ? t('login.waiting') : t('plex.discovery.sign_in')}
+              </button>
+              {modalError && <p className="text-xs text-ndp-danger">{modalError}</p>}
+              {plexConnected && <p className="text-xs text-ndp-success">{t('plex.discovery.ready_save')}</p>}
+              {plexDiscoveryToken && <PlexServerDiscovery accountToken={plexDiscoveryToken} endpointPrefix="/admin" onCancel={() => setPlexDiscoveryToken(null)} onConnected={(connection) => {
+                setConfig((prev) => ({ ...prev, ...connection }));
+                setName((prev) => prev.trim() ? prev : 'Plex');
+                setPlexDiscoveryToken(null);
+                setPlexConnected(true);
+              }} onManual={(token) => {
+                setConfig((prev) => ({ ...prev, token, accountToken: token }));
+                setPlexDiscoveryToken(null);
+                setShowPlexFields(true);
+                setModalError(t('plex.discovery.manual_hint'));
+              }} />}
+              <button type="button" onClick={() => setShowPlexFields((visible) => !visible)} className="text-xs text-ndp-text-muted hover:text-ndp-text" aria-expanded={showPlexFields}>
+                {showPlexFields ? t('plex.discovery.hide_manual') : t('plex.discovery.show_manual')}
+              </button>
+            </div>
+          )}
+
+          <div className={type === 'plex' && !showPlexFields ? 'hidden' : 'space-y-4'}>
           {schema?.fields.map((field) => {
             const isMasked = field.type === 'password' && config[field.key] === MASK;
             return (
             <div key={field.key}>
-              <label htmlFor={`${fieldId}-${field.key}`} className="text-sm text-ndp-text mb-1.5 block">{t(field.labelKey)}</label>
+              <label htmlFor={`${fieldId}-${field.key}`} className="text-xs font-medium text-ndp-text-muted mb-1.5 block">{t(field.labelKey)}</label>
               <div className="relative">
                 <input
                   id={`${fieldId}-${field.key}`}
                   type={field.type === 'password' && !showSecrets[field.key] ? 'password' : 'text'}
                   value={isMasked ? '' : (config[field.key] || '')}
                   onChange={(e) => handleConfigChange(field.key, e.target.value)}
-                  onFocus={() => { if (isMasked) handleConfigChange(field.key, ''); }}
                   placeholder={isMasked ? t('admin.services.secret_stored') : field.placeholder}
                   className="input w-full pr-20"
                 />
                 {field.type === 'password' && (
-                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                  <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center">
                     {isEdit && isMasked && (
                       <button
                         type="button"
                         onClick={() => setPwdPrompt({ kind: 'copy', fieldKey: field.key })}
-                        className="p-1 text-ndp-text-dim hover:text-ndp-text"
+                        className="w-9 h-9 flex items-center justify-center rounded-md text-ndp-text-dim hover:text-ndp-text"
                         title={t('common.copy')}
                         aria-label={t('common.copy')}
                       >
@@ -290,7 +324,7 @@ export function ServiceModal({ service, onClose, onSaved }: ServiceModalProps) {
                           setShowSecrets((prev) => ({ ...prev, [field.key]: !prev[field.key] }));
                         }
                       }}
-                      className="p-1 text-ndp-text-dim hover:text-ndp-text"
+                      className="w-9 h-9 flex items-center justify-center rounded-md text-ndp-text-dim hover:text-ndp-text"
                       aria-label={showSecrets[field.key] ? t('common.hide') : t('common.show')}
                     >
                       {showSecrets[field.key] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -298,26 +332,12 @@ export function ServiceModal({ service, onClose, onSaved }: ServiceModalProps) {
                   </div>
                 )}
               </div>
-              {type === 'plex' && field.key === 'token' && (
-                <>
-                  <button
-                    type="button"
-                    onClick={fetchPlexToken}
-                    disabled={fetchingPlexToken}
-                    className="mt-1.5 text-xs text-ndp-accent hover:text-ndp-accent-hover flex items-center gap-1 transition-colors"
-                  >
-                    {fetchingPlexToken ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plug className="w-3 h-3" />}
-                    {t('admin.services.use_plex_token')}
-                  </button>
-                  {modalError && <p className="text-xs text-ndp-danger mt-1">{modalError}</p>}
-                </>
-              )}
               {type === 'plex' && field.key === 'machineId' && (
                 <button
                   type="button"
                   onClick={detectMachineId}
                   disabled={detectingMachineId || !config.url || !config.token}
-                  className="mt-1.5 text-xs text-ndp-accent hover:text-ndp-accent-hover flex items-center gap-1 transition-colors disabled:opacity-40"
+                  className="mt-1 py-1.5 text-xs font-medium text-ndp-accent hover:text-ndp-accent-hover flex items-center gap-1.5 transition-colors disabled:opacity-40"
                 >
                   {detectingMachineId ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
                   {t('admin.services.auto_detect')}
@@ -326,17 +346,24 @@ export function ServiceModal({ service, onClose, onSaved }: ServiceModalProps) {
             </div>
             );
           })}
+          </div>
 
-          <label className="flex items-center gap-2 text-sm text-ndp-text-muted cursor-pointer">
-            <input type="checkbox" checked={isDefault} onChange={(e) => setIsDefault(e.target.checked)} className="rounded" />
+          {type === 'rex' && <div className="text-xs text-ndp-text-dim space-y-2">
+            <p>Test the saved service from the Services page, or check the library from the REX host. If your server requires a token, set REX_TOKEN first.</p>
+            <code className="block rounded bg-black/20 p-2 break-all select-all">{'curl -H "Accept: application/json" -H "X-Plex-Token: $REX_TOKEN" "$REX_URL/library/sections"'}</code>
+            <p>Set REX_URL to the address entered above, for example http://127.0.0.1:32400.</p>
+          </div>}
+
+          <label className="flex items-center gap-3 min-h-[44px] px-3 rounded-lg bg-ndp-surface-light border border-white/[0.06] text-sm text-ndp-text cursor-pointer">
+            <input type="checkbox" checked={isDefault} onChange={(e) => setIsDefault(e.target.checked)} className="w-4 h-4 rounded accent-ndp-accent flex-shrink-0" />
             {t('admin.services.set_default')}
           </label>
 
-          <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium bg-ndp-surface text-ndp-text-muted hover:bg-ndp-surface-light transition-colors">
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={onClose} className="btn-secondary text-sm px-4 py-2">
               {t('common.cancel')}
             </button>
-            <button type="submit" disabled={saving} className="flex-1 btn-primary flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium">
+            <button type="submit" disabled={saving || fetchingPlexToken || !!plexDiscoveryToken} className="btn-primary flex items-center justify-center gap-2 px-4 py-2 text-sm">
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               {isEdit ? t('common.save') : t('common.add')}
             </button>

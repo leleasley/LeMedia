@@ -7,13 +7,21 @@ import { assertPublicUrl, SsrfBlockedError } from '../../../utils/ssrfGuard.js';
 import { verifyPassword } from '../../../utils/password.js';
 import { classifyTestError } from '../../../utils/serviceTestError.js';
 import { parseServiceConfig, serializeServiceConfig } from '../../../utils/services.js';
+import { patchAppSettings } from '../../../utils/appSettings.js';
 
 const MASK = '__MASKED__';
+
+async function updateDiscoveredPlexMachineId(service: { id: number; type: string; enabled: boolean; isDefault: boolean }, config: Record<string, string> | undefined) {
+  if (service.type !== 'plex' || !service.enabled || !config?.accountToken || config.accountToken === MASK || !config.machineId) return;
+  if (!service.isDefault && await prisma.service.count({ where: { type: 'plex', enabled: true, NOT: { id: service.id } } }) > 0) return;
+  await patchAppSettings({ plexMachineId: config.machineId });
+}
 
 function maskServiceConfig(type: string, config: Record<string, unknown>): Record<string, unknown> {
   const def = getServiceDefinition(type);
   if (!def) return config;
   const out: Record<string, unknown> = { ...config };
+  if (type === 'plex' && typeof out.accountToken === 'string' && out.accountToken) out.accountToken = MASK;
   for (const field of def.fields) {
     if (field.type === 'password' && typeof out[field.key] === 'string' && out[field.key]) {
       out[field.key] = MASK;
@@ -30,6 +38,7 @@ function mergeServiceConfig(
 ): Record<string, unknown> {
   const def = getServiceDefinition(type);
   const allowed = new Set(def?.fields.map((f) => f.key) ?? Object.keys(patch));
+  if (type === 'plex') allowed.add('accountToken');
   const out: Record<string, unknown> = Object.create(null);
   for (const key of allowed) {
     const incoming = patch[key];
@@ -129,6 +138,7 @@ export async function servicesCrudRoutes(app: FastifyInstance) {
     const service = await prisma.service.create({
       data: { name, type, config: serializeServiceConfig(config), isDefault: isDefault ?? false },
     });
+    await updateDiscoveredPlexMachineId(service, config);
     logEvent('info', 'Service', `Service "${name}" (${type}) added`);
     return reply.status(201).send({ ...service, config: maskServiceConfig(service.type, parseServiceConfig(service.config) as Record<string, unknown>) });
   });
@@ -189,6 +199,7 @@ export async function servicesCrudRoutes(app: FastifyInstance) {
         ...(enabled !== undefined ? { enabled } : {}),
       },
     });
+    await updateDiscoveredPlexMachineId(service, config);
     return { ...service, config: maskServiceConfig(service.type, parseServiceConfig(service.config) as Record<string, unknown>) };
   });
 
@@ -243,7 +254,7 @@ export async function servicesCrudRoutes(app: FastifyInstance) {
       return await def.test(config);
     } catch (err) {
       const info = classifyTestError(err);
-      logEvent('warn', 'Service', `Test failed for "${service.name}" (${service.type}): ${info.code} — ${info.message}`, err);
+      logEvent('warn', 'Service', `Test failed for "${service.name}" (${service.type}): ${info.code}, ${info.message}`, err);
       return reply.status(502).send({ error: info.code, detail: info.message });
     }
   });

@@ -68,8 +68,10 @@ export async function jobsRoutes(app: FastifyInstance) {
     }
     const job = await prisma.cronJob.findUnique({ where: { key }, select: { key: true } });
     if (!job) return reply.status(404).send({ error: 'unknown_job' });
+    // A manual Run is a deliberate admin action — force it past any age gate (e.g. the 24h
+    // grace on purge_deleted_requests). The scheduled tick still honours the window.
     // Fire-and-forget — front polls /jobs for lastStatus/lastResult.
-    triggerJob(key).then(async (outcome) => {
+    triggerJob(key, { force: true }).then(async (outcome) => {
       // A skipped launch never reaches the scheduler's completion write. Advance its state
       // explicitly so the client can stop waiting. Do not overwrite a concurrent real run.
       if (outcome.skipped && outcome.reason !== 'already_running' && outcome.reason !== 'maintenance') {

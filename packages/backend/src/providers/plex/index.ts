@@ -10,17 +10,18 @@ import { isProviderEnabled } from '../authSettings.js';
 import { refreshUserAvatar } from '../../utils/avatarSource.js';
 import { resolvePublicBaseUrl } from '../../utils/publicUrl.js';
 import { encryptSecretValue, decryptSecretValue } from '../../utils/secrets.js';
+import { isSecureCookie } from '../../utils/authCookie.js';
 
-const PLEX_CLIENT_ID = 'oscarr-client';
+const PLEX_CLIENT_ID = 'lemedia-client';
 
 // ─── Exported utilities for setup routes ────────────────────────────
 
 export async function plexCreatePin(forwardUrlBase?: string, state?: string) {
   const pin = await createPlexPin(PLEX_CLIENT_ID);
-  let authUrl = `https://app.plex.tv/auth#?clientID=${PLEX_CLIENT_ID}&code=${pin.code}&context%5Bdevice%5D%5Bproduct%5D=Oscarr`;
+  let authUrl = `https://app.plex.tv/auth#?clientID=${PLEX_CLIENT_ID}&code=${pin.code}&context%5Bdevice%5D%5Bproduct%5D=LeMedia`;
   if (forwardUrlBase) {
     // Plex forwards the auth tab back here after sign-in instead of leaving the user on its static
-    // "you can now close this window" page — critical on mobile, where the original Oscarr tab is
+    // "you can now close this window" page — critical on mobile, where the original LeMedia tab is
     // backgrounded/suspended and can't poll the PIN to close the auth tab itself (#212). `state`
     // binds the returned pin to the session that started the login (CSRF / session-fixation guard).
     const sep = forwardUrlBase.includes('?') ? '&' : '?';
@@ -50,9 +51,10 @@ export async function plexFetchMachineId(url: string, token: string): Promise<st
 export async function getPlexToken(adminUserId?: number): Promise<string | null> {
   const plexService = await prisma.service.findFirst({
     where: { type: 'plex', enabled: true },
+    orderBy: { isDefault: 'desc' },
   });
   const config = plexService ? parseServiceConfig(plexService.config) : null;
-  if (config?.token) return config.token;
+  if (config?.accountToken || config?.token) return config.accountToken || config.token;
 
   if (adminUserId) {
     const provider = await prisma.userProvider.findUnique({
@@ -115,7 +117,7 @@ const plexAuth: AuthProvider = {
         label: 'Allow new account creation',
         type: 'boolean',
         default: false,
-        help: 'Auto-create Oscarr users for new Plex logins.',
+        help: 'Auto-create LeMedia users for new Plex logins.',
       },
     ],
   },
@@ -127,7 +129,7 @@ const plexAuth: AuthProvider = {
       if (!(await isProviderEnabled('plex'))) {
         return reply.status(403).send({ error: 'PROVIDER_DISABLED' });
       }
-      // forwardUrl lands the auth tab on the Oscarr /plex-return page (which finalizes the LOGIN
+      // forwardUrl lands the auth tab on the LeMedia /plex-return page (which finalizes the LOGIN
       // session) after Plex sign-in — for the login flow ONLY (#212). This same endpoint is reused
       // by the admin "link Plex account" flow (UsersTab), which must NOT forward there or it would
       // run the login callback and hijack the admin's session — so forwarding is opt-in.
@@ -138,13 +140,12 @@ const plexAuth: AuthProvider = {
       let state: string | undefined;
       if (forward) {
         state = randomUUID();
-        reply.setCookie('oscarr_plex_state', state, {
+        reply.setCookie('lemedia_plex_state', state, {
           path: '/',
           httpOnly: true,
-          secure: process.env.COOKIE_SECURE === 'true'
-            || (process.env.COOKIE_SECURE !== 'false' && request.protocol === 'https'),
+          secure: isSecureCookie(request.protocol),
           sameSite: 'lax',
-          maxAge: 600, // 10 min — comfortably covers the 2-min PIN TTL
+          maxAge: 600, // 10 min, comfortably covers the 2-min PIN TTL
         });
       }
       const result = await plexCreatePin(forward ? `${resolvePublicBaseUrl(request)}/plex-return` : undefined, state);
@@ -176,7 +177,7 @@ const plexAuth: AuthProvider = {
       }
       // Session-fixation guard: the pin must belong to the session that started THIS login. A
       // crafted /plex-return?pinId=... with an attacker's pin has no matching cookie → rejected.
-      const stateCookie = request.cookies?.oscarr_plex_state;
+      const stateCookie = request.cookies?.lemedia_plex_state;
       if (typeof state !== 'string' || !state || !stateCookie || state !== stateCookie) {
         return reply.status(403).send({ error: 'INVALID_STATE' });
       }
@@ -212,7 +213,7 @@ const plexAuth: AuthProvider = {
         throw err;
       }
 
-      logEvent('info', 'Auth', `${result.displayName} logged in (plex)${result.isNew ? ' — new account' : ''}`);
+      logEvent('info', 'Auth', `${result.displayName} logged in (plex)${result.isNew ? ', new account' : ''}`);
       return helpers.signAndSend(reply, result.id);
     });
   },
@@ -282,7 +283,7 @@ export const plexProvider: Provider = {
     icon: '/providers/plex.svg',
     category: 'media-server',
     canConfirmAvailability: true,
-    requiredForInstall: true,
+    requiredForInstall: false, // optional in LeMedia: requests only need Radarr or Sonarr
     fields: [
       { key: 'url', labelKey: 'common.url', type: 'text', placeholder: 'http://localhost:32400' },
       { key: 'token', labelKey: 'common.token', type: 'password', helper: 'plex-oauth' },

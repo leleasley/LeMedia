@@ -16,7 +16,7 @@ import { userRoutes } from './routes/user.js';
  * Seerr. RBAC is bypassed for this prefix (PUBLIC marker) so we can own auth via X-Api-Key
  * resolved through UserApiKey instead of JWT.
  *
- * Each endpoint translates an Oscarr internal call into the response shape that Seerr clients
+ * Each endpoint translates an LeMedia internal call into the response shape that Seerr clients
  * expect. Endpoints we haven't implemented yet fall through to a clean 501 catch-all so apps
  * degrade gracefully instead of timing out.
  */
@@ -46,7 +46,7 @@ export async function seerrRoutes(app: FastifyInstance) {
   app.all('/*', async (request, reply) => {
     return reply.status(501).send({
       error: 'Not Implemented',
-      message: `${request.method} ${request.url} is not implemented by Oscarr's Seerr-compatible API layer yet.`,
+      message: `${request.method} ${request.url} is not implemented by LeMedia's Seerr-compatible API layer yet.`,
       compat: 'seerr',
     });
   });

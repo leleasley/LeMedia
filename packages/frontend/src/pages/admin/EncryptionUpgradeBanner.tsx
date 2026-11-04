@@ -15,14 +15,14 @@ interface FlaggedService {
 /** Custom DOM event ServiceModal (and any future writer) dispatches after a successful save —
  *  lets this banner re-check without coupling either side to the other or pulling in a state
  *  manager. */
-export const SERVICE_SAVED_EVENT = 'oscarr:service-saved';
+export const SERVICE_SAVED_EVENT = 'lemedia:service-saved';
 
 /**
  * Floating bottom-right "upgrade to AES-256-GCM encryption" prompt rendered globally for
  * admins as long as at least one Service row still holds an unencrypted credential.
  *
  * Self-contained: gates on the `admin.*` permission, fetches the security endpoint on mount,
- * re-fetches whenever the window regains focus or a `oscarr:service-saved` event fires, and
+ * re-fetches whenever the window regains focus or a `lemedia:service-saved` event fires, and
  * disappears silently as soon as every service has been re-saved through the encrypted write
  * path.
  */
@@ -75,18 +75,20 @@ export function EncryptionUpgradeBanner() {
     <button
       type="button"
       onClick={() => navigate('/admin?tab=services')}
-      className="fixed bottom-4 right-4 z-[60] max-w-sm w-[calc(100vw-2rem)] sm:w-auto animate-fade-in flex items-center gap-3 text-left px-4 py-3 rounded-xl border border-amber-500/40 bg-ndp-bg/95 backdrop-blur-xl shadow-2xl shadow-black/60 hover:bg-amber-500/5 transition-colors"
+      className="fixed bottom-4 right-4 z-[60] max-w-sm w-[calc(100vw-2rem)] sm:w-auto animate-fade-in flex items-center gap-3 text-left px-4 py-3 min-h-[56px] rounded-xl bg-ndp-surface ring-1 ring-inset ring-ndp-warning/30 shadow-lg shadow-black/50 hover:bg-ndp-surface-light transition-colors"
     >
-      <Lock className="w-5 h-5 text-amber-300 flex-shrink-0" />
+      <span className="admin-icon-tile bg-ndp-warning/15 text-ndp-warning">
+        <Lock className="w-4 h-4" />
+      </span>
       <div className="flex-1 min-w-0">
-        <p className="font-semibold text-amber-200 text-sm">
+        <p className="font-semibold text-ndp-text text-sm">
           {t(titleKey, { count: services.length })}
         </p>
-        <p className="text-xs text-amber-100/85 mt-0.5">
+        <p className="text-xs text-ndp-text-muted leading-relaxed mt-0.5">
           {t(bodyKey, { count: services.length })}
         </p>
       </div>
-      <ChevronRight className="w-4 h-4 text-amber-300 flex-shrink-0" aria-hidden />
+      <ChevronRight className="w-4 h-4 text-ndp-text-dim flex-shrink-0" aria-hidden />
     </button>
   );
 }

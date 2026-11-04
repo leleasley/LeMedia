@@ -1,7 +1,7 @@
 import type { ArrClient, ArrMediaItem, ArrAvailabilityResult, ArrHistoryEntry, ArrAddMediaOptions, ArrWebhookEvent } from '../types.js';
 import { extractImageFromArr } from '../types.js';
 import type { RadarrMovie, RadarrQueueItem, RadarrHistoryRecord } from './types.js';
-import type { MediaStateCategory } from '@oscarr/shared';
+import type { MediaStateCategory } from '@lemedia/shared';
 import { logEvent } from '../../utils/logEvent.js';
 import { ArrClientBase } from '../arrClientBase.js';
 import { parseMetadata, metadataFields } from '../metadata.js';
@@ -67,6 +67,24 @@ export class RadarrClient extends ArrClientBase implements ArrClient {
     return data;
   }
 
+  /** Radarr's metadata lookup (`tmdb:603`, `imdb:tt0133093` or a title). Used by list imports. */
+  async lookupMovies(term: string): Promise<Record<string, unknown>[]> {
+    const { data } = await this.api.get('/movie/lookup', { params: { term } });
+    return Array.isArray(data) ? data : [];
+  }
+
+  /** Add a movie from a lookup record as-is (list imports set profile, folder and addOptions). */
+  async addMovieRecord(record: Record<string, unknown>): Promise<RadarrMovie> {
+    const { data } = await this.api.post('/movie', record);
+    return data;
+  }
+
+  /** Import-list exclusions ("never add this again"). */
+  async getExclusions(): Promise<{ tmdbId?: number; movieTitle?: string; movieYear?: number }[]> {
+    const { data } = await this.api.get('/exclusions');
+    return Array.isArray(data) ? data : [];
+  }
+
   async getCalendar(start: string, end: string): Promise<RadarrMovie[]> {
     const { data } = await this.api.get('/calendar', { params: { start, end } });
     return data;
@@ -107,7 +125,7 @@ export class RadarrClient extends ArrClientBase implements ArrClient {
 
   // ─── Normalized interface methods ─────────────────────────────────
 
-  /** Maps native Radarr state (+ queue presence) to the Oscarr vocabulary. */
+  /** Maps native Radarr state (+ queue presence) to the LeMedia vocabulary. */
   private resolveState(movie: RadarrMovie, inActiveQueue: boolean): MediaStateCategory {
     if (movie.hasFile) return 'AVAILABLE';
     if (inActiveQueue) return 'PROCESSING';
@@ -187,6 +205,16 @@ export class RadarrClient extends ArrClientBase implements ArrClient {
     return movie ? { id: movie.id } : null;
   }
 
+  /** Path occupant lookup for add-time conflict resolution. The *arr names the rejected
+   *  path but not the entry holding it — the caller matches it here (trailing-slash
+   *  insensitive, like the root-folder resolver) to adopt-or-explain. */
+  async findByPath(path: string): Promise<{ id: number; externalId: number | null; title: string } | null> {
+    const { data } = await this.api.get('/movie');
+    const strip = (p: string) => (p || '').replace(/\/+$/, '');
+    const hit = (data as RadarrMovie[]).find((m) => strip(m.path) === strip(path));
+    return hit ? { id: hit.id, externalId: hit.tmdbId ?? null, title: hit.title } : null;
+  }
+
   async addMedia(options: ArrAddMediaOptions): Promise<void> {
     await this.addMovie({
       title: options.title,
@@ -204,6 +232,37 @@ export class RadarrClient extends ArrClientBase implements ArrClient {
 
   async deleteMedia(movieId: number, deleteFiles = true): Promise<void> {
     await this.api.delete(`/movie/${movieId}`, { params: { deleteFiles } });
+  }
+
+  // ── File swap (zurg duplicates) ──────────────────────────────────────────────────────────
+
+  async setMonitored(movieId: number, monitored: boolean): Promise<void> {
+    const { data } = await this.api.get<RadarrMovie>(`/movie/${movieId}`);
+    if (data.monitored === monitored) return;
+    await this.api.put(`/movie/${movieId}`, { ...data, monitored });
+  }
+
+  /** Deletes the file from disk too (Radarr has no recycle bin set on this stack). */
+  async deleteMovieFile(movieFileId: number): Promise<void> {
+    await this.api.delete(`/moviefile/${movieFileId}`);
+  }
+
+  /** Runs a command and waits for it to finish (or the timeout); returns the final status. */
+  async runCommand(body: Record<string, unknown>, timeoutMs = 120_000): Promise<string> {
+    const { data } = await this.api.post<{ id: number }>('/command', body);
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 1500));
+      const { data: cmd } = await this.api.get<{ status?: string }>(`/command/${data.id}`);
+      if (cmd.status === 'completed' || cmd.status === 'failed' || cmd.status === 'aborted') return cmd.status;
+    }
+    return 'timedout';
+  }
+
+  /** Radarr's own parse of the files in a folder (quality, languages) for an explicit ManualImport. */
+  async getManualImport(folder: string, movieId: number): Promise<{ path: string; size?: number; quality?: unknown; languages?: unknown[]; releaseGroup?: string }[]> {
+    const { data } = await this.api.get('/manualimport', { params: { folder, movieId, filterExistingFiles: false } });
+    return Array.isArray(data) ? data : [];
   }
 
   async getHistoryEntries(since?: Date | null): Promise<ArrHistoryEntry[]> {

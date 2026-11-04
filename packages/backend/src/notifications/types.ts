@@ -1,4 +1,4 @@
-import type { NotificationLocale } from '@oscarr/shared';
+import type { NotificationLocale } from '@lemedia/shared';
 
 /**
  * A field definition for a provider's configuration form.

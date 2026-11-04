@@ -18,7 +18,7 @@ const QUALITY_DEFAULTS = [
 ];
 
 /**
- * Materialize a `DerivedConfig` (read from a Seerr-family source) into Oscarr's DB.
+ * Materialize a `DerivedConfig` (read from a Seerr-family source) into LeMedia's DB.
  *
  * Idempotent within reason — re-running on an already-populated install is a no-op for
  * services that match an existing URL, won't duplicate quality options, and only writes

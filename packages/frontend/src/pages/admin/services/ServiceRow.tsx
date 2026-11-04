@@ -26,18 +26,23 @@ export function ServiceRow({
 }: ServiceRowProps) {
   const { t } = useTranslation();
 
-  return (
-    <div className={clsx('card', !service.enabled && 'opacity-50')}>
-      <div className="flex items-center gap-4 p-4">
-        <span className={clsx('w-2.5 h-2.5 rounded-full flex-shrink-0', service.enabled ? 'bg-ndp-success' : 'bg-ndp-text-dim')} />
+  const iconBtn = 'w-10 h-10 flex items-center justify-center rounded-lg text-ndp-text-dim hover:bg-white/[0.06] transition-colors disabled:opacity-50';
 
-        <img src={schema?.icon || '/logo.png'} alt={schema?.label || service.type} className="w-8 h-8 rounded-lg object-contain flex-shrink-0" />
+  return (
+    <div className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-3">
+      <div className={clsx('flex items-center gap-3 flex-1 min-w-0', !service.enabled && 'opacity-50')}>
+        <div className="relative flex-shrink-0">
+          <span className="admin-icon-tile w-9 h-9 p-1.5">
+            <img src={schema?.icon || '/logo-v2.png'} alt={schema?.label || service.type} className="w-full h-full object-contain" />
+          </span>
+          <span className={clsx('absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-ndp-surface', service.enabled ? 'bg-ndp-success' : 'bg-ndp-text-dim')} />
+        </div>
 
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-ndp-text truncate">{service.name}</span>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-sm font-medium text-ndp-text truncate">{service.name}</span>
             {service.isDefault && (
-              <span className="px-1.5 py-0.5 bg-ndp-accent/10 text-ndp-accent text-[10px] font-semibold rounded-full flex-shrink-0">{t('common.default_badge')}</span>
+              <span className="admin-chip bg-ndp-accent/15 text-ndp-accent flex-shrink-0">{t('common.default_badge')}</span>
             )}
             {flagReason && (
               <span
@@ -57,60 +62,69 @@ export function ServiceRow({
               </span>
             )}
           </div>
-          <div className="flex items-center gap-3 mt-0.5">
-            <span className="text-xs text-ndp-text-dim">{schema?.label || service.type}</span>
-            {service.config.url && <span className="text-xs text-ndp-text-dim truncate">{service.config.url}</span>}
+          <div className="flex items-center gap-1.5 mt-0.5 min-w-0 text-xs text-ndp-text-dim">
+            <span className="flex-shrink-0">{schema?.label || service.type}</span>
+            {service.config.url && (
+              <>
+                <span aria-hidden className="flex-shrink-0">·</span>
+                <span className="truncate">{service.config.url}</span>
+              </>
+            )}
           </div>
         </div>
+      </div>
 
-        {result && (() => {
-          const blocked = !result.ok && result.errorCode === 'URL_BLOCKED_BY_SSRF_GUARD';
-          // Hovering the badge shows the full pre-rendered cause (e.g. "Connection refused at
-          // 192.168.1.50:7878 — nothing listening, or bound to localhost"). Keeps the row tight
-          // while still giving admins enough to diagnose without opening AppLog.
-          const title = blocked
-            ? t('admin.services.ssrf_blocked')
-            : !result.ok
-            ? result.errorDetail
-            : undefined;
-          return (
-            <span
-              className={clsx(
-                'text-xs px-2 py-1 rounded-lg flex-shrink-0',
-                result.ok
-                  ? 'bg-ndp-success/10 text-ndp-success'
+      <div className="flex items-center justify-between gap-2 pl-12 sm:pl-0 sm:justify-end flex-shrink-0">
+        <div className="min-w-0">
+          {result && (() => {
+            const blocked = !result.ok && result.errorCode === 'URL_BLOCKED_BY_SSRF_GUARD';
+            // Hovering the badge shows the full pre-rendered cause (e.g. "Connection refused at
+            // 192.168.1.50:7878 — nothing listening, or bound to localhost"). Keeps the row tight
+            // while still giving admins enough to diagnose without opening AppLog.
+            const title = blocked
+              ? t('admin.services.ssrf_blocked')
+              : !result.ok
+              ? result.errorDetail
+              : undefined;
+            return (
+              <span
+                className={clsx(
+                  'admin-chip',
+                  result.ok
+                    ? 'bg-emerald-500/15 text-emerald-300'
+                    : blocked
+                    ? 'bg-amber-500/15 text-amber-300'
+                    : 'bg-red-500/15 text-red-300',
+                )}
+                title={title}
+              >
+                {result.ok
+                  ? (result.version ? `v${result.version}` : t('status.connected'))
                   : blocked
-                  ? 'bg-ndp-warning/10 text-ndp-warning'
-                  : 'bg-ndp-danger/10 text-ndp-danger',
-              )}
-              title={title}
-            >
-              {result.ok
-                ? (result.version ? `v${result.version}` : t('status.connected'))
-                : blocked
-                ? t('status.ssrf_blocked')
-                : t('status.connection_failed')}
-            </span>
-          );
-        })()}
+                  ? t('status.ssrf_blocked')
+                  : t('status.connection_failed')}
+              </span>
+            );
+          })()}
+        </div>
 
-        <div className="flex items-center gap-0.5 flex-shrink-0">
-          <button onClick={() => onTest(service)} disabled={testing} className="p-2 text-ndp-text-dim hover:text-ndp-accent hover:bg-white/5 rounded-lg transition-colors" title={t('common.test')}>
+        <div className="flex items-center -mr-2 flex-shrink-0">
+          <button onClick={() => onTest(service)} disabled={testing} className={clsx(iconBtn, 'hover:text-ndp-accent')} title={t('common.test')} aria-label={t('common.test')}>
             {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plug className="w-4 h-4" />}
           </button>
-          <button onClick={() => onEdit(service)} className="p-2 text-ndp-text-dim hover:text-ndp-text hover:bg-white/5 rounded-lg transition-colors" title={t('common.edit')}>
+          <button onClick={() => onEdit(service)} className={clsx(iconBtn, 'hover:text-ndp-text')} title={t('common.edit')} aria-label={t('common.edit')}>
             <Pencil className="w-4 h-4" />
           </button>
-          <button onClick={() => onToggle(service)} className="p-2 text-ndp-text-dim hover:text-ndp-text hover:bg-white/5 rounded-lg transition-colors" title={service.enabled ? t('common.disable') : t('common.enable')}>
+          <button onClick={() => onToggle(service)} className={clsx(iconBtn, 'hover:text-ndp-text')} title={service.enabled ? t('common.disable') : t('common.enable')} aria-label={service.enabled ? t('common.disable') : t('common.enable')}>
             <Power className={clsx('w-4 h-4', service.enabled && 'text-ndp-success')} />
           </button>
           {!service.isDefault && (
-            <button onClick={() => onSetDefault(service)} className="p-2 text-ndp-text-dim hover:text-ndp-warning hover:bg-white/5 rounded-lg transition-colors" title={t('admin.services.set_default')}>
+            <button onClick={() => onSetDefault(service)} className={clsx(iconBtn, 'hover:text-ndp-warning')} title={t('admin.services.set_default')} aria-label={t('admin.services.set_default')}>
               <Star className="w-4 h-4" />
             </button>
           )}
-          <div className="w-px h-5 bg-white/10 mx-1" />
-          <button onClick={() => onDelete(service.id)} className="p-2 text-ndp-text-dim hover:text-ndp-danger hover:bg-white/5 rounded-lg transition-colors" title={t('common.delete')}>
+          <div className="w-px h-5 bg-white/[0.08] mx-1" />
+          <button onClick={() => onDelete(service.id)} className={clsx(iconBtn, 'hover:text-ndp-danger hover:bg-ndp-danger/10')} title={t('common.delete')} aria-label={t('common.delete')}>
             <Trash2 className="w-4 h-4" />
           </button>
         </div>

@@ -212,22 +212,22 @@ export function NotificationsTab() {
     const provider = providers.find(p => p.id === editingProvider);
     if (!provider) return null;
     return createPortal(
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onMouseDown={() => setEditingProvider(null)}>
+      <div className="modal-overlay z-50" onMouseDown={() => setEditingProvider(null)}>
         <div
           ref={providerDialogRef}
           role="dialog"
           aria-modal="true"
           aria-labelledby={providerTitleId}
-          className="card p-6 w-full max-w-md border border-white/10 shadow-2xl animate-fade-in"
+          className="modal-panel p-5 sm:p-6 w-full max-w-md"
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <h3 id={providerTitleId} className="text-lg font-bold text-ndp-text mb-4">{t(provider.nameKey)}</h3>
+          <h3 id={providerTitleId} className="text-base font-semibold text-ndp-text mb-5">{t(provider.nameKey)}</h3>
           <div className="space-y-4">
             {provider.settingsSchema.map((field) => {
               const inputId = `notif-${provider.id}-${field.key}`;
               return (
               <div key={field.key}>
-                <label htmlFor={inputId} className="text-xs text-ndp-text-dim block mb-1">{t(field.labelKey)}</label>
+                <label htmlFor={inputId} className="text-xs font-medium text-ndp-text-muted block mb-1.5">{t(field.labelKey)}</label>
                 <div className="relative">
                   <input
                     id={inputId}
@@ -242,7 +242,7 @@ export function NotificationsTab() {
                       type="button"
                       onClick={() => setShowSecrets(prev => ({ ...prev, [field.key]: !prev[field.key] }))}
                       aria-label={showSecrets[field.key] ? t('common.hide') : t('common.show')}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-ndp-text-dim hover:text-ndp-text"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center rounded-lg text-ndp-text-dim hover:text-ndp-text"
                     >
                       {showSecrets[field.key] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
@@ -252,9 +252,9 @@ export function NotificationsTab() {
               );
             })}
           </div>
-          <div className="flex gap-3 mt-6">
-            <button onClick={() => setEditingProvider(null)} className="btn-secondary text-sm flex-1">{t('common.cancel')}</button>
-            <button onClick={saveProviderConfig} className="btn-primary text-sm flex-1 flex items-center justify-center gap-2">
+          <div className="flex justify-end gap-2 mt-6">
+            <button onClick={() => setEditingProvider(null)} className="btn-secondary text-sm px-4 py-2">{t('common.cancel')}</button>
+            <button onClick={saveProviderConfig} className="btn-primary text-sm px-4 py-2 flex items-center justify-center gap-2">
               <Save className="w-4 h-4" /> {t('common.save')}
             </button>
           </div>
@@ -270,106 +270,111 @@ export function NotificationsTab() {
     <AdminTabLayout
       title={t('admin.notifications.channels')}
       actions={
-        <button onClick={handleSave} disabled={saving} className={clsx('flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-xl transition-all', saved ? 'bg-ndp-success/10 text-ndp-success' : 'btn-primary')}>
+        <button onClick={handleSave} disabled={saving} className={clsx('flex items-center gap-2 text-sm font-medium px-4 py-2 min-h-[40px] rounded-lg transition-colors', saved ? 'bg-ndp-success/10 text-ndp-success' : 'btn-primary')}>
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <CheckCircle className="w-4 h-4" /> : <Save className="w-4 h-4" />}
           {saved ? t('common.saved') : t('common.save')}
         </button>
       }
     >
-      {/* Providers */}
-      <div>
-        {providers.length === 0 ? (
-          <p className="text-sm text-ndp-text-dim">{t('admin.notifications.no_providers')}</p>
-        ) : (
-          <div className="space-y-3">
-            {providers.map((provider) => {
-              const configured = isConfigured(provider.id);
-              const enabled = configs[provider.id]?.enabled ?? false;
-              const result = testResult?.providerId === provider.id ? testResult : null;
+      <div className="space-y-8">
+        {/* Providers */}
+        <section>
+          {providers.length === 0 ? (
+            <p className="admin-group px-4 py-6 text-sm text-center text-ndp-text-dim">{t('admin.notifications.no_providers')}</p>
+          ) : (
+            <div className="admin-group divide-y divide-white/[0.06]">
+              {providers.map((provider) => {
+                const configured = isConfigured(provider.id);
+                const enabled = configs[provider.id]?.enabled ?? false;
+                const result = testResult?.providerId === provider.id ? testResult : null;
 
-              return (
-                <div key={provider.id} className={clsx('card', !enabled && 'opacity-50')}>
-                  <div className="flex items-center gap-4 p-4">
-                    <span className={clsx('w-2.5 h-2.5 rounded-full flex-shrink-0', configured && enabled ? 'bg-ndp-success' : 'bg-ndp-text-dim')} />
-                    <span className="text-sm font-semibold text-ndp-text flex-1">
-                      {t(provider.nameKey)}
-                      {provider.id === 'email' && !mailReady && (
-                        <Link to="/admin?tab=mail" className="ml-2 text-xs font-normal text-ndp-accent hover:underline">
-                          {t('admin.notifications.email_needs_transport')}
-                        </Link>
-                      )}
-                    </span>
+                return (
+                  <div key={provider.id} className="admin-row flex-wrap sm:flex-nowrap">
+                    <div className={clsx('flex-1 min-w-0 flex items-center gap-3', !enabled && 'opacity-50')}>
+                      <span className={clsx('w-2 h-2 rounded-full flex-shrink-0', configured && enabled ? 'bg-ndp-success' : 'bg-ndp-text-dim')} />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-ndp-text truncate">{t(provider.nameKey)}</p>
+                        {provider.id === 'email' && !mailReady && (
+                          <Link to="/admin?tab=mail" className="block text-xs text-ndp-accent hover:underline mt-0.5">
+                            {t('admin.notifications.email_needs_transport')}
+                          </Link>
+                        )}
+                      </div>
+                    </div>
 
                     {result && (
-                      <span className={clsx('text-xs px-2 py-1 rounded-lg flex-shrink-0', result.ok ? 'bg-ndp-success/10 text-ndp-success' : 'bg-ndp-danger/10 text-ndp-danger')}>
+                      <span className={clsx('admin-chip flex-shrink-0', result.ok ? 'bg-emerald-500/15 text-emerald-300' : 'bg-red-500/15 text-red-300')}>
                         {result.ok ? t('admin.notifications.test_success') : t('admin.notifications.test_failed')}
                       </span>
                     )}
 
-                    <div className="flex items-center gap-0.5 flex-shrink-0">
+                    <div className="flex items-center gap-0.5 flex-shrink-0 -mr-2">
                       <button
                         onClick={() => testProvider(provider.id)}
                         disabled={!configured || !enabled || testingProvider === provider.id}
-                        className="p-2 text-ndp-text-dim hover:text-ndp-accent hover:bg-white/5 rounded-lg transition-colors"
+                        className="w-10 h-10 flex items-center justify-center text-ndp-text-dim hover:text-ndp-accent hover:bg-white/5 rounded-lg transition-colors disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-ndp-text-dim"
                         title={t('common.test')}
+                        aria-label={t('common.test')}
                       >
                         {testingProvider === provider.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                       </button>
                       <button
                         onClick={() => openEditModal(provider.id)}
-                        className="p-2 text-ndp-text-dim hover:text-ndp-text hover:bg-white/5 rounded-lg transition-colors"
+                        className="w-10 h-10 flex items-center justify-center text-ndp-text-dim hover:text-ndp-text hover:bg-white/5 rounded-lg transition-colors"
                         title={t('common.configure')}
+                        aria-label={t('common.configure')}
                       >
                         <Pencil className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => toggleProvider(provider.id)}
-                        className="p-2 text-ndp-text-dim hover:text-ndp-text hover:bg-white/5 rounded-lg transition-colors"
+                        className="w-10 h-10 flex items-center justify-center text-ndp-text-dim hover:text-ndp-text hover:bg-white/5 rounded-lg transition-colors"
                         title={enabled ? t('common.disable') : t('common.enable')}
+                        aria-label={enabled ? t('common.disable') : t('common.enable')}
                       >
                         <Power className={clsx('w-4 h-4', enabled && 'text-ndp-success')} />
                       </button>
                     </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Event Matrix */}
-      <div className="mt-8">
-        <h2 className="text-lg font-semibold text-ndp-text mb-2">{t('admin.notifications.matrix_title')}</h2>
-        <p className="text-xs text-ndp-text-dim mb-4">{t('admin.notifications.matrix_desc')}</p>
-
-        <div className="space-y-3">
-          {eventTypes.map((et) => (
-            <div key={et.key} className="card">
-              <div className="flex items-center gap-4 p-4">
-                <span className="text-sm text-ndp-text flex-1">{t(et.labelKey)}</span>
-                {providers.map((provider) => {
-                  const enabled = configs[provider.id]?.enabled ?? false;
-                  const active = matrix[et.key]?.[provider.id] ?? false;
-                  return (
-                    <button
-                      key={provider.id}
-                      onClick={() => enabled && toggleMatrix(et.key, provider.id)}
-                      disabled={!enabled}
-                      className={clsx(
-                        'px-3 py-1 rounded-lg text-xs font-medium transition-colors',
-                        !enabled ? 'opacity-30 cursor-not-allowed bg-white/5 text-ndp-text-dim' :
-                        active ? 'bg-ndp-accent/10 text-ndp-accent' : 'bg-white/5 text-ndp-text-dim hover:bg-white/10'
-                      )}
-                    >
-                      {t(provider.nameKey)}
-                    </button>
-                  );
-                })}
-              </div>
+                );
+              })}
             </div>
-          ))}
-        </div>
+          )}
+        </section>
+
+        {/* Event Matrix */}
+        <section>
+          <h2 className="admin-group-label">{t('admin.notifications.matrix_title')}</h2>
+          <div className="admin-group divide-y divide-white/[0.06]">
+            {eventTypes.map((et) => (
+              <div key={et.key} className="admin-row flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:gap-3">
+                <span className="text-sm text-ndp-text flex-1 min-w-0">{t(et.labelKey)}</span>
+                <div className="flex flex-wrap gap-1.5 sm:justify-end">
+                  {providers.map((provider) => {
+                    const enabled = configs[provider.id]?.enabled ?? false;
+                    const active = matrix[et.key]?.[provider.id] ?? false;
+                    return (
+                      <button
+                        key={provider.id}
+                        onClick={() => enabled && toggleMatrix(et.key, provider.id)}
+                        disabled={!enabled}
+                        aria-pressed={active}
+                        className={clsx(
+                          'min-h-[36px] px-3 rounded-lg text-xs font-medium transition-colors ring-1 ring-inset',
+                          !enabled ? 'opacity-30 cursor-not-allowed bg-white/[0.03] ring-white/[0.04] text-ndp-text-dim' :
+                          active ? 'bg-ndp-accent/10 ring-ndp-accent/30 text-ndp-accent' : 'bg-white/[0.04] ring-white/[0.06] text-ndp-text-dim hover:bg-white/[0.08] hover:text-ndp-text'
+                        )}
+                      >
+                        {t(provider.nameKey)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="admin-hint">{t('admin.notifications.matrix_desc')}</p>
+        </section>
       </div>
 
       {/* Provider config modal */}

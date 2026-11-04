@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Check, Loader2, Plus, Film } from 'lucide-react';
 import { clsx } from 'clsx';
 import api, { posterUrl } from '@/lib/api';
-import { ACTIVE_REQUEST_STATUSES, type MediaStateCategory, type RequestStatus } from '@oscarr/shared';
+import { ACTIVE_REQUEST_STATUSES, type MediaStateCategory, type RequestStatus } from '@lemedia/shared';
 import { MediaStateBadge } from '@/utils/mediaStateDisplay';
 import type { TmdbMedia } from '@/types';
 

@@ -1,4 +1,4 @@
-import type { SeriesCatalog, SeriesSeason, TmdbSeason } from '@oscarr/shared';
+import type { SeriesCatalog, SeriesSeason, TmdbSeason } from '@lemedia/shared';
 import { fillOf } from './seasonFill';
 
 export function catalogSeasons(metadata: TmdbSeason[] | undefined, catalog: SeriesCatalog | null): SeriesSeason[] {

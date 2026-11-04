@@ -37,7 +37,7 @@ export function ConfirmModal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-md animate-fade-in p-4"
+      className="modal-overlay z-[60]"
       onMouseDown={onClose}
     >
       <div
@@ -45,31 +45,31 @@ export function ConfirmModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="card relative p-6 w-full max-w-sm border border-white/10 shadow-2xl"
+        className="modal-panel relative p-6 w-full max-w-sm"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-start gap-3 mb-4">
           <div
             className={clsx(
-              'w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0',
+              'w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0',
               tone === 'danger' ? 'bg-ndp-danger/15 text-ndp-danger' : 'bg-ndp-accent/15 text-ndp-accent',
             )}
           >
-            <AlertTriangle className="w-4 h-4" />
+            <AlertTriangle className="w-5 h-5" />
           </div>
-          <div className="min-w-0">
-            <h2 id={titleId} className="text-base font-semibold text-ndp-text">{title}</h2>
+          <div className="min-w-0 pr-6">
+            <h2 id={titleId} className="text-lg font-semibold text-ndp-text leading-snug">{title}</h2>
             {description && (
-              <p className="text-xs text-ndp-text-muted mt-1">{description}</p>
+              <p className="text-sm text-ndp-text-muted mt-1.5 leading-relaxed">{description}</p>
             )}
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 pt-1">
+        <div className="flex justify-end gap-2 pt-2">
           <button
             type="button"
             onClick={onClose}
-            className="btn-secondary !py-1.5 !px-3 !text-sm"
+            className="btn-secondary !py-2 !px-4 !text-sm"
           >
             {cancelLabel ?? t('common.cancel')}
           </button>
@@ -77,7 +77,7 @@ export function ConfirmModal({
             type="button"
             onClick={() => void handleConfirm()}
             className={clsx(
-              '!py-1.5 !px-3 !text-sm',
+              '!py-2 !px-4 !text-sm',
               tone === 'danger' ? 'btn-danger' : 'btn-primary',
             )}
           >

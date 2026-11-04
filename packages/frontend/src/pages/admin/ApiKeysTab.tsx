@@ -109,24 +109,24 @@ export function ApiKeysTab() {
       }
     >
       {reveal && (
-        <div className="card border border-amber-500/30 bg-amber-500/5 p-4 mb-4">
+        <div className="rounded-xl bg-amber-500/[0.06] ring-1 ring-inset ring-amber-500/25 p-4 mb-6">
           <div className="flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-amber-300 flex-shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
-              <p className="font-semibold text-amber-200 mb-1">
+              <p className="text-sm font-semibold text-amber-200 mb-1 break-words">
                 {t('admin.api_keys.created_warning_title', { name: reveal.name })}
               </p>
-              <p className="text-xs text-amber-100/80 mb-3">
+              <p className="text-xs text-amber-100/80 leading-relaxed mb-3">
                 {t('admin.api_keys.created_warning')}
               </p>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 min-w-0 truncate font-mono text-xs bg-black/40 px-3 py-2 rounded border border-white/10 text-ndp-text">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                <code className="flex-1 min-w-0 break-all font-mono text-xs leading-relaxed bg-black/40 px-3 py-2.5 rounded-lg ring-1 ring-inset ring-white/[0.08] text-ndp-text select-all">
                   {reveal.key}
                 </code>
                 <button
                   type="button"
                   onClick={handleCopy}
-                  className="btn-secondary inline-flex items-center gap-1.5 !px-3 !py-2 text-xs"
+                  className="btn-secondary inline-flex items-center justify-center gap-1.5 !px-4 !py-2 min-h-[40px] text-sm flex-shrink-0"
                 >
                   <Copy size={14} />
                   {copied ? t('admin.api_keys.copied') : t('admin.api_keys.copy')}
@@ -135,7 +135,7 @@ export function ApiKeysTab() {
               <button
                 type="button"
                 onClick={() => setReveal(null)}
-                className="mt-3 text-xs text-amber-200 hover:text-amber-100 underline"
+                className="mt-2 -ml-1 px-1 min-h-[40px] text-xs font-medium text-amber-200 hover:text-amber-100 underline underline-offset-2"
               >
                 {t('admin.api_keys.dismiss_reveal')}
               </button>
@@ -145,9 +145,9 @@ export function ApiKeysTab() {
       )}
 
       {showForm && (
-        <form onSubmit={handleCreate} className="card p-4 mb-4 flex flex-col sm:flex-row sm:items-end gap-3">
-          <div className="flex-1">
-            <label htmlFor="api-key-name" className="text-xs uppercase tracking-wider font-semibold text-ndp-text-dim mb-1.5 block">
+        <form onSubmit={handleCreate} className="admin-group p-4 mb-6 flex flex-col sm:flex-row sm:items-end gap-3">
+          <div className="flex-1 min-w-0">
+            <label htmlFor="api-key-name" className="admin-group-label block !px-0">
               {t('admin.api_keys.new_label')}
             </label>
             <input
@@ -163,52 +163,58 @@ export function ApiKeysTab() {
           </div>
           <div className="flex gap-2">
             <button
-              type="submit"
-              disabled={creating || !newName.trim()}
-              className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {creating ? t('admin.api_keys.creating') : t('admin.api_keys.create_submit')}
-            </button>
-            <button
               type="button"
               onClick={() => { setShowForm(false); setNewName(''); }}
-              className="btn-secondary"
+              className="btn-secondary flex-1 sm:flex-none"
             >
               {t('common.cancel')}
+            </button>
+            <button
+              type="submit"
+              disabled={creating || !newName.trim()}
+              className="btn-primary flex-1 sm:flex-none disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {creating ? t('admin.api_keys.creating') : t('admin.api_keys.create_submit')}
             </button>
           </div>
         </form>
       )}
 
       {!loading && keys.length === 0 && !reveal && (
-        <div className="card p-8 text-center">
-          <KeyRound className="w-10 h-10 text-ndp-text-dim mx-auto mb-3" />
+        <div className="admin-group px-6 py-10 text-center">
+          <div className="admin-icon-tile mx-auto mb-3 !w-10 !h-10 text-ndp-text-dim">
+            <KeyRound className="w-5 h-5" />
+          </div>
           <p className="text-sm text-ndp-text-muted">{t('admin.api_keys.empty')}</p>
         </div>
       )}
 
       {keys.length > 0 && (
-        <div className="space-y-2">
+        <div className="admin-group divide-y divide-white/[0.06]">
           {keys.map((k) => (
-            <div key={k.id} className="card p-4 flex items-center gap-4">
-              <KeyRound className="w-4 h-4 text-ndp-text-dim flex-shrink-0" />
+            <div key={k.id} className="admin-row">
+              <div className="admin-icon-tile text-ndp-text-muted">
+                <KeyRound className="w-4 h-4" />
+              </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-ndp-text truncate">{k.name}</p>
+                <p className="text-sm font-medium text-ndp-text truncate">{k.name}</p>
                 <p className="text-xs text-ndp-text-dim font-mono truncate">{k.prefix}…</p>
+                {/* Phones: usage metadata moves under the name instead of a right-hand column. */}
+                <p className="sm:hidden text-[11px] text-ndp-text-dim mt-0.5 truncate">{lastUsedLabel(k.lastUsedAt)}</p>
               </div>
               <div className="hidden sm:block text-right flex-shrink-0">
                 <p className="text-xs text-ndp-text-muted">{lastUsedLabel(k.lastUsedAt)}</p>
-                <p className="text-[10px] text-ndp-text-dim">
+                <p className="text-[11px] text-ndp-text-dim mt-0.5">
                   {t('admin.api_keys.created', { date: formatDate(k.createdAt) ?? '' })}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setRevokeTarget(k)}
-                className="text-ndp-text-dim hover:text-ndp-danger hover:bg-ndp-danger/10 p-2 rounded-lg transition-colors"
+                className="w-10 h-10 -mr-2 flex items-center justify-center flex-shrink-0 rounded-lg text-ndp-text-dim hover:text-ndp-danger hover:bg-ndp-danger/10 transition-colors"
                 aria-label={t('admin.api_keys.revoke')}
               >
-                <Trash2 size={14} />
+                <Trash2 size={16} />
               </button>
             </div>
           ))}

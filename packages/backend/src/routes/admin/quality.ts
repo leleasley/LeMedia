@@ -142,7 +142,7 @@ export async function qualityRoutes(app: FastifyInstance) {
     return { created };
   });
 
-  // Auto-map every available Radarr/Sonarr quality profile to one of the seeded Oscarr
+  // Auto-map every available Radarr/Sonarr quality profile to one of the seeded LeMedia
   // tiers based on a simple name-matching heuristic. Idempotent — skips mappings that
   // already exist (same option/service/profile triplet). Used by the install wizard's
   // Defaults step to close the loop after seeding the quality tiers.
@@ -151,7 +151,7 @@ export async function qualityRoutes(app: FastifyInstance) {
     const { parseServiceConfig } = await import('../../utils/services.js');
 
     const options = await prisma.qualityOption.findMany();
-    if (options.length === 0) return { created: 0, scanned: 0, note: 'No quality options to map against — seed them first.' };
+    if (options.length === 0) return { created: 0, scanned: 0, note: 'No quality options to map against, seed them first.' };
     const services = await prisma.service.findMany({
       where: { type: { in: ['radarr', 'sonarr'] }, enabled: true },
     });

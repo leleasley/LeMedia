@@ -14,7 +14,7 @@ export function AdminJumpButton() {
 
   const inAdmin = location.pathname.startsWith('/admin');
   const Icon = inAdmin ? Home : Shield;
-  const label = inAdmin ? t('admin.back_to_app', 'Retour Oscarr') : t('nav.admin');
+  const label = inAdmin ? t('admin.back_to_app', 'Retour LeMedia') : t('nav.admin');
 
   return (
     <Tooltip label={label}>

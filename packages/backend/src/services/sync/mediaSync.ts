@@ -7,6 +7,8 @@ import { logEvent } from '../../utils/logEvent.js';
 import type { SyncResult } from './helpers.js';
 import { sendAvailabilityNotifications } from './helpers.js';
 import { isTmdbMediaTypeConflict, mergeTvPlaceholderInto, cascadeRequestsForCategory } from '../mediaService.js';
+import { transitionRequestStatus } from '../requestStatusTransition.js';
+import { selectVanished } from './vanished.js';
 import type { Media } from '@prisma/client';
 
 /** Every enabled instance, not just the default: requests are dispatched to any of them.
@@ -56,6 +58,9 @@ async function syncOneInstance(
 
   try {
     const allMedia = await client.getAllMedia();
+
+    // Safety net for titles removed from the *arr when the webhook didn't tell us.
+    await reconcileVanished(client, serviceId, serviceType, allMedia);
 
     let filtered = allMedia;
     if (since) {
@@ -161,10 +166,85 @@ async function syncOneInstance(
   return { added, updated, errors, duration, reached };
 }
 
+/**
+ * Detect titles that were removed from the *arr.
+ *
+ * The webhook normally reports deletions, but if it doesn't fire — instance down, webhook
+ * misconfigured, proxy hiccup — the title stays "available" in LeMedia forever, and the user is
+ * told they already have a film they no longer do. The sync already holds the instance's entire
+ * library in memory (`getAllMedia()`), so comparing it against our own rows costs no extra *arr
+ * call: anything we own, that has an *arr id, and that the instance no longer lists, is gone.
+ */
+async function reconcileVanished(
+  client: ArrClient,
+  serviceId: number,
+  serviceType: string,
+  allMedia: ArrMediaItem[],
+): Promise<number> {
+  const arrIdField = arrIdFieldForClient(client); // 'radarrId' | 'sonarrId'
+  const presentArrIds = new Set(
+    allMedia.map((m) => m.serviceMediaId).filter((id): id is number => Number.isFinite(id)),
+  );
+
+  // Only rows this instance owns: an id from another instance is that one's business, and a row
+  // with no *arr id was never confirmed to be in the library.
+  // A title the service still lists under the same TMDB id is not gone, even when its internal id
+  // changed or the sync refused the match as an identity conflict; that row is left for an admin.
+  const presentTmdbIds = new Set(
+    allMedia.map((m) => m.tmdbId).filter((id): id is number => typeof id === 'number' && id > 0),
+  );
+  const owned = (await prisma.media.findMany({
+    where: { mediaType: client.mediaType, serviceId, [arrIdField]: { not: null } },
+    select: { id: true, title: true, tmdbId: true, radarrId: true, sonarrId: true },
+  })).filter((row) => !presentTmdbIds.has(row.tmdbId));
+  if (owned.length === 0) return 0;
+
+  const decision = selectVanished(owned, presentArrIds, arrIdField);
+  if (decision.resetSuspected) {
+    logEvent(
+      'warn',
+      'Sync',
+      `${serviceType}: ${owned.filter((row) => {
+        const arrId = arrIdField === 'radarrId' ? row.radarrId : row.sonarrId;
+        return arrId != null && !presentArrIds.has(arrId);
+      }).length} of ${owned.length} tracked titles are absent from the service, `
+      + `looks like a library reset rather than deletions, so nothing was marked missing. Re-sync if needed.`,
+    );
+    return 0;
+  }
+  const vanished = decision.vanished;
+  if (vanished.length === 0) return 0;
+
+  for (const row of vanished) {
+    await prisma.media.update({
+      where: { id: row.id },
+      data: { statusCategory: 'UNAVAILABLE', availableAt: null, [arrIdField]: null },
+    }).catch((err) => {
+      logEvent('debug', 'Sync', `Failed to mark "${row.title}" as missing: ${err}`);
+    });
+    // In-flight requests for a title the service no longer holds — same treatment the delete
+    // webhook gives them, so the user can re-request it straight away.
+    await transitionRequestStatus(
+      { requestId: undefined, from: undefined, to: 'deleted', why: 'sync-detected-removed-from-service' },
+      () => prisma.mediaRequest.updateMany({
+        where: { mediaId: row.id, status: { in: ['approved', 'processing'] } },
+        data: { status: 'deleted' },
+      }),
+    ).catch(() => {});
+  }
+
+  logEvent(
+    'info',
+    'Sync',
+    `${serviceType}: ${vanished.length} title(s) removed from the service were marked missing `
+    + `(webhook did not report them)`,
+  );
+  return vanished.length;
+}
+
 /** Single bulk query replaces one findUnique/findFirst per item. Returns a Map keyed by the
  *  externalId the service uses — tmdbId for movies, tvdbId (or -(tmdbId) legacy placeholder)
- *  for TV. Absent keys = no existing row → caller creates. */
-async function bulkFetchExisting(
+ *  for TV. Absent keys = no existing row → caller creates. */async function bulkFetchExisting(
   mediaType: 'movie' | 'tv',
   items: ArrMediaItem[],
   catalog: ArrMediaItem[],

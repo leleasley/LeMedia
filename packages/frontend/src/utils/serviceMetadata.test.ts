@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ServiceMetadata, TmdbMedia } from '@oscarr/shared';
+import type { ServiceMetadata, TmdbMedia } from '@lemedia/shared';
 import { detailWithServiceMetadata } from './serviceMetadata';
 
 const tmdb: TmdbMedia = { id: 60572, name: 'TMDB Pokémon', overview: 'TMDB description', poster_path: '/tmdb.jpg',

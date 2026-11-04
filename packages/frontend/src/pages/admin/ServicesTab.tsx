@@ -33,7 +33,7 @@ export function ServicesTab() {
 
   // Pull the security-flag map (plaintext / undecryptable per service) so each row can
   // show an inline warning. Same data source as the global banner; we listen for the
-  // `oscarr:service-saved` event so it refreshes the second a row is re-saved.
+  // `lemedia:service-saved` event so it refreshes the second a row is re-saved.
   const refreshFlags = useCallback(async () => {
     try {
       const { data } = await api.get<{ services: Array<{ id: number; reason: FlagReason }> }>(
@@ -67,19 +67,21 @@ export function ServicesTab() {
       title={t('admin.tab.services')}
       count={services.length}
       actions={
-        <button onClick={() => { setEditingService(null); setShowModal(true); }} className="btn-primary flex items-center gap-2 text-sm px-4 py-2 rounded-xl">
+        <button onClick={() => { setEditingService(null); setShowModal(true); }} className="btn-primary flex items-center gap-1.5 text-sm px-4 py-2 min-h-[40px]">
           <Plus className="w-4 h-4" /> {t('common.add')}
         </button>
       }
     >
       {services.length === 0 ? (
-        <div className="card p-12 text-center">
-          <Server className="w-12 h-12 text-ndp-text-dim mx-auto mb-4" />
-          <p className="text-ndp-text-muted">{t('admin.services.no_services')}</p>
-          <p className="text-sm text-ndp-text-dim mt-1">{t('admin.services.no_services_help')}</p>
+        <div className="admin-group px-6 py-10 text-center">
+          <div className="admin-icon-tile w-10 h-10 mx-auto mb-3 text-ndp-text-dim">
+            <Server className="w-5 h-5" />
+          </div>
+          <p className="text-sm font-medium text-ndp-text">{t('admin.services.no_services')}</p>
+          <p className="text-xs text-ndp-text-dim mt-1">{t('admin.services.no_services_help')}</p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="admin-group divide-y divide-white/[0.06]">
           {services.map((service) => (
             <ServiceRow
               key={service.id}
@@ -99,20 +101,20 @@ export function ServicesTab() {
       )}
 
       {confirmDelete !== null && createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
-          <div className="card p-6 max-w-sm w-full mx-4 shadow-2xl">
-            <h3 className="text-lg font-bold text-ndp-text mb-2">{t('admin.danger.confirm_title')}</h3>
+        <div className="modal-overlay z-50">
+          <div className="modal-panel px-5 pt-6 pb-5 sm:p-6 max-w-sm w-full">
+            <h3 className="text-base font-semibold text-ndp-text mb-1.5">{t('admin.danger.confirm_title')}</h3>
             <p className="text-sm text-ndp-text-muted mb-6">
               {t('admin.services.confirm_delete', { name: services.find((s) => s.id === confirmDelete)?.name })}
             </p>
-            <div className="flex gap-3">
-              <button onClick={() => setConfirmDelete(null)} className="btn-secondary text-sm flex-1">
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setConfirmDelete(null)} className="btn-secondary text-sm px-4 py-2">
                 {t('common.cancel')}
               </button>
               <button
                 onClick={() => handleDeleteConfirmed(confirmDelete)}
                 disabled={deleting}
-                className="btn-danger text-sm flex-1 flex items-center justify-center gap-2"
+                className="btn-danger text-sm px-4 py-2 flex items-center justify-center gap-2"
               >
                 {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                 {t('common.delete')}

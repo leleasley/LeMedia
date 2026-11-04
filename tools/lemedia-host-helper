@@ -1,0 +1,239 @@
+#!/usr/bin/env python3
+"""LeMedia host helper: the only thing LeMedia's SSH key can run on your Docker host.
+
+LeMedia (Admin -> Radarr & Sonarr -> Settings) gives you a one-line installer that puts this
+file at /usr/local/bin/lemedia-host-helper and adds LeMedia's key to authorized_keys as:
+
+    restrict,command="/usr/local/bin/lemedia-host-helper" ssh-ed25519 AAAA... lemedia-host-helper
+
+so that key can run nothing else. LeMedia sends one of these as the SSH command:
+
+    ping
+    containers
+    restart <app>
+    update <app> <tag>    pull <image repo>:<tag> (or @sha256:<digest>) and recreate (Radarr/Sonarr/Prowlarr)
+    pull <app>            pull the image the compose file already names and recreate (Zurg)
+    logs <app> [lines]
+
+<app> must be listed in /etc/lemedia-host-helper.json, e.g.
+
+    {"apps": {"sonarr": {}, "radarr": {}, "prowlarr": {}, "zurg": {"mode": "pull"}}}
+
+Per app you can set "container" (if the container isn't named like the app) and "mode"
+("tag" = update to an exact image tag, "pull" = re-pull the current tag, "none" = restart and
+logs only). Everything else (compose file, project, image) is read from the container's own
+Docker Compose labels, so nothing needs editing. Containers not started by Docker Compose can
+be restarted and read, but not updated.
+
+Updates back up the compose file first and put it back if the container doesn't come up.
+Every reply is a single JSON object on stdout.
+"""
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+
+CONFIG = "/etc/lemedia-host-helper.json"
+DEFAULT_APPS = {"sonarr": {}, "radarr": {}, "prowlarr": {}, "zurg": {"mode": "pull"}}
+TAG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+DIGEST_RE = re.compile(r"^sha256:[a-f0-9]{64}$")
+LOG = "/var/log/lemedia-host-helper.log"
+VERSION = 3
+
+
+def out(obj, code=0):
+    print(json.dumps(obj))
+    sys.exit(code)
+
+
+def log(line):
+    try:
+        with open(LOG, "a") as fh:
+            fh.write(f"{datetime.now(timezone.utc).isoformat()} {line}\n")
+    except OSError:
+        pass
+
+
+def run(args, timeout=600):
+    p = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+    return p.returncode, (p.stdout or "") + (p.stderr or "")
+
+
+def load_apps():
+    try:
+        with open(CONFIG) as fh:
+            apps = json.load(fh).get("apps")
+        return apps if isinstance(apps, dict) and apps else DEFAULT_APPS
+    except FileNotFoundError:
+        return DEFAULT_APPS
+    except Exception as exc:  # a broken config must not widen access
+        out({"ok": False, "error": f"bad {CONFIG}: {exc}"}, 1)
+
+
+APPS = load_apps()
+
+
+def app_arg(value):
+    if value not in APPS:
+        out({"ok": False, "error": f"{value!r} is not allowed (add it to {CONFIG})"}, 2)
+    return value
+
+
+def container_of(app):
+    return str(APPS[app].get("container") or app)
+
+
+def inspect_raw(name):
+    code, text = run(["docker", "inspect", name], 30)
+    return json.loads(text)[0] if code == 0 else None
+
+
+def inspect(app):
+    d = inspect_raw(container_of(app))
+    if not d:
+        return {"name": app, "container": container_of(app), "exists": False}
+    st = d.get("State") or {}
+    labels = (d.get("Config") or {}).get("Labels") or {}
+    image = (d.get("Config") or {}).get("Image") or ""
+    return {
+        "name": app, "container": container_of(app), "exists": True, "image": image, "imageId": d.get("Image"),
+        "status": st.get("Status"), "running": st.get("Running"), "health": (st.get("Health") or {}).get("Status"),
+        "startedAt": st.get("StartedAt"), "restartCount": d.get("RestartCount"),
+        "compose": bool(labels.get("com.docker.compose.project")),
+        "service": labels.get("com.docker.compose.service"),
+        "mode": APPS[app].get("mode", "tag"),
+    }
+
+
+def compose_of(app):
+    """(compose base command, compose file, service) from the container's own labels."""
+    d = inspect_raw(container_of(app))
+    if not d:
+        out({"ok": False, "error": f"container {container_of(app)} not found"}, 1)
+    labels = (d.get("Config") or {}).get("Labels") or {}
+    project = labels.get("com.docker.compose.project")
+    files = [f for f in str(labels.get("com.docker.compose.project.config_files") or "").split(",") if f]
+    workdir = labels.get("com.docker.compose.project.working_dir")
+    service = labels.get("com.docker.compose.service")
+    if not (project and files and workdir and service) or not all(os.path.isfile(f) for f in files):
+        out({"ok": False, "error": f"{container_of(app)} wasn't started by Docker Compose (or its compose file moved), so it can't be updated from here"}, 1)
+    base = ["docker", "compose", "-p", project, "--project-directory", workdir]
+    for f in files:
+        base += ["-f", f]
+    # The service's image line lives in one of the files; find which.
+    target = next((f for f in files if re.search(rf"^\s+{re.escape(service)}:\s*(#.*)?$", open(f).read(), re.M)), files[0])
+    return base, target, service, (d.get("Config") or {}).get("Image") or ""
+
+
+def rewrite_image(text, service, ref):
+    """Replace the image: line inside one compose service block, and nothing else."""
+    lines = text.splitlines(keepends=True)
+    result, svc_indent, done = [], None, False
+    for line in lines:
+        s = line.strip()
+        indent = len(line) - len(line.lstrip())
+        if svc_indent is not None and s and not s.startswith("#") and indent <= svc_indent:
+            svc_indent = None  # next sibling key: left the service block
+        if svc_indent is None and not done and re.match(rf"^{re.escape(service)}:\s*(#.*)?$", s) and indent > 0:
+            svc_indent = indent
+        elif svc_indent is not None and not done and re.match(r"^image:\s*\S+", s):
+            result.append(f"{line[:indent]}image: {ref}\n")
+            done = True
+            continue
+        result.append(line)
+    if not done:
+        raise ValueError(f"no image line for {service}")
+    return "".join(result)
+
+
+def repo_of(image):
+    """lscr.io/linuxserver/sonarr:develop or ...@sha256:... -> lscr.io/linuxserver/sonarr"""
+    image = image.split("@", 1)[0]
+    last = image.rsplit("/", 1)[-1]
+    return image[: len(image) - len(last)] + last.split(":", 1)[0]
+
+
+def wait_healthy(app, seconds=240):
+    deadline = time.time() + seconds
+    info = inspect(app)
+    while time.time() < deadline and (not info.get("running") or info.get("health") not in (None, "healthy")):
+        time.sleep(5)
+        info = inspect(app)
+    return info
+
+
+def main():
+    parts = (os.environ.get("SSH_ORIGINAL_COMMAND") or " ".join(sys.argv[1:])).split()
+    if not parts:
+        out({"ok": False, "error": "no command"}, 2)
+    cmd, args = parts[0], parts[1:]
+    if cmd == "ping":
+        code, _ = run(["docker", "version", "--format", "{{.Server.Version}}"], 20)
+        out({"ok": code == 0, "host": os.uname().nodename, "version": VERSION, "apps": sorted(APPS),
+             **({} if code == 0 else {"error": "docker isn't reachable for this user"})})
+    if cmd == "containers":
+        out({"ok": True, "containers": [inspect(a) for a in APPS]})
+    if cmd == "logs":
+        app = app_arg(args[0] if args else "")
+        lines = max(1, min(2000, int(args[1]) if len(args) > 1 and args[1].isdigit() else 300))
+        code, text = run(["docker", "logs", "--tail", str(lines), "--timestamps", container_of(app)], 30)
+        out({"ok": code == 0, "app": app, "lines": text.splitlines()[-lines:]})
+    if cmd == "restart":
+        app = app_arg(args[0] if args else "")
+        log(f"restart {app}")
+        code, text = run(["docker", "restart", "-t", "30", container_of(app)], 120)
+        out({"ok": code == 0, "app": app, "detail": text.strip()[-500:], "container": inspect(app)})
+    if cmd in ("update", "pull"):
+        app = app_arg(args[0] if args else "")
+        mode = APPS[app].get("mode", "tag")
+        if cmd == "update" and mode != "tag":
+            out({"ok": False, "error": f"{app} is set to mode {mode!r}, not exact-tag updates"}, 2)
+        if cmd == "pull" and mode != "pull":
+            out({"ok": False, "error": f"{app} is set to mode {mode!r}, not pull"}, 2)
+        base, compose, service, image = compose_of(app)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        backup = f"{compose}.lemedia-{stamp}.bak"
+        shutil.copy2(compose, backup)
+        with open(compose) as fh:
+            before_text = fh.read()
+        before_id = inspect(app).get("imageId")
+        if cmd == "update":
+            if len(args) != 2 or not (TAG_RE.match(args[1]) or DIGEST_RE.match(args[1])):
+                out({"ok": False, "error": "usage: update <app> <tag|sha256:digest>"}, 2)
+            # A digest pins an exact earlier image (used for roll back).
+            ref = f"{repo_of(image)}@{args[1]}" if DIGEST_RE.match(args[1]) else f"{repo_of(image)}:{args[1]}"
+            log(f"update {app} -> {ref}")
+            code, text = run(["docker", "pull", ref], 900)
+            if code != 0:
+                out({"ok": False, "error": f"pull failed: {text.strip()[-400:]}"}, 1)
+            with open(compose, "w") as fh:
+                fh.write(rewrite_image(before_text, service, ref))
+        else:
+            ref = image
+            log(f"pull {app} ({image})")
+            code, text = run(base + ["pull", service], 900)
+            if code != 0:
+                out({"ok": False, "error": f"pull failed: {text.strip()[-400:]}"}, 1)
+        code, text = run(base + ["up", "-d", service], 600)
+        info = wait_healthy(app) if code == 0 else {}
+        if code != 0 or not info.get("running") or info.get("health") not in (None, "healthy"):
+            if cmd == "update":
+                with open(compose, "w") as fh:
+                    fh.write(before_text)
+                run(base + ["up", "-d", service], 600)
+            out({"ok": False, "error": f"{app} didn't come back healthy{'; compose file restored' if cmd == 'update' else ''}: {text.strip()[-300:]}", "backup": backup}, 1)
+        out({"ok": True, "app": app, "image": ref, "changed": info.get("imageId") != before_id, "backup": backup, "container": info})
+    out({"ok": False, "error": f"unknown command {cmd!r}"}, 2)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as exc:  # never leak a traceback over SSH
+        out({"ok": False, "error": str(exc)[:500]}, 1)

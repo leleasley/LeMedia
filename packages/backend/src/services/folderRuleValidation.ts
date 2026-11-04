@@ -4,7 +4,7 @@ import {
   isCriterionField, criterionIdOf, CRITERION_OPERATORS,
   RULE_MEDIA_TYPES, RULE_SERIES_TYPES,
   type RuleOperator,
-} from '@oscarr/shared';
+} from '@lemedia/shared';
 import { checkRuleService } from './folderRules.js';
 import { createServiceTagClient, getServiceDefinition, findServiceTypeForMedia } from '../providers/index.js';
 import { getServiceById } from '../utils/services.js';

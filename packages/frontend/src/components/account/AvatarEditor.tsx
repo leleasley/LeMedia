@@ -106,7 +106,7 @@ function renderDataUri(opts: AvatarOptions, seed: string): string {
 }
 
 /** Re-render a saved avatar config to a data URI without opening the editor. Used when the user
- *  toggles back to "Oscarr" after switching to another source — restores the previous look from
+ *  toggles back to "LeMedia" after switching to another source — restores the previous look from
  *  the persisted config instead of forcing a re-edit. */
 export function renderDicebearAvatar(seed: string, options: AvatarOptions): string {
   return renderDataUri(options, seed);
@@ -192,7 +192,7 @@ export default function AvatarEditor({ initialSeed, initialOptions, onCancel, on
             {t('account.avatar.editor.title', 'Personnalise ton avatar')}
           </h3>
           <p className="text-xs text-ndp-text-dim mt-0.5">
-            {t('account.avatar.editor.hint', 'Choisis chaque trait — preview en direct, save quand t’es satisfait.')}
+            {t('account.avatar.editor.hint', 'Choisis chaque trait, preview en direct, save quand t’es satisfait.')}
           </p>
         </div>
         <button
@@ -206,7 +206,7 @@ export default function AvatarEditor({ initialSeed, initialOptions, onCancel, on
       </div>
 
       <div className="border-t border-white/5 flex flex-col md:flex-row max-h-[60vh]">
-        {/* Column A — preview + identity (skin / background) + shuffle */}
+        {/* Column A, preview + identity (skin / background) + shuffle */}
         <div className="md:w-64 md:border-r border-white/5 p-5 space-y-4 flex-shrink-0">
           <div className="w-24 h-24 mx-auto rounded-2xl bg-white/5 ring-1 ring-white/10 flex items-center justify-center">
             <img src={mainPreview} alt="" className="w-full h-full p-1.5 object-contain" />
@@ -235,7 +235,7 @@ export default function AvatarEditor({ initialSeed, initialOptions, onCancel, on
           </div>
         </div>
 
-        {/* Column B — every trait select with its color picker */}
+        {/* Column B, every trait select with its color picker */}
         <div className="flex-1 min-w-0 overflow-y-auto p-5 space-y-4">
         <Row label={t('account.avatar.editor.section.eyes', 'Yeux')}>
           <Select options={ENUM('eyes')} value={opts.eyes} onChange={(v) => setOpt('eyes', v)} saving={saving} />
@@ -417,7 +417,7 @@ function Select({ options, value, onChange, saving, labelMap, className }: Reado
         disabled={saving}
         className="w-full appearance-none px-3 py-2 pr-9 rounded-lg bg-white/5 border border-white/10 text-sm text-ndp-text focus:outline-none focus:ring-2 focus:ring-ndp-accent/40 disabled:opacity-50 cursor-pointer"
       >
-        {!value && <option value="" disabled>—</option>}
+        {!value && <option value="" disabled>-</option>}
         {options.map((id) => (
           <option key={id} value={id}>{labelMap?.[id] ?? prettify(id)}</option>
         ))}

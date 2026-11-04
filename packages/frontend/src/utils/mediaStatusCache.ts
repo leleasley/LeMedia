@@ -1,4 +1,4 @@
-import type { MediaStateCategory, RequestStatus } from '@oscarr/shared';
+import type { MediaStateCategory, RequestStatus } from '@lemedia/shared';
 
 export interface MediaStatus {
   statusCategory: MediaStateCategory;

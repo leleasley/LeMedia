@@ -1,345 +1,63 @@
 name: Release
 
+# Builds the Docker image and pushes it to GitHub Container Registry
+# (ghcr.io/leleasley/lemedia). Runs on a version tag (v1.2.3) or by hand.
 on:
   workflow_dispatch:
     inputs:
-      tag:
-        description: "Image tag (e.g. 0.1.0). Leave empty to tag as 'latest' only."
+      version:
+        description: "Image tag (e.g. 1.0.0). Leave empty to tag as 'latest' only."
         required: false
         type: string
-      nightly:
-        description: "Push as :nightly (not :latest). Use for in-prod test builds."
-        required: false
-        type: boolean
-        default: false
   push:
     tags:
-      - "v*"
+      - 'v*'
 
 permissions:
   contents: read
+  packages: write
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: arediss/oscarr
+  IMAGE_NAME: leleasley/lemedia
 
 jobs:
-  # Build both platforms on the Mac mini self-hosted runner. arm64 builds natively (M-series),
-  # amd64 builds under QEMU emulation via Colima's binfmt — slower than a native amd64 host but
-  # still a net win over a low-spec native amd64 box because the M's CPU is faster in absolute.
-  # Matrix runs sequentially on a single runner; cache is namespaced per platform to avoid mixing.
-  build:
-    name: Build (${{ matrix.platform }})
-    permissions:
-      contents: read
-      packages: write
-    strategy:
-      matrix:
-        platform: [linux/amd64, linux/arm64]
-    runs-on: [self-hosted, macOS, ARM64]
+  build-push:
+    name: Build and push image
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-
-      # The runner service runs outside a GUI login session, so docker-credential-osxkeychain
-      # can't unlock the keychain (errSecInteractionNotAllowed / -25308) and `docker login` fails
-      # with "error storing credentials". Strip credsStore/credHelpers so login writes a base64
-      # token into config.json instead of the keychain. Idempotent; leaves the docker context
-      # (currentContext) untouched. No-op on Linux runners (no such config).
-      - name: Drop macOS keychain cred store (headless self-hosted runner)
-        run: |
-          cfg="${DOCKER_CONFIG:-$HOME/.docker}/config.json"
-          [ -f "$cfg" ] || exit 0
-          /usr/bin/python3 -c "import json,sys; p=sys.argv[1]; d=json.load(open(p)); d.pop('credsStore',None); d.pop('credHelpers',None); json.dump(d,open(p,'w'),indent=2)" "$cfg"
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@49b3bc8e6bdd4a60e6116a5414239cba5943d3cf # v3
-        with:
-          platforms: linux/amd64,linux/arm64
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
-      - name: Login to GHCR
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Platform slug
-        id: slug
-        run: echo "pair=$(echo '${{ matrix.platform }}' | tr '/' '-')" >> "$GITHUB_OUTPUT"
+      - name: Image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
+            type=raw,value=latest
 
-      - name: Build & push single-platform digest
-        id: build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+      - name: Build and push
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
-          platforms: ${{ matrix.platform }}
+          platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:build-${{ steps.slug.outputs.pair }}
-          cache-from: type=local,src=/tmp/docker-cache-${{ steps.slug.outputs.pair }}
-          cache-to: type=local,dest=/tmp/docker-cache-${{ steps.slug.outputs.pair }},mode=max
-
-  # Boot the bundled image end-to-end on amd64: healthcheck, static frontend, public API.
-  # Catches regressions from the esbuild externals list — a missing native in externals (bcrypt,
-  # bare-*, Prisma engines) only surfaces at runtime when the `require()` misses, not at build
-  # time. Gate the manifest on this so we never promote a broken bundle to :latest.
-  # Boot the bundled image end-to-end on arm64 (native on the Mac mini, no QEMU runtime cost):
-  # healthcheck, static frontend, public API. Catches regressions from the esbuild externals
-  # list — a missing native in externals (bcrypt, bare-*, Prisma engines) only surfaces at
-  # runtime when the require() misses, not at build time. Bundle issues are arch-independent
-  # so testing arm64 covers amd64 as well. Gate the manifest on this.
-  smoke:
-    name: Smoke test (arm64)
-    needs: build
-    permissions:
-      contents: read
-      packages: read
-    runs-on: [self-hosted, macOS, ARM64]
-    steps:
-      # See the build job: strip the macOS keychain cred store so headless `docker login` works.
-      - name: Drop macOS keychain cred store (headless self-hosted runner)
-        run: |
-          cfg="${DOCKER_CONFIG:-$HOME/.docker}/config.json"
-          [ -f "$cfg" ] || exit 0
-          /usr/bin/python3 -c "import json,sys; p=sys.argv[1]; d=json.load(open(p)); d.pop('credsStore',None); d.pop('credHelpers',None); json.dump(d,open(p,'w'),indent=2)" "$cfg"
-
-      - name: Login to GHCR
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Pull image
-        run: docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:build-linux-arm64
-
-      - name: Boot + probe
-        run: |
-          DATADIR=$(mktemp -d)
-          chmod 0777 "$DATADIR"
-          docker run -d --name oscarr-smoke \
-            -p 127.0.0.1:3456:3456 \
-            -v "$DATADIR:/data" \
-            -e JWT_SECRET=ci-smoke-boot-probe-0123456789abcdef \
-            -e SETUP_SECRET=ci-smoke-boot-probe-fedcba9876543210 \
-            -e OSCARR_SECRET_KEY=0000000000000000000000000000000000000000000000000000000000000000 \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:build-linux-arm64
-
-          # Wait up to 90s for the healthcheck (covers prisma migrate deploy on a fresh DB).
-          for i in $(seq 1 30); do
-            status=$(docker inspect -f '{{.State.Health.Status}}' oscarr-smoke 2>/dev/null || echo "starting")
-            echo "[$i/30] health=$status"
-            if [ "$status" = "healthy" ]; then break; fi
-            sleep 3
-          done
-          if [ "$status" != "healthy" ]; then
-            echo "::error::Container never became healthy"
-            docker logs oscarr-smoke | tail -80
-            exit 1
-          fi
-
-          # Probe three representative surfaces:
-          # - /api/setup/install-status: always-mounted (pre-auth, migration-safe)
-          # - /api/app/features: pre-auth public settings, exercises Prisma read
-          # - /: static frontend fallback (@fastify/static on FRONTEND_DIST)
-          set -e
-          curl -fsS http://127.0.0.1:3456/api/setup/install-status > /dev/null
-          curl -fsS http://127.0.0.1:3456/api/app/features | grep -q '"siteName"'
-          curl -fsS http://127.0.0.1:3456/ | grep -qi '<!doctype html'
-          echo "Smoke OK"
-
-      - name: Graceful shutdown check
-        run: |
-          # docker stop sends SIGTERM via tini. If tini/entrypoint forward correctly, node exits
-          # <10s. A process that ignores SIGTERM waits for the 10s docker kill timeout.
-          start=$(date +%s)
-          docker stop oscarr-smoke
-          elapsed=$(( $(date +%s) - start ))
-          echo "Shutdown took ${elapsed}s"
-          if [ "$elapsed" -ge 10 ]; then
-            echo "::error::Shutdown exceeded 10s — SIGTERM likely not propagated"
-            exit 1
-          fi
-
-      - name: Cleanup
-        if: always()
-        run: docker rm -f oscarr-smoke 2>/dev/null || true
-
-  # Trivy scan on the amd64 image (representative of both — image content is arch-independent
-  # for vuln scanning purposes). Runs on ubuntu-latest because the trivy-action is a Docker
-  # action (Linux-only) and the scan is lightweight enough to not warrant a self-hosted slot.
-  scan:
-    name: Trivy Scan
-    needs: build
-    permissions:
-      contents: read
-      packages: read
-      security-events: write
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Login to GHCR
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # master
-        with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:build-linux-amd64
-          format: sarif
-          output: trivy-results.sarif
-          severity: CRITICAL,HIGH
-          exit-code: "1"
-          ignore-unfixed: true
-          # Without this, sarif format builds an "all severities" report so GitHub Security
-          # can surface lower-severity findings, but the exit-code check then gates on the
-          # full report instead of the `severity:` filter — a MEDIUM-only image was failing.
-          limit-severities-for-sarif: true
-
-      - name: Upload Trivy results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v4
-        if: always()
-        with:
-          sarif_file: trivy-results.sarif
-
-  # Merge platform images into a single multi-arch manifest
-  manifest:
-    name: Create multi-arch manifest
-    needs: [build, scan, smoke]
-    permissions:
-      contents: read
-      packages: write
-    runs-on: ubuntu-latest
-    outputs:
-      digest: ${{ steps.manifest.outputs.digest }}
-      first_tag: ${{ steps.manifest.outputs.first_tag }}
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Login to GHCR
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Determine image tags
-        id: tags
-        # Tag logic:
-        # - Nightly runs (workflow_dispatch with nightly=true) → only push :nightly. No :latest,
-        #   no version alias. Lets the owner pull `:nightly` on their prod box for pre-release
-        #   verification without affecting users on :latest.
-        # - Stable tags (refs/tags/vX.Y.Z without '-') → push :latest + X + X.Y + X.Y.Z.
-        # - Pre-release tags (vX.Y.Z-rc.1, v0.1.0-beta, etc.) → push only the full version
-        #   (X.Y.Z-rc.1). No :latest alias — prevents rc from hijacking stable consumers.
-        # - workflow_dispatch with custom 'tag' input → push that tag plus :latest (legacy
-        #   behaviour for ad-hoc stable pushes).
-        run: |
-          TAGS=""
-          if [ "$INPUT_NIGHTLY" = "true" ]; then
-            TAGS="nightly"
-          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            VERSION="${GITHUB_REF#refs/tags/v}"
-            TAGS="${VERSION}"
-            if [[ "$VERSION" != *-* ]]; then
-              # Stable release only — roll out the aliases.
-              TAGS="${TAGS} latest"
-              MINOR="${VERSION%.*}"
-              if [ "$MINOR" != "$VERSION" ]; then
-                TAGS="${TAGS} ${MINOR}"
-                MAJOR="${MINOR%.*}"
-                if [ "$MAJOR" != "$MINOR" ]; then
-                  TAGS="${TAGS} ${MAJOR}"
-                fi
-              fi
-            fi
-          else
-            TAGS="latest"
-            if [ -n "$INPUT_TAG" ]; then
-              TAGS="${TAGS} ${INPUT_TAG}"
-            fi
-          fi
-          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
-        env:
-          INPUT_TAG: ${{ inputs.tag }}
-          INPUT_NIGHTLY: ${{ inputs.nightly }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-
-      - name: Create and push multi-arch manifest
-        id: manifest
-        run: |
-          SRC_AMD64="${REGISTRY}/${IMAGE_NAME}:build-linux-amd64"
-          SRC_ARM64="${REGISTRY}/${IMAGE_NAME}:build-linux-arm64"
-          FIRST_TAG=""
-          for TAG in $TAGS; do
-            FULL="${REGISTRY}/${IMAGE_NAME}:${TAG}"
-            echo "Creating manifest for ${FULL}"
-            docker buildx imagetools create -t "${FULL}" "${SRC_AMD64}" "${SRC_ARM64}"
-            if [ -z "$FIRST_TAG" ]; then FIRST_TAG="$TAG"; fi
-          done
-          # Capture the manifest digest for cosign sign + SBOM attach (immutable, unlike tags).
-          # Use buildx's own templating to extract the digest directly — no jq dependency on
-          # the runner. Format strings: {{.Manifest.Digest}} on imagetools inspect.
-          DIGEST=$(docker buildx imagetools inspect "${REGISTRY}/${IMAGE_NAME}:${FIRST_TAG}" --format '{{.Manifest.Digest}}')
-          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
-          echo "first_tag=${FIRST_TAG}" >> "$GITHUB_OUTPUT"
-        env:
-          TAGS: ${{ steps.tags.outputs.tags }}
-
-  # Supply-chain: generate SBOM + keyless-sign the pushed manifest with cosign. Separate job
-  # so a signing failure doesn't block the multi-arch manifest itself (but surfaces loudly).
-  # Uses GitHub's OIDC token — no long-lived secret to rotate.
-  sign:
-    name: SBOM + cosign sign
-    needs: manifest
-    permissions:
-      contents: write      # attach SBOM as a release asset (upload-release-assets)
-      packages: write
-      id-token: write      # cosign keyless signing
-      attestations: write  # attach SBOM as an attestation
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Login to GHCR
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install cosign
-        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1 (cosign 2.5.2)
-
-      - name: Generate SBOM (SPDX)
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
-        with:
-          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.manifest.outputs.first_tag || 'latest' }}
-          format: spdx-json
-          output-file: sbom.spdx.json
-
-      - name: Sign image + attach SBOM (keyless OIDC)
-        env:
-          COSIGN_EXPERIMENTAL: "1"
-          DIGEST: ${{ needs.manifest.outputs.digest }}
-        run: |
-          REF="${REGISTRY}/${IMAGE_NAME}@${DIGEST}"
-          echo "Signing ${REF}"
-          cosign sign --yes "${REF}"
-          cosign attach sbom --sbom sbom.spdx.json "${REF}"
-          cosign attest --yes --type spdxjson --predicate sbom.spdx.json "${REF}"
-
-      - name: Upload SBOM artifact
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
-        with:
-          name: sbom-spdx
-          path: sbom.spdx.json
-          retention-days: 90
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

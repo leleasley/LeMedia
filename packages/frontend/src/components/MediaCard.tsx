@@ -2,15 +2,16 @@ import { useNavigate } from 'react-router-dom';
 import MediaLink from './MediaLink';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Star, CheckCircle, Film, Tv, EyeOff } from 'lucide-react';
+import { Star, CheckCircle, Film, Tv, Plus, Loader2, EyeOff, Globe } from 'lucide-react';
 import { PosterRequestButton } from './PosterRequestButton';
 import api, { posterUrl } from '@/lib/api';
-import { type MediaStateCategory, type RequestStatus } from '@oscarr/shared';
+import { type MediaStateCategory, type RequestStatus } from '@lemedia/shared';
 import type { TmdbMedia } from '@/types';
 import { clsx } from 'clsx';
 import { useNsfwFilter } from '@/hooks/useNsfwFilter';
 import { MediaStateBadge } from '@/utils/mediaStateDisplay';
-import { toastApiError } from '@/utils/toast';
+import { toastApiError, showToast } from '@/utils/toast';
+import { languageCode, isForeignLanguage, languageName } from '@/utils/languageName';
 import { useFeatures } from '@/context/FeaturesContext';
 import { cardRequestAction } from '@/utils/cardRequestAction';
 import { invalidateMediaStatus } from '@/hooks/useMediaStatus';
@@ -34,6 +35,7 @@ export default function MediaCard({ media, className, availability, index = 0 }:
   const submitting = useRef(false);
   const { isNsfw } = useNsfwFilter();
   const [loaded, setLoaded] = useState(false);
+  const [imageFailed, setImageFailed] = useState(false);
   const [requesting, setRequesting] = useState(false);
   const [requested, setRequested] = useState(false);
   const [revealed, setRevealed] = useState(false);
@@ -47,6 +49,13 @@ export default function MediaCard({ media, className, availability, index = 0 }:
   const requestAction = cardRequestAction(availability, !featuresLoading && features.requestsEnabled, type);
   const showRequest = requestAction !== 'none';
 
+  // Foreign-titled films get a small language badge on the poster, so a foreign title is
+  // recognisable while scrolling rather than only after opening it. Native titles stay
+  // unmarked — a badge on every card would be noise.
+  const lang = media.original_language;
+  const foreignBadge = isForeignLanguage(lang) ? languageCode(lang) : '';
+  const langTitle = foreignBadge ? `${t('media.original_language')}: ${languageName(lang)}` : undefined;
+
   const handleRequest = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -57,6 +66,9 @@ export default function MediaCard({ media, className, availability, index = 0 }:
     try {
       await api.post('/requests', { tmdbId: media.id, mediaType: type });
       setRequested(true);
+      // Toast, not a modal: the card already flips to a check, and a toast lets the user keep
+      // scrolling and requesting without dismissing anything. Replaces any previous toast.
+      showToast(t('status.request_sent'), 'success');
       invalidateMediaStatus(media.id, type);
     } catch (err) {
       toastApiError(err, t('status.request_send_failed'));
@@ -73,14 +85,15 @@ export default function MediaCard({ media, className, availability, index = 0 }:
     // the whole problem.
     <div
       className={clsx(
-        'group relative flex-shrink-0 rounded-xl overflow-hidden will-change-transform transition-[transform,box-shadow] duration-300 hover:scale-105 hover:z-10 hover:shadow-2xl hover:shadow-black/50',
+        'group relative flex-shrink-0',
         className
       )}
     >
       <MediaLink to={link} className="block">
+      <div className="poster-frame will-change-transform group-hover:scale-[1.04] group-active:scale-[0.97]">
       {/* Poster */}
-      <div className="aspect-[2/3] bg-ndp-surface-light relative">
-        {media.poster_path ? (
+      <div className="aspect-[2/3] relative">
+        {media.poster_path && !imageFailed ? (
           <img
             src={posterUrl(media.poster_path, 'w342')}
             alt={title}
@@ -92,10 +105,12 @@ export default function MediaCard({ media, className, availability, index = 0 }:
             style={{ transitionDelay: loaded ? '0ms' : `${delay}ms` }}
             loading="lazy"
             onLoad={() => setLoaded(true)}
+            onError={() => setImageFailed(true)}
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-ndp-text-dim">
-            <Film className="w-10 h-10" />
+          <div className="w-full h-full flex flex-col items-center justify-center gap-2 px-3 text-center text-ndp-text-dim">
+            {type === 'movie' ? <Film className="w-8 h-8" /> : <Tv className="w-8 h-8" />}
+            <span className="text-xs font-medium text-ndp-text-muted line-clamp-3">{title}</span>
           </div>
         )}
         {nsfw && (
@@ -125,20 +140,36 @@ export default function MediaCard({ media, className, availability, index = 0 }:
         <span className="text-[10px] uppercase tracking-wider text-ndp-accent font-semibold mt-1">
           {type === 'movie' ? t('common.movie') : t('common.series')}
         </span>
+        {media.via_person ? (
+          <span className="text-[10px] text-white/70 truncate mt-0.5">
+            {t('search.via_person', { name: media.via_person })}
+          </span>
+        ) : null}
       </div>
 
-      {/* Top-left: media type badge (hidden on hover) */}
-      <div className="absolute top-2 left-2 bg-black/75 rounded-md p-1 transition-opacity duration-300 group-hover:opacity-0">
-        {type === 'movie' ? (
-          <Film className="w-3 h-3 text-white/80" />
-        ) : (
-          <Tv className="w-3 h-3 text-white/80" />
+      {/* Top-left: media type badge + original-language badge (hidden on hover) */}
+      <div className="absolute top-2 left-2 flex items-center gap-1 transition-opacity duration-300 group-hover:opacity-0">
+        <div className="bg-black/70 rounded-full p-1">
+          {type === 'movie' ? (
+            <Film className="w-3 h-3 text-white/80" />
+          ) : (
+            <Tv className="w-3 h-3 text-white/80" />
+          )}
+        </div>
+        {foreignBadge && (
+          <span
+            title={langTitle}
+            className="flex items-center gap-0.5 bg-black/70 rounded-full px-1.5 py-1 text-[10px] font-semibold text-white/90 leading-none"
+          >
+            <Globe className="w-2.5 h-2.5" />
+            {foreignBadge}
+          </span>
         )}
       </div>
 
       {/* Top-right: rating (hidden on hover) */}
       {media.vote_average > 0 && (
-        <div className="absolute top-2 right-2 flex items-center gap-1 bg-black/75 px-1.5 py-0.5 rounded-md transition-opacity duration-300 group-hover:opacity-0">
+        <div className="absolute top-2 right-2 flex items-center gap-1 bg-black/70 px-1.5 py-0.5 rounded-full transition-opacity duration-300 group-hover:opacity-0">
           <Star className="w-3 h-3 fill-ndp-gold text-ndp-gold" />
           <span className="text-xs font-medium text-white">{media.vote_average.toFixed(1)}</span>
         </div>
@@ -146,7 +177,7 @@ export default function MediaCard({ media, className, availability, index = 0 }:
 
       {/* Bottom-left: latest episode badge for TV */}
       {media.lastEpisodeInfo && type === 'tv' && (media.lastEpisodeInfo.season != null) && (media.lastEpisodeInfo.episode != null) && (
-        <div className="absolute bottom-2 left-2 px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-black/75 text-white transition-opacity duration-300 group-hover:opacity-0">
+        <div className="absolute bottom-2 left-2 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-black/70 text-white transition-opacity duration-300 group-hover:opacity-0">
           S{String(media.lastEpisodeInfo.season).padStart(2, '0')}E{String(media.lastEpisodeInfo.episode).padStart(2, '0')}
         </div>
       )}
@@ -157,9 +188,18 @@ export default function MediaCard({ media, className, availability, index = 0 }:
         mediaType={type}
         className="absolute bottom-2 right-2 transition-opacity duration-300 group-hover:opacity-0"
       />
+      </div>
+
+      {/* Caption, always visible, since touch screens never see the hover overlay. */}
+      <div className="mt-2 px-0.5">
+        <p className="text-[13px] font-medium text-ndp-text leading-snug truncate">{title}</p>
+        <p className="text-xs text-ndp-text-dim mt-0.5">
+          {[year, type === 'movie' ? t('common.movie') : t('common.series')].filter(Boolean).join(' · ')}
+        </p>
+      </div>
       </MediaLink>
 
-      {/* Quick request — rendered OUTSIDE the Link so the click never bubbles to the
+      {/* Quick request, rendered OUTSIDE the Link so the click never bubbles to the
        *  anchor. Visible only on hover (matches the rest of the overlay), positioned
        *  absolute so it overlays the top-right of the card. */}
       {showRequest && !requested && (
@@ -176,8 +216,8 @@ export default function MediaCard({ media, className, availability, index = 0 }:
 
 export function MediaCardSkeleton({ className }: Readonly<{ className?: string }>) {
   return (
-    <div className={clsx('flex-shrink-0 rounded-xl overflow-hidden', className || 'w-[140px] sm:w-[160px] lg:w-[180px]')}>
-      <div className="aspect-[2/3] skeleton" />
+    <div className={clsx('flex-shrink-0', className || 'w-[140px] sm:w-[160px] lg:w-[180px]')}>
+      <div className="aspect-[2/3] skeleton rounded-lg" />
       <div className="mt-2 space-y-1.5">
         <div className="skeleton h-3 w-3/4 rounded" />
         <div className="skeleton h-2.5 w-1/2 rounded" />

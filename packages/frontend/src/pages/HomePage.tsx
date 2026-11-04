@@ -5,6 +5,7 @@ import { backdropUrl } from '@/lib/api';
 import MediaRow from '@/components/MediaRow';
 import { PluginSlot } from '@/plugins/PluginSlot';
 import GenreRow from '@/components/GenreRow';
+import StreamingRow from '@/components/StreamingRow';
 import type { TmdbMedia } from '@/types';
 import { dbMediaToTmdbShape } from '@/utils/mediaMapper';
 import { buildDiscoverUrl } from '@/utils/tmdbDiscoverQuery';
@@ -17,6 +18,8 @@ import MediaLink from '@/components/MediaLink';
 /* ------------------------------------------------------------------ */
 
 const BUILTIN_ENDPOINTS: Record<string, string> = {
+  missing_movies: '/media/missing?type=movie',
+  missing_tv: '/media/missing?type=tv',
   recently_added: '/media/recent?limit=20',
   trending: '/tmdb/trending',
   popular_movies: '/tmdb/movies/popular',
@@ -35,6 +38,8 @@ const BUILTIN_HREF: Record<string, string> = {
 
 /* Force media_type for rows that need it */
 const BUILTIN_MEDIA_TYPE: Record<string, string> = {
+  missing_movies: 'movie',
+  missing_tv: 'tv',
   popular_movies: 'movie',
   popular_tv: 'tv',
   trending_anime: 'tv',
@@ -42,12 +47,15 @@ const BUILTIN_MEDIA_TYPE: Record<string, string> = {
 };
 
 const BUILTIN_TITLE_KEY: Record<string, string> = {
+  missing_movies: 'home.missing_movies',
+  missing_tv: 'home.missing_tv',
   recently_added: 'home.recently_added',
   trending: 'home.trending_week',
   popular_movies: 'home.popular_movies',
   popular_tv: 'home.popular_series',
   trending_anime: 'home.trending_anime',
   upcoming: 'home.coming_soon',
+  streaming: 'home.streaming',
 };
 
 /* ------------------------------------------------------------------ */
@@ -60,7 +68,11 @@ function BuiltinSection({ builtinKey, title, size }: Readonly<{ builtinKey: stri
   const endpoint = BUILTIN_ENDPOINTS[builtinKey] ?? null;
 
   const { data, loading } = useTmdbList<TmdbMedia>(endpoint, '', isRecent ? {
-    transform: (d: any) => (d || []).map(dbMediaToTmdbShape),
+    transform: (d: any) => {
+      const arr = Array.isArray(d) ? d : (d?.results || []);
+      if (!Array.isArray(arr)) return [];
+      try { return arr.map(dbMediaToTmdbShape); } catch { return []; }
+    },
   } : undefined);
 
   const displayTitle = title || t(BUILTIN_TITLE_KEY[builtinKey] ?? builtinKey);
@@ -69,8 +81,17 @@ function BuiltinSection({ builtinKey, title, size }: Readonly<{ builtinKey: stri
 
   const items = mediaType ? data.map(m => ({ ...m, media_type: mediaType })) : data;
 
-  /* recently_added: hide when empty & loaded (matches original behaviour) */
-  if (isRecent && !loading && items.length === 0) return null;
+  /* recently_added: always show on mobile so it's findable — empty state handled by MediaRow */
+  if (isRecent && !loading && items.length === 0) {
+    return (
+      <MediaRow
+        title={displayTitle}
+        media={[]}
+        loading={false}
+        href={href ?? undefined}
+      />
+    );
+  }
 
   return (
     <MediaRow
@@ -180,7 +201,7 @@ function HeroCarousel({ trending, loading }: Readonly<{ trending: TmdbMedia[]; l
               style={{ opacity: heroVisible ? 1 : 0 }}
             >
               <img
-                src={backdropUrl(hero.backdrop_path)}
+                src={backdropUrl(hero.backdrop_path, 'w1280')}
                 alt={heroTitle}
                 className="w-full h-full object-cover object-top"
               />
@@ -196,6 +217,10 @@ function HeroCarousel({ trending, loading }: Readonly<{ trending: TmdbMedia[]; l
           className="absolute inset-0 bg-ndp-bg transition-none"
           style={{ opacity: 0 }}
         />
+        {/* Colour bleed from the current hero artwork, kept faintly under the rows. */}
+        {!loading && hero?.backdrop_path && (
+          <img src={backdropUrl(hero.backdrop_path, 'w300')} alt="" aria-hidden className="absolute inset-0 w-full h-full object-cover blur-3xl scale-125 opacity-[0.12] pointer-events-none transition-opacity duration-700" />
+        )}
       </div>
 
       {/* Hero content area */}
@@ -218,10 +243,10 @@ function HeroCarousel({ trending, loading }: Readonly<{ trending: TmdbMedia[]; l
                 transform: heroVisible ? 'translateY(0)' : 'translateY(16px)',
               }}
             >
-              <span className="text-ndp-accent text-xs font-semibold uppercase tracking-widest mb-2 block">
+              <span className="inline-block mb-3 rounded-full bg-black/40 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-ndp-accent ring-1 ring-inset ring-white/10">
                 {t('home.trending_type', { type: heroType === 'movie' ? t('common.movie') : t('common.series') })}
               </span>
-              <h1 className="text-4xl sm:text-5xl font-extrabold text-white mb-3 leading-tight">
+              <h1 className="font-display-title text-[44px] sm:text-6xl lg:text-7xl text-white mb-3 line-clamp-2 [text-shadow:0_2px_24px_rgba(0,0,0,0.6)]">
                 {heroTitle}
               </h1>
               <div className="flex items-center gap-3 mb-4">
@@ -235,7 +260,7 @@ function HeroCarousel({ trending, loading }: Readonly<{ trending: TmdbMedia[]; l
                   {(hero.release_date || hero.first_air_date || '').slice(0, 4)}
                 </span>
               </div>
-              <p className="text-ndp-text-muted text-sm leading-relaxed line-clamp-3 max-w-lg mb-6">
+              <p className="text-white/75 text-sm leading-relaxed line-clamp-3 max-w-lg mb-6">
                 {hero.overview}
               </p>
               <div className="flex gap-3">
@@ -306,10 +331,11 @@ function DynamicHomePage({ sections }: Readonly<{ sections: HomepageSection[] }>
         {!enabledSections.some(s => s.builtinKey === 'hero') && <div className="h-8" />}
 
         {/* Content rows */}
-        <div className="relative space-y-10 pb-16 pt-8">
+        <div className="relative space-y-12 pb-16 pt-8">
           {enabledSections.map(section => {
             if (section.builtinKey === 'hero') return null; /* rendered above */
             if (section.builtinKey === 'genres') return <GenreRow key={section.id} />;
+            if (section.builtinKey === 'streaming') return <StreamingRow key={section.id} />;
             if (section.type === 'custom' && section.endpoint) {
               return (
                 <EndpointSection
@@ -342,7 +368,7 @@ function DynamicHomePage({ sections }: Readonly<{ sections: HomepageSection[] }>
             }
             return null;
           })}
-          {/* Plugin hook: home rows — always at the bottom */}
+          {/* Plugin hook: home rows, always at the bottom */}
           <PluginSlot hookPoint="home.rows" />
         </div>
       </div>
@@ -373,7 +399,7 @@ function FallbackHomePage() {
       {/* Scrollable content */}
       <div className="relative z-10">
         {/* Content rows - passes over the hero */}
-        <div className="relative space-y-10 pb-16 pt-8">
+        <div className="relative space-y-12 pb-16 pt-8">
           {loading && (
             <MediaRow title={t('home.recently_added')} media={[]} loading={true} />
           )}
@@ -385,6 +411,7 @@ function FallbackHomePage() {
           <MediaRow title={t('home.popular_series')} media={popularTv.map(m => ({ ...m, media_type: 'tv' }))} loading={loading} href="/category/tv-popular" />
           <MediaRow title={t('home.trending_anime')} media={trendingAnime.map(m => ({ ...m, media_type: 'tv' }))} loading={loading} href="/category/anime-trending" />
           <GenreRow />
+          <StreamingRow />
           {/* Plugin hook: home rows */}
           <PluginSlot hookPoint="home.rows" />
           <MediaRow title={t('home.coming_soon')} media={upcoming.map(m => ({ ...m, media_type: 'movie' }))} loading={loading} href="/category/movies-upcoming" />

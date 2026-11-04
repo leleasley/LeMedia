@@ -24,6 +24,29 @@ const PHASES = [
 ];
 const EXPECTED_DURATION_MS = 30_000;
 
+/** The defaults a new install needs, picked the way the old Defaults step pre-selected them:
+ *  the built-in quality options mapped onto the *arr profiles, and each *arr's first root
+ *  folder as the default. Best effort — anything missing can be set later in Admin. */
+async function applyDefaults() {
+  try {
+    const { data: options } = await api.get<unknown[]>('/admin/quality-options');
+    if (!Array.isArray(options) || options.length === 0) await api.post('/admin/quality-options/seed');
+    await api.post('/admin/quality-mappings/auto');
+  } catch { /* quality can be set up in Admin → Quality */ }
+  try {
+    const { data: services } = await api.get<{ id: number; type: string; enabled: boolean }[]>('/admin/services');
+    const firstFolder = async (type: string) => {
+      for (const svc of services.filter((s) => s.type === type && s.enabled)) {
+        const { data } = await api.get<{ path: string }[]>(`/admin/services/${svc.id}/rootfolders`).catch(() => ({ data: [] as { path: string }[] }));
+        if (data[0]?.path) return data[0].path;
+      }
+      return undefined;
+    };
+    const [movie, tv] = await Promise.all([firstFolder('radarr'), firstFolder('sonarr')]);
+    if (movie || tv) await api.put('/admin/settings', { defaultMovieFolder: movie, defaultTvFolder: tv });
+  } catch { /* folders can be set in Admin → Paths */ }
+}
+
 export default function SyncStep({ onComplete }: Readonly<Props>) {
   const { t } = useTranslation();
   const [running, setRunning] = useState(false);
@@ -41,6 +64,7 @@ export default function SyncStep({ onComplete }: Readonly<Props>) {
     setElapsed(0);
     startedAtRef.current = Date.now();
     try {
+      await applyDefaults();
       const { data } = await api.post('/setup/sync');
       if (data?.result) setResult(data.result);
       setProgress(100);
@@ -166,7 +190,7 @@ function CountCard({ icon, label, count, accent, suffix }: Readonly<CountCardPro
       </div>
       <div className="flex items-baseline gap-1.5">
         <span className="text-xl font-bold text-ndp-text tabular-nums">
-          {count !== undefined ? `+${count}` : '—'}
+          {count !== undefined ? `+${count}` : '-'}
         </span>
         <span className="text-[11px] text-ndp-text-dim">{suffix}</span>
       </div>

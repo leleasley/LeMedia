@@ -196,7 +196,7 @@ describe('restore', () => {
     expect(leftoverStagingFiles()).toEqual([]);
   });
 
-  it('refuses a sound SQLite file that is not an Oscarr database', async () => {
+  it('refuses a sound SQLite file that is not an LeMedia database', async () => {
     const strayPath = resolve(tmpdir(), `stray-${randomUUID()}.db`);
     const stray = new Database(strayPath);
     stray.exec('CREATE TABLE whatever (id INTEGER PRIMARY KEY)');
@@ -286,7 +286,7 @@ describe('restore safety copy', () => {
 });
 
 /**
- * A backup taken by an older Oscarr carries an older schema. Restore used to accept any sound
+ * A backup taken by an older LeMedia carries an older schema. Restore used to accept any sound
  * SQLite file with a `_prisma_migrations` table and reconnect on top of it, so the first query
  * against a table that version never had failed at runtime — reproduced in the 2026-08-27 audit.
  *

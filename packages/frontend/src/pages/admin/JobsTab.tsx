@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { Loader2, CheckCircle, XCircle, RefreshCw, Pencil, Power, Webhook } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, RefreshCw, Pencil, Power, Webhook, Search, ChevronDown, ChevronRight } from 'lucide-react';
 import cronstrue from 'cronstrue/i18n';
 import i18n from '@/i18n';
 import { localizedDateTime } from '@/i18n/formatters';
@@ -30,13 +30,20 @@ interface PluginInfoLite {
   name: string;
 }
 
-interface SyncToast {
-  type: 'success' | 'error';
-  message: string;
+
+
+/** Extract the stored error text from a failed job's lastResult JSON (`{"error": ...}`).
+ *  Returns null when the job didn't fail or nothing was recorded. */
+function lastErrorText(job: CronJobData): string | null {
+  if (job.lastStatus !== 'error' || !job.lastResult) return null;
+  try {
+    const parsed = JSON.parse(job.lastResult) as { error?: unknown };
+    if (typeof parsed.error === 'string' && parsed.error) return parsed.error;
+  } catch { /* not JSON, fall through to raw */ }
+  return job.lastResult;
 }
 
-interface WebhookStatus {
-  serviceId: number;
+interface WebhookStatus {  serviceId: number;
   serviceName: string;
   serviceType: string;
   icon: string;
@@ -54,12 +61,13 @@ export function JobsTab() {
   const [pluginsById, setPluginsById] = useState<Map<string, PluginInfoLite>>(new Map());
   const [loading, setLoading] = useState(true);
   const [editingCron, setEditingCron] = useState<{ key: string; value: string } | null>(null);
-  const [toast, setToast] = useState<SyncToast | null>(null);
   const [webhooks, setWebhooks] = useState<WebhookStatus[]>([]);
   const [webhookLoading, setWebhookLoading] = useState<number | null>(null);
   // Snapshot of lastRunAt taken when *this* client triggered the job — lets us detect
   // completion (lastRunAt advances + running goes false) and surface the result toast.
   const [triggered, setTriggered] = useState<Map<string, string | null>>(new Map());
+  const [jobFilter, setJobFilter] = useState('');
+  const [expandedErrors, setExpandedErrors] = useState<Set<string>>(new Set());
 
   const fetchJobs = useCallback(async () => {
     try {
@@ -105,12 +113,10 @@ export function JobsTab() {
     try {
       const { data } = await api.get<PluginInfoLite[]>('/plugins');
       setPluginsById(new Map(data.map((p) => [p.id, p])));
-    } catch { /* non-critical — UI falls back to raw pluginId */ }
+    } catch { /* non-critical, UI falls back to raw pluginId */ }
   }, []);
 
   useEffect(() => { fetchJobs(); fetchWebhooks(); fetchPlugins(); }, [fetchJobs, fetchWebhooks, fetchPlugins]);
-
-  const showToast = (t: SyncToast) => { setToast(t); setTimeout(() => setToast(null), 6000); };
 
   const formatSyncResult = (data: Record<string, any>) => {
     const parts: string[] = [];
@@ -124,7 +130,7 @@ export function JobsTab() {
       if ('added' in s) parts.push(t('admin.jobs.toast.sonarr_sync', { added: s.added, updated: s.updated, duration: (s.duration / 1000).toFixed(1) }));
       else if ('imported' in s) parts.push(t('admin.jobs.toast.sonarr_requests', { imported: s.imported, skipped: s.skipped }) + (s.errors ? t('admin.jobs.toast.errors', { errors: s.errors }) : ''));
     }
-    return parts.join(' — ') || JSON.stringify(data);
+    return parts.join(', ') || JSON.stringify(data);
   };
 
   const runJob = async (key: string) => {
@@ -132,14 +138,14 @@ export function JobsTab() {
     try {
       await api.post(`/admin/jobs/${key}/run`);
       setTriggered((prev) => new Map(prev).set(key, snapshot));
-      showToast({ type: 'success', message: t('admin.jobs.job_started', { key }) });
+      showGlobalToast(t('admin.jobs.job_started', { key }), 'success');
       fetchJobs();
     } catch (err: unknown) {
       const status = (err as { response?: { status?: number } })?.response?.status;
       if (status === 409) {
-        showToast({ type: 'error', message: t('admin.jobs.job_already_running', { key }) });
+        showGlobalToast(t('admin.jobs.job_already_running', { key }), 'error');
       } else {
-        showToast({ type: 'error', message: extractApiError(err, t('admin.jobs.job_failed', { key })) });
+        showGlobalToast(extractApiError(err, t('admin.jobs.job_failed', { key })), 'error');
       }
     }
   };
@@ -169,12 +175,14 @@ export function JobsTab() {
           let parsed: Record<string, unknown> | null = null;
           try { parsed = job.lastResult ? JSON.parse(job.lastResult) : null; } catch { /* ignore */ }
           if (parsed && (parsed.radarr || parsed.sonarr)) {
-            showToast({ type: 'success', message: formatSyncResult(parsed as Record<string, any>) });
+            showGlobalToast(formatSyncResult(parsed as Record<string, any>), 'success');
+          } else if (parsed && typeof parsed.purged === 'number') {
+            showGlobalToast(t('admin.jobs.purged_deleted', { count: parsed.purged }), 'success');
           } else {
-            showToast({ type: 'success', message: t('admin.jobs.job_done', { key }) });
+            showGlobalToast(t('admin.jobs.job_done', { key }), 'success');
           }
         } else {
-          showToast({ type: 'error', message: t('admin.jobs.job_failed', { key }) });
+          showGlobalToast(t('admin.jobs.job_failed', { key }), 'error');
         }
       }
     }
@@ -203,28 +211,26 @@ export function JobsTab() {
     catch { return null; }
   };
   const formatDuration = (ms: number | null) => {
-    if (ms === null) return '—';
+    if (ms === null) return '-';
     if (ms < 1000) return `${ms}ms`;
     return `${(ms / 1000).toFixed(1)}s`;
   };
 
   return (
     <AdminTabLayout title={t('admin.jobs.header.job')} count={jobs.length}>
-      {/* Toast */}
-      {toast && (
-        <div className={clsx(
-          'fixed bottom-6 right-6 z-50 max-w-lg px-5 py-3 rounded-xl shadow-2xl shadow-black/50 animate-fade-in flex items-start gap-3',
-          toast.type === 'success' ? 'bg-ndp-success/10 border border-ndp-success/20 text-ndp-success' : 'bg-ndp-danger/10 border border-ndp-danger/20 text-ndp-danger'
-        )}>
-          {toast.type === 'success' ? <CheckCircle className="w-5 h-5 flex-shrink-0 mt-0.5" /> : <XCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />}
-          <p className="text-sm">{toast.message}</p>
-        </div>
-      )}
 
       {/* Jobs grouped by source: system (pluginId IS NULL) vs plugin-owned. */}
       {(() => {
-        const systemJobs = jobs.filter((j) => !j.pluginId);
-        const pluginJobs = jobs.filter((j) => j.pluginId);
+        const q = jobFilter.trim().toLowerCase();
+        const matches = (j: CronJobData) =>
+          !q ||
+          j.key.toLowerCase().includes(q) ||
+          j.label.toLowerCase().includes(q) ||
+          (j.label.startsWith('admin.jobs.labels.') && t(j.label).toLowerCase().includes(q)) ||
+          (j.pluginId ?? '').toLowerCase().includes(q);
+        const visibleJobs = jobs.filter(matches);
+        const systemJobs = visibleJobs.filter((j) => !j.pluginId);
+        const pluginJobs = visibleJobs.filter((j) => j.pluginId);
         const pluginGroups = new Map<string, CronJobData[]>();
         for (const j of pluginJobs) {
           const arr = pluginGroups.get(j.pluginId!) ?? [];
@@ -236,8 +242,8 @@ export function JobsTab() {
         const runningCount = jobs.filter((j) => j.running).length;
         return (
           <>
-            {/* KPI row */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+            {/* KPI row, 2×2 on phones, one row of four from sm up. */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-6">
               <KpiCard
                 label={t('admin.jobs.kpi.total', 'Total')}
                 value={jobs.length}
@@ -260,20 +266,34 @@ export function JobsTab() {
               />
             </div>
 
+            {/* Filter, full width on phones. */}
+            <div className="relative w-full sm:w-72 mb-6">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-ndp-text-dim pointer-events-none" />
+              <input
+                value={jobFilter}
+                onChange={(e) => setJobFilter(e.target.value)}
+                placeholder={t('admin.jobs.filter_placeholder', 'Filter jobs...')}
+                aria-label={t('admin.jobs.filter_placeholder', 'Filter jobs...')}
+                className="input w-full text-sm pl-9 pr-3 py-2.5"
+              />
+            </div>
+
             {/* Two-column layout: system jobs left, plugin jobs right. Collapses to a
-                single column on mobile. */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <section className="space-y-3">
+                single column below lg. */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-6 items-start">
+              <section>
                 <SectionHeading label={t('admin.jobs.section.system', 'System jobs')} count={systemJobs.length} />
-                <div className="space-y-3">
-                  {systemJobs.map((job) => renderJob(job))}
-                </div>
+                {systemJobs.length > 0 && (
+                  <div className="admin-group divide-y divide-white/[0.06]">
+                    {systemJobs.map((job) => renderJob(job))}
+                  </div>
+                )}
               </section>
 
-              <section className="space-y-3">
+              <section>
                 <SectionHeading label={t('admin.jobs.section.plugin', 'Plugin jobs')} count={pluginJobs.length} />
                 {pluginGroups.size === 0 ? (
-                  <div className="card p-6 text-center text-sm text-ndp-text-dim">
+                  <div className="admin-group px-4 py-6 text-center text-sm text-ndp-text-dim">
                     {t('admin.jobs.section.plugin_empty', 'No plugin jobs installed.')}
                   </div>
                 ) : (
@@ -281,14 +301,12 @@ export function JobsTab() {
                     {[...pluginGroups.entries()].map(([pid, list]) => {
                       const meta = pluginsById.get(pid);
                       return (
-                        <div key={pid} className="space-y-2">
-                          <div className="flex items-center gap-2 px-1">
-                            <span className="text-xs font-medium uppercase tracking-wider text-ndp-text-dim">
-                              {meta?.name ?? pid}
-                            </span>
-                            <span className="text-[10px] text-ndp-text-dim">{list.length}</span>
+                        <div key={pid}>
+                          <div className="admin-group-label flex items-center gap-2 normal-case tracking-normal text-xs font-medium text-ndp-text-muted">
+                            <span className="truncate">{meta?.name ?? pid}</span>
+                            <span className="admin-chip">{list.length}</span>
                           </div>
-                          <div className="space-y-3">
+                          <div className="admin-group divide-y divide-white/[0.06]">
                             {list.map((job) => renderJob(job))}
                           </div>
                         </div>
@@ -304,74 +322,99 @@ export function JobsTab() {
         function renderJob(job: CronJobData) {
           const isEditing = editingCron?.key === job.key;
           return (
-            <div key={job.key} className={clsx('card', !job.enabled && 'opacity-50')}>
-              <div className="flex items-center gap-4 p-4">
+            <div key={job.key} className={clsx(!job.enabled && 'opacity-50')}>
+              <div className="flex items-start gap-3 px-4 py-3 min-h-[52px]">
                 {/* Status dot */}
-                <span className={clsx('w-2.5 h-2.5 rounded-full flex-shrink-0',
+                <span className={clsx('w-2 h-2 rounded-full flex-shrink-0 mt-[7px]',
                   !job.enabled ? 'bg-ndp-text-dim' :
                   job.lastStatus === 'success' ? 'bg-ndp-success' :
                   job.lastStatus === 'error' ? 'bg-ndp-danger' :
                   'bg-ndp-text-dim'
                 )} />
 
-                {/* Job info */}
+                {/* Job info, title, schedule, then last-run metadata underneath. */}
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-ndp-text">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-medium text-ndp-text break-words">
                       {job.label.startsWith('admin.jobs.labels.') ? t(job.label) : job.label}
                     </span>
+                    {job.lastStatus && (
+                      <span className={clsx('admin-chip',
+                        job.lastStatus === 'success' ? 'bg-ndp-success/15 text-ndp-success' : 'bg-ndp-danger/15 text-ndp-danger'
+                      )}>
+                        {job.lastStatus === 'success' ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+                        {job.lastStatus === 'success' ? t('common.ok') : t('common.error')}
+                      </span>
+                    )}
                   </div>
-                  <div className="flex items-center gap-3 mt-0.5">
+                  <div className="mt-1">
                     {isEditing ? (
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1">
                         <input
                           type="text"
                           value={editingCron.value}
                           onChange={(e) => setEditingCron({ key: job.key, value: e.target.value })}
-                          className="input text-xs font-mono w-32 py-0.5 px-2"
+                          className="input text-xs font-mono w-36 py-1.5 px-2.5"
                           onKeyDown={(e) => { if (e.key === 'Enter') saveCron(job.key, editingCron.value); if (e.key === 'Escape') setEditingCron(null); }}
                           autoFocus
                         />
-                        <button onClick={() => saveCron(job.key, editingCron.value)} className="p-0.5 text-ndp-success hover:bg-ndp-success/10 rounded"><CheckCircle className="w-3.5 h-3.5" /></button>
-                        <button onClick={() => setEditingCron(null)} className="p-0.5 text-ndp-text-dim hover:bg-white/5 rounded"><XCircle className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => saveCron(job.key, editingCron.value)} className="w-10 h-10 flex items-center justify-center text-ndp-success hover:bg-ndp-success/10 rounded-lg transition-colors"><CheckCircle className="w-4 h-4" /></button>
+                        <button onClick={() => setEditingCron(null)} className="w-10 h-10 flex items-center justify-center text-ndp-text-dim hover:bg-white/5 rounded-lg transition-colors"><XCircle className="w-4 h-4" /></button>
                       </div>
                     ) : (
-                      <button onClick={() => setEditingCron({ key: job.key, value: job.cronExpression })} className="text-xs text-ndp-text-dim hover:text-ndp-accent transition-colors flex items-center gap-1">
-                        <Pencil className="w-3 h-3" />
-                        {cronToHuman(job.cronExpression) || job.cronExpression}
+                      <button onClick={() => setEditingCron({ key: job.key, value: job.cronExpression })} className="text-xs text-ndp-text-muted hover:text-ndp-accent transition-colors inline-flex items-start gap-1.5 text-left py-0.5">
+                        <Pencil className="w-3 h-3 flex-shrink-0 mt-0.5" />
+                        <span className="break-words">{cronToHuman(job.cronExpression) || job.cronExpression}</span>
                       </button>
                     )}
                   </div>
-                </div>
-
-                {/* Last run info */}
-                <div className="hidden sm:flex items-center gap-4 text-xs text-ndp-text-dim flex-shrink-0">
-                  {job.lastRunAt && (
-                    <span title={localizedDateTime(job.lastRunAt)}>{localizedDateTime(job.lastRunAt)}</span>
-                  )}
-                  {job.lastDuration !== null && (
-                    <span className="font-mono">{formatDuration(job.lastDuration)}</span>
-                  )}
-                  {job.lastStatus && (
-                    <span className={clsx('inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold rounded-full',
-                      job.lastStatus === 'success' ? 'bg-ndp-success/10 text-ndp-success' : 'bg-ndp-danger/10 text-ndp-danger'
-                    )}>
-                      {job.lastStatus === 'success' ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-                      {job.lastStatus === 'success' ? t('common.ok') : t('common.error')}
-                    </span>
+                  {(job.lastRunAt || job.lastDuration !== null) && (
+                    <div className="flex items-center gap-x-2 gap-y-0.5 flex-wrap mt-0.5 text-[11px] text-ndp-text-dim">
+                      {job.lastRunAt && (
+                        <span title={localizedDateTime(job.lastRunAt)}>{localizedDateTime(job.lastRunAt)}</span>
+                      )}
+                      {job.lastRunAt && job.lastDuration !== null && <span aria-hidden>·</span>}
+                      {job.lastDuration !== null && (
+                        <span className="font-mono">{formatDuration(job.lastDuration)}</span>
+                      )}
+                    </div>
                   )}
                 </div>
 
                 {/* Actions */}
-                <div className="flex items-center gap-0.5 flex-shrink-0">
-                  <button onClick={() => runJob(job.key)} disabled={!!job.running} className="p-2 text-ndp-text-dim hover:text-ndp-accent hover:bg-white/5 rounded-lg transition-colors" title={t('admin.jobs.run')}>
+                <div className="flex items-center flex-shrink-0 -mr-2 -my-1">
+                  <button onClick={() => runJob(job.key)} disabled={!!job.running} className="w-10 h-10 flex items-center justify-center text-ndp-text-muted hover:text-ndp-accent hover:bg-white/5 rounded-lg transition-colors disabled:cursor-not-allowed" title={t('admin.jobs.run')} aria-label={t('admin.jobs.run')}>
                     {job.running || triggered.has(job.key) ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
                   </button>
-                  <button onClick={() => toggleJob(job)} className="p-2 text-ndp-text-dim hover:text-ndp-text hover:bg-white/5 rounded-lg transition-colors" title={job.enabled ? t('common.disable') : t('common.enable')}>
+                  <button onClick={() => toggleJob(job)} className="w-10 h-10 flex items-center justify-center text-ndp-text-muted hover:text-ndp-text hover:bg-white/5 rounded-lg transition-colors" title={job.enabled ? t('common.disable') : t('common.enable')} aria-label={job.enabled ? t('common.disable') : t('common.enable')}>
                     <Power className={clsx('w-4 h-4', job.enabled && 'text-ndp-success')} />
                   </button>
                 </div>
               </div>
+              {(() => {
+                const errText = lastErrorText(job);
+                if (!errText) return null;
+                const expanded = expandedErrors.has(job.key);
+                return (
+                  <div className="pl-9 pr-4 pb-3 -mt-1">
+                    <button
+                      onClick={() => setExpandedErrors((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(job.key)) next.delete(job.key);
+                        else next.add(job.key);
+                        return next;
+                      })}
+                      className="flex items-start gap-1.5 text-left w-full rounded-lg bg-ndp-danger/[0.06] px-2.5 py-2 text-ndp-danger/90 hover:text-ndp-danger"
+                      aria-expanded={expanded}
+                    >
+                      {expanded ? <ChevronDown className="w-3.5 h-3.5 flex-shrink-0 mt-px" /> : <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 mt-px" />}
+                      <span className={clsx('flex-1 min-w-0 text-[11px] font-mono', expanded ? 'whitespace-pre-wrap break-all' : 'truncate')}>
+                        {errText}
+                      </span>
+                    </button>
+                  </div>
+                );
+              })()}
             </div>
           );
         }
@@ -379,83 +422,84 @@ export function JobsTab() {
 
       {/* Webhooks section */}
       {webhooks.length > 0 && (
-        <div className="mt-10">
-          <div className="flex items-center gap-2 mb-4">
-            <Webhook className="w-5 h-5 text-ndp-accent" />
-            <h2 className="text-lg font-semibold text-ndp-text">{t('admin.jobs.webhooks_title')}</h2>
-          </div>
-          <p className="text-xs text-ndp-text-dim mb-4">{t('admin.jobs.webhooks_desc')}</p>
+        <section className="mt-10">
+          <h2 className="font-display-title text-2xl text-ndp-text">{t('admin.jobs.webhooks_title')}</h2>
+          <p className="text-xs text-ndp-text-dim leading-relaxed mt-1.5 mb-4">{t('admin.jobs.webhooks_desc')}</p>
 
-          <div className="space-y-3">
+          <div className="admin-group divide-y divide-white/[0.06]">
             {webhooks.map(wh => (
-              <div key={wh.serviceId} className={clsx('card', !wh.enabled && 'opacity-50')}>
-                <div className="flex items-center gap-4 p-4">
-                  {/* Service icon */}
+              <div key={wh.serviceId} className={clsx('admin-row items-start', !wh.enabled && 'opacity-50')}>
+                {/* Service icon */}
+                <span className="admin-icon-tile">
                   {wh.icon ? (
-                    <img src={wh.icon} alt="" className="w-6 h-6 rounded-lg object-contain flex-shrink-0" />
+                    <img src={wh.icon} alt="" className="w-5 h-5 object-contain" />
                   ) : (
-                    <Webhook className="w-5 h-5 text-ndp-text-dim flex-shrink-0" />
+                    <Webhook className="w-4 h-4 text-ndp-text-dim" />
                   )}
+                </span>
 
-                  {/* Name + event labels */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-ndp-text">{wh.serviceName}</span>
-                      {wh.enabled && !wh.serviceReachable && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-ndp-warning/10 text-ndp-warning font-medium">
-                          {t('admin.services.unreachable')}
-                        </span>
-                      )}
-                    </div>
-                    {wh.supportsWebhooks && wh.events.length > 0 && (
-                      <div className="flex items-center gap-1.5 flex-wrap mt-1">
-                        {wh.events.map(ev => (
-                          <span
-                            key={ev.key}
-                            title={ev.description}
-                            className={clsx(
-                              'text-[10px] font-medium px-1.5 py-0.5 rounded-md cursor-default',
-                              wh.enabled ? 'bg-ndp-success/10 text-ndp-success' : 'bg-white/5 text-ndp-text-dim',
-                            )}
-                          >
-                            {ev.label}
-                          </span>
-                        ))}
-                      </div>
+                {/* Name + event labels */}
+                <div className="flex-1 min-w-0 pt-1.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-medium text-ndp-text truncate">{wh.serviceName}</span>
+                    {wh.enabled && !wh.serviceReachable && (
+                      <span className="admin-chip bg-ndp-warning/15 text-ndp-warning">
+                        {t('admin.services.unreachable')}
+                      </span>
                     )}
                   </div>
-
-                  {/* Power toggle */}
-                  <button
-                    onClick={async () => {
-                      setWebhookLoading(wh.serviceId);
-                      try {
-                        if (wh.enabled) {
-                          await api.post(`/admin/services/${wh.serviceId}/webhook/disable`);
-                          showGlobalToast(t('admin.services.webhook_disabled_toast', { name: wh.serviceName }), 'info');
-                        } else {
-                          await api.post(`/admin/services/${wh.serviceId}/webhook/enable`);
-                          showGlobalToast(t('admin.services.webhook_enabled_toast', { name: wh.serviceName }), 'success');
-                        }
-                        fetchWebhooks();
-                      } catch (err) {
-                        const detail = (err as { response?: { data?: { detail?: string } } }).response?.data?.detail;
-                        const base = extractApiError(err, t('admin.services.webhook_failed_toast'));
-                        showGlobalToast(detail ? `${base}: ${detail}` : base, 'error');
-                      } finally { setWebhookLoading(null); }
-                    }}
-                    disabled={webhookLoading === wh.serviceId}
-                    className="p-2 text-ndp-text-dim hover:text-ndp-text hover:bg-white/5 rounded-lg transition-colors flex-shrink-0"
-                    title={wh.enabled ? t('common.disable') : t('common.enable')}
-                  >
-                    {webhookLoading === wh.serviceId ? <Loader2 className="w-4 h-4 animate-spin" /> : <Power className={clsx('w-4 h-4', wh.enabled && 'text-ndp-success')} />}
-                  </button>
+                  {wh.supportsWebhooks && wh.events.length > 0 && (
+                    <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                      {wh.events.map(ev => (
+                        <span
+                          key={ev.key}
+                          title={ev.description}
+                          className={clsx(
+                            'admin-chip font-medium cursor-default',
+                            wh.enabled ? 'bg-ndp-success/15 text-ndp-success' : '',
+                          )}
+                        >
+                          {ev.label}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
+
+                {/* Power toggle */}
+                <button
+                  onClick={async () => {
+                    setWebhookLoading(wh.serviceId);
+                    try {
+                      if (wh.enabled) {
+                        await api.post(`/admin/services/${wh.serviceId}/webhook/disable`);
+                        showGlobalToast(t('admin.services.webhook_disabled_toast', { name: wh.serviceName }), 'info');
+                      } else {
+                        await api.post(`/admin/services/${wh.serviceId}/webhook/enable`);
+                        showGlobalToast(t('admin.services.webhook_enabled_toast', { name: wh.serviceName }), 'success');
+                      }
+                      fetchWebhooks();
+                    } catch (err) {
+                      const detail = (err as { response?: { data?: { detail?: string } } }).response?.data?.detail;
+                      const base = extractApiError(err, t('admin.services.webhook_failed_toast'));
+                      showGlobalToast(detail ? `${base}: ${detail}` : base, 'error');
+                    } finally { setWebhookLoading(null); }
+                  }}
+                  disabled={webhookLoading === wh.serviceId}
+                  className="w-10 h-10 -mr-2 -my-1 flex items-center justify-center text-ndp-text-muted hover:text-ndp-text hover:bg-white/5 rounded-lg transition-colors flex-shrink-0"
+                  title={wh.enabled ? t('common.disable') : t('common.enable')}
+                  aria-label={wh.enabled ? t('common.disable') : t('common.enable')}
+                >
+                  {webhookLoading === wh.serviceId ? <Loader2 className="w-4 h-4 animate-spin" /> : <Power className={clsx('w-4 h-4', wh.enabled && 'text-ndp-success')} />}
+                </button>
               </div>
             ))}
           </div>
-        </div>
+        </section>
       )}
+
+      {/* Recent webhook events */}
+      <WebhookEventLog />
 
     </AdminTabLayout>
   );
@@ -463,9 +507,9 @@ export function JobsTab() {
 
 function SectionHeading({ label, count }: Readonly<{ label: string; count: number }>) {
   return (
-    <div className="flex items-baseline gap-2">
-      <h2 className="text-sm font-semibold uppercase tracking-wider text-ndp-text-muted">{label}</h2>
-      <span className="text-xs text-ndp-text-dim">{count}</span>
+    <div className="admin-group-label flex items-center gap-2">
+      <h3>{label}</h3>
+      <span className="tabular-nums text-ndp-text-dim/80">{count}</span>
     </div>
   );
 }
@@ -486,10 +530,46 @@ function KpiCard({
     muted: 'text-ndp-text-dim',
   }[tone];
   return (
-    <div className="card p-3.5">
-      <div className="text-[10px] font-medium uppercase tracking-wider text-ndp-text-dim">{label}</div>
-      <div className={clsx('text-2xl font-bold tabular-nums mt-1', valueClass)}>{value}</div>
-      {hint && <div className="text-[11px] text-ndp-text-dim mt-0.5 truncate">{hint}</div>}
+    <div className="admin-group px-3.5 py-3">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ndp-text-dim">{label}</div>
+      <div className={clsx('text-2xl font-semibold tabular-nums mt-1 leading-none', valueClass)}>{value}</div>
+      {hint && <div className="text-[11px] text-ndp-text-dim mt-1.5 truncate">{hint}</div>}
     </div>
+  );
+}
+
+function WebhookEventLog() {
+  const { t } = useTranslation();
+  const [events, setEvents] = useState<{ id: number; createdAt: string; message: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get('/admin/logs', { params: { label: 'Webhook', page: '1' } })
+      .then(({ data }) => setEvents(data.results || []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return null;
+  if (events.length === 0) return null;
+
+  return (
+    <section className="mt-10">
+      <h2 className="font-display-title text-2xl text-ndp-text">{t('admin.jobs.webhook_log', 'Webhook Events')}</h2>
+      <p className="text-xs text-ndp-text-dim leading-relaxed mt-1.5 mb-4">{t('admin.jobs.webhook_log_desc', 'Recent webhook events from Radarr/Sonarr.')}</p>
+      <div className="admin-group divide-y divide-white/[0.06]">
+        {events.map((ev) => (
+          <div key={ev.id} className="px-4 py-3 flex items-start gap-3">
+            <span className="w-2 h-2 rounded-full bg-ndp-success mt-1.5 flex-shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm text-ndp-text break-words">{ev.message}</p>
+              <p className="text-[11px] text-ndp-text-dim mt-0.5">
+                {new Date(ev.createdAt).toLocaleString()}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }

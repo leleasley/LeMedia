@@ -58,9 +58,9 @@ function buildArrSettingsResponse(service: ServiceWithRelations): SeerrArrConfig
     port = Number(u.port) || (u.protocol === 'https:' ? 443 : 80);
     useSsl = u.protocol === 'https:';
     baseUrl = trimTrailingSlashes(u.pathname);
-  } catch { /* malformed url — leave defaults so the response stays well-shaped */ }
+  } catch { /* malformed url, leave defaults so the response stays well-shaped */ }
 
-  // Oscarr decides routing via QualityMapping + FolderRule, not a single "active" pair like
+  // LeMedia decides routing via QualityMapping + FolderRule, not a single "active" pair like
   // Overseerr — we surface the first mapping as a sensible default so Doplarr's UI has a
   // pre-filled value the user can override.
   const firstMapping = service.qualityMappings[0];
@@ -95,17 +95,17 @@ function buildArrSettingsResponse(service: ServiceWithRelations): SeerrArrConfig
  * that's a credential leak we refuse to reproduce.
  *
  * The `/profiles` and `/rootfolders` sub-endpoints fetch live from the *arr instance via
- * Oscarr's existing arr client (so the lists are always current). On failure we return an
+ * LeMedia's existing arr client (so the lists are always current). On failure we return an
  * empty array rather than 500 — Doplarr falls back to its own defaults gracefully.
  */
 export async function settingsRoutes(app: FastifyInstance) {
   // Doplarr (and probably others) probe /settings/main for the `partialRequestsEnabled` flag —
   // they fail soft on 501 but log a FATAL stack trace. We return a minimal payload describing
   // the few flags clients actually branch on; everything else stays defaulted to Overseerr-like
-  // "off" so we don't accidentally promise a feature Oscarr doesn't deliver.
+  // "off" so we don't accidentally promise a feature LeMedia doesn't deliver.
   app.get('/settings/main', async () => ({
     apiKey: '',
-    applicationTitle: 'Oscarr',
+    applicationTitle: 'LeMedia',
     applicationUrl: '',
     csrfProtection: false,
     cacheImages: false,

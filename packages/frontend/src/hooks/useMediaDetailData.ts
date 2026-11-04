@@ -4,7 +4,7 @@ import { useNsfwFilter } from '@/hooks/useNsfwFilter';
 import { useAuth } from '@/context/AuthContext';
 import { useDownloadForMedia, useOnDownloadComplete } from '@/hooks/useDownloads';
 import { invalidateMediaStatus, updateMediaStatusCache } from '@/hooks/useMediaStatus';
-import { type MediaStateCategory, type RequestStatus, toMediaStateCategory } from '@oscarr/shared';
+import { type MediaStateCategory, type RequestStatus, toMediaStateCategory } from '@lemedia/shared';
 import type { TmdbMedia, Media } from '@/types';
 import { useMediaMetadata } from '@/hooks/useMediaMetadata';
 
@@ -28,10 +28,11 @@ function loadQualityOptions(): Promise<QualityOption[]> {
   return qualityOptionsInFlight;
 }
 
-export function useMediaDetailData(id: string | undefined, type: 'movie' | 'tv') {
+export function useMediaDetailData(id: string | undefined, type: 'movie' | 'tv', shareToken?: string) {
+  const publicMode = !!shareToken;
   const { addNsfwIds } = useNsfwFilter();
   const { user } = useAuth();
-  const { media, loading, catalog, metadata, seasonsLoading, seasonsError, refresh: refreshMetadata } = useMediaMetadata(id, type);
+  const { media, loading, catalog, metadata, seasonsLoading, seasonsError, refresh: refreshMetadata } = useMediaMetadata(id, type, shareToken);
   const [dbMedia, setDbMedia] = useState<Media | null>(null);
   const [inLibrary, setInLibrary] = useState(false);
   const [recommendations, setRecommendations] = useState<TmdbMedia[]>([]);
@@ -83,6 +84,14 @@ export function useMediaDetailData(id: string | undefined, type: 'movie' | 'tv')
     setAudioLanguages([]);
     setSubtitleLanguages([]);
 
+    // Public share view: the token-scoped detail comes from useMediaMetadata. Authed-only
+    // calls (*arr live-check, blacklist, recommendations, quality) are skipped, the visitor
+    // has no session and would 401 on all of them.
+    if (publicMode) {
+      setLibraryLoading(false);
+      return;
+    }
+
     const dbPromise = api.get(`/media/tmdb/${id}/${type}`)
       .then(({ data }) => { if (!cancelled) { applyDbData(data); if (!data.id) setDbMedia(null); } })
       .catch((err) => {
@@ -107,7 +116,7 @@ export function useMediaDetailData(id: string | undefined, type: 'movie' | 'tv')
 
     void dbPromise;
     return () => { cancelled = true; };
-  }, [id, type, applyDbData]);
+  }, [id, type, applyDbData, publicMode]);
 
   const refreshDbData = useCallback(async () => {
     if (!id) return;

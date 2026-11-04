@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { installScript } from '../services/hostHelper.js';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { prisma } from '../utils/prisma.js';
 import { getAppSettings } from '../utils/appSettings.js';
@@ -6,6 +7,9 @@ import { getArrClient, getServiceDefinition, arrIdFieldForService } from '../pro
 import { promoteMediaToAvailable, findMediaByExternalId, cascadeRequestsForCategory } from '../services/mediaService.js';
 import { sendAvailabilityNotifications, findAvailabilityRecipients } from '../services/sync/helpers.js';
 import { logEvent } from '../utils/logEvent.js';
+import { transitionRequestStatus } from '../services/requestStatusTransition.js';
+import { runZurgSync } from '../services/zurg/watcher.js';
+import { setRexHostReport } from '../services/rexHost.js';
 
 function sanitize(input: string): string {
   return input.replaceAll(/[\r\n\t]/g, '');
@@ -127,7 +131,14 @@ async function backfillSeasons(mediaId: number, enriched: Awaited<ReturnType<typ
 
 async function handleAdded(serviceType: string, client: ArrClient, event: WebhookEvent): Promise<Ack> {
   const mediaType = client.mediaType;
-  if (await findMediaByExternalId(mediaType, event.externalId)) return { ok: true };
+  const existing = await findMediaByExternalId(mediaType, event.externalId);
+  if (existing) {
+    // A request creates the row before the *arr does, so "added" usually lands on a known title —
+    // still claim the *arr id it carries. Without it the zurg watcher (and anything else keyed on
+    // radarrId/sonarrId) could not match the title until the next sync.
+    await backfillArrId(serviceType, existing, event.internalId);
+    return { ok: true };
+  }
 
   const arrIdField = arrIdFieldForService(serviceType);
   const enriched = await enrich(client, event.internalId);
@@ -154,15 +165,23 @@ async function handleAdded(serviceType: string, client: ArrClient, event: Webhoo
   });
 
   if (mediaType === 'tv') await backfillSeasons(created.id, enriched);
-  logEvent('info', 'Webhook', `${sanitize(serviceType)}: "${sanitize(event.title)}" added — created in Oscarr`);
+  logEvent('info', 'Webhook', `${sanitize(serviceType)}: "${sanitize(event.title)}" added, created in LeMedia`);
   return { ok: true };
 }
 
 async function handleDeleted(serviceType: string, client: ArrClient, event: WebhookEvent): Promise<Ack> {
   const media = await findMediaByExternalId(client.mediaType, event.externalId);
-  if (media?.statusCategory === 'AVAILABLE') {
-    await prisma.media.update({ where: { id: media.id }, data: { statusCategory: 'UNAVAILABLE' } });
-    logEvent('info', 'Webhook', `${sanitize(serviceType)}: "${sanitize(event.title)}" deleted from service`);
+  if (media && media.statusCategory !== 'UNAVAILABLE' && media.statusCategory !== 'BLACKLISTED') {
+    await prisma.media.update({ where: { id: media.id }, data: { statusCategory: 'UNAVAILABLE', availableAt: null } });
+    // `deleted`, not `failed`: the user removed it from the *arr on purpose. Failed would
+    // (a) block re-requesting via the ACTIVE dedup set and (b) get re-added by the
+    // retry_failed_requests scheduler. Deleted is terminal and non-retryable, so the
+    // title stays gone until someone explicitly asks for it again.
+    await transitionRequestStatus(
+      { requestId: undefined, from: undefined, to: 'deleted', why: 'arr-webhook-deleted' },
+      () => prisma.mediaRequest.updateMany({ where: { mediaId: media.id, status: { in: ['approved', 'processing'] } }, data: { status: 'deleted' } }),
+    ).catch(() => {});
+    logEvent('info', 'Webhook', `${sanitize(serviceType)}: "${sanitize(event.title)}" deleted from service, marked missing`);
     logEvent('debug', 'Webhook', `${sanitize(serviceType)}: "${sanitize(event.title)}" deleted`);
   }
   return { ok: true };
@@ -221,6 +240,33 @@ const HANDLERS: Record<string, (serviceType: string, client: ArrClient, event: W
 // ─── Route ──────────────────────────────────────────────────────────
 
 export async function webhookRoutes(app: FastifyInstance) {
+  // Zurg's `on_library_update` hook pings this so LeMedia checks zurg's acquisition snapshot at
+  // once instead of on the next 30 s poll. The body (changed directory paths) is ignored — the
+  // snapshot is the source of truth. Same instance API key as the *arr webhooks.
+  app.post('/zurg', { bodyLimit: 64 * 1024 }, async (request, reply) => {
+    const failure = await authFailure(request);
+    if (failure) return reply.status(failure.status).send({ error: failure.error });
+    void runZurgSync('webhook').catch((err) => logEvent('debug', 'Zurg', `webhook-triggered sync failed: ${String(err)}`));
+    return reply.status(202).send({ ok: true });
+  });
+
+  // A timer on the rex host pushes its machine stats here (memory, disk, DB sizes) for the
+  // admin rex page; rex's own API has none of that. Same instance API key.
+  // One-line host-helper installer (Admin → Radarr & Sonarr → Settings). The token is the only
+  // auth: one hour, made by an admin, and the script holds only LeMedia's *public* key.
+  app.get('/host-helper/install', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (request, reply) => {
+    const script = await installScript(String((request.query as { t?: string }).t ?? ''));
+    if (!script) return reply.status(403).type('text/plain').send('echo "This LeMedia install link has expired. Make a new one in Admin, Radarr & Sonarr, Settings." >&2; exit 1\n');
+    return reply.type('text/x-shellscript; charset=utf-8').header('Cache-Control', 'no-store').send(script);
+  });
+
+  app.post('/rex-host', { bodyLimit: 16 * 1024 }, async (request, reply) => {
+    const failure = await authFailure(request);
+    if (failure) return reply.status(failure.status).send({ error: failure.error });
+    if (!setRexHostReport(request.body)) return reply.status(400).send({ error: 'BAD_REPORT' });
+    return reply.status(202).send({ ok: true });
+  });
+
   app.post('/:serviceType', { bodyLimit: 64 * 1024 }, async (request, reply) => {
     const { serviceType } = request.params as { serviceType: string };
 

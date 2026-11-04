@@ -12,18 +12,23 @@ export async function logsRoutes(app: FastifyInstance) {
           page: { type: 'string', description: 'Page number (defaults to 1)' },
           level: { type: 'string', enum: ['info', 'warn', 'error', 'debug'], description: 'Filter logs by level' },
           label: { type: 'string', description: 'Filter logs by label' },
+          q: { type: 'string', description: 'Freetext search in the message (max 100 chars)' },
         },
       },
     },
   }, async (request, reply) => {
 
-    const { page, level, label } = request.query as { page?: string; level?: string; label?: string };
+    const { page, level, label, q } = request.query as { page?: string; level?: string; label?: string; q?: string };
     const pageNum = Number.parseInt(page || '1', 10) || 1;
     const take = 50;
     const skip = (pageNum - 1) * take;
     const where: Record<string, unknown> = {};
     if (level && ['info', 'warn', 'error', 'debug'].includes(level)) where.level = level;
     if (label) where.label = label;
+    // Bounded freetext search — LIKE on a non-indexed column, capped length so a
+    // pathological query can't turn the admin log viewer into a full-table scan timer.
+    const needle = (q || '').trim().slice(0, 100);
+    if (needle) where.message = { contains: needle };
 
     const [logs, total] = await Promise.all([
       prisma.appLog.findMany({ where, orderBy: { createdAt: 'desc' }, take, skip }),

@@ -41,7 +41,7 @@ export function DynamicIcon({ name, className }: Readonly<DynamicIconProps>) {
     if (import.meta.env.DEV && !warned.has(name)) {
       warned.add(name);
       console.warn(
-        `[DynamicIcon] Unknown icon "${name}" — falling back to Puzzle. Add it to packages/frontend/src/plugins/DynamicIcon.tsx and document it in docs/plugins.md.`,
+        `[DynamicIcon] Unknown icon "${name}", falling back to Puzzle. Add it to packages/frontend/src/plugins/DynamicIcon.tsx and document it in docs/plugins.md.`,
       );
     }
     return <Puzzle className={className} />;

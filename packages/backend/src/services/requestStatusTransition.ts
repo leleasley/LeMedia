@@ -1,5 +1,5 @@
-import type { RequestStatusKind } from '@oscarr/shared';
-import { isValidTransition, validTransitionsFrom } from '@oscarr/shared';
+import type { RequestStatusKind } from '@lemedia/shared';
+import { isValidTransition, validTransitionsFrom } from '@lemedia/shared';
 
 interface FastifyLogger {
   warn(obj: object, msg: string): void;
@@ -8,7 +8,7 @@ interface FastifyLogger {
 /**
  * Wrap a write of `MediaRequest.status` to log unusual transitions.
  * Warn-only: we proceed regardless of validity. The catalogue in
- * `@oscarr/shared/requestTransitions.ts` is best-effort and will be
+ * `@lemedia/shared/requestTransitions.ts` is best-effort and will be
  * tightened once we have prod log signal.
  *
  * When the writer has no read of the current row (`updateMany`, `create`),

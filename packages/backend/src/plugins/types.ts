@@ -3,7 +3,7 @@ import type { NotificationRegistry } from '../notifications/registry.js';
 import type { NotificationPayload } from '../notifications/types.js';
 import type { ArrClient } from '../providers/types.js';
 import type { PluginRouter } from './router.js';
-import type { PluginMedia, PluginMediaRequest, PluginMediaBatchKey, PluginMediaBatchStatus, PluginTmdbSearchPage, PluginFolderRule, TmdbMovie, TmdbTv, PluginSettingDef } from '@oscarr/shared';
+import type { PluginMedia, PluginMediaRequest, PluginMediaBatchKey, PluginMediaBatchStatus, PluginTmdbSearchPage, PluginFolderRule, TmdbMovie, TmdbTv, PluginSettingDef } from '@lemedia/shared';
 import type { Migration, PluginDatabase } from './storage/index.js';
 
 export type { Migration, PluginDatabase };
@@ -24,7 +24,7 @@ export type PluginCapability =
   | 'requests:read'
   | 'requests:write'
   // Persistent plugin-owned storage (JSON KV + SQLite) under data/plugins/<id>/. Files are
-  // wiped on uninstall; never touches oscarr.db.
+  // wiped on uninstall; never touches lemedia.db.
   | 'storage:plugin';
 
 export const ALL_CAPABILITIES: readonly PluginCapability[] = [
@@ -50,10 +50,10 @@ export interface PluginManifest {
   author?: string;
   entry: string;
   frontend?: string;
-  /** Compatibility declaration. `oscarr` is a semver range the author claims to support;
-   *  `testedAgainst` lists Oscarr versions explicitly verified to work. Missing = 'unknown' status. */
+  /** Compatibility declaration. `lemedia` is a semver range the author claims to support;
+   *  `testedAgainst` lists LeMedia versions explicitly verified to work. Missing = 'unknown' status. */
   engines?: {
-    oscarr: string;
+    lemedia: string;
     testedAgainst?: string[];
   };
   /** Services whose config the plugin is allowed to read via getServiceConfig / getServiceConfigRaw.
@@ -73,8 +73,8 @@ export interface PluginManifest {
   };
 }
 
-// PluginSettingDef moved to @oscarr/shared (shared wire contract with the frontend).
-export type { PluginSettingDef } from '@oscarr/shared';
+// PluginSettingDef moved to @lemedia/shared (shared wire contract with the frontend).
+export type { PluginSettingDef } from '@lemedia/shared';
 
 export interface PluginJobDef {
   key: string;
@@ -91,8 +91,6 @@ export interface UIContribution {
 /** UIContribution enriched with the owning plugin's id (returned by engine) */
 export interface LoadedUIContribution extends UIContribution {
   pluginId: string;
-  /** Appended to this plugin's asset URLs by the page, so a redeploy is not served from cache. */
-  assetVersion: string;
 }
 
 // ─── Plugin Context (V1 API passed to plugins) ──────────────────────
@@ -102,7 +100,7 @@ export interface PluginContext {
   getUser(userId: number): Promise<{ id: number; email: string; displayName: string | null; role: string; avatar: string | null } | null>;
   /** Assign a role to a user. Throws if the role doesn't exist. */
   setUserRole(userId: number, roleName: string): Promise<void>;
-  /** Enable or disable an Oscarr user. Disabled users are rejected at login per AppSettings.disabledLoginMode (friendly message vs silent block). Admins cannot be disabled via this method — throws if you try, to protect the server owner from accidental lockout. */
+  /** Enable or disable an LeMedia user. Disabled users are rejected at login per AppSettings.disabledLoginMode (friendly message vs silent block). Admins cannot be disabled via this method — throws if you try, to protect the server owner from accidental lockout. */
   setUserDisabled(userId: number, disabled: boolean): Promise<void>;
   /** Mint an auth JWT for the given user. Caller is responsible for delivering it (cookie, response body, etc.). */
   issueAuthToken(userId: number): Promise<string>;
@@ -117,12 +115,12 @@ export interface PluginContext {
   getServiceConfig(serviceType: string): Promise<{ url: string; apiKey: string } | null>;
   /** Returns the full raw JSON config of a configured service (whatever fields the provider chose to store). Use when you need more than the common url/apiKey subset. */
   getServiceConfigRaw(serviceType: string): Promise<Record<string, unknown> | null>;
-  /** Returns the external auth providers linked to an Oscarr user (identity info only — no tokens). */
+  /** Returns the external auth providers linked to an LeMedia user (identity info only — no tokens). */
   getUserProviders(userId: number): Promise<Array<{ provider: string; providerId: string | null; providerUsername: string | null; providerEmail: string | null }>>;
   /**
-   * Find the Oscarr user linked to a given external provider identity. Returns null if no
+   * Find the LeMedia user linked to a given external provider identity. Returns null if no
    * UserProvider row matches. Useful for plugins that receive events from external systems
-   * (Discord bot webhooks, etc.) and need to resolve the Oscarr user behind an external ID.
+   * (Discord bot webhooks, etc.) and need to resolve the LeMedia user behind an external ID.
    */
   findUserByProvider(provider: string, providerId: string): Promise<{ id: number; email: string; displayName: string | null; role: string; avatar: string | null } | null>;
   registerRoutePermission(routeKey: string, rule: { permission: string; ownerScoped?: boolean }): void;
@@ -134,7 +132,7 @@ export interface PluginContext {
   };
 
   /** Plugin-owned persistent storage. Files live under `data/plugins/<pluginId>/` and are
-   *  wiped on uninstall — they never touch oscarr.db. Gated by `storage:plugin`. */
+   *  wiped on uninstall — they never touch lemedia.db. Gated by `storage:plugin`. */
   kv: {
     get<T>(key: string): Promise<T | null>;
     set<T>(key: string, value: T): Promise<void>;
@@ -160,7 +158,7 @@ export interface PluginContext {
    *  the plugin must declare the service type in its manifest. */
   getArrClients(serviceType: string): Promise<ArrClient[]>;
 
-  /** Find an Oscarr user by email. Symmetric to `findUserByProvider`. Useful for CSV imports,
+  /** Find an LeMedia user by email. Symmetric to `findUserByProvider`. Useful for CSV imports,
    *  cross-system reconciliation, or webhook payloads that only carry an email. */
   findUserByEmail(email: string): Promise<{ id: number; email: string; displayName: string | null; role: string; avatar: string | null } | null>;
 
@@ -177,19 +175,19 @@ export interface PluginContext {
     tv(tmdbId: number, options?: { lang?: string }): Promise<TmdbTv>;
   };
 
-  /** Oscarr-side media helpers. Kept separate from `requests` because `batchStatus` + `getById`
+  /** LeMedia-side media helpers. Kept separate from `requests` because `batchStatus` + `getById`
    *  are read-only and useful on their own (enriching a TMDB result grid, rendering a
    *  notification payload). Gated by `requests:read` — same bucket since both query the same
    *  request-aware view of the library. */
   media: {
-    /** Bulk lookup of Oscarr status for N TMDB ids. When `userId` is passed, also reports the
+    /** Bulk lookup of LeMedia status for N TMDB ids. When `userId` is passed, also reports the
      *  user's personal request status per item. Replaces N+1 patterns where a plugin would
      *  otherwise loop `findByExternalId` per result. */
     batchStatus(
       items: Array<{ tmdbId: number; mediaType: 'movie' | 'tv' }>,
       userId?: number,
     ): Promise<Record<PluginMediaBatchKey, PluginMediaBatchStatus>>;
-    /** Single-media lookup by Oscarr id (not TMDB id). Returns null when the media row
+    /** Single-media lookup by LeMedia id (not TMDB id). Returns null when the media row
      *  doesn't exist — plugins can enrich a notification payload or confirm a reference. */
     getById(mediaId: number): Promise<PluginMedia | null>;
   };
@@ -237,8 +235,6 @@ export interface PluginContext {
       tmdbId: number;
       mediaType: 'movie' | 'tv';
       seasons?: number[];
-      /** Numbering returned by the native catalog, required to dispatch a scoped TV request. */
-      seasonNumbering?: string;
       rootFolder?: string;
       qualityOptionId?: number;
       skipPluginGuard?: boolean;
@@ -290,9 +286,6 @@ export interface LoadedPlugin {
   error?: string;
   /** True when `plugins/<dir>/` is a symlink (dev workflow). Resolved at boot via lstat. */
   isSymlink?: boolean;
-  /** Changes when the plugin's frontend files change. Appended to every asset URL so a redeploy
-   *  is not hidden behind the browser cache. Computed at load; a reload recomputes it. */
-  assetVersion: string;
 }
 
 // ─── Plugin source / runtime status ─────────────────────────────────
@@ -317,5 +310,5 @@ export interface PluginRuntimeStatus {
   autoUpdateEnabled: boolean;
 }
 
-// PluginInfo (the public shape returned by getPluginList()) moved to @oscarr/shared.
-export type { PluginInfo } from '@oscarr/shared';
+// PluginInfo (the public shape returned by getPluginList()) moved to @lemedia/shared.
+export type { PluginInfo } from '@lemedia/shared';

@@ -5,8 +5,8 @@ import jwt from '@fastify/jwt';
 import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
 import { rbacPlugin } from '../middleware/rbac.js';
-import { logEvent } from '../utils/logEvent.js';
 import { maintenanceReason } from '../utils/maintenance.js';
+import { logEvent } from '../utils/logEvent.js';
 
 /** Security layer: headers, CORS, cookies, JWT, rate-limit, CSRF gate, RBAC. */
 export async function registerSecurity(app: FastifyInstance) {
@@ -16,18 +16,19 @@ export async function registerSecurity(app: FastifyInstance) {
       directives: {
         defaultSrc: ["'self'"],
         // Strict: only same-origin scripts + the static importmap hash (plugin runtime resolution
-        // for react / react-dom / @oscarr/sdk). Update if packages/frontend/index.html changes.
-        scriptSrc: ["'self'", "'sha256-faXwVQbBGEbFozbVLtyhAzVuniTmTwA/WN/tTKNJ88g='"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
+        // for react / react-dom / @lemedia/sdk). Update if packages/frontend/index.html changes.
+        scriptSrc: ["'self'", "'unsafe-inline'", 'https://challenges.cloudflare.com', 'https://telegram.org', 'https://oauth.telegram.org'],
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://telegram.org'],
         // Permissive: any HTTPS image is allowed. <img> can't execute code, and the alternative
         // (allowlisting plex.tv / discord / jellyfin / emby / radarr / sonarr / future providers
         // / user-uploaded TMDB-mirror endpoints) creates ongoing CSP friction with no real
         // security benefit on a self-hosted, reverse-proxied app.
         imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
-        connectSrc: ["'self'", 'https://api.themoviedb.org', 'https://image.tmdb.org'],
+        connectSrc: ["'self'", 'https://api.themoviedb.org', 'https://image.tmdb.org', 'https://challenges.cloudflare.com', 'https://oauth.telegram.org'],
         mediaSrc: ["'self'", 'blob:'],
         workerSrc: ["'self'", 'blob:'],
         fontSrc: ["'self'", 'data:'],
+        frameSrc: ["'self'", 'https://challenges.cloudflare.com', 'https://oauth.telegram.org', 'https://telegram.org', 'https://www.youtube-nocookie.com'],
         frameAncestors: ["'none'"],
         formAction: ["'self'"],
         baseUri: ["'self'"],
@@ -55,7 +56,15 @@ export async function registerSecurity(app: FastifyInstance) {
     secret: jwtSecret,
     cookie: { cookieName: 'token', signed: false },
   });
-  await app.register(rateLimit, { global: false });
+  await app.register(rateLimit, {
+    // Global ceiling guards against scrapers/burst traffic. Per-route limits below
+    // still win where stricter. Webhooks are exempt — *arr instances burst on import.
+    global: true,
+    max: 500,
+    timeWindow: '1 minute',
+    allowList: (req) => req.url.startsWith('/api/webhooks/') || req.url.startsWith('/api/app/banner'),
+    skipOnError: true,
+  });
 
   // Maintenance latch — held while a restore swaps the database file. Answering 503 here beats
   // letting handlers hit a disconnected Prisma client mid-swap.
@@ -66,15 +75,23 @@ export async function registerSecurity(app: FastifyInstance) {
     return reply.status(503).header('Retry-After', '15').send({ error: 'MAINTENANCE', reason: why });
   });
 
-  // CSRF gate — /api/admin/* must carry X-Requested-With: oscarr. Custom headers can't be
+  // CSRF gate — /api/admin/* must carry X-Requested-With: lemedia. Custom headers can't be
   // set by a forged cross-origin request.
   app.addHook('onRequest', async (request, reply) => {
     if (!request.url.startsWith('/api/admin/')) return;
-    if (request.headers['x-requested-with'] === 'oscarr') return;
+    if (request.headers['x-requested-with'] === 'lemedia') return;
     return reply.status(403).send({ error: 'CSRF_HEADER_REQUIRED' });
   });
 
   rbacPlugin(app);
+
+  // Private instance posture: nothing here is meant for a search index (auth-walled app,
+  // personal library data). Belt-and-braces alongside public/robots.txt — a misconfigured
+  // reverse proxy that strips static files can't accidentally get these pages indexed.
+  app.addHook('onSend', async (_request, reply, payload) => {
+    reply.header('X-Robots-Tag', 'noindex, nofollow');
+    return payload;
+  });
 
   // Forward unhandled 5xx errors to AppLog so they surface in Admin → System → Logs. 4xx are
   // expected (bad input, auth, not-found) — logging them would flood the table. Fastify still

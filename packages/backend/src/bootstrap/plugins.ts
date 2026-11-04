@@ -18,7 +18,7 @@ export async function registerPlugins(app: FastifyInstance) {
   if (failed.length > 0) {
     app.log.warn(
       { failed },
-      `${failed.length} plugin(s) failed to load — see earlier errors for details`,
+      `${failed.length} plugin(s) failed to load, see earlier errors for details`,
     );
   }
 

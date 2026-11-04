@@ -19,6 +19,8 @@ export interface HomepageSection {
     voteCountGte?: number;
     sortBy?: string;
     language?: string;
+    watchProviders?: number[];
+    watchRegion?: string;
   };
 }
 

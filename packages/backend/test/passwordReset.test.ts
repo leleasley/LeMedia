@@ -36,7 +36,7 @@ beforeAll(async () => {
   sink = await startSmtpSink();
   await saveMailConfig({
     enabled: true, transport: 'smtp', host: '127.0.0.1', port: sink.port,
-    secure: false, user: '', password: '', fromEmail: 'Oscarr <no-reply@test.local>',
+    secure: false, user: '', password: '', fromEmail: 'LeMedia <no-reply@test.local>',
   });
 });
 
@@ -45,8 +45,8 @@ beforeEach(async () => {
   await prisma.user.deleteMany({ where: { email: { in: [localEmail, providerEmail] } } });
   await prisma.appSettings.upsert({
     where: { id: 1 },
-    update: { passwordResetEnabled: true, siteName: 'Oscarr', siteUrl: 'https://oscarr.test' },
-    create: { id: 1, passwordResetEnabled: true, siteName: 'Oscarr', siteUrl: 'https://oscarr.test' },
+    update: { passwordResetEnabled: true, siteName: 'LeMedia', siteUrl: 'https://lemedia.test' },
+    create: { id: 1, passwordResetEnabled: true, siteName: 'LeMedia', siteUrl: 'https://lemedia.test' },
   });
   await prisma.authProviderSettings.upsert({
     where: { provider: 'email' },
@@ -112,10 +112,10 @@ describe('mail transport', () => {
 describe('password reset — nominal', () => {
   it('delivers a link and changes the password', async () => {
     const token = await lastToken();
-    expect(await consumeReset(token, 'brandnewpass')).toBeNull();
+    expect(await consumeReset(token, 'Brandnewpass1!')).toBeNull();
 
     const user = await prisma.user.findUnique({ where: { id: localId } });
-    expect(await verifyPassword('brandnewpass', user!.passwordHash!)).toBe(true);
+    expect(await verifyPassword('Brandnewpass1!', user!.passwordHash!)).toBe(true);
     expect(await verifyPassword('originalpass', user!.passwordHash!)).toBe(false);
   });
 
@@ -128,26 +128,26 @@ describe('password reset — nominal', () => {
 
   it('builds the link from siteUrl, never from the request', async () => {
     await lastToken();
-    expect(sink.received.at(-1)!.replace(/=\r?\n/g, '')).toContain('https://oscarr.test/reset-password');
+    expect(sink.received.at(-1)!.replace(/=\r?\n/g, '')).toContain('https://lemedia.test/reset-password');
   });
 });
 
 describe('password reset — token lifecycle', () => {
   it('refuses a reused token', async () => {
     const token = await lastToken();
-    expect(await consumeReset(token, 'firstpass')).toBeNull();
-    expect(await consumeReset(token, 'secondpass')).toBe('INVALID_TOKEN');
+    expect(await consumeReset(token, 'Firstpass1!')).toBeNull();
+    expect(await consumeReset(token, 'Secondpass1!')).toBe('INVALID_TOKEN');
   });
 
   it('refuses an unknown token', async () => {
-    expect(await consumeReset('nonsense', 'whatever12')).toBe('INVALID_TOKEN');
+    expect(await consumeReset('nonsense', 'Whatever12!')).toBe('INVALID_TOKEN');
   });
 
   it('invalidates the previous link when a new one is requested', async () => {
     const first = await lastToken();
     const second = await lastToken();
-    expect(await consumeReset(first, 'firstpass')).toBe('INVALID_TOKEN');
-    expect(await consumeReset(second, 'secondpass')).toBeNull();
+    expect(await consumeReset(first, 'Firstpass1!')).toBe('INVALID_TOKEN');
+    expect(await consumeReset(second, 'Secondpass1!')).toBeNull();
   });
 
   it('refuses an expired token', async () => {
@@ -156,18 +156,18 @@ describe('password reset — token lifecycle', () => {
       where: { userId: localId, usedAt: null },
       data: { expiresAt: new Date(Date.now() - 1000) },
     });
-    expect(await consumeReset(token, 'expiredpass')).toBe('INVALID_TOKEN');
+    expect(await consumeReset(token, 'Expiredpass1!')).toBe('INVALID_TOKEN');
   });
 
   it('keeps the token alive after a rejected password', async () => {
     const token = await lastToken();
     expect(await consumeReset(token, 'short')).toBe('PASSWORD_TOO_SHORT');
-    expect(await consumeReset(token, 'longenough1')).toBeNull();
+    expect(await consumeReset(token, 'Longenough1!')).toBeNull();
   });
 
   it('purges spent and expired rows', async () => {
     const token = await lastToken();
-    await consumeReset(token, 'donepass123');
+    await consumeReset(token, 'Donepass123!');
     expect(await purgeExpiredResets()).toBeGreaterThan(0);
     expect(await prisma.passwordResetToken.count({ where: { userId: localId } })).toBe(0);
   });

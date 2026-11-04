@@ -19,7 +19,12 @@ export interface RadarrMovie {
   inCinemas?: string;
   releaseDate?: string;
   movieFile?: {
+    id?: number;
     dateAdded: string;
+    /** Full path on the Radarr host (e.g. /mnt/…/__magic__/movies/X/file.mkv). */
+    path?: string;
+    relativePath?: string;
+    size?: number;
     languages?: { id: number; name: string }[];
     mediaInfo?: {
       audioLanguages?: string;  // e.g. "English / French"

@@ -13,6 +13,8 @@ export interface CalendarItem {
   poster: string | null;
   hasFile?: boolean;
   episodeCount?: number;
+  /** Where the date came from: movie digital/physical/cinema/theatrical, episode air. */
+  releaseKind?: string;
 }
 
 interface UseCalendarReturn {

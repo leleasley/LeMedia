@@ -18,7 +18,7 @@ interface WizardShellProps {
 export function WizardShell({ steps, currentStep, banner, brandTagline, children }: Readonly<WizardShellProps>) {
   return (
     <div className="min-h-dvh bg-ndp-bg flex flex-col lg:grid lg:grid-cols-[420px_1fr_420px] relative overflow-hidden">
-      {/* Ambient accent glow — soft halos anchored top-left that bleed across both panels.
+      {/* Ambient accent glow, soft halos anchored top-left that bleed across both panels.
        *  Lifted out of the brand `<aside>` so the blur isn't clipped at its boundary. */}
       <div aria-hidden className="pointer-events-none absolute -top-40 -left-40 w-[40rem] h-[40rem] rounded-full bg-ndp-accent/10 blur-3xl z-0" />
       <div aria-hidden className="pointer-events-none absolute top-32 -left-20 w-[28rem] h-[28rem] rounded-full bg-purple-500/8 blur-3xl z-0" />
@@ -27,7 +27,7 @@ export function WizardShell({ steps, currentStep, banner, brandTagline, children
       <aside className="relative z-10 flex-shrink-0 lg:col-start-1 flex flex-col border-b lg:border-b-0 border-white/5">
         <div className="relative px-8 pt-10 pb-6 lg:pt-16">
           <h1 className="text-4xl lg:text-5xl font-black uppercase tracking-[0.3em] text-ndp-text leading-none">
-            Oscarr
+            LeMedia
           </h1>
           {brandTagline && (
             <p className="mt-3 text-[11px] font-mono uppercase tracking-[0.25em] text-ndp-text-dim">

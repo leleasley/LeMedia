@@ -1,4 +1,4 @@
-import type { SeriesCatalog, SeriesEpisodes } from '@oscarr/shared';
+import type { SeriesCatalog, SeriesEpisodes } from '@lemedia/shared';
 import { getCached, setCache } from '../utils/cache.js';
 import type { ArrClient } from '../providers/types.js';
 import { getServiceMetadata, loadServiceMetadata, resolveMetadataSource, ServiceMetadataError } from './serviceMetadata.js';

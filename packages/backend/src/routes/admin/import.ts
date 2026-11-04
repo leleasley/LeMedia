@@ -20,6 +20,8 @@ function pickAdapter(source: ImportSource): ImportAdapter {
       return jellyseerrAdapter;
     case 'seerr':
       return seerrAdapter;
+    case 'ombi':
+      throw new Error('Ombi importer not implemented yet.');
     default: {
       const _exhaustive: never = source;
       void _exhaustive;
@@ -32,7 +34,7 @@ const credsSchema = {
   type: 'object',
   required: ['source', 'url', 'apiKey'],
   properties: {
-    source: { type: 'string', enum: ['overseerr', 'jellyseerr', 'seerr'] },
+    source: { type: 'string', enum: ['overseerr', 'jellyseerr', 'seerr', 'ombi'] },
     url: { type: 'string', minLength: 1 },
     apiKey: { type: 'string', minLength: 1 },
   },
@@ -94,7 +96,7 @@ export async function importRoutes(app: FastifyInstance) {
               properties: {
                 sourceId: { type: 'string' },
                 action: { type: 'string', enum: ['link', 'create', 'skip'] },
-                oscarrUserId: { type: 'integer' },
+                lemediaUserId: { type: 'integer' },
               },
             },
           },
@@ -117,7 +119,7 @@ export async function importRoutes(app: FastifyInstance) {
   });
 
   // Migration-driven config import — used by the install wizard's Migrate path to
-  // bootstrap Oscarr with the source's services, default folders and locale.
+  // bootstrap LeMedia with the source's services, default folders and locale.
   const configCredsSchema = {
     type: 'object',
     required: ['source', 'url', 'apiKey'],

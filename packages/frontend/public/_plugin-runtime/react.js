@@ -1,4 +1,4 @@
-const R = window.__OSCARR_REACT__;
+const R = window.__LEMEDIA_REACT__;
 export default R;
 export const {
   // Hooks

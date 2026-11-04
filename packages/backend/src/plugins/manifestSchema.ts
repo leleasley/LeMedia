@@ -116,7 +116,7 @@ const pluginManifestSchema = z.object({
   entry: relativePath,
   frontend: relativePath.optional(),
   engines: z.object({
-    oscarr: z.string().min(1),
+    lemedia: z.string().min(1),
     testedAgainst: z.array(z.string().min(1)).optional(),
   }).strict().optional(),
   services: z.array(z.string().min(1)).optional(),

@@ -5,7 +5,7 @@ import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/re
 import { useSeasonEpisodes } from '@/hooks/useSeasonEpisodes';
 import type { DownloadItem } from '@/hooks/useDownloads';
 import { nextEpisodeDate } from '@/utils/episodeStatus';
-import type { SeriesSeason } from '@oscarr/shared';
+import type { SeriesSeason } from '@lemedia/shared';
 import type { SeasonExplorerProps, SeasonRequestState } from './SeasonExplorer';
 import { SeasonEpisodes } from './SeasonEpisodes';
 import { SeasonRequestForm } from './SeasonRequestForm';

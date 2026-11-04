@@ -1,5 +1,5 @@
 import { prisma } from '../../utils/prisma.js';
-import { getMovieDetails, getTvDetails, extractKeywords, extractContentRating, type TmdbMovie, type TmdbTv } from '../tmdb.js';
+import { getMovieDetails, getTvDetails, extractKeywords, extractContentRating, extractDigitalRelease, type TmdbMovie, type TmdbTv } from '../tmdb.js';
 import { logEvent } from '../../utils/logEvent.js';
 import { chunk } from '../../utils/batch.js';
 import { findTvPlaceholder, upgradeOrMergeTvPlaceholder } from '../mediaService.js';
@@ -93,7 +93,9 @@ export async function syncMissingKeywords(): Promise<{ synced: number; errors: n
 
 /**
  * Track keywords + content rating when a TMDB detail page is viewed.
- * Upserts keywords and ensures the Media row has data set.
+ * Upserts keywords and ensures the Media row has data set. For movies this also hydrates
+ * the digital release date from the already-fetched release_dates payload (never wipes an
+ * existing value — a null here just means TMDB doesn't know one yet).
  */
 export async function trackKeywordsFromDetails(
   tmdbId: number,
@@ -102,6 +104,10 @@ export async function trackKeywordsFromDetails(
 ): Promise<void> {
   const keywords = extractKeywords(details);
   const contentRating = await extractContentRating(details);
+  const digitalReleaseDate = mediaType === 'movie'
+    ? await extractDigitalRelease(details as TmdbMovie).catch(() => null)
+    : null;
+  const digitalDateUpdate = digitalReleaseDate ? { digitalReleaseDate } : {};
 
   for (const kw of keywords) {
     const autoTag = AUTO_NSFW_KEYWORDS.has(kw.name.toLowerCase()) ? 'nsfw' : undefined;
@@ -130,7 +136,7 @@ export async function trackKeywordsFromDetails(
 
   await prisma.media.upsert({
     where: { tmdbId_mediaType: { tmdbId, mediaType } },
-    update: { keywordIds, contentRating, ...(tvdbId ? { tvdbId } : {}) },
+    update: { keywordIds, contentRating, ...(tvdbId ? { tvdbId } : {}), ...digitalDateUpdate },
     create: {
       tmdbId,
       mediaType,
@@ -140,6 +146,7 @@ export async function trackKeywordsFromDetails(
       backdropPath: details.backdrop_path,
       keywordIds,
       contentRating,
+      ...digitalDateUpdate,
     },
   });
 }

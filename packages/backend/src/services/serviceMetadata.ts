@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { ServiceMetadata } from '@oscarr/shared';
+import type { ServiceMetadata } from '@lemedia/shared';
 import { prisma } from '../utils/prisma.js';
 import { getServiceById } from '../utils/services.js';
 import { getArrClientForService, getServiceTypeForMedia } from '../providers/index.js';

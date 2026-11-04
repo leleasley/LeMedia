@@ -58,13 +58,13 @@ interface PageEnvelope<T> {
 }
 import { trimTrailingSlashes } from '../utils/trimTrailingSlashes.js';
 
-function buildUrl(base: string, path: string): string {
-  return `${trimTrailingSlashes(base)}${path}`;
-}
-
 /** Per-request ceiling. Without one, a Seerr instance that accepts the connection and then goes
  *  quiet parks the import forever — `fetch` has no default timeout. */
 const REQUEST_TIMEOUT_MS = 20_000;
+
+function buildUrl(base: string, path: string): string {
+  return `${trimTrailingSlashes(base)}${path}`;
+}
 
 async function seerrFetch<T>(creds: AdapterCredentials, path: string): Promise<T> {
   const res = await fetch(buildUrl(creds.url, path), {
@@ -96,7 +96,7 @@ async function fetchAllPages<T>(creds: AdapterCredentials, path: string): Promis
   return rows;
 }
 
-/** Map Overseerr's MediaRequestStatus enum to Oscarr's request status. The enum has grown
+/** Map Overseerr's MediaRequestStatus enum to LeMedia's request status. The enum has grown
  *  over Overseerr versions (1=pending, 2=approved, 3=declined, 4=failed/completed depending
  *  on fork) so we whitelist only the two unambiguous codes (pending, declined) and treat
  *  anything else as approved — a request that's been moved past the pending tray by an admin

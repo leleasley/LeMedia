@@ -40,7 +40,7 @@ export async function createPlexPin(clientId: string): Promise<{ id: number; cod
       params: { strong: true },
       headers: {
         Accept: 'application/json',
-        'X-Plex-Product': 'Oscarr',
+        'X-Plex-Product': 'LeMedia',
         'X-Plex-Client-Identifier': clientId,
         'X-Plex-Version': '1.0.0',
       },
@@ -79,8 +79,8 @@ export async function getSharedServerUsers(adminToken: string, machineId: string
   const { data } = await axios.get(`https://plex.tv/api/servers/${encodeURIComponent(machineId)}/shared_servers`, {
     headers: {
       'X-Plex-Token': adminToken,
-      'X-Plex-Client-Identifier': 'oscarr-client',
-      'X-Plex-Product': 'Oscarr',
+      'X-Plex-Client-Identifier': 'lemedia-client',
+      'X-Plex-Product': 'LeMedia',
       'X-Plex-Version': '1.0.0',
       Accept: 'application/xml',
     },
@@ -133,8 +133,8 @@ export async function removeSharedServer(
     {
       headers: {
         'X-Plex-Token': adminToken,
-        'X-Plex-Client-Identifier': 'oscarr-client',
-        'X-Plex-Product': 'Oscarr',
+        'X-Plex-Client-Identifier': 'lemedia-client',
+        'X-Plex-Product': 'LeMedia',
         'X-Plex-Version': '1.0.0',
       },
     }
@@ -155,7 +155,7 @@ export async function checkPlexServerAccess(
       headers: {
         Accept: 'application/json',
         'X-Plex-Token': userPlexToken,
-        'X-Plex-Client-Identifier': 'oscarr-client',
+        'X-Plex-Client-Identifier': 'lemedia-client',
       },
       params: { includeHttps: 1, includeRelay: 1 },
     });

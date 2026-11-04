@@ -72,6 +72,9 @@ export interface SonarrEpisodeFile {
   id: number;
   seriesId: number;
   seasonNumber: number;
+  /** Full path on the Sonarr host. */
+  path?: string;
+  relativePath?: string;
   languages?: { id: number; name: string }[];
   quality: { quality: { name: string } };
   size: number;

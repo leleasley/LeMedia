@@ -4,9 +4,9 @@ import type { PluginManifest } from './types.js';
 import { parseManifest } from './manifestSchema.js';
 import { PLUGINS_DIR } from '../utils/paths.js';
 
-/** Resolve the plugins directory. Supports OSCARR_PLUGINS_DIR env var. */
+/** Resolve the plugins directory. Supports LEMEDIA_PLUGINS_DIR env var. */
 export function getPluginsDir(): string {
-  if (process.env.OSCARR_PLUGINS_DIR) return resolve(process.env.OSCARR_PLUGINS_DIR);
+  if (process.env.LEMEDIA_PLUGINS_DIR) return resolve(process.env.LEMEDIA_PLUGINS_DIR);
   return PLUGINS_DIR;
 }
 
@@ -23,7 +23,7 @@ export async function discoverPlugins(): Promise<DiscoveredPlugin[]> {
   try {
     await access(pluginsDir);
   } catch {
-    return []; // Directory doesn't exist — no plugins
+    return []; // Directory doesn't exist, no plugins
   }
 
   const entries = await readdir(pluginsDir, { withFileTypes: true });

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useId, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { Plus, Trash2, X, XCircle, Pencil, Copy, Power, GripVertical, AlertTriangle } from 'lucide-react';
-import { RULE_FIELDS, criterionField, criterionIdOf, operatorsForAnyField } from '@oscarr/shared';
+import { RULE_FIELDS, criterionField, criterionIdOf, operatorsForAnyField } from '@lemedia/shared';
 import api from '@/lib/api';
 import { Spinner } from './Spinner';
 import type { RootFolder } from '@/types';
@@ -58,7 +58,7 @@ async function fetchRootFolders(arrServices: RoutingService[]) {
     }
     const url = svc.config?.url || '';
     for (const f of res.data) {
-      folders.push({ path: f.path, label: `${f.path} — ${svc.name}${url ? ` (${url})` : ''}`, serviceId: svc.id });
+      folders.push({ path: f.path, label: `${f.path}, ${svc.name}${url ? ` (${url})` : ''}`, serviceId: svc.id });
     }
   });
   return { folders, failed };
@@ -293,7 +293,7 @@ export function RoutingRulesTab() {
       <div className="col-span-2 flex min-w-0 sm:col-span-1">{renderValueInput(cond, i)}</div>
       </div>
       {newConditions.length > 1 && (
-        <button onClick={() => setNewConditions(prev => prev.filter((_, j) => j !== i))} className="text-ndp-text-dim hover:text-ndp-danger"><XCircle className="w-4 h-4" /></button>
+        <button onClick={() => setNewConditions(prev => prev.filter((_, j) => j !== i))} aria-label={t('common.delete')} className="w-9 h-9 flex items-center justify-center flex-shrink-0 rounded-lg text-ndp-text-dim hover:text-ndp-danger hover:bg-ndp-danger/10 transition-colors"><XCircle className="w-4 h-4" /></button>
       )}
     </div>
   );
@@ -302,18 +302,20 @@ export function RoutingRulesTab() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-ndp-text">{t('admin.paths.routing_rules')} ({rules.length})</h2>
-        <button onClick={() => { resetForm(); setShowForm(true); }} className="btn-primary text-sm flex items-center gap-2 px-4 py-2">
-          <Plus className="w-4 h-4" /> {t('admin.paths.new_rule')}
-        </button>
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-3 min-h-[40px]">
+          <h2 className="font-display-title text-3xl text-ndp-text">{t('admin.paths.routing_rules')} ({rules.length})</h2>
+          <button onClick={() => { resetForm(); setShowForm(true); }} className="btn-primary text-sm flex items-center gap-1.5 px-4 py-2 min-h-[40px]">
+            <Plus className="w-4 h-4" /> {t('admin.paths.new_rule')}
+          </button>
+        </div>
+        <p className="text-sm text-ndp-text-dim leading-relaxed">{t('admin.paths.rules_help')}</p>
       </div>
-      <p className="text-xs text-ndp-text-dim mb-4">{t('admin.paths.rules_help')}</p>
 
       {unreachableServices.length > 0 && (
-        <div className="flex items-center gap-3 p-3 rounded-xl bg-ndp-warning/10 border border-ndp-warning/20 mb-4">
-          <AlertTriangle className="w-4 h-4 text-ndp-warning flex-shrink-0" />
-          <p className="text-sm text-ndp-warning">
+        <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-ndp-warning/10 border border-ndp-warning/20">
+          <AlertTriangle className="w-4 h-4 mt-0.5 text-ndp-warning flex-shrink-0" />
+          <p className="text-sm text-ndp-warning min-w-0 break-words">
             {t('admin.paths.services_unreachable', { services: unreachableServices.join(', ') })}
           </p>
         </div>
@@ -365,17 +367,17 @@ export function RoutingRulesTab() {
                   </div>
                 </div>
                 <div className="ml-auto flex shrink-0 items-center gap-1">
-                  <button onClick={() => toggleRule(rule.id)} className={`p-1.5 rounded-lg transition-colors ${rule.enabled ? 'text-ndp-success hover:bg-ndp-success/10' : 'text-ndp-text-dim hover:bg-white/5'}`} title={rule.enabled ? t('admin.paths.disable') : t('admin.paths.enable')}>
-                    <Power className="w-3.5 h-3.5" />
+                  <button onClick={() => toggleRule(rule.id)} className={`w-10 h-10 flex items-center justify-center rounded-lg transition-colors ${rule.enabled ? 'text-ndp-success hover:bg-ndp-success/10' : 'text-ndp-text-dim hover:bg-white/[0.06]'}`} title={rule.enabled ? t('admin.paths.disable') : t('admin.paths.enable')} aria-label={rule.enabled ? t('admin.paths.disable') : t('admin.paths.enable')}>
+                    <Power className="w-4 h-4" />
                   </button>
-                  <button onClick={() => startEdit(rule)} className="p-1.5 text-ndp-text-dim hover:text-ndp-accent hover:bg-ndp-accent/10 rounded-lg transition-colors" title={t('common.edit')}>
-                    <Pencil className="w-3.5 h-3.5" />
+                  <button onClick={() => startEdit(rule)} className="w-10 h-10 flex items-center justify-center text-ndp-text-dim hover:text-ndp-text hover:bg-white/[0.06] rounded-lg transition-colors" title={t('common.edit')} aria-label={t('common.edit')}>
+                    <Pencil className="w-4 h-4" />
                   </button>
-                  <button onClick={() => duplicateRule(rule.id)} className="p-1.5 text-ndp-text-dim hover:text-ndp-accent hover:bg-ndp-accent/10 rounded-lg transition-colors" title={t('admin.paths.duplicate')}>
-                    <Copy className="w-3.5 h-3.5" />
+                  <button onClick={() => duplicateRule(rule.id)} className="w-10 h-10 flex items-center justify-center text-ndp-text-dim hover:text-ndp-text hover:bg-white/[0.06] rounded-lg transition-colors" title={t('admin.paths.duplicate')} aria-label={t('admin.paths.duplicate')}>
+                    <Copy className="w-4 h-4" />
                   </button>
-                  <button onClick={() => setConfirmDeleteId(rule.id)} className="p-1.5 text-ndp-text-dim hover:text-ndp-danger hover:bg-ndp-danger/10 rounded-lg transition-colors" title={t('common.delete')}>
-                    <Trash2 className="w-3.5 h-3.5" />
+                  <button onClick={() => setConfirmDeleteId(rule.id)} className="w-10 h-10 flex items-center justify-center text-ndp-text-dim hover:text-ndp-danger hover:bg-ndp-danger/10 rounded-lg transition-colors" title={t('common.delete')} aria-label={t('common.delete')}>
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>
@@ -450,13 +452,13 @@ export function RoutingRulesTab() {
 
       {/* Delete confirmation modal */}
       {confirmDeleteId !== null && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 animate-fade-in" onClick={() => setConfirmDeleteId(null)}>
-          <div className="bg-ndp-bg-card border border-white/10 rounded-2xl p-6 max-w-sm w-full mx-4 space-y-4" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay z-50" onClick={() => setConfirmDeleteId(null)}>
+          <div className="modal-panel px-5 pt-6 pb-5 sm:p-6 max-w-sm w-full space-y-4" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-base font-semibold text-ndp-text">{t('admin.paths.confirm_delete_title')}</h3>
             <p className="text-sm text-ndp-text-muted">{t('admin.paths.confirm_delete_desc')}</p>
-            <div className="flex gap-2 justify-end">
-              <button onClick={() => setConfirmDeleteId(null)} className="btn-secondary text-sm">{t('common.cancel')}</button>
-              <button onClick={() => deleteRule(confirmDeleteId)} className="px-4 py-2 bg-ndp-danger/10 text-ndp-danger hover:bg-ndp-danger/20 rounded-xl text-sm font-medium transition-colors">{t('common.delete')}</button>
+            <div className="flex justify-end gap-2 pt-1">
+              <button onClick={() => setConfirmDeleteId(null)} className="btn-secondary text-sm px-4 py-2">{t('common.cancel')}</button>
+              <button onClick={() => deleteRule(confirmDeleteId)} className="btn-danger text-sm px-4 py-2">{t('common.delete')}</button>
             </div>
           </div>
         </div>
@@ -536,7 +538,7 @@ function FormSection({ step, title, children }: Readonly<{ step: number; title: 
   );
 }
 
-// Operators come from the shared field×operator matrix (@oscarr/shared) — the same source the
+// Operators come from the shared field×operator matrix (@lemedia/shared) — the same source the
 // backend matcher and validator use, so the UI can no longer offer a dead combo nor hide a valid
 // one (e.g. role/quality "in" are now selectable, matching the backend).
 function getDefaultOperator(field: string): string {

@@ -1,6 +1,6 @@
 import { Check, CircleDashed, CircleHelp, Clock, Download, Minus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { SeriesSeason } from '@oscarr/shared';
+import type { SeriesSeason } from '@lemedia/shared';
 
 const statusIcons = {
   complete: Check,

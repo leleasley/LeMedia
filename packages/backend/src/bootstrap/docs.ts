@@ -29,8 +29,8 @@ export async function registerDocs(app: FastifyInstance) {
   await app.register(swagger, {
     openapi: {
       info: {
-        title: 'Oscarr API',
-        description: 'API documentation for Oscarr — media request management',
+        title: 'LeMedia API',
+        description: 'API documentation for LeMedia, media request management',
         version: '0.1.0-alpha',
       },
       components: {
@@ -40,9 +40,9 @@ export async function registerDocs(app: FastifyInstance) {
       },
       security: [{ cookieAuth: [] }],
       tags: [
-        { name: 'Public', description: 'No authentication required — open to anyone' },
+        { name: 'Public', description: 'No authentication required, open to anyone' },
         { name: 'Auth Required', description: 'Requires a valid JWT session (logged-in user)' },
-        { name: 'Admin Only', description: 'Requires admin role — sensitive operations' },
+        { name: 'Admin Only', description: 'Requires admin role, sensitive operations' },
       ],
     },
   });

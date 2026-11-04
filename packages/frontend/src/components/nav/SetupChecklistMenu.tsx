@@ -115,7 +115,7 @@ export default function SetupChecklistMenu({ dropdownDirection = 'below' }: Prop
             ))}
           </ul>
 
-          {/* Explicit, full-width "stop reminding me" — previous design used a bare X icon in
+          {/* Explicit, full-width "stop reminding me", previous design used a bare X icon in
               the header that looked like a close-dropdown affordance but actually persisted
               a dismissal. Users hit it by accident. Now: dropdown closes via outside-click or
               clicking the bell again; permanent dismissal is this clearly-labeled button. */}

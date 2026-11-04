@@ -28,6 +28,24 @@ model User {
   pushSubscriptions     PushSubscription[]
   apiKeys               UserApiKey[]
   passwordResets        PasswordResetToken[]
+  shareLinks            ShareLink[]
+  notifyRequests        Boolean   @default(true)  // bell notifications for own requests (approved/declined/available)
+  notifyDigital         Boolean   @default(true)  // bell notifications for digital release dates
+  pushPrefs             String?   // phone/web push opt-outs: JSON { [type]: boolean }, missing = on
+}
+
+model UserInvite {
+  id         Int       @id @default(autoincrement())
+  email      String
+  tokenHash  String    @unique
+  role       String    @default("user")
+  invitedBy  Int?
+  expiresAt  DateTime
+  acceptedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([email])
+  @@index([expiresAt])
 }
 
 /// Password reset is for local accounts only — a Plex/Jellyfin/Emby/Discord user has no
@@ -66,7 +84,7 @@ model UserApiKey {
   name       String              // user-chosen label, e.g. "Doplarr", "Maintainerr"
   // sha256(plain key) — bcrypt is overkill for high-entropy tokens, sha256 lookups are constant-time enough.
   keyHash    String    @unique
-  prefix     String              // first 12 chars of the plain key, kept for display ("oscarr_a3f2…")
+  prefix     String              // first 12 chars of the plain key, kept for display ("lemedia_a3f2…")
   lastUsedAt DateTime?
   createdAt  DateTime  @default(now())
   revokedAt  DateTime?
@@ -105,6 +123,14 @@ model UserProvider {
   @@index([userId])
 }
 
+/// Outside accounts LeMedia connects to for itself (not sign-in), one row per integration —
+/// e.g. "github" for reading Zurg/rex release feeds. Secrets in `config` are encrypted.
+model Integration {
+  id        String   @id
+  config    String   @default("{}")
+  updatedAt DateTime @updatedAt
+}
+
 model AuthProviderSettings {
   id         Int      @id @default(autoincrement())
   provider   String   @unique  // "email" | "plex" | "jellyfin" | "emby" | "discord" | ...
@@ -124,6 +150,10 @@ model Media {
   posterPath          String?
   backdropPath        String?
   releaseDate         String?
+  digitalReleaseDate  String?   // TMDB digital release date (YYYY-MM-DD, type 4, physical fallback)
+  // Notification dedupe for the digital_release_sync job (null = not sent yet).
+  digitalDiscoveredNotifiedAt DateTime?
+  digitalReleaseNotifiedAt    DateTime?
   voteAverage         Float?
   genres              String?   // JSON string array
   keywordIds          String?   // JSON array of TMDB keyword IDs, e.g. "[210024,818]"
@@ -177,7 +207,7 @@ model MediaRequest {
   id            Int       @id @default(autoincrement())
   mediaId       Int
   userId        Int
-  status        String    @default("pending") // "pending" | "approved" | "declined" | "processing" | "available" | "failed"
+  status        String    @default("pending") // "pending" | "approved" | "declined" | "processing" | "available" | "failed" | "deleted"
   mediaType     String    // "movie" | "tv"
   seasons       String?   // JSON array of season numbers for TV requests, null = all seasons
   seasonNumbering String? // Provider numbering at selection time; null = unknown legacy provenance
@@ -248,17 +278,14 @@ model AppSettings {
   plexMachineId         String?   // Plex server machine identifier for access verification
   lastRadarrSync        DateTime? // Last Radarr sync timestamp
   lastSonarrSync        DateTime? // Last Sonarr sync timestamp
-  /// Deprecated — cron schedules live in CronJob, one row per job, and nothing reads this.
-  /// Kept only so an existing database doesn't need a column drop mid-release; remove it with a
-  /// migration on the next schema change.
-  syncIntervalHours     Int       @default(6)
+  syncIntervalHours     Int       @default(6) // Auto-sync interval in hours
   notificationMatrix    String?
   incidentBanner        String?   // Global incident banner text (null = no banner)
   disabledLoginMode     String    @default("friendly") // "block" | "friendly" — how to reject login for User.disabled=true
   autoApproveRequests   Boolean   @default(false)
   requestsEnabled       Boolean   @default(true)
   calendarEnabled       Boolean   @default(true)
-  siteName              String    @default("Oscarr")
+  siteName              String    @default("LeMedia")
   registrationEnabled   Boolean   @default(true)
   // Opt-in: an install that upgrades must not silently gain a new unauthenticated auth surface.
   // Also inert without a working mail transport, so defaulting it on would only produce dead links.
@@ -278,14 +305,14 @@ model AppSettings {
   nsfwBlurEnabled       Boolean   @default(true)
   missingSearchCooldownMin Int   @default(60) // Minutes before allowing another missing search
   instanceLanguages     String    @default("[\"en\"]") // JSON array of ISO 639-1 codes, e.g. ["fr","en"]
-  siteUrl               String?   // Public URL of the instance (e.g. https://oscarr.example.com) for notification links
+  siteUrl               String?   // Public URL of the instance (e.g. https://lemedia.example.com) for notification links
   apiKey                String?   // API key for external access (health check, integrations)
   homepageLayout        String?   // JSON array of HomepageSection configs
   adminDashboardLayout  String?   // JSON: { version, items[{ i, x, y, w, h }] } — null = use defaults
   verboseRequestLog     Boolean   @default(false) // When true, every HTTP request is persisted to AppLog (debug only)
   customLinks           String    @default("[]") // JSON array of { id, label, url, icon, order } — admin-defined external links rendered in the user account modal
   setupChecklistDismissed Boolean @default(false)
-  // When true, Oscarr attaches an `oscarr-<username>` tag to the movie/series it adds in
+  // When true, LeMedia attaches an `lemedia-<username>` tag to the movie/series it adds in
   // Radarr/Sonarr. When false (default) no tag is sent — keeps usernames out of the *arr UI
   // unless the admin explicitly opts in. Pre-0.8.4 installs that used to ship the hardcoded
   // `ndp-<username>` tag are NOT auto-migrated (orphan tags remain in *arr until the admin
@@ -484,10 +511,26 @@ model Patchnote {
   titleEn String
   titleFr String
   entries String   // JSON: [{ type: "feat"|"fix"|"perf", titleEn, titleFr, descEn?, descFr? }]
-  /// Long-form note, rendered as a document instead of the entry list. Nullable: releases seeded
-  /// before this existed keep their list. See frontend utils/releaseNotes.ts for the subset.
   bodyEn  String?
   bodyFr  String?
+}
+
+model ShareLink {
+  id        Int      @id @default(autoincrement())
+  token     String   @unique
+  tmdbId    Int
+  mediaType String   // "movie" | "tv"
+  title     String?  // snapshot for the "my links" list (no extra fetch)
+  posterPath String?
+  views     Int      @default(0)
+  createdById Int
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  createdBy User @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([expiresAt])
 }
 
 model PushSubscription {
@@ -511,3 +554,32 @@ model PluginLog {
 }
 
 // Status-to-category mapping lives in each connector (resolveState), not in the DB.
+
+// Admin → Lists: a list link (or `custom:<id>`) that keeps feeding Radarr/Sonarr. Ported from
+// media-heal's list subscriptions; JSON columns keep the same shapes so its state imports as-is.
+model ListSubscription {
+  id            Int       @id @default(autoincrement())
+  url           String    @unique // canonical list link, or custom:<id>
+  name          String?
+  provider      String    @default("")
+  mediaType     String    @default("mixed") // movie | show | mixed
+  enabled       Boolean   @default(true)
+  settings      String    @default("{}") // { search, onlyNew, radarrProfileId, radarrRoot, sonarrProfileId, sonarrRoot }
+  seenKeys      String    @default("[]")
+  lastNew       String    @default("[]")
+  history       String    @default("[]")
+  lastResult    String?
+  lastError     String?
+  lastCheckedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+// A handmade list: titles picked by hand, fed to Radarr/Sonarr like any other list.
+model CustomList {
+  id        String   @id
+  name      String
+  items     String   @default("[]")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

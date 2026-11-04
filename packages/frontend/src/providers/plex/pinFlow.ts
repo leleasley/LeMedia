@@ -24,7 +24,7 @@ export interface PlexPinFlowOptions {
    *  admins configuring a service use `/admin/plex-pin`, install wizard uses `/setup/plex-pin`. */
   pinEndpoint?: string;
   /** Body for the PIN-creation POST. Login passes `{ forward: true }` so Plex forwards the auth tab
-   *  back to Oscarr (#212); other flows omit it so they are NOT forwarded. */
+   *  back to LeMedia (#212); other flows omit it so they are NOT forwarded. */
   pinPayload?: Record<string, unknown>;
   /** Response shape varies: login/link returns `{ pin: { id }, authUrl }`, setup/admin returns
    *  the same shape, but linkAccount checks `linkData.success` instead of a token. The caller
@@ -38,6 +38,11 @@ export interface PlexPinFlowOptions {
   onError: () => void;
   /** Max attempts before giving up. 120 × 1s = 2 minutes, matches Plex PIN TTL. */
   maxAttempts?: number;
+  /** When the popup was blocked (authWindow null/closed) and this is set, navigate the current
+   *  tab to the provider auth URL instead of polling blindly for 2 minutes. Only safe for flows
+   *  whose return page finalizes the session itself (login's /plex-return does, #212) — other
+   *  callers leave it off and keep the polling behavior. */
+  redirectIfPopupBlocked?: boolean;
 }
 
 export interface PlexPinFlowHandle {
@@ -56,6 +61,7 @@ export function startPlexPinFlow(opts: PlexPinFlowOptions): PlexPinFlowHandle {
     onToken,
     onError,
     maxAttempts = 120,
+    redirectIfPopupBlocked = false,
   } = opts;
 
   let pollId: ReturnType<typeof setInterval> | null = null;
@@ -80,6 +86,14 @@ export function startPlexPinFlow(opts: PlexPinFlowOptions): PlexPinFlowHandle {
       if (!pin?.id || !authUrl) {
         cancel();
         onError();
+        return;
+      }
+      // Popup blocked (or closed before the PIN arrived) and the caller opted into the
+      // full-page fallback: navigate here instead of polling a window that doesn't exist.
+      // Same-tab navigation is never popup-blocked, and the return page finalizes the flow.
+      if ((!authWindow || authWindow.closed) && redirectIfPopupBlocked) {
+        cancel();
+        globalThis.location.href = authUrl;
         return;
       }
       if (authWindow) authWindow.location.href = authUrl;

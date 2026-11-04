@@ -1,6 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { readFileSync } from 'node:fs';
-import axios from 'axios';
+import { readFileSync, statfsSync } from 'node:fs';
 import crypto from 'node:crypto';
 import { prisma } from '../utils/prisma.js';
 import { getAppSettings, parseInstanceLanguages } from '../utils/appSettings.js';
@@ -11,64 +10,62 @@ import { isQualityAllowedForRole } from '../utils/qualityAccess.js';
 import { PROJECT_PACKAGE_JSON } from '../utils/paths.js';
 import { getHomepageLayout } from './admin/homepage.js';
 import { isResetEnabled } from '../services/passwordReset.js';
-import { isUpdateAvailable } from '../utils/updateCheck.js';
 
 const APP_VERSION = JSON.parse(
   readFileSync(PROJECT_PACKAGE_JSON, 'utf-8')
 ).version as string;
 
+const AVATAR_HOSTS = ['googleusercontent.com', 'githubusercontent.com', 'discordapp.com', 'discordapp.net', 'plex.tv'];
+const AVATAR_TTL_MS = 6 * 3600_000;
+const avatarCache = new Map<string, { at: number; type: string; body: Buffer }>();
+
 export async function appRoutes(app: FastifyInstance) {
   app.get('/version', async (request, reply) => {
-    const clientV = request.cookies?.oscarr_v;
+    const clientV = request.cookies?.lemedia_v;
     if (clientV && clientV !== APP_VERSION) {
       reply.header('Clear-Site-Data', '"cache"');
     }
-    reply.setCookie('oscarr_v', APP_VERSION, {
+    reply.setCookie('lemedia_v', APP_VERSION, {
       path: '/',
       httpOnly: false,
       sameSite: 'lax',
       maxAge: 60 * 60 * 24 * 365,
     });
+    // Report the local version; the cookie above drives cache busting after a rebuild.
     const result: { current: string; latest?: string; updateAvailable?: boolean; releaseUrl?: string } = {
       current: APP_VERSION,
     };
-    try {
-      const { data } = await axios.get('https://raw.githubusercontent.com/arediss/Oscarr/main/version.json', {
-        timeout: 5000,
-      });
-      result.latest = data.latest;
-      result.updateAvailable = isUpdateAvailable(data.latest, APP_VERSION);
-      result.releaseUrl = data.releaseUrl;
-    } catch {
-      // GitHub unreachable
-    }
     return result;
   });
 
-  // Get changelog from DB patchnotes
-  app.get('/changelog', async (request) => {
-    const lang = ((request.headers['accept-language'] || '').split(',')[0]?.split('-')[0] || 'en').toLowerCase();
-    const patchnotes = await prisma.patchnote.findMany({ orderBy: { date: 'desc' }, take: 15 });
-    return {
-      current: APP_VERSION,
-      releases: patchnotes.map(p => {
-        const entries = JSON.parse(p.entries) as { type: string; titleEn: string; titleFr: string; descEn?: string; descFr?: string }[];
-        return {
-          version: p.version,
-          type: p.type,
-          title: lang === 'fr' ? p.titleFr : p.titleEn,
-          // Long-form note when the release has one; the client falls back to `entries` otherwise,
-          // so releases seeded before bodies existed keep rendering as they always did.
-          body: (lang === 'fr' ? p.bodyFr : p.bodyEn) || null,
-          date: p.date.toISOString(),
-          entries: entries.map(e => ({
-            type: e.type,
-            title: lang === 'fr' ? e.titleFr : e.titleEn,
-            description: lang === 'fr' ? (e.descFr || null) : (e.descEn || null),
-          })),
-        };
-      }),
-    };
+  // Provider profile photos (Google, GitHub, Discord, Plex) served from LeMedia's own origin.
+  // Browsers often refuse hotlinked Google photos, which left empty avatar circles; the server
+  // fetches them fine. Allowlisted hosts only (no open proxy), small images, cached 6 h.
+  app.get('/avatar', async (request, reply) => {
+    const { u } = request.query as { u?: string };
+    let url: URL;
+    try { url = new URL(String(u ?? '')); } catch { return reply.status(400).send({ error: 'BAD_URL' }); }
+    if (url.protocol !== 'https:' || !AVATAR_HOSTS.some((h) => url.hostname === h || url.hostname.endsWith(`.${h}`))) {
+      return reply.status(400).send({ error: 'HOST_NOT_ALLOWED' });
+    }
+    const key = url.toString();
+    let hit = avatarCache.get(key);
+    if (!hit || Date.now() - hit.at > AVATAR_TTL_MS) {
+      try {
+        const res = await fetch(key, { signal: AbortSignal.timeout(8000), redirect: 'follow' });
+        const type = res.headers.get('content-type') ?? '';
+        const body = Buffer.from(await res.arrayBuffer());
+        if (!res.ok || !type.startsWith('image/') || body.length > 1_000_000) return reply.status(404).send({ error: 'NO_AVATAR' });
+        hit = { at: Date.now(), type, body };
+        if (avatarCache.size >= 200) avatarCache.delete(avatarCache.keys().next().value as string);
+        avatarCache.set(key, hit);
+      } catch {
+        return reply.status(502).send({ error: 'AVATAR_FETCH_FAILED' });
+      }
+    }
+    reply.header('Content-Type', hit.type);
+    reply.header('Cache-Control', 'private, max-age=21600');
+    return reply.send(hit.body);
   });
 
   // Get incident banner (no auth — displayed before login)
@@ -123,11 +120,33 @@ export async function appRoutes(app: FastifyInstance) {
       }
     }
 
+    // Real DB probe (was a hardcoded 'ok'). A locked/corrupt SQLite file must flip health.
+    let database: string = 'ok';
+    try {
+      await prisma.$queryRawUnsafe('SELECT 1');
+    } catch {
+      database = 'error';
+    }
+
+    // Disk space for /data (SQLite + backups live here). Best-effort — never fail health on it.
+    let storage: { freeMb?: number; totalMb?: number } | undefined;
+    try {
+      const stats = statfsSync('/data');
+      storage = {
+        freeMb: Math.floor((stats.bfree * stats.bsize) / 1024 / 1024),
+        totalMb: Math.floor((stats.blocks * stats.bsize) / 1024 / 1024),
+      };
+    } catch {
+      /* /data may not exist in dev — omit field */
+    }
+
     return {
-      status: 'ok',
+      status: database === 'ok' ? 'ok' : 'degraded',
       version: APP_VERSION,
       uptime: Math.floor(uptime),
-      database: 'ok',
+      database,
+      ...(storage ? { storage } : {}),
+      memory: { rssMb: Math.floor(process.memoryUsage().rss / 1024 / 1024) },
       services,
     };
   });
@@ -153,9 +172,12 @@ export async function appRoutes(app: FastifyInstance) {
     return {
       requestsEnabled: settings?.requestsEnabled ?? true,
       calendarEnabled: settings?.calendarEnabled ?? true,
-      siteName: settings?.siteName ?? 'Oscarr',
+      siteName: settings?.siteName ?? 'LeMedia',
       nsfwBlurEnabled: settings?.nsfwBlurEnabled ?? true,
       passwordResetEnabled,
+      // Public Turnstile site key (safe to expose — it's the public half). Null when
+      // TURNSTILE_* env keys aren't configured, and the login page then skips the widget.
+      turnstileSiteKey: process.env.TURNSTILE_SITE_KEY || null,
       // Presentation of the IMPORTED state. The vocabulary stays closed; only these two are the
       // admin's, and the colour was validated against COLOR_TOKENS on write.
       importedStateLabel: settings?.importedStateLabel ?? null,

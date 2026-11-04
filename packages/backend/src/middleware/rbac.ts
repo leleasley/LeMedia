@@ -60,8 +60,17 @@ const ROUTE_PERMISSIONS: Record<string, RouteRule> = {
   'POST:/api/auth/password/reset':       { permission: PUBLIC },
   'POST:/api/auth/link-provider':        { permission: AUTH },
   'GET:/api/auth/me':                    { permission: AUTH },
+  'PUT:/api/auth/me':                    { permission: AUTH },
   'PUT:/api/auth/me/avatar-source':      { permission: AUTH },
+  'PUT:/api/auth/me/notifications':      { permission: AUTH },
+  'GET:/api/auth/me/push-prefs':         { permission: AUTH },
+  'PUT:/api/auth/me/push-prefs':         { permission: AUTH },
   'POST:/api/auth/logout':               { permission: AUTH },
+  // Self-service unlink. Without this entry the route ran unauthenticated, so
+  // `request.user` was null and the handler threw "Cannot read properties of null"
+  // → a 500 and "Failed to unlink account" in the UI.
+  'DELETE:/api/auth/me/providers/:provider': { permission: AUTH },
+  'GET:/api/auth/github/connect':       { permission: 'admin.*' },
 
   // ── TMDB (any user) ──
   'GET:/api/tmdb/trending':                            { permission: PUBLIC },
@@ -77,6 +86,7 @@ const ROUTE_PERMISSIONS: Record<string, RouteRule> = {
   'GET:/api/tmdb/person/:id':                           { permission: AUTH },
   'GET:/api/tmdb/collection/:id':                      { permission: AUTH },
   'GET:/api/tmdb/discover/:mediaType/genre/:genreId':  { permission: AUTH },
+  'GET:/api/tmdb/watch/providers/:mediaType':        { permission: AUTH },
   'GET:/api/tmdb/genre-backdrops':                     { permission: AUTH },
   'GET:/api/tmdb/genres/:mediaType':                   { permission: AUTH },
   'GET:/api/tmdb/discover/:mediaType':                 { permission: AUTH },
@@ -100,6 +110,8 @@ const ROUTE_PERMISSIONS: Record<string, RouteRule> = {
   'GET:/api/media/:id':                  { permission: AUTH },
   'GET:/api/media/tmdb/:tmdbId/:mediaType': { permission: AUTH },
   'GET:/api/media/recent':               { permission: AUTH },
+  'GET:/api/media/missing':              { permission: AUTH },
+  'DELETE:/api/media/:tmdbId':          { permission: AUTH },
   'POST:/api/media/batch-status':        { permission: AUTH },
   'GET:/api/media/episodes':             { permission: AUTH },
   'GET:/api/media/nsfw-ids':             { permission: AUTH },
@@ -121,13 +133,20 @@ const ROUTE_PERMISSIONS: Record<string, RouteRule> = {
 
   // ── App ──
   'GET:/api/app/version':                { permission: AUTH },
-  'GET:/api/app/changelog':              { permission: AUTH },
+  'GET:/api/app/avatar':                 { permission: AUTH },
   'GET:/api/app/banner':                 { permission: PUBLIC },
   'GET:/api/app/health':                 { permission: PUBLIC },  // Auth via API key, not JWT
   'GET:/api/app/quality-options':        { permission: AUTH },
   'GET:/api/app/features':               { permission: PUBLIC },
   'GET:/api/app/homepage-layout':        { permission: PUBLIC },
   'GET:/api/app/vapid-key':              { permission: PUBLIC },
+
+  // ── Share links ──
+  'POST:/api/share/':                    { permission: AUTH },
+  'GET:/api/share/mine':                 { permission: AUTH },
+  'DELETE:/api/share/:token':            { permission: AUTH },
+  'GET:/api/share/:token':               { permission: PUBLIC },
+  'GET:/api/share/:token/detail':        { permission: PUBLIC },
 
   // ── Notifications (always own) ──
   'GET:/api/notifications/':             { permission: AUTH },
@@ -139,6 +158,7 @@ const ROUTE_PERMISSIONS: Record<string, RouteRule> = {
   // ── Push notifications ──
   'POST:/api/push/subscribe':    { permission: AUTH },
   'DELETE:/api/push/unsubscribe': { permission: AUTH },
+  'POST:/api/push/test':         { permission: AUTH },
 
   // ── Plugins ──
   'GET:/api/plugins/':                   { permission: 'admin.plugins' },
@@ -152,7 +172,7 @@ const ROUTE_PERMISSIONS: Record<string, RouteRule> = {
   // admin PluginsTab / PluginDocsModal / ManualInstallModal to show the correct path hint.
   'GET:/api/plugins/dir':                { permission: 'admin.plugins' },
   'GET:/api/plugins/features':           { permission: PUBLIC },
-  'GET:/api/plugins/registry':           { permission: AUTH },  // Plugin discovery — any authenticated user
+  'GET:/api/plugins/registry':           { permission: AUTH },  // Plugin discovery, any authenticated user
   // Admin-only side of the plugin engine — install + updates must NOT fall through
   // to the /api/plugins = AUTH prefix default, otherwise any user can RCE the server.
   'POST:/api/plugins/install':           { permission: 'admin.plugins' },
@@ -185,12 +205,14 @@ const PREFIX_DEFAULTS: [string, RouteRule][] = [
   ['/api/admin',    { permission: 'admin.*' }],
   // Plugin custom routes fall through here (registered dynamically by plugins at /api/plugins/:pluginId/*).
   // Reads only — undeclared writes are upgraded to admin.plugins (resolveUndeclaredPluginWrite).
-  ['/api/tmdb',     { permission: AUTH }],    // All TMDB endpoints — any authenticated user
+  ['/api/tmdb',     { permission: AUTH }],    // All TMDB endpoints, any authenticated user
+  ['/api/zurg',     { permission: AUTH }],    // Read-only zurg status per title (from the watcher snapshot)
+  ['/api/play',     { permission: AUTH }],    // Watch links (Plezy / Plex on rex / Infuse) for a title
   ['/api/plugins',  { permission: AUTH }],
   ['/api/setup',    { permission: PUBLIC }],  // setup has its own secret-based guards
   ['/api/auth',     { permission: PUBLIC }],  // OAuth callback routes registered dynamically
   ['/api/webhooks', { permission: PUBLIC }],  // Auth via API key in handler
-  ['/api/v1',       { permission: PUBLIC }],  // Seerr-compat layer — auth via X-Api-Key (UserApiKey) at the route level
+  ['/api/v1',       { permission: PUBLIC }],  // Seerr-compat layer, auth via X-Api-Key (UserApiKey) at the route level
 ];
 
 // ── DB-backed role cache ────────────────────────────────────────────────────
@@ -517,9 +539,9 @@ function applyRolePermission(
 // ── Swagger tag helper ──────────────────────────────────────────────────────
 export function getAccessTag(method: string, url: string): string {
   const rule = resolveRule(method, url);
-  if (!rule || rule.permission === PUBLIC) return 'Public';
+  if (!rule || rule.permission === PUBLIC || rule.permission === null) return 'Public';
   if (rule.permission === AUTH) return 'Auth Required';
-  if (rule.permission.startsWith('admin')) return 'Admin Only';
+  if (typeof rule.permission === 'string' && rule.permission.startsWith('admin')) return 'Admin Only';
   return 'Auth Required';
 }
 

@@ -5,11 +5,11 @@ import { getSharedServerUsers } from './client.js';
 import type { SyncResult } from '../types.js';
 
 /**
- * Reconciles Oscarr local users with the Plex server's shared_servers list.
+ * Reconciles LeMedia local users with the Plex server's shared_servers list.
  *
  * - Users with a linked Plex provider still present in shared_servers → disabled=false
  * - Users with a linked Plex provider absent from shared_servers → disabled=true
- * - Shared users with no matching Oscarr account → returned as pendingImports
+ * - Shared users with no matching LeMedia account → returned as pendingImports
  * - Users without a Plex provider are untouched (Jellyfin / email / etc.)
  * - Admin users are NEVER disabled by sync: the Plex server owner is not listed
  *   in their own shared_servers (that endpoint returns people the server is

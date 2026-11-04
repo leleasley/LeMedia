@@ -12,8 +12,8 @@ function withPlainApiKey<T extends AppSettings | null>(row: T): T {
 }
 
 /** Read the AppSettings singleton, or null if it hasn't been created yet. */
-export async function getAppSettings(): Promise<AppSettings | null> {
-  return withPlainApiKey(await prisma.appSettings.findUnique({ where: { id: 1 } }));
+export function getAppSettings(): Promise<AppSettings | null> {
+  return prisma.appSettings.findUnique({ where: { id: 1 } }).then(withPlainApiKey);
 }
 
 /** Read the AppSettings singleton, creating it from defaults on first access. */
@@ -34,13 +34,13 @@ export function parseInstanceLanguages(raw: string | null | undefined): string[]
 
 /** Upsert the AppSettings singleton. The create branch is derived from the same partial, so a
  *  brand-new row can never silently drop a field. Callers pass already-normalised values. */
-export async function patchAppSettings(data: Prisma.AppSettingsUncheckedUpdateInput): Promise<AppSettings> {
+export function patchAppSettings(data: Prisma.AppSettingsUncheckedUpdateInput): Promise<AppSettings> {
   const payload: Prisma.AppSettingsUncheckedUpdateInput = typeof data.apiKey === 'string'
     ? { ...data, apiKey: encryptSecretValue(data.apiKey) }
     : data;
-  return withPlainApiKey(await prisma.appSettings.upsert({
+  return prisma.appSettings.upsert({
     where: { id: 1 },
     update: payload,
     create: { id: 1, ...payload } as Prisma.AppSettingsUncheckedCreateInput,
-  }));
+  }).then(withPlainApiKey);
 }

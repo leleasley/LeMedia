@@ -1,7 +1,6 @@
 import { useAuth } from '@/context/AuthContext';
-import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { ShieldX, MessageSquare, Server } from 'lucide-react';
+import { ShieldX, Server } from 'lucide-react';
 
 export default function NoAccessPage() {
   const { t } = useTranslation();
@@ -28,14 +27,9 @@ export default function NoAccessPage() {
           </div>
         </div>
 
-        <p className="text-ndp-text-muted text-sm mb-6">
+        <p className="text-ndp-text-muted text-sm">
           {t('noAccess.support_help')}
         </p>
-
-        <Link to="/p/arediss__oscarr-plugin-support" className="btn-primary inline-flex items-center gap-2">
-          <MessageSquare className="w-4 h-4" />
-          {t('noAccess.contact_support')}
-        </Link>
       </div>
     </div>
   );

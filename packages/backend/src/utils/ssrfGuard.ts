@@ -1,7 +1,7 @@
 import { lookup as dnsLookup } from 'node:dns/promises';
 
 /** SSRF guard for admin-typed URLs. Permissive by default (self-hosted LAN). Opt into strict
- *  mode via OSCARR_BLOCK_PRIVATE_SERVICES=true for cloud/shared hosting. */
+ *  mode via LEMEDIA_BLOCK_PRIVATE_SERVICES=true for cloud/shared hosting. */
 
 export function isPrivateIPv4(ip: string): boolean {
   const parts = ip.split('.').map(Number);
@@ -48,7 +48,7 @@ export function isPrivateAddress(address: string, family: number): boolean {
 }
 
 export function arePrivateAddressesAllowed(): boolean {
-  return process.env.OSCARR_BLOCK_PRIVATE_SERVICES !== 'true';
+  return process.env.LEMEDIA_BLOCK_PRIVATE_SERVICES !== 'true';
 }
 
 export class SsrfBlockedError extends Error {

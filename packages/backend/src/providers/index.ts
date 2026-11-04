@@ -6,6 +6,8 @@ import { sonarrProvider } from './sonarr/index.js';
 import { qbittorrentProvider } from './qbittorrent/index.js';
 import { jackettProvider } from './jackett/index.js';
 import { prowlarrProvider } from './prowlarr/index.js';
+import { zurgProvider } from './zurg/index.js';
+import { rexProvider } from './rex/index.js';
 import { nzbgetProvider } from './nzbget/index.js';
 import { sabnzbdProvider } from './sabnzbd/index.js';
 import { transmissionProvider } from './transmission/index.js';
@@ -13,6 +15,8 @@ import { delugeProvider } from './deluge/index.js';
 import { tautulliProvider } from './tautulli/index.js';
 import { emailProvider } from './email/index.js';
 import { discordProvider } from './discord/index.js';
+import { googleProvider } from './google/index.js';
+import { githubProvider } from './github/index.js';
 import type { Provider, ServiceDefinition, AuthProvider, ArrClient, ServiceTagClient } from './types.js';
 import { getServiceById, getServiceConfig } from '../utils/services.js';
 import { getProviderSettings, listAllProviderSettings } from './authSettings.js';
@@ -34,9 +38,13 @@ const ALL_PROVIDERS: Provider[] = [
   sabnzbdProvider,
   jackettProvider,
   prowlarrProvider,
+  zurgProvider,
+  rexProvider,
   tautulliProvider,
   emailProvider,
   discordProvider,
+  googleProvider,
+  githubProvider,
 ];
 
 // ─── Service queries ────────────────────────────────────────────────

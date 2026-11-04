@@ -1,5 +1,5 @@
 {
-  "name": "@oscarr/shared",
+  "name": "@lemedia/shared",
   "version": "0.10.0",
   "private": true,
   "type": "module",
@@ -17,5 +17,7 @@
     "dev": "tsc --watch --preserveWatchOutput"
   },
   "sideEffects": false,
-  "files": ["dist"]
+  "files": [
+    "dist"
+  ]
 }

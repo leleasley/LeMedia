@@ -5,7 +5,6 @@ import { safeNotify, safeUserNotify, buildSiteLink } from '../../utils/safeNotif
 import { parseId } from '../../utils/params.js';
 import { sendToService } from '../../services/requestService.js';
 import { transitionRequestStatus } from '../../services/requestStatusTransition.js';
-import type { RequestStatusKind } from '@oscarr/shared';
 
 /** Per-request state transitions — approve, decline, edit routing, delete. Owner-scoping on
  *  delete prevents a non-admin from deleting someone else's request. */
@@ -55,7 +54,7 @@ export async function requestLifecycleRoutes(app: FastifyInstance) {
 
     const seasons = mediaRequest.seasons ? JSON.parse(mediaRequest.seasons) : undefined;
     const tagName = mediaRequest.user.displayName || mediaRequest.user.email || `user-${mediaRequest.user.id}`;
-    const sent = await sendToService(
+    const outcome = await sendToService(
       mediaRequest.media, mediaRequest.mediaType, tagName, mediaRequest.userId, seasons,
       effectiveQuality, mediaRequest.rootFolder,
       // Approving must route on what was actually asked for, criteria included.
@@ -63,17 +62,20 @@ export async function requestLifecycleRoutes(app: FastifyInstance) {
       mediaRequest.seasonNumbering,
     );
 
-    if (!sent) {
+    if (outcome !== 'sent') {
+      // `conflict` is permanent (the *arr holds a different title at the target folder) and is
+      // terminal; `failed` stays retryable by the scheduler.
+      const nextStatus = outcome === 'conflict' ? 'conflict' : 'failed';
       await transitionRequestStatus(
-        { requestId, from: 'approved', to: 'failed', why: 'dispatch-failed' },
-        () => prisma.mediaRequest.update({ where: { id: requestId }, data: { status: 'failed' } }),
+        { requestId, from: 'approved', to: nextStatus, why: outcome === 'conflict' ? 'dispatch-conflict' : 'dispatch-failed' },
+        () => prisma.mediaRequest.update({ where: { id: requestId }, data: { status: nextStatus } }),
         request.log,
       );
     }
 
     // Flip to 'searching' so the UI reflects the service-side pickup; preserve 'available' and
     // 'processing' (TV partial) so the "request rest" CTA stays visible.
-    if (sent && mediaRequest.media.statusCategory !== 'AVAILABLE' && mediaRequest.media.statusCategory !== 'PROCESSING') {
+    if (outcome === 'sent' && mediaRequest.media.statusCategory !== 'AVAILABLE' && mediaRequest.media.statusCategory !== 'PROCESSING') {
       await prisma.media.update({
         where: { id: mediaRequest.media.id },
         data: { statusCategory: 'SEARCHING' },
@@ -87,11 +89,13 @@ export async function requestLifecycleRoutes(app: FastifyInstance) {
       include: { media: true, user: { select: { id: true, displayName: true, avatar: true } }, qualityOption: { select: { id: true, label: true } } },
     });
 
-    if (sent) {
+    if (outcome === 'sent') {
       const approvedUrl = await buildSiteLink(`/${updated.mediaType}/${updated.media.tmdbId}`);
       safeNotify('request_approved', { title: updated.media.title, mediaType: updated.mediaType as 'movie' | 'tv', username: updated.user?.displayName || 'User', posterPath: updated.media.posterPath, url: approvedUrl });
       safeUserNotify(updated.user.id, { type: 'request_approved', title: updated.media.title, message: 'notifications.msg.request_approved', metadata: { mediaId: updated.mediaId, tmdbId: updated.media.tmdbId, mediaType: updated.mediaType, msgParams: { title: updated.media.title } } });
       logEvent('info', 'Request', `Request "${updated.media.title}" approved`);
+    } else if (outcome === 'conflict') {
+      logEvent('error', 'Request', `Request "${updated.media.title}" approved but conflicts with an existing ${updated.mediaType} entry in the service, marked as conflict`);
     } else {
       logEvent('error', 'Request', `Request "${updated.media.title}" approved but failed to send to service`);
     }

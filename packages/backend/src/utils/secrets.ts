@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 /**
  * Encryption-at-rest for credentials stored in `Service.config` (and any future table that
  * holds secrets). All sensitive values are AES-256-GCM encrypted with a key derived from
- * `OSCARR_SECRET_KEY` (env var, mandatory).
+ * `LEMEDIA_SECRET_KEY` (env var, mandatory).
  *
  * Storage format per field: `enc:v1:<base64-iv>.<base64-ciphertext>.<base64-tag>`. The
  * `enc:v1:` prefix lets readers detect encrypted vs plaintext without parsing — same column
@@ -45,10 +45,10 @@ function deriveSubKey(master: Buffer, info: string): Buffer {
 function printFatalKeyMessage(reason: string): void {
   const suggested = crypto.randomBytes(KEY_BYTES).toString('hex');
   const line = '━'.repeat(70);
-  process.stderr.write(`\n${line}\n Oscarr — secret key required\n${line}\n\n`);
+  process.stderr.write(`\n${line}\n LeMedia, secret key required\n${line}\n\n`);
   process.stderr.write(` ${reason}.\n\n Add this to your environment:\n\n`);
-  process.stderr.write(`   OSCARR_SECRET_KEY=${suggested}\n\n`);
-  process.stderr.write(' • Docker:     add `-e OSCARR_SECRET_KEY=...` (or env_file in compose)\n');
+  process.stderr.write(`   LEMEDIA_SECRET_KEY=${suggested}\n\n`);
+  process.stderr.write(' • Docker:     add `-e LEMEDIA_SECRET_KEY=...` (or env_file in compose)\n');
   process.stderr.write(' • Bare-metal: add to your .env file\n\n');
   process.stderr.write(' Treat this key like a password. Lose it = stored credentials become\n');
   process.stderr.write(' unrecoverable and need to be re-entered.\n');
@@ -59,23 +59,23 @@ function printFatalKeyMessage(reason: string): void {
  *  generated key suggestion when missing or malformed. Must be called once at boot before
  *  anything that touches Service.config. */
 export function loadMasterKeyOrExit(): void {
-  const raw = process.env.OSCARR_SECRET_KEY?.trim();
+  const raw = process.env.LEMEDIA_SECRET_KEY?.trim();
   if (!raw) {
-    printFatalKeyMessage('OSCARR_SECRET_KEY is not set');
+    printFatalKeyMessage('LEMEDIA_SECRET_KEY is not set');
     process.exit(1);
   }
   let master: Buffer;
   try {
     master = Buffer.from(raw, 'hex');
   } catch {
-    printFatalKeyMessage('OSCARR_SECRET_KEY is not valid hex');
+    printFatalKeyMessage('LEMEDIA_SECRET_KEY is not valid hex');
     process.exit(1);
   }
   if (master.length !== KEY_BYTES) {
-    printFatalKeyMessage(`OSCARR_SECRET_KEY must be ${KEY_BYTES * 2} hex characters (got ${master.length * 2})`);
+    printFatalKeyMessage(`LEMEDIA_SECRET_KEY must be ${KEY_BYTES * 2} hex characters (got ${master.length * 2})`);
     process.exit(1);
   }
-  _serviceConfigKey = deriveSubKey(master, 'oscarr.service-config.v1');
+  _serviceConfigKey = deriveSubKey(master, 'lemedia.service-config.v1');
 }
 
 export function isEncrypted(value: unknown): boolean {
@@ -87,7 +87,7 @@ export function isSensitiveKey(key: string): boolean {
 }
 
 export function encryptField(plain: string): string {
-  if (!_serviceConfigKey) throw new Error('Master key not loaded — call loadMasterKeyOrExit() first');
+  if (!_serviceConfigKey) throw new Error('Master key not loaded, call loadMasterKeyOrExit() first');
   const iv = crypto.randomBytes(IV_BYTES);
   const cipher = crypto.createCipheriv(ALGO, _serviceConfigKey, iv);
   const ciphertext = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
@@ -97,7 +97,7 @@ export function encryptField(plain: string): string {
 
 export function decryptField(stored: string): string {
   if (!isEncrypted(stored)) return stored;
-  if (!_serviceConfigKey) throw new Error('Master key not loaded — call loadMasterKeyOrExit() first');
+  if (!_serviceConfigKey) throw new Error('Master key not loaded, call loadMasterKeyOrExit() first');
   const parts = stored.slice(ENC_PREFIX.length).split('.');
   if (parts.length !== 3) throw new Error('Encrypted payload malformed');
   const [ivB64, ctB64, tagB64] = parts;
@@ -224,7 +224,7 @@ export function encryptServiceConfig(config: Record<string, string>): Record<str
  *  empty string so admin forms don't leak raw ciphertext into password inputs — the matching
  *  `hasUndecryptableSecret` helper surfaces these rows in the security banner so the admin
  *  re-enters them. Triggers in practice when restoring a backup encrypted with a different
- *  `OSCARR_SECRET_KEY` (cross-env DB clone, key rotation, lost key). */
+ *  `LEMEDIA_SECRET_KEY` (cross-env DB clone, key rotation, lost key). */
 export function decryptServiceConfig(config: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(config)) {

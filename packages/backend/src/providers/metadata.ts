@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { ProviderMediaMetadata } from '@oscarr/shared';
+import type { ProviderMediaMetadata } from '@lemedia/shared';
 import { extractImageFromArr } from './types.js';
 
 /** Parse only public metadata. Paths, credentials and other instance configuration stay out. */

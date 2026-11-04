@@ -53,7 +53,7 @@ async function setup(mediaType: 'tv' | 'movie') {
 describe('request dispatch with routing tags', () => {
   it.each(['tv', 'movie'] as const)('sends rule tags on new %s requests even when user tagging is off', async mediaType => {
     const media = await setup(mediaType);
-    expect(await sendToService(media, mediaType, 'Requester')).toBe(true);
+    expect(await sendToService(media, mediaType, 'Requester')).toBe('sent');
     expect(transport.addMedia).toHaveBeenCalledWith(expect.objectContaining({ tags: [7, 9], rootFolderPath: '/media' }));
     expect(transport.getOrCreateTag).not.toHaveBeenCalled();
   });
@@ -61,14 +61,14 @@ describe('request dispatch with routing tags', () => {
   it('deduplicates rule and requester tags', async () => {
     const media = await setup('tv');
     await patchAppSettings({ arrUserTaggingEnabled: true });
-    expect(await sendToService(media, 'tv', 'Requester')).toBe(true);
+    expect(await sendToService(media, 'tv', 'Requester')).toBe('sent');
     expect(transport.addMedia).toHaveBeenCalledWith(expect.objectContaining({ tags: [7, 9] }));
   });
 
   it.each(['tv', 'movie'] as const)('adds rule tags to an existing %s before searching', async mediaType => {
     const media = await setup(mediaType);
     transport.findByExternalId.mockResolvedValue({ id: 42 });
-    expect(await sendToService(media, mediaType, 'Requester', null, mediaType === 'tv' ? [2] : undefined, undefined, undefined, [], mediaType === 'tv' ? 'tvdb:official' : undefined)).toBe(true);
+    expect(await sendToService(media, mediaType, 'Requester', null, mediaType === 'tv' ? [2] : undefined, undefined, undefined, [], mediaType === 'tv' ? 'tvdb:official' : undefined)).toBe('sent');
     expect(transport.addTagsToMedia).toHaveBeenCalledWith(42, [7, 9]);
     expect(transport.addMedia).not.toHaveBeenCalled();
     expect(mediaType === 'tv' ? transport.requestSeasons : transport.searchMedia).toHaveBeenCalled();
@@ -77,7 +77,7 @@ describe('request dispatch with routing tags', () => {
   it('does not send the request with missing tags after an upstream deletion', async () => {
     const media = await setup('tv');
     transport.getTags.mockResolvedValue([]);
-    expect(await sendToService(media, 'tv', 'Requester')).toBe(false);
+    expect(await sendToService(media, 'tv', 'Requester')).toBe('failed');
     expect(transport.addMedia).not.toHaveBeenCalled();
   });
 });

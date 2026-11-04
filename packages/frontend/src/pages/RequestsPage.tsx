@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useId, memo, type Dispatch, type SetStateAction, type ReactNode } from 'react';
+import { avatarSrc } from '@/utils/avatarSrc';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -17,7 +18,8 @@ import {
   Save,
   Eraser,
   ChevronDown,
-  SlidersHorizontal, } from 'lucide-react';
+  SlidersHorizontal,
+  AlertTriangle, } from 'lucide-react';
 import { clsx } from 'clsx';
 import api, { posterUrl, backdropUrl } from '@/lib/api';
 import MediaLink from '@/components/MediaLink';
@@ -26,6 +28,7 @@ import { useDownloadForMedia } from '@/hooks/useDownloads';
 import { localizedDate } from '@/i18n/formatters';
 import type { MediaRequest } from '@/types';
 import { useModal } from '@/hooks/useModal';
+import EmptyState from '@/components/ui/EmptyState';
 import { parseRequestSeasons } from '@/utils/requestSeasons';
 import { groupRequests, sortRequestsBySeason } from '@/utils/requestGroups';
 import { useExpandableRequestCard } from '@/hooks/useExpandableRequestCard';
@@ -39,6 +42,8 @@ const STATUS_CONFIG: Record<string, { labelKey: string; icon: typeof Clock; colo
   searching: { labelKey: 'searching', icon: Search, color: 'text-ndp-accent', bg: 'bg-ndp-accent', dot: 'bg-ndp-accent' },
   upcoming: { labelKey: 'upcoming', icon: CalendarClock, color: 'text-purple-400', bg: 'bg-purple-500', dot: 'bg-purple-400' },
   failed: { labelKey: 'failed', icon: AlertCircle, color: 'text-ndp-danger', bg: 'bg-ndp-danger', dot: 'bg-ndp-danger' },
+  deleted: { labelKey: 'deleted', icon: Trash2, color: 'text-ndp-text-muted', bg: 'bg-ndp-surface-light', dot: 'bg-ndp-text-muted' },
+  conflict: { labelKey: 'conflict', icon: AlertTriangle, color: 'text-ndp-warning', bg: 'bg-ndp-warning', dot: 'bg-ndp-warning' },
 };
 
 interface RequestStats {
@@ -48,6 +53,8 @@ interface RequestStats {
   available: number;
   declined: number;
   failed: number;
+  deleted: number;
+  conflict: number;
   processing: number;
 }
 
@@ -57,6 +64,8 @@ const FILTER_TABS = [
   { key: 'approved', labelKey: 'status.approved' },
   { key: 'available', labelKey: 'status.available' },
   { key: 'declined', labelKey: 'status.declined' },
+  { key: 'deleted', labelKey: 'status.deleted' },
+  { key: 'conflict', labelKey: 'status.conflict' },
 ] as const;
 
 export default function RequestsPage() {
@@ -85,7 +94,7 @@ export default function RequestsPage() {
   type CleanupAction = 'keep' | 'remove' | 'remove_with_service';
   const [cleanupActions, setCleanupActions] = useState<Record<string, CleanupAction>>({});
   const [cleanupLoading, setCleanupLoading] = useState(false);
-  const [cleanupResult, setCleanupResult] = useState<{ oscarr: number; service: number } | null>(null);
+  const [cleanupResult, setCleanupResult] = useState<{ lemedia: number; service: number } | null>(null);
   const [confirmDeleteRequest, setConfirmDeleteRequest] = useState<MediaRequest | null>(null);
   const confirmDeleteModal = useModal({
     open: confirmDeleteRequest !== null,
@@ -196,8 +205,8 @@ export default function RequestsPage() {
       {/* Header + filter tabs */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-4">
-          <h1 className="text-2xl font-bold text-ndp-text">{t('requests.title')}</h1>
-          {hasPermission('admin.danger') && stats && (stats.available > 0 || stats.approved > 0 || stats.declined > 0) && (
+          <h1 className="font-display-title text-4xl text-ndp-text">{t('requests.title')}</h1>
+          {hasPermission('admin.danger') && stats && (stats.available > 0 || stats.approved > 0 || stats.declined > 0 || stats.deleted > 0) && (
             <button
               onClick={() => { setShowCleanup(true); setCleanupActions({}); setCleanupResult(null); }}
               className="text-xs text-ndp-text-dim hover:text-ndp-text flex items-center gap-1.5 hover:bg-white/5 px-3 py-1.5 rounded-lg transition-colors"
@@ -257,13 +266,15 @@ export default function RequestsPage() {
           ))}
         </div>
       ) : requests.length === 0 ? (
-        <div className="text-center py-20">
-          <Film className="w-16 h-16 text-ndp-text-dim mx-auto mb-4" />
-          <p className="text-ndp-text-muted text-lg">{t('requests.no_requests')}</p>
-          <Link to="/" className="btn-primary inline-flex items-center gap-2 mt-4">
-            {t('requests.search_media')}
-          </Link>
-        </div>
+        <EmptyState
+          icon={Film}
+          title={t('requests.no_requests')}
+          action={
+            <Link to="/" className="btn-primary inline-flex items-center gap-2">
+              {t('requests.search_media')}
+            </Link>
+          }
+        />
       ) : (
         <>
           <div className={clsx('transition-opacity duration-300', filtering ? 'opacity-40' : 'opacity-100')}>
@@ -320,7 +331,7 @@ export default function RequestsPage() {
       {/* Delete confirmation modal */}
       {confirmDeleteRequest && createPortal(
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in"
+          className="modal-overlay z-50"
           onClick={() => setConfirmDeleteRequest(null)}
         >
           <div
@@ -328,7 +339,7 @@ export default function RequestsPage() {
             role="dialog"
             aria-modal="true"
             aria-labelledby={confirmDeleteModal.titleId}
-            className="card p-6 max-w-sm w-full mx-4 shadow-2xl"
+            className="modal-panel p-6 max-w-sm w-full"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 id={confirmDeleteModal.titleId} className="text-lg font-bold text-ndp-text mb-2">
@@ -364,13 +375,13 @@ export default function RequestsPage() {
 
       {/* Cleanup modal */}
       {showCleanup && createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowCleanup(false); }}>
+        <div className="modal-overlay z-50" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowCleanup(false); }}>
           <div
             ref={cleanupModal.dialogRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby={cleanupModal.titleId}
-            className="bg-ndp-surface border border-white/10 rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl"
+            className="modal-panel p-6 w-full max-w-md"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-5">
@@ -392,6 +403,8 @@ export default function RequestsPage() {
                 { key: 'approved', label: t('status.approved'), count: stats?.approved ?? 0, color: 'text-ndp-accent', dot: 'bg-ndp-accent' },
                 { key: 'declined', label: t('status.declined'), count: stats?.declined ?? 0, color: 'text-ndp-danger', dot: 'bg-ndp-danger' },
                 { key: 'failed', label: t('status.failed'), count: stats?.failed ?? 0, color: 'text-purple-400', dot: 'bg-purple-400' },
+                { key: 'deleted', label: t('status.deleted'), count: stats?.deleted ?? 0, color: 'text-ndp-text-muted', dot: 'bg-ndp-text-muted' },
+                { key: 'conflict', label: t('status.conflict'), count: stats?.conflict ?? 0, color: 'text-ndp-warning', dot: 'bg-ndp-warning' },
               ].map(s => {
                 const action = cleanupActions[s.key] || 'keep';
                 return (
@@ -429,7 +442,7 @@ export default function RequestsPage() {
             {cleanupResult && (
               <div className="mt-4 p-3 rounded-xl bg-ndp-success/10 text-ndp-success text-sm flex items-center gap-2">
                 <CheckCircle className="w-4 h-4" />
-                {t('requests.cleanup_result_detail', { oscarr: cleanupResult.oscarr, service: cleanupResult.service })}
+                {t('requests.cleanup_result_detail', { lemedia: cleanupResult.lemedia, service: cleanupResult.service })}
               </div>
             )}
 
@@ -444,7 +457,7 @@ export default function RequestsPage() {
                   setCleanupLoading(true);
                   try {
                     const { data } = await api.post('/requests/cleanup', { actions: cleanupActions });
-                    setCleanupResult({ oscarr: data.deletedFromOscarr, service: data.deletedFromService });
+                    setCleanupResult({ lemedia: data.deletedFromLeMedia, service: data.deletedFromService });
                     fetchRequests(1);
                     api.get('/requests/stats').then(({ data }) => setStats(data)).catch(() => {});
                   } catch (err) { console.error('Cleanup failed:', err); }
@@ -563,6 +576,7 @@ function RequestCardInner({
   const year = req.media?.releaseDate?.slice(0, 4);
   const backdrop = req.media?.backdropPath;
   const isPending = req.status === 'pending' && !groupDetails;
+  const [avatarFailed, setAvatarFailed] = useState(false);
   const seasons = req.mediaType === 'tv' && !groupDetails ? parseRequestSeasons(req.seasons) : null;
   const seasonLabel = seasons === 'all' ? t('media.all_seasons')
     : seasons === 'unknown' ? t('requests.seasons_unknown')
@@ -581,13 +595,14 @@ function RequestCardInner({
         <MediaLink
           to={mediaLink}
           className="absolute inset-0 z-[1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ndp-accent/60 rounded-2xl"
-          aria-label={[req.media?.title || t('requests.unknown_media'), seasonLabel].filter(Boolean).join(' — ')}
+          aria-label={[req.media?.title || t('requests.unknown_media'), seasonLabel].filter(Boolean).join(', ')}
         />
       )}
-{/* No left bar — status shown inline */}
+{/* No left bar, status shown inline */}
 
-      {/* Background — subtle backdrop hint */}
-      {!compact && <div className="absolute inset-0 bg-ndp-surface">
+      {/* Background, subtle backdrop hint. Background + content ignore the pointer so clicks
+          reach the card link underneath; the delete button opts back in. */}
+      {!compact && <div className="absolute inset-0 bg-ndp-surface pointer-events-none">
         {backdrop && !compact && (
           <>
             <img src={backdropUrl(backdrop, 'w300')} alt="" className="absolute right-0 top-0 h-full w-2/3 object-cover opacity-[0.07]" />
@@ -614,8 +629,8 @@ function RequestCardInner({
           </div>}
 
           {!compact && <div className="flex items-center gap-1.5 mt-2">
-            {req.user?.avatar ? (
-              <img src={req.user.avatar} alt="" className="w-4 h-4 rounded-full ring-1 ring-white/20" />
+            {req.user?.avatar && !avatarFailed ? (
+              <img src={avatarSrc(req.user.avatar)} alt="" referrerPolicy="no-referrer" onError={() => setAvatarFailed(true)} className="w-4 h-4 rounded-full ring-1 ring-white/20 object-cover" />
             ) : (
               <div className="w-4 h-4 rounded-full bg-ndp-accent/30 flex items-center justify-center text-[9px] text-white font-bold">
                 {(req.user?.displayName || '?')[0].toUpperCase()}
@@ -632,7 +647,7 @@ function RequestCardInner({
             </div>
           )}
 
-          {/* Status badge — hidden when pending (bottom bar shows intent) */}
+          {/* Status badge, hidden when pending (bottom bar shows intent) */}
           {!groupDetails && (!isPending || compact) && (
             <div className={compact ? '' : 'mt-auto pt-1.5'}>
               <span className={clsx('inline-flex text-[11px] font-semibold px-2 py-0.5 rounded-md', status.color,
@@ -669,6 +684,15 @@ function RequestCardInner({
                 <Film className="w-5 h-5 text-ndp-text-dim" />
               </div>
             )}
+
+            {/* Delete button, visible on hover, top-right of poster */}
+            <button
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(req.id); }}
+              className="pointer-events-auto absolute top-1.5 right-1.5 p-1 rounded-lg bg-black/60 text-white/40 hover:text-ndp-danger hover:bg-ndp-danger/20 transition-colors opacity-0 group-hover:opacity-100 z-20"
+              title={t('common.delete')}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>}
       </div>
@@ -711,7 +735,7 @@ function RequestCardInner({
                     .catch(() => {})
                     .finally(() => setResolvingCtx(false));
                 }}
-                aria-label={[t('requests.request_settings'), seasonLabel].filter(Boolean).join(' — ')}
+                aria-label={[t('requests.request_settings'), seasonLabel].filter(Boolean).join(', ')}
                 className="px-4 py-2 text-white/50 hover:text-white hover:bg-white/5 transition-colors rounded-r-xl"
               >
                 <Settings2 className="w-3.5 h-3.5" />
@@ -732,8 +756,8 @@ function RequestCardInner({
 
       {/* Settings modal */}
       {showSettings && createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowSettings(false); }}>
-          <div ref={settingsModal.dialogRef} role="dialog" aria-modal="true" aria-labelledby={settingsModal.titleId} className="bg-ndp-surface border border-white/10 rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay z-50" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowSettings(false); }}>
+          <div ref={settingsModal.dialogRef} role="dialog" aria-modal="true" aria-labelledby={settingsModal.titleId} className="modal-panel p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-5">
               <h3 id={settingsModal.titleId} className="text-base font-bold text-ndp-text flex items-center gap-2">
                 <Settings2 className="w-4 h-4 text-ndp-text-muted" />

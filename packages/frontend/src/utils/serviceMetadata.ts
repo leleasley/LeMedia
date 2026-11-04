@@ -1,4 +1,4 @@
-import type { ServiceMetadata, TmdbMedia } from '@oscarr/shared';
+import type { ServiceMetadata, TmdbMedia } from '@lemedia/shared';
 
 /** Service fields take precedence; TMDB still supplies credits, discovery links and trailers. */
 export function detailWithServiceMetadata(tmdb: TmdbMedia | null, native: ServiceMetadata | null, type: 'tv' | 'movie'): TmdbMedia | null {

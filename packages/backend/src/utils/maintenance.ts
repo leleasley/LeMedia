@@ -1,7 +1,7 @@
 /** Process-wide maintenance latch.
  *
  *  Held while the database file is being swapped underneath a running server (backup restore):
- *  Prisma is disconnected and `oscarr.db` is replaced, so any request that reached a handler in
+ *  Prisma is disconnected and `lemedia.db` is replaced, so any request that reached a handler in
  *  that window would query a connection that no longer has a database. The onRequest hook in
  *  `bootstrap/security.ts` answers 503 for the duration instead.
  *

@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getTvSeasonDetails } from '../src/services/tmdb.js';
 
 const http = vi.hoisted(() => ({ get: vi.fn() }));
-const cache = vi.hoisted(() => ({ getCached: vi.fn(), setCache: vi.fn() }));
+// LeMedia's TMDB client reads through getCachedEntry (stale-while-revalidate).
+const cache = vi.hoisted(() => ({ getCached: vi.fn(), getCachedEntry: vi.fn(), setCache: vi.fn() }));
 vi.mock('axios', () => ({ default: { create: () => http } }));
 vi.mock('../src/utils/cache.js', () => cache);
 vi.mock('../src/utils/fetchWithRetry.js', () => ({ attachAxiosRetry: (client: unknown) => client }));
@@ -10,6 +11,8 @@ vi.mock('../src/utils/fetchWithRetry.js', () => ({ attachAxiosRetry: (client: un
 beforeEach(() => {
   vi.resetAllMocks();
   http.get.mockResolvedValue({ data: { episodes: [] } });
+  cache.getCachedEntry.mockResolvedValue(null);
+  cache.setCache.mockResolvedValue(undefined);
 });
 
 describe('TMDB season resource validation', () => {
@@ -17,6 +20,7 @@ describe('TMDB season resource validation', () => {
     'rejects an invalid series ID before cache or HTTP access: %s', async value => {
       await expect(getTvSeasonDetails(value as number, 1)).rejects.toThrow('Invalid TMDB series ID');
       expect(cache.getCached).not.toHaveBeenCalled();
+      expect(cache.getCachedEntry).not.toHaveBeenCalled();
       expect(http.get).not.toHaveBeenCalled();
     },
   );
@@ -25,6 +29,7 @@ describe('TMDB season resource validation', () => {
     'rejects an invalid season before cache or HTTP access: %s', async value => {
       await expect(getTvSeasonDetails(1411, value as number)).rejects.toThrow('Invalid TMDB season number');
       expect(cache.getCached).not.toHaveBeenCalled();
+      expect(cache.getCachedEntry).not.toHaveBeenCalled();
       expect(http.get).not.toHaveBeenCalled();
     },
   );

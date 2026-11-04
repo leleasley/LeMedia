@@ -14,13 +14,13 @@ import { afterAll } from 'vitest';
  * Secrets are generated per run: nothing here should ever depend on a developer's local .env, and
  * a test that only passes with someone's real key is a test nobody else can run.
  */
-const dir = mkdtempSync(join(tmpdir(), 'oscarr-test-'));
+const dir = mkdtempSync(join(tmpdir(), 'lemedia-test-'));
 const dbPath = join(dir, 'test.db');
 // Prisma's Windows schema engine needs the SQLite file to exist before migrate deploy.
 closeSync(openSync(dbPath, 'wx'));
 
 process.env.DATABASE_URL = `file:${dbPath.replaceAll('\\', '/')}`;
-process.env.OSCARR_SECRET_KEY = randomBytes(32).toString('hex');
+process.env.LEMEDIA_SECRET_KEY = randomBytes(32).toString('hex');
 process.env.JWT_SECRET = randomBytes(32).toString('base64');
 process.env.NODE_ENV = 'test';
 

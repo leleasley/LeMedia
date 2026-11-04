@@ -17,15 +17,15 @@ const PAGE_SIZE = 50;
 
 // Tag colors — nsfw gets red, others cycle through these
 const TAG_COLORS: Record<string, string> = {
-  nsfw: 'bg-red-500/20 text-red-400 ring-red-500/30',
+  nsfw: 'bg-red-500/15 text-red-300 ring-red-500/25',
 };
 const DEFAULT_TAG_COLORS = [
-  'bg-violet-500/20 text-violet-400 ring-violet-500/30',
-  'bg-emerald-500/20 text-emerald-400 ring-emerald-500/30',
-  'bg-amber-500/20 text-amber-400 ring-amber-500/30',
-  'bg-cyan-500/20 text-cyan-400 ring-cyan-500/30',
-  'bg-pink-500/20 text-pink-400 ring-pink-500/30',
-  'bg-blue-500/20 text-blue-400 ring-blue-500/30',
+  'bg-lime-500/15 text-lime-300 ring-lime-500/25',
+  'bg-emerald-500/15 text-emerald-300 ring-emerald-500/25',
+  'bg-amber-500/15 text-amber-300 ring-amber-500/25',
+  'bg-cyan-500/15 text-cyan-300 ring-cyan-500/25',
+  'bg-orange-500/15 text-orange-300 ring-orange-500/25',
+  'bg-sky-500/15 text-sky-300 ring-sky-500/25',
 ];
 
 function getTagColor(tag: string, index: number): string {
@@ -73,14 +73,15 @@ function TagCell({ keyword, allTags, onUpdate }: Readonly<{ keyword: Keyword; al
   if (keyword.tag && !editing) {
     const tagIndex = allTags.indexOf(keyword.tag);
     return (
-      <div className="flex items-center gap-1.5">
-        <span className={`px-2.5 py-1 rounded-lg text-xs font-medium ring-1 ${getTagColor(keyword.tag, tagIndex)}`}>
-          {keyword.tag}
+      <div className="flex items-center gap-1 min-w-0">
+        <span className={`admin-chip ring-1 ring-inset min-w-0 ${getTagColor(keyword.tag, tagIndex)}`}>
+          <span className="truncate">{keyword.tag}</span>
         </span>
         <button
           onClick={() => onUpdate(keyword.tmdbId, null)}
-          className="p-1 rounded-lg text-ndp-text-dim hover:text-ndp-text hover:bg-white/10 transition-colors"
+          className="w-8 h-8 flex items-center justify-center flex-shrink-0 rounded-lg text-ndp-text-dim hover:text-ndp-text hover:bg-white/[0.06] transition-colors"
           title={t('admin.keywords.tag.clear')}
+          aria-label={t('admin.keywords.tag.clear')}
         >
           <X className="w-3.5 h-3.5" />
         </button>
@@ -90,7 +91,7 @@ function TagCell({ keyword, allTags, onUpdate }: Readonly<{ keyword: Keyword; al
 
   if (editing) {
     return (
-      <div>
+      <div className="w-full">
         <input
           ref={inputRef}
           type="text"
@@ -100,21 +101,21 @@ function TagCell({ keyword, allTags, onUpdate }: Readonly<{ keyword: Keyword; al
           onBlur={() => setTimeout(() => { setEditing(false); setInput(''); }, 150)}
           placeholder={t('admin.keywords.tag.placeholder')}
           autoFocus
-          className="w-full px-2.5 py-1 bg-ndp-surface rounded-lg text-xs text-ndp-text border border-ndp-accent/30 focus:outline-none"
+          className="w-full px-3 h-8 bg-ndp-surface-light rounded-lg text-xs text-ndp-text placeholder:text-ndp-text-dim border border-ndp-accent/50 focus:outline-none focus:ring-2 focus:ring-ndp-accent/30"
         />
         {suggestions.length > 0 && createPortal(
           <div
-            className="fixed bg-ndp-surface border border-white/10 rounded-lg shadow-xl z-[9999] max-h-32 overflow-y-auto"
+            className="fixed bg-ndp-surface border border-white/[0.08] rounded-lg py-1 shadow-[0_12px_32px_rgba(0,0,0,0.6)] z-[9999] max-h-40 overflow-y-auto"
             style={{ top: dropPos.top, left: dropPos.left, width: dropPos.width }}
           >
             {suggestions.map((tag, i) => (
               <button
                 key={tag}
                 onMouseDown={(e) => { e.preventDefault(); handleSelect(tag); }}
-                className="w-full text-left px-2.5 py-1.5 text-xs text-ndp-text hover:bg-white/5 transition-colors flex items-center gap-2"
+                className="w-full text-left px-3 min-h-[36px] text-xs text-ndp-text hover:bg-white/[0.06] transition-colors flex items-center gap-2"
               >
-                <span className={`w-2 h-2 rounded-full ring-1 ${getTagColor(tag, i)}`} />
-                {tag}
+                <span className={`w-2 h-2 rounded-full ring-1 flex-shrink-0 ${getTagColor(tag, i)}`} />
+                <span className="truncate">{tag}</span>
               </button>
             ))}
           </div>,
@@ -127,7 +128,7 @@ function TagCell({ keyword, allTags, onUpdate }: Readonly<{ keyword: Keyword; al
   return (
     <button
       onClick={() => setEditing(true)}
-      className="px-2.5 py-1 rounded-lg text-xs text-ndp-text-dim bg-white/5 hover:bg-white/10 transition-colors"
+      className="px-3 h-8 rounded-lg text-xs font-medium text-ndp-text-dim border border-dashed border-white/[0.12] hover:text-ndp-text hover:border-white/25 transition-colors"
     >
       + {t('admin.keywords.tag')}
     </button>
@@ -185,25 +186,27 @@ export function KeywordsTab() {
 
   if (keywords.length === 0) {
     return (
-      <div className="text-center py-12 text-ndp-text-muted">
-        <Tag className="w-10 h-10 mx-auto mb-3 opacity-40" />
-        <p>{t('admin.keywords.empty')}</p>
+      <div className="admin-group px-6 py-10 text-center">
+        <div className="admin-icon-tile w-10 h-10 mx-auto mb-3 text-ndp-text-dim">
+          <Tag className="w-5 h-5" />
+        </div>
+        <p className="text-sm text-ndp-text-muted max-w-sm mx-auto">{t('admin.keywords.empty')}</p>
       </div>
     );
   }
 
   return (
-    <div>
-      <p className="text-sm text-ndp-text-muted mb-4">{t('admin.keywords.description')}</p>
+    <div className="space-y-4">
+      <p className="text-sm text-ndp-text-muted leading-relaxed">{t('admin.keywords.description')}</p>
 
       {/* Active tags summary */}
       {allTags.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mb-4">
+        <div className="flex flex-wrap gap-1.5">
           {allTags.map((tag, i) => {
             const count = keywords.filter((k) => k.tag === tag).length;
             return (
-              <span key={tag} className={`px-2.5 py-1 rounded-lg text-xs font-medium ring-1 ${getTagColor(tag, i)}`}>
-                {tag} ({count})
+              <span key={tag} className={`admin-chip ring-1 ring-inset ${getTagColor(tag, i)}`}>
+                {tag} <span className="opacity-70 tabular-nums">({count})</span>
               </span>
             );
           })}
@@ -211,62 +214,59 @@ export function KeywordsTab() {
       )}
 
       {/* Search */}
-      <div className="relative mb-4">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ndp-text-dim" />
+      <div className="relative">
+        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-ndp-text-dim pointer-events-none" />
         <input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder={t('admin.keywords.search')}
-          className="w-full pl-10 pr-4 py-2 bg-ndp-surface rounded-xl text-sm text-ndp-text placeholder:text-ndp-text-dim border border-white/5 focus:border-ndp-accent/30 focus:outline-none"
+          className="input w-full pl-10 py-2.5 text-sm"
         />
       </div>
 
-      {/* Table */}
-      <div className="rounded-xl border border-white/5 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-ndp-surface text-ndp-text-muted text-left">
-              <th className="px-4 py-3 font-medium">{t('admin.keywords.name')}</th>
-              <th className="px-4 py-3 font-medium text-right w-24">{t('admin.keywords.media_count')}</th>
-              <th className="px-4 py-3 font-medium w-48">{t('admin.keywords.tag')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {paginated.map((kw) => (
-              <tr key={kw.tmdbId} className="border-t border-white/5 hover:bg-white/[0.02] transition-colors">
-                <td className="px-4 py-2.5 text-ndp-text">{kw.name}</td>
-                <td className="px-4 py-2.5 text-ndp-text-muted text-right">{kw.mediaCount}</td>
-                <td className="px-4 py-2.5">
-                  <TagCell keyword={kw} allTags={allTags} onUpdate={updateTag} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {/* List, column grid on desktop, stacked rows on phones */}
+      <div className="admin-group divide-y divide-white/[0.06]">
+        <div className="hidden sm:grid grid-cols-[minmax(0,1fr)_6rem_12rem] gap-4 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-ndp-text-dim">
+          <span>{t('admin.keywords.name')}</span>
+          <span className="text-right">{t('admin.keywords.media_count')}</span>
+          <span>{t('admin.keywords.tag')}</span>
+        </div>
+        {paginated.map((kw) => (
+          <div key={kw.tmdbId} className="flex items-center gap-3 px-4 py-2 min-h-[52px] sm:grid sm:grid-cols-[minmax(0,1fr)_6rem_12rem] sm:gap-4 hover:bg-white/[0.02] transition-colors">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-ndp-text break-words">{kw.name}</p>
+              <p className="sm:hidden mt-0.5 text-xs text-ndp-text-dim tabular-nums">{t('admin.keywords.media_count')} · {kw.mediaCount}</p>
+            </div>
+            <span className="hidden sm:block text-sm text-ndp-text-muted text-right tabular-nums">{kw.mediaCount}</span>
+            <div className="w-36 sm:w-auto flex-shrink-0 flex justify-end sm:justify-start min-w-0">
+              <TagCell keyword={kw} allTags={allTags} onUpdate={updateTag} />
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Pagination */}
-      <div className="flex items-center justify-between mt-3">
-        <p className="text-xs text-ndp-text-dim">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-ndp-text-dim tabular-nums">
           {filtered.length} / {keywords.length} keywords
         </p>
         {totalPages > 1 && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             <button
               onClick={() => setPage((p) => Math.max(0, p - 1))}
               disabled={page === 0}
-              className="p-1.5 rounded-lg text-ndp-text-muted hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="w-10 h-10 flex items-center justify-center rounded-lg text-ndp-text-muted hover:bg-white/[0.06] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
-            <span className="text-xs text-ndp-text-muted">
+            <span className="text-xs text-ndp-text-muted tabular-nums px-1">
               {page + 1} / {totalPages}
             </span>
             <button
               onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
               disabled={page >= totalPages - 1}
-              className="p-1.5 rounded-lg text-ndp-text-muted hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="w-10 h-10 flex items-center justify-center rounded-lg text-ndp-text-muted hover:bg-white/[0.06] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               <ChevronRight className="w-4 h-4" />
             </button>

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import api from '@/lib/api';
 import type { TmdbMedia } from '@/types';
-import type { MediaStateCategory, RequestStatus } from '@oscarr/shared';
+import type { MediaStateCategory, RequestStatus } from '@lemedia/shared';
 import { MediaStatusCache, type MediaStatus } from '@/utils/mediaStatusCache';
 
 type StatusMap = Record<string, MediaStatus>;

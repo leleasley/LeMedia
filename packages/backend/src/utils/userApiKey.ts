@@ -1,8 +1,7 @@
 import crypto from 'node:crypto';
 
-export const PLAIN_PREFIX = 'oscarr_';
+export const PLAIN_PREFIX = 'lemedia_';
 const KEY_BYTES = 32; // 256-bit entropy
-const PREFIX_DISPLAY_CHARS = PLAIN_PREFIX.length + 5; // "oscarr_" + 5 hex chars
 
 /** New plaintext key, returned to the caller once and never stored. */
 export function generatePlainKey(): string {
@@ -21,7 +20,7 @@ export function hashKey(plain: string): string {
   return crypto.createHash('sha256').update(plain).digest('hex');
 }
 
-/** Stored display prefix (e.g. "oscarr_a1b2c") so the UI can tell keys apart. */
+/** Stored display prefix, including five characters of the random portion. */
 export function plainPrefix(plain: string): string {
-  return plain.slice(0, PREFIX_DISPLAY_CHARS);
+  return plain.slice(0, PLAIN_PREFIX.length + 5);
 }

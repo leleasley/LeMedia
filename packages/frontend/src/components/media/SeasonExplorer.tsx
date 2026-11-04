@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SeasonQuickRequest, type SeasonRequestResult } from './SeasonQuickRequest';
-import { ACTIVE_REQUEST_STATUSES, type SeriesCatalog, type SeriesSeason } from '@oscarr/shared';
+import { ACTIVE_REQUEST_STATUSES, type SeriesCatalog, type SeriesSeason } from '@lemedia/shared';
 import { useFeatures } from '@/context/FeaturesContext';
 import { useAuth } from '@/context/AuthContext';
 import { useDownloads } from '@/hooks/useDownloads';

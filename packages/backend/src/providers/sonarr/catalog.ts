@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { ProviderSeasonCatalog } from '@oscarr/shared';
+import type { ProviderSeasonCatalog } from '@lemedia/shared';
 import { extractImageFromArr } from '../types.js';
 
 const count = z.number().int().nonnegative();

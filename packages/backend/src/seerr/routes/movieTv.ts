@@ -9,7 +9,7 @@ import { SEERR_MEDIA_INCLUDE } from '../shared.js';
  * block describing whether the title is already requested/processing/available locally.
  *
  * We pass the TMDB payload through verbatim (Overseerr does the same — clients depend on the
- * full TMDB shape) and only inject the Oscarr-specific `mediaInfo` field, derived from the
+ * full TMDB shape) and only inject the LeMedia-specific `mediaInfo` field, derived from the
  * Media row keyed by (tmdbId, mediaType).
  */
 export async function movieTvRoutes(app: FastifyInstance) {
@@ -21,13 +21,13 @@ export async function movieTvRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: 'INVALID_ID' });
       }
 
-      const [tmdb, oscarrMedia] = await Promise.all([
+      const [tmdb, lemediaMedia] = await Promise.all([
         safeFetch(() => getMovieDetails(tmdbId, request.query.language)),
         prisma.media.findUnique({ where: { tmdbId_mediaType: { tmdbId, mediaType: 'movie' } }, include: SEERR_MEDIA_INCLUDE }),
       ]);
 
       if (!tmdb) return reply.status(404).send({ error: 'NOT_FOUND' });
-      return { ...tmdb, mediaInfo: oscarrMedia ? buildSeerrMedia(oscarrMedia) : null };
+      return { ...tmdb, mediaInfo: lemediaMedia ? buildSeerrMedia(lemediaMedia) : null };
     },
   );
 
@@ -39,13 +39,13 @@ export async function movieTvRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: 'INVALID_ID' });
       }
 
-      const [tmdb, oscarrMedia] = await Promise.all([
+      const [tmdb, lemediaMedia] = await Promise.all([
         safeFetch(() => getTvDetails(tmdbId, request.query.language)),
         prisma.media.findUnique({ where: { tmdbId_mediaType: { tmdbId, mediaType: 'tv' } }, include: SEERR_MEDIA_INCLUDE }),
       ]);
 
       if (!tmdb) return reply.status(404).send({ error: 'NOT_FOUND' });
-      return { ...tmdb, mediaInfo: oscarrMedia ? buildSeerrMedia(oscarrMedia) : null };
+      return { ...tmdb, mediaInfo: lemediaMedia ? buildSeerrMedia(lemediaMedia) : null };
     },
   );
 }

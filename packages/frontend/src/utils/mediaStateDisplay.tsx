@@ -1,11 +1,11 @@
 import {
   CheckCircle, Clock, Search, CalendarClock, Loader2, AlertCircle, AlertTriangle, Ban, XCircle,
-  HelpCircle, Download, Film, Tv, Star, Bookmark, BookmarkX, Eye, EyeOff, Lock, Unlock,
+  HelpCircle, Download, Film, Tv, Star, Bookmark, BookmarkX, Eye, EyeOff, Lock, Unlock, Trash2,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
-import { MEDIA_STATE_DISPLAY, COLOR_TOKEN_CLASSES, type MediaStateCategory, type IconName, type ColorToken } from '@oscarr/shared';
+import { MEDIA_STATE_DISPLAY, COLOR_TOKEN_CLASSES, type MediaStateCategory, type IconName, type ColorToken } from '@lemedia/shared';
 import { useFeatures } from '@/context/FeaturesContext';
 
 // keyed by IconName so a missing icon is a compile error, not a silent HelpCircle fallback
@@ -61,12 +61,24 @@ export function resolveDisplayState(
   if (!availability) return null;
   const { statusCategory: cat, requestStatus } = availability;
   if (cat === 'AVAILABLE') return mediaStateDisplay('AVAILABLE', t);
-  if (cat === 'UNAVAILABLE') {
-    if (requestStatus === 'pending') return { label: t('status.requested'), Icon: Clock, badgeClass: COLOR_TOKEN_CLASSES.warning };
-    if (requestStatus === 'approved' || requestStatus === 'processing') return { label: t('status.processing'), Icon: Clock, badgeClass: COLOR_TOKEN_CLASSES.accent };
-    if (requestStatus === 'failed') return { label: t('status.failed'), Icon: AlertTriangle, badgeClass: COLOR_TOKEN_CLASSES.danger };
-    return null;
-  }
+    // SEARCHING with no active request = missing (requestable)
+    if (cat === 'SEARCHING' && !requestStatus) return { label: t('status.missing'), Icon: AlertCircle, badgeClass: COLOR_TOKEN_CLASSES.warning };
+    // SEARCHING with request = in progress
+    if (cat === 'SEARCHING') {
+      if (requestStatus === 'pending') return { label: t('status.requested'), Icon: Clock, badgeClass: COLOR_TOKEN_CLASSES.warning };
+      if (requestStatus === 'approved' || requestStatus === 'processing') return { label: t('status.processing'), Icon: Clock, badgeClass: COLOR_TOKEN_CLASSES.accent };
+      if (requestStatus === 'failed') return { label: t('status.failed'), Icon: AlertTriangle, badgeClass: COLOR_TOKEN_CLASSES.danger };
+      if (requestStatus === 'deleted') return { label: t('status.deleted'), Icon: Trash2, badgeClass: COLOR_TOKEN_CLASSES.muted };
+      if (requestStatus === 'conflict') return { label: t('status.conflict'), Icon: AlertTriangle, badgeClass: COLOR_TOKEN_CLASSES.warning };
+    }
+    if (cat === 'UNAVAILABLE') {
+      if (requestStatus === 'pending') return { label: t('status.requested'), Icon: Clock, badgeClass: COLOR_TOKEN_CLASSES.warning };
+      if (requestStatus === 'approved' || requestStatus === 'processing') return { label: t('status.processing'), Icon: Clock, badgeClass: COLOR_TOKEN_CLASSES.accent };
+      if (requestStatus === 'failed') return { label: t('status.failed'), Icon: AlertTriangle, badgeClass: COLOR_TOKEN_CLASSES.danger };
+      if (requestStatus === 'deleted') return { label: t('status.deleted'), Icon: Trash2, badgeClass: COLOR_TOKEN_CLASSES.muted };
+      if (requestStatus === 'conflict') return { label: t('status.conflict'), Icon: AlertTriangle, badgeClass: COLOR_TOKEN_CLASSES.warning };
+      return null;
+    }
   if (cat === 'PROCESSING' && mediaType === 'tv') return { label: t('status.partial'), Icon: Loader2, badgeClass: COLOR_TOKEN_CLASSES.accent };
   return mediaStateDisplay(cat, t, override);
 }
@@ -83,7 +95,7 @@ export function MediaStateBadge({ availability, mediaType, className }: {
   if (!view) return null;
   const { label, Icon, badgeClass } = view;
   return (
-    <div className={clsx('inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold', badgeClass, className)}>
+    <div className={clsx('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold shadow-[0_2px_8px_rgba(0,0,0,0.5)]', badgeClass, className)}>
       <Icon className="w-3 h-3" />
       {label}
     </div>

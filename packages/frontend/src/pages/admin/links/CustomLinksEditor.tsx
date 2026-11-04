@@ -123,7 +123,7 @@ export function CustomLinksEditor() {
 
   if (loading) {
     return (
-      <div className="card p-5 flex items-center justify-center">
+      <div className="admin-group p-6 flex items-center justify-center">
         <Loader2 className="w-5 h-5 animate-spin text-ndp-text-dim" />
       </div>
     );
@@ -132,8 +132,8 @@ export function CustomLinksEditor() {
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-lg font-semibold text-ndp-text">{t('admin.custom_links.title', 'Liens rapides')}</h2>
-        <p className="text-sm text-ndp-text-dim mt-1">
+        <h2 className="text-base font-semibold text-ndp-text">{t('admin.custom_links.title', 'Liens rapides')}</h2>
+        <p className="text-sm text-ndp-text-dim mt-1 leading-relaxed">
           {t('admin.custom_links.help', 'Raccourcis affichés dans la barre du haut, à gauche ou à droite de la recherche.')}
         </p>
       </div>
@@ -158,18 +158,18 @@ export function CustomLinksEditor() {
       </div>
 
       {!allValid && links.length > 0 && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-ndp-warning/10 text-ndp-warning text-xs">
-          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+        <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-ndp-warning/10 text-ndp-warning text-xs leading-relaxed">
+          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-px" />
           {t('admin.custom_links.invalid_warning', 'Chaque lien doit avoir un label et une URL https://')}
         </div>
       )}
 
-      <div className="flex items-center justify-end gap-2">
+      <div className="flex items-center justify-end gap-2 [&>button]:flex-1 sm:[&>button]:flex-none">
         {dirty && (
           <button
             onClick={load}
             disabled={saving}
-            className="px-3 py-1.5 rounded-lg text-sm text-ndp-text-dim hover:text-ndp-text hover:bg-white/5 transition-colors disabled:opacity-50"
+            className="btn-secondary text-sm px-4 py-2 min-h-[40px] disabled:opacity-50"
           >
             {t('common.cancel', 'Annuler')}
           </button>
@@ -177,7 +177,7 @@ export function CustomLinksEditor() {
         <button
           onClick={save}
           disabled={!dirty || !allValid || saving}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-ndp-accent text-white hover:bg-ndp-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="btn-primary flex items-center justify-center gap-1.5 px-4 py-2 min-h-[40px] text-sm disabled:opacity-50 disabled:cursor-not-allowed flex-1 sm:flex-none"
         >
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           {t('common.save', 'Sauvegarder')}
@@ -199,17 +199,18 @@ interface ColumnProps {
 function Column({ label, links, onUpdate, onRemove, onMove, onAdd }: Readonly<ColumnProps>) {
   const { t } = useTranslation();
   return (
-    <div className="card p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="text-[10px] uppercase tracking-wider font-semibold text-ndp-text-dim">{label}</p>
+    <div className="min-w-0">
+      <div className="flex items-center justify-between gap-2 mb-2 pr-1">
+        <p className="admin-group-label mb-0 truncate">{label}</p>
         <span className={clsx(
-          'text-[10px] px-1.5 py-0.5 rounded-full font-medium tabular-nums',
-          links.length > 0 ? 'bg-ndp-accent/10 text-ndp-accent' : 'bg-white/5 text-ndp-text-dim',
+          'admin-chip tabular-nums',
+          links.length > 0 && 'bg-ndp-accent/15 text-ndp-accent',
         )}>
           {links.length}
         </span>
       </div>
 
+      <div className="admin-group p-3 space-y-3">
       {links.length === 0 ? (
         <div className="py-6 text-center text-xs text-ndp-text-dim border border-dashed border-white/10 rounded-lg">
           {t('admin.custom_links.empty_column', 'Aucun lien')}
@@ -232,11 +233,12 @@ function Column({ label, links, onUpdate, onRemove, onMove, onAdd }: Readonly<Co
 
       <button
         onClick={onAdd}
-        className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-white/10 hover:border-ndp-accent/40 hover:bg-ndp-accent/[0.04] text-xs font-medium text-ndp-text-dim hover:text-ndp-accent transition-colors"
+        className="w-full min-h-[40px] flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-white/10 hover:border-ndp-accent/40 hover:bg-ndp-accent/[0.04] text-sm font-medium text-ndp-text-dim hover:text-ndp-accent transition-colors"
       >
-        <Plus className="w-3.5 h-3.5" />
+        <Plus className="w-4 h-4" />
         {t('admin.custom_links.add', 'Ajouter un lien')}
       </button>
+      </div>
     </div>
   );
 }
@@ -257,7 +259,7 @@ function LinkRow({ link, isFirst, isLast, onUpdate, onRemove, onMove }: Readonly
   const showReorder = !(isFirst && isLast);
 
   return (
-    <div className="rounded-xl bg-white/[0.03] ring-1 ring-white/5 hover:ring-white/10 transition-colors p-3">
+    <div className="rounded-lg bg-white/[0.03] ring-1 ring-inset ring-white/[0.06] transition-colors p-3">
       <div className="flex items-start gap-3">
         <IconPicker
           value={link.icon}
@@ -266,8 +268,9 @@ function LinkRow({ link, isFirst, isLast, onUpdate, onRemove, onMove }: Readonly
           trigger={
             <button
               type="button"
-              className="flex h-11 w-11 items-center justify-center rounded-lg bg-white/5 hover:bg-white/10 ring-1 ring-white/5 hover:ring-ndp-accent/30 transition-colors flex-shrink-0"
+              className="flex h-11 w-11 items-center justify-center rounded-lg bg-white/5 hover:bg-white/10 ring-1 ring-inset ring-white/[0.06] transition-colors flex-shrink-0"
               title={t('admin.custom_links.icon_picker_hint', 'Changer l’icône')}
+              aria-label={t('admin.custom_links.icon_picker_hint', 'Changer l’icône')}
             >
               <LinkIcon value={link.icon} className="h-5 w-5 text-ndp-text-muted" />
             </button>
@@ -281,8 +284,8 @@ function LinkRow({ link, isFirst, isLast, onUpdate, onRemove, onMove }: Readonly
             placeholder={t('admin.custom_links.label_placeholder', 'Label (ex: Discord)')}
             maxLength={50}
             className={clsx(
-              'w-full px-3 py-1.5 rounded-md bg-white/[0.04] border text-sm text-ndp-text placeholder:text-ndp-text-dim focus:outline-none focus:ring-2 focus:ring-ndp-accent/40 focus:border-transparent',
-              labelOk ? 'border-white/5' : 'border-ndp-warning/40',
+              'w-full px-3 py-2 rounded-lg bg-white/[0.04] border text-sm text-ndp-text placeholder:text-ndp-text-dim focus:outline-none focus:ring-2 focus:ring-ndp-accent/40 focus:border-transparent',
+              labelOk ? 'border-white/[0.06]' : 'border-ndp-warning/40',
             )}
           />
           <input
@@ -291,43 +294,43 @@ function LinkRow({ link, isFirst, isLast, onUpdate, onRemove, onMove }: Readonly
             onChange={(e) => onUpdate(link.id, { url: e.target.value })}
             placeholder="https://..."
             className={clsx(
-              'w-full px-3 py-1.5 rounded-md bg-white/[0.04] border text-xs text-ndp-text-muted placeholder:text-ndp-text-dim focus:outline-none focus:ring-2 focus:ring-ndp-accent/40 focus:border-transparent font-mono',
-              urlOk ? 'border-white/5' : 'border-ndp-warning/40',
+              'w-full px-3 py-2 rounded-lg bg-white/[0.04] border text-xs text-ndp-text-muted placeholder:text-ndp-text-dim focus:outline-none focus:ring-2 focus:ring-ndp-accent/40 focus:border-transparent font-mono',
+              urlOk ? 'border-white/[0.06]' : 'border-ndp-warning/40',
             )}
           />
         </div>
       </div>
 
-      <div className="mt-2 pt-2 border-t border-white/5 flex items-center justify-between gap-2">
+      <div className="mt-2.5 pt-2 border-t border-white/[0.06] flex items-center justify-between gap-2">
         <PositionPicker value={link.position} onChange={(p) => onUpdate(link.id, { position: p })} />
-        <div className="flex items-center gap-1">
+        <div className="flex items-center -mr-1.5">
           {showReorder && (
             <>
               <button
                 onClick={() => onMove(link.id, -1)}
                 disabled={isFirst}
-                className="p-1 rounded text-ndp-text-dim hover:text-ndp-text hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed"
+                className="w-10 h-10 flex items-center justify-center rounded-lg text-ndp-text-dim hover:text-ndp-text hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed"
                 aria-label={t('admin.custom_links.move_up', 'Monter')}
               >
-                <ArrowUp className="w-3.5 h-3.5" />
+                <ArrowUp className="w-4 h-4" />
               </button>
               <button
                 onClick={() => onMove(link.id, 1)}
                 disabled={isLast}
-                className="p-1 rounded text-ndp-text-dim hover:text-ndp-text hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed"
+                className="w-10 h-10 flex items-center justify-center rounded-lg text-ndp-text-dim hover:text-ndp-text hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed"
                 aria-label={t('admin.custom_links.move_down', 'Descendre')}
               >
-                <ArrowDown className="w-3.5 h-3.5" />
+                <ArrowDown className="w-4 h-4" />
               </button>
               <span className="w-px h-4 bg-white/10 mx-0.5" />
             </>
           )}
           <button
             onClick={() => onRemove(link.id)}
-            className="p-1 rounded text-ndp-text-dim hover:text-ndp-danger hover:bg-ndp-danger/10 transition-colors"
+            className="w-10 h-10 flex items-center justify-center rounded-lg text-ndp-text-dim hover:text-ndp-danger hover:bg-ndp-danger/10 transition-colors"
             aria-label={t('common.delete', 'Supprimer')}
           >
-            <Trash2 className="w-3.5 h-3.5" />
+            <Trash2 className="w-4 h-4" />
           </button>
         </div>
       </div>
@@ -338,11 +341,11 @@ function LinkRow({ link, isFirst, isLast, onUpdate, onRemove, onMove }: Readonly
 function PositionPicker({ value, onChange }: Readonly<{ value: 'left' | 'right'; onChange: (p: 'left' | 'right') => void }>) {
   const { t } = useTranslation();
   return (
-    <div className="inline-flex p-0.5 rounded-md bg-white/5">
+    <div className="inline-flex gap-0.5 p-0.5 rounded-lg bg-white/5 ring-1 ring-inset ring-white/[0.06]">
       <button
         onClick={() => onChange('left')}
         className={clsx(
-          'px-2 py-0.5 rounded text-[10px] font-medium transition-colors',
+          'min-h-[34px] px-3 rounded-md text-xs font-medium transition-colors',
           value === 'left' ? 'bg-ndp-accent text-white' : 'text-ndp-text-dim hover:text-ndp-text',
         )}
       >
@@ -351,7 +354,7 @@ function PositionPicker({ value, onChange }: Readonly<{ value: 'left' | 'right';
       <button
         onClick={() => onChange('right')}
         className={clsx(
-          'px-2 py-0.5 rounded text-[10px] font-medium transition-colors',
+          'min-h-[34px] px-3 rounded-md text-xs font-medium transition-colors',
           value === 'right' ? 'bg-ndp-accent text-white' : 'text-ndp-text-dim hover:text-ndp-text',
         )}
       >

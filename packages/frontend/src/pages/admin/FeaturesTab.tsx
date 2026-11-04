@@ -7,10 +7,11 @@ import { useFeatures } from '@/context/FeaturesContext';
 import { Spinner } from './Spinner';
 import { AdminTabLayout } from './AdminTabLayout';
 import { FloatingSaveBar } from '@/components/FloatingSaveBar';
-import { COLOR_TOKENS } from '@oscarr/shared';
+import { COLOR_TOKENS } from '@lemedia/shared';
+import Switch from '@/components/ui/Switch';
 
 /**
- * "How Oscarr behaves" — feature flags + request policy + disabled-login behavior.
+ * "How LeMedia behaves" — feature flags + request policy + disabled-login behavior.
  * Split out of the old General tab. Everything here tunes what's on/off and how the site
  * responds to edge cases, without touching the instance's identity.
  */
@@ -147,7 +148,7 @@ export function FeaturesTab() {
   if (loadError) {
     return (
       <AdminTabLayout>
-        <div className="mt-6 card p-5 flex items-start gap-3 border-ndp-danger/20 bg-ndp-danger/5">
+        <div className="rounded-xl p-4 flex items-start gap-3 border border-ndp-danger/20 bg-ndp-danger/5">
           <AlertTriangle className="w-5 h-5 text-ndp-danger flex-shrink-0 mt-0.5" />
           <div className="flex-1">
             <p className="text-sm text-ndp-text">{t('admin.load.failed')}</p>
@@ -171,125 +172,117 @@ export function FeaturesTab() {
 
   return (
     <AdminTabLayout>
-      <div>
-        <h2 className="text-lg font-semibold text-ndp-text mb-2">{t('admin.features.section_title')}</h2>
-        <p className="text-xs text-ndp-text-dim mb-4">{t('admin.features.section_desc')}</p>
-        <div className="space-y-3">
-          {features.map(({ label, desc, value, set }) => (
-            <div key={label} className="card">
-              <div className="flex items-center gap-4 p-4">
+      <div className="space-y-8">
+        <section>
+          <h2 className="admin-group-label">{t('admin.features.section_title')}</h2>
+          <div className="admin-group divide-y divide-white/[0.06]">
+            {features.map(({ label, desc, value, set }) => (
+              <div key={label} className="admin-row">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-ndp-text">{label}</p>
-                  <p className="text-xs text-ndp-text-dim mt-0.5">{desc}</p>
+                  <p className="text-xs text-ndp-text-dim mt-0.5 leading-relaxed">{desc}</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => set(!value)}
-                  className={clsx('relative w-11 h-6 rounded-full transition-colors flex-shrink-0', value ? 'bg-ndp-accent' : 'bg-white/10')}
-                >
-                  <span className={clsx('absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm', value && 'translate-x-5')} />
-                </button>
+                <Switch checked={value} onChange={(next) => set(next)} label={label} className="-mr-1.5" />
               </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="mt-8">
-        <h2 className="text-lg font-semibold text-ndp-text mb-2">{t('admin.features.search_cooldown')}</h2>
-        <p className="text-xs text-ndp-text-dim mb-4">{t('admin.features.search_cooldown_desc')}</p>
-        <div className="card p-4">
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              min={1}
-              max={1440}
-              value={missingSearchCooldownMin}
-              onChange={(e) => setMissingSearchCooldownMin(Math.max(1, Number.parseInt(e.target.value) || 60))}
-              className="input w-24 text-sm text-center"
-            />
-            <span className="text-sm text-ndp-text-dim">min</span>
+            ))}
           </div>
-        </div>
-      </div>
+          <p className="admin-hint">{t('admin.features.section_desc')}</p>
+        </section>
 
-
-      <div className="mt-8">
-        <h2 className="text-lg font-semibold text-ndp-text mb-2">{t('admin.features.availability_title')}</h2>
-        <p className="text-xs text-ndp-text-dim mb-4">{t('admin.features.availability_desc')}</p>
-        <div className="card p-4 space-y-3">
-
-          {([
-            { key: 'movie', label: t('admin.features.source_movies'), value: movieAvailabilitySource, set: setMovieAvailabilitySource, options: sources.movie },
-            { key: 'tv', label: t('admin.features.source_tv'), value: tvAvailabilitySource, set: setTvAvailabilitySource, options: sources.tv },
-          ] as const).map(({ key, label, value, set, options }) => (
-            <div key={key} className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm font-medium text-ndp-text">{label}</p>
-              <select value={value} onChange={(e) => set(e.target.value)} className="input text-sm w-56">
-                {/* The stored value stays selectable even if its service was since disabled, so
-                    opening this page never silently rewrites the configuration. */}
-                {!options.some((o) => o.id === value) && <option value={value}>{value}</option>}
-                {options.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.label}{o.category === 'arr' ? t('admin.features.source_arr_suffix') : ''}
-                  </option>
-                ))}
-              </select>
+        <section>
+          <h2 className="admin-group-label">{t('admin.features.search_cooldown')}</h2>
+          <div className="admin-group">
+            <div className="admin-row">
+              <input
+                type="number"
+                min={1}
+                max={1440}
+                value={missingSearchCooldownMin}
+                onChange={(e) => setMissingSearchCooldownMin(Math.max(1, Number.parseInt(e.target.value) || 60))}
+                className="input w-24 py-2 text-sm text-center"
+              />
+              <span className="text-sm text-ndp-text-dim">min</span>
             </div>
-          ))}
+          </div>
+          <p className="admin-hint">{t('admin.features.search_cooldown_desc')}</p>
+        </section>
 
-          {(sourceIsLibrary(movieAvailabilitySource, sources.movie) || sourceIsLibrary(tvAvailabilitySource, sources.tv)) && (
-            <div className="border-t border-white/10 pt-3 mt-1 space-y-3">
-              <p className="text-xs text-ndp-text-dim">{t('admin.features.imported_state_desc')}</p>
-              <div className="flex flex-wrap gap-3 items-end">
-                <div>
-                  <label className="block text-xs font-medium text-ndp-text mb-1">{t('admin.features.imported_label')}</label>
-                  <input
-                    value={importedStateLabel}
-                    maxLength={40}
-                    onChange={(e) => setImportedStateLabel(e.target.value)}
-                    placeholder={t('status.imported')}
-                    className="input text-sm w-56"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-ndp-text mb-1">{t('admin.features.imported_color')}</label>
-                  <select value={importedStateColor} onChange={(e) => setImportedStateColor(e.target.value)} className="input text-sm w-40">
-                    <option value="">{t('admin.features.imported_color_default')}</option>
-                    {COLOR_TOKENS.map((token) => (<option key={token} value={token}>{token}</option>))}
-                  </select>
+        <section>
+          <h2 className="admin-group-label">{t('admin.features.availability_title')}</h2>
+          <div className="admin-group divide-y divide-white/[0.06]">
+            {([
+              { key: 'movie', label: t('admin.features.source_movies'), value: movieAvailabilitySource, set: setMovieAvailabilitySource, options: sources.movie },
+              { key: 'tv', label: t('admin.features.source_tv'), value: tvAvailabilitySource, set: setTvAvailabilitySource, options: sources.tv },
+            ] as const).map(({ key, label, value, set, options }) => (
+              <div key={key} className="admin-row flex-col items-stretch sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm font-medium text-ndp-text">{label}</p>
+                <select value={value} onChange={(e) => set(e.target.value)} aria-label={label} className="input py-2 text-sm w-full sm:w-56">
+                  {/* The stored value stays selectable even if its service was since disabled, so
+                      opening this page never silently rewrites the configuration. */}
+                  {!options.some((o) => o.id === value) && <option value={value}>{value}</option>}
+                  {options.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.label}{o.category === 'arr' ? t('admin.features.source_arr_suffix') : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ))}
+
+            {(sourceIsLibrary(movieAvailabilitySource, sources.movie) || sourceIsLibrary(tvAvailabilitySource, sources.tv)) && (
+              <div className="px-4 py-3 space-y-3">
+                <p className="text-xs text-ndp-text-dim leading-relaxed">{t('admin.features.imported_state_desc')}</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-ndp-text-muted mb-1.5">{t('admin.features.imported_label')}</label>
+                    <input
+                      value={importedStateLabel}
+                      maxLength={40}
+                      onChange={(e) => setImportedStateLabel(e.target.value)}
+                      placeholder={t('status.imported')}
+                      className="input py-2 text-sm w-full"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-ndp-text-muted mb-1.5">{t('admin.features.imported_color')}</label>
+                    <select value={importedStateColor} onChange={(e) => setImportedStateColor(e.target.value)} className="input py-2 text-sm w-full">
+                      <option value="">{t('admin.features.imported_color_default')}</option>
+                      {COLOR_TOKENS.map((token) => (<option key={token} value={token}>{token}</option>))}
+                    </select>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
-        </div>
-      </div>
+            )}
+          </div>
+          <p className="admin-hint">{t('admin.features.availability_desc')}</p>
+        </section>
 
-      <div className="mt-8">
-        <h2 className="text-lg font-semibold text-ndp-text mb-2">{t('admin.features.disabled_login_title', 'Disabled accounts')}</h2>
-        <p className="text-xs text-ndp-text-dim mb-4">
-          {t('admin.features.disabled_login_desc', 'Choose how the login screen responds when a user marked as disabled tries to sign in.')}
-        </p>
-        <div className="card p-4 space-y-2">
-          <label className="flex items-start gap-3 p-2 rounded-lg cursor-pointer hover:bg-white/5 transition-colors">
-            <input type="radio" name="disabledLoginMode" checked={disabledLoginMode === 'friendly'} onChange={() => setDisabledLoginMode('friendly')} className="mt-0.5" />
-            <div>
-              <p className="text-sm font-medium text-ndp-text">{t('admin.features.disabled_login_friendly', 'Friendly message')}</p>
-              <p className="text-xs text-ndp-text-dim mt-0.5">
-                {t('admin.features.disabled_login_friendly_desc', 'Login rejected with an explicit message telling the user their account is disabled.')}
-              </p>
-            </div>
-          </label>
-          <label className="flex items-start gap-3 p-2 rounded-lg cursor-pointer hover:bg-white/5 transition-colors">
-            <input type="radio" name="disabledLoginMode" checked={disabledLoginMode === 'block'} onChange={() => setDisabledLoginMode('block')} className="mt-0.5" />
-            <div>
-              <p className="text-sm font-medium text-ndp-text">{t('admin.features.disabled_login_silent', 'Silent block')}</p>
-              <p className="text-xs text-ndp-text-dim mt-0.5">
-                {t('admin.features.disabled_login_silent_desc', 'Login rejected with a generic "Invalid credentials" error. The user has no indication their account was disabled.')}
-              </p>
-            </div>
-          </label>
-        </div>
+        <section>
+          <h2 className="admin-group-label">{t('admin.features.disabled_login_title', 'Disabled accounts')}</h2>
+          <div className="admin-group divide-y divide-white/[0.06]">
+            <label className="admin-row items-start cursor-pointer hover:bg-white/[0.03] transition-colors">
+              <input type="radio" name="disabledLoginMode" checked={disabledLoginMode === 'friendly'} onChange={() => setDisabledLoginMode('friendly')} className="mt-1 w-4 h-4 accent-ndp-accent flex-shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-ndp-text">{t('admin.features.disabled_login_friendly', 'Friendly message')}</p>
+                <p className="text-xs text-ndp-text-dim mt-0.5 leading-relaxed">
+                  {t('admin.features.disabled_login_friendly_desc', 'Login rejected with an explicit message telling the user their account is disabled.')}
+                </p>
+              </div>
+            </label>
+            <label className="admin-row items-start cursor-pointer hover:bg-white/[0.03] transition-colors">
+              <input type="radio" name="disabledLoginMode" checked={disabledLoginMode === 'block'} onChange={() => setDisabledLoginMode('block')} className="mt-1 w-4 h-4 accent-ndp-accent flex-shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-ndp-text">{t('admin.features.disabled_login_silent', 'Silent block')}</p>
+                <p className="text-xs text-ndp-text-dim mt-0.5 leading-relaxed">
+                  {t('admin.features.disabled_login_silent_desc', 'Login rejected with a generic "Invalid credentials" error. The user has no indication their account was disabled.')}
+                </p>
+              </div>
+            </label>
+          </div>
+          <p className="admin-hint">
+            {t('admin.features.disabled_login_desc', 'Choose how the login screen responds when a user marked as disabled tries to sign in.')}
+          </p>
+        </section>
       </div>
 
       <FloatingSaveBar show={hasChanges} saving={saving} saved={saved} error={saveError} onSave={handleSave} onReset={handleReset} />

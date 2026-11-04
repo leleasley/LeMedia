@@ -1,4 +1,4 @@
-import { ACTIVE_REQUEST_STATUSES } from '@oscarr/shared';
+import { ACTIVE_REQUEST_STATUSES } from '@lemedia/shared';
 import { resolveButtonState, type ButtonState, type ButtonStateInputs } from '@/utils/resolveButtonState';
 
 interface RequestLike {
@@ -64,6 +64,7 @@ export function useMediaAvailability({
     takenQualityIds,
     userHasRequest,
     buttonState: resolveButtonState({
+      selectedQuality,
       isAvailable,
       // Only meaningful for a series: a movie is one file, it is never half there.
       isPartiallyAvailable: !isAvailable && category === 'PROCESSING' && type === 'tv',

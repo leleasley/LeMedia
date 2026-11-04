@@ -29,7 +29,7 @@ export default function DoneStep({ onGo }: Readonly<Props>) {
   useEffect(() => {
     api.get<ChecklistResponse>('/admin/setup-checklist')
       .then(({ data }) => setItems(data.items))
-      .catch(() => { /* surface stays — checklist optional */ });
+      .catch(() => { /* surface stays, checklist optional */ });
   }, []);
 
   useEffect(() => {

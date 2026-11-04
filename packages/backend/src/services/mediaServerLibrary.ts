@@ -6,7 +6,7 @@ import { trimTrailingSlashes } from '../utils/trimTrailingSlashes.js';
 /**
  * Reads what is actually present in the user's media server library.
  *
- * Oscarr has never had this: the Plex provider only does authentication and user sharing, so
+ * LeMedia has never had this: the Plex provider only does authentication and user sharing, so
  * "available" could only ever mean "the *arr reported a file". That is right most of the time and
  * wrong exactly when it hurts — the library has not been rescanned, and the user clicks a title
  * their player cannot find.
@@ -71,7 +71,7 @@ async function plexGet(baseUrl: string, token: string, path: string, params: Rec
   }
 }
 
-/** Movie and show sections only — music and photo libraries have nothing Oscarr can match. */
+/** Movie and show sections only — music and photo libraries have nothing LeMedia can match. */
 async function plexSections(baseUrl: string, token: string): Promise<PlexSection[]> {
   const body = await plexGet(baseUrl, token, 'library/sections');
   const dirs = (body.MediaContainer?.Directory ?? []) as PlexSection[];
@@ -113,7 +113,7 @@ async function plexCredentials(): Promise<{ url: string; token: string } | null>
 /**
  * Everything the configured media server currently holds.
  *
- * Only Plex is implemented. Jellyfin and Emby are configured in Oscarr for authentication only,
+ * Only Plex is implemented. Jellyfin and Emby are configured in LeMedia for authentication only,
  * and their library APIs have not been verified here — returning null for them is deliberate, so
  * an unverified integration can never silently mark a whole library as unconfirmed.
  */

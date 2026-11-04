@@ -152,7 +152,7 @@ export async function authProvidersRoutes(app: FastifyInstance) {
         const othersEnabled = allSettings.some((s) => s.provider !== id && s.enabled);
         if (!othersEnabled) {
           return reply.status(409).send({
-            error: 'Cannot disable the last enabled auth provider — you would lose login access. Enable another provider first.',
+            error: 'Cannot disable the last enabled auth provider, you would lose login access. Enable another provider first.',
           });
         }
       }

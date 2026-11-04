@@ -17,7 +17,7 @@ import { closeAllPluginStorage } from '../plugins/storage/index.js';
 /** Suffixes SQLite keeps alongside the main database file in WAL mode. */
 const SQLITE_SIDECARS = ['-wal', '-shm'] as const;
 
-/** Reject anything that isn't a sound Oscarr database before it gets anywhere near the live
+/** Reject anything that isn't a sound LeMedia database before it gets anywhere near the live
  *  path. Runs on the staged file, so a corrupt archive costs nothing. */
 function assertRestorableSqlite(path: string): void {
   const db = new Database(path, { readonly: true, fileMustExist: true });
@@ -27,7 +27,7 @@ function assertRestorableSqlite(path: string): void {
     const row = db
       .prepare("SELECT count(*) AS n FROM sqlite_master WHERE type = 'table' AND name = '_prisma_migrations'")
       .get() as { n: number } | undefined;
-    if (!row?.n) throw new Error('no _prisma_migrations table — not an Oscarr database');
+    if (!row?.n) throw new Error('no _prisma_migrations table, not a LeMedia database');
   } finally {
     db.close();
   }
@@ -85,7 +85,7 @@ function stagePluginData(entries: PluginDataEntry[], stageRoot: string): { stage
  *  By the time the buffer reaches this function it's been validated 7 ways and is NOT untrusted
  *  network data anymore — dbPath is also a constant derived from env/config, never from the body.
  *
- *  The previous implementation wrote the buffer straight over `oscarr.db` with Prisma still
+ *  The previous implementation wrote the buffer straight over `lemedia.db` with Prisma still
  *  connected, the cron jobs still firing and the old `-wal` still on disk. Three ways to lose
  *  data: the live connection kept serving pages from a file that changed underneath it, SQLite
  *  could replay the stale WAL over the restored database (WAL frames are validated by their own

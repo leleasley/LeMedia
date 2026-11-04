@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Shield, Plus, Pencil, Trash2, Loader2, Lock, Check, X } from 'lucide-react';
 import { clsx } from 'clsx';
 import api from '@/lib/api';
+import { showToast, toastApiError } from '@/utils/toast';
 import { Spinner } from './Spinner';
 import { AdminTabLayout } from './AdminTabLayout';
 import { useModal } from '@/hooks/useModal';
@@ -62,7 +63,7 @@ export function RolesTab() {
       setRoles(rolesRes.data);
       setAllPermissions(permsRes.data);
     } catch (err) {
-      console.error('Failed to fetch roles:', err);
+      toastApiError(err, t('admin.roles.load_failed'));
     } finally {
       setLoading(false);
     }
@@ -114,8 +115,9 @@ export function RolesTab() {
       }
       closeModal();
       await fetchData();
+      showToast(t('common.saved'), 'success');
     } catch (err) {
-      console.error('Failed to save role:', err);
+      toastApiError(err, t('admin.roles.save_failed'));
     } finally {
       setSaving(false);
     }
@@ -144,7 +146,7 @@ export function RolesTab() {
           ?? roles.find(r => r.id !== confirmDelete.id);
         setReassignTo(fallback?.name ?? '');
       } else {
-        console.error('Failed to delete role:', err);
+        toastApiError(err, t('admin.roles.delete_failed'));
       }
     } finally {
       setDeleting(false);
@@ -155,8 +157,9 @@ export function RolesTab() {
     try {
       await api.put(`/admin/roles/${role.id}`, { isDefault: true });
       await fetchData();
+      showToast(t('common.saved'), 'success');
     } catch (err) {
-      console.error('Failed to set default role:', err);
+      toastApiError(err, t('admin.roles.save_failed'));
     }
   };
 
@@ -175,76 +178,75 @@ export function RolesTab() {
       title={t('admin.roles.title', 'Roles')}
       count={roles.length}
       actions={
-        <button onClick={openCreate} className="btn-primary flex items-center gap-2 text-sm">
+        <button onClick={openCreate} className="btn-primary flex items-center gap-2 text-sm !px-4 whitespace-nowrap">
           <Plus className="w-4 h-4" />
           {t('admin.roles.create', 'New role')}
         </button>
       }
     >
-      <div className="space-y-3">
+      <div className="admin-group divide-y divide-white/[0.06]">
         {roles.map((role) => {
           const perms = JSON.parse(role.permissions) as string[];
           const isAll = perms.includes('*');
 
           return (
-            <div key={role.id} className="card p-4">
-              <div className="flex items-center gap-4">
-                <div className={clsx(
-                  'w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0',
-                  isAll ? 'bg-ndp-accent/20 text-ndp-accent' : 'bg-white/5 text-ndp-text-muted'
-                )}>
-                  <Shield className="w-5 h-5" />
-                </div>
+            <div key={role.id} className="admin-row flex-wrap gap-y-1">
+              <div className={clsx(
+                'admin-icon-tile !w-10 !h-10',
+                isAll ? 'bg-ndp-accent/15 text-ndp-accent' : 'text-ndp-text-muted'
+              )}>
+                <Shield className="w-[18px] h-[18px]" />
+              </div>
 
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-ndp-text capitalize">{role.name}</span>
-                    {role.isSystem && (
-                      <span className="text-[10px] bg-white/5 text-ndp-text-dim px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
-                        <Lock className="w-2.5 h-2.5" />
-                        {t('admin.roles.system', 'System')}
-                      </span>
-                    )}
-                    {role.isDefault && (
-                      <span className="text-[10px] bg-ndp-success/10 text-ndp-success px-2 py-0.5 rounded-full font-medium">
-                        {t('admin.roles.default', 'Default')}
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-xs text-ndp-text-dim mt-0.5">
-                    {isAll
-                      ? t('admin.roles.all_permissions', 'All permissions')
-                      : t('admin.roles.permission_count', '{{count}} permissions', { count: perms.filter(p => p !== '$authenticated').length })
-                    }
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  {/* Never offer wildcard roles as default — would grant new users full admin. */}
-                  {!role.isDefault && !isAll && (
-                    <button
-                      onClick={() => handleSetDefault(role)}
-                      className="text-xs px-2.5 py-1 rounded-lg text-ndp-text-dim hover:text-ndp-success hover:bg-ndp-success/10 transition-colors"
-                      title={t('admin.roles.set_default', 'Set as default')}
-                    >
-                      {t('admin.roles.set_default', 'Set as default')}
-                    </button>
+              {/* min-w forces the actions onto their own line on narrow phones instead of crushing the name. */}
+              <div className="flex-1 min-w-[9rem]">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="text-sm font-medium text-ndp-text capitalize truncate min-w-0 max-w-full">{role.name}</span>
+                  {role.isSystem && (
+                    <span className="admin-chip">
+                      <Lock className="w-2.5 h-2.5" />
+                      {t('admin.roles.system', 'System')}
+                    </span>
                   )}
+                  {role.isDefault && (
+                    <span className="admin-chip bg-emerald-500/15 text-emerald-300">
+                      {t('admin.roles.default', 'Default')}
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-ndp-text-dim mt-0.5">
+                  {isAll
+                    ? t('admin.roles.all_permissions', 'All permissions')
+                    : t('admin.roles.permission_count', '{{count}} permissions', { count: perms.filter(p => p !== '$authenticated').length })
+                  }
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1 flex-shrink-0 ml-auto -mr-2">
+                {/* Never offer wildcard roles as default, would grant new users full admin. */}
+                {!role.isDefault && !isAll && (
                   <button
-                    onClick={() => openEdit(role)}
-                    className="p-1.5 rounded-lg text-ndp-text-dim hover:text-ndp-accent hover:bg-ndp-accent/10 transition-colors"
+                    onClick={() => handleSetDefault(role)}
+                    className="text-xs font-medium px-3 min-h-[40px] rounded-lg text-ndp-text-muted hover:text-ndp-success hover:bg-ndp-success/10 transition-colors whitespace-nowrap"
+                    title={t('admin.roles.set_default', 'Set as default')}
                   >
-                    <Pencil className="w-3.5 h-3.5" />
+                    {t('admin.roles.set_default', 'Set as default')}
                   </button>
-                  {!role.isSystem && (
-                    <button
-                      onClick={() => setConfirmDelete(role)}
-                      className="p-1.5 rounded-lg text-ndp-text-dim hover:text-ndp-danger hover:bg-ndp-danger/10 transition-colors"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
+                )}
+                <button
+                  onClick={() => openEdit(role)}
+                  className="w-10 h-10 flex items-center justify-center rounded-lg text-ndp-text-dim hover:text-ndp-text hover:bg-white/5 transition-colors"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
+                {!role.isSystem && (
+                  <button
+                    onClick={() => setConfirmDelete(role)}
+                    className="w-10 h-10 flex items-center justify-center rounded-lg text-ndp-text-dim hover:text-ndp-danger hover:bg-ndp-danger/10 transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             </div>
           );
@@ -253,26 +255,26 @@ export function RolesTab() {
 
       {/* Create/Edit Modal */}
       {isModalOpen && createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
+        <div className="modal-overlay z-50">
           <div
             ref={editModal.dialogRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby={editModal.titleId}
-            className="card p-6 max-w-lg w-full mx-4 shadow-2xl max-h-[85vh] flex flex-col"
+            className="modal-panel max-w-lg w-full max-h-[85vh] flex flex-col"
           >
-            <div className="flex items-center justify-between mb-4">
-              <h3 id={editModal.titleId} className="text-lg font-bold text-ndp-text">
+            <div className="flex items-center justify-between gap-4 px-5 sm:px-6 pt-6 pb-4 border-b border-white/[0.06]">
+              <h3 id={editModal.titleId} className="text-lg font-semibold text-ndp-text">
                 {creating ? t('admin.roles.create', 'New role') : t('admin.roles.edit', 'Edit role')}
               </h3>
-              <button onClick={closeModal} aria-label={t('common.close')} className="p-1 rounded-lg hover:bg-white/5 text-ndp-text-dim">
+              <button onClick={closeModal} aria-label={t('common.close')} className="w-10 h-10 -mr-2 flex items-center justify-center flex-shrink-0 rounded-lg hover:bg-white/5 text-ndp-text-dim hover:text-ndp-text transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Name */}
-            <div className="mb-4">
-              <label htmlFor="role-name" className="text-sm text-ndp-text mb-1.5 block font-medium">
+            <div className="px-5 sm:px-6 pt-5 pb-4">
+              <label htmlFor="role-name" className="text-xs text-ndp-text-muted mb-1.5 block font-medium">
                 {t('admin.roles.name', 'Name')}
               </label>
               <input
@@ -282,13 +284,13 @@ export function RolesTab() {
                 onChange={(e) => setFormName(e.target.value)}
                 disabled={editingRole?.isSystem}
                 placeholder="moderator"
-                className="input w-full"
+                className="input w-full disabled:opacity-60"
               />
             </div>
 
             {/* Permissions */}
-            <div className="mb-4 flex-1 overflow-y-auto min-h-0">
-              <label className="text-sm text-ndp-text mb-2 block font-medium">
+            <div className="px-5 sm:px-6 pb-4 flex-1 overflow-y-auto min-h-0">
+              <label className="admin-group-label block">
                 {t('admin.roles.permissions', 'Permissions')}
               </label>
 
@@ -296,13 +298,13 @@ export function RolesTab() {
               <button
                 onClick={toggleWildcard}
                 className={clsx(
-                  'w-full flex items-center gap-3 px-3 py-2 rounded-lg mb-3 transition-colors text-left',
-                  isWildcard ? 'bg-ndp-accent/10 text-ndp-accent' : 'bg-white/5 text-ndp-text-muted hover:bg-white/10'
+                  'w-full flex items-center gap-3 px-3 min-h-[48px] rounded-lg mb-4 transition-colors text-left ring-1 ring-inset',
+                  isWildcard ? 'bg-ndp-accent/10 text-ndp-accent ring-ndp-accent/25' : 'bg-white/[0.03] text-ndp-text ring-white/[0.06] hover:bg-white/[0.06]'
                 )}
               >
                 <div className={clsx(
-                  'w-4 h-4 rounded border flex items-center justify-center flex-shrink-0',
-                  isWildcard ? 'bg-ndp-accent border-ndp-accent' : 'border-white/20'
+                  'w-[18px] h-[18px] rounded border flex items-center justify-center flex-shrink-0',
+                  isWildcard ? 'bg-ndp-accent border-ndp-accent' : 'border-white/25'
                 )}>
                   {isWildcard && <Check className="w-3 h-3 text-white" />}
                 </div>
@@ -311,11 +313,11 @@ export function RolesTab() {
 
               {/* Grouped permissions */}
               {!isWildcard && Object.entries(grouped).map(([group, perms]) => (
-                <div key={group} className="mb-3">
-                  <p className="text-[10px] text-ndp-text-dim uppercase tracking-wider mb-1.5 px-1">
+                <div key={group} className="mb-4">
+                  <p className="admin-group-label">
                     {group}
                   </p>
-                  <div className="space-y-0.5">
+                  <div className="rounded-lg ring-1 ring-inset ring-white/[0.06] divide-y divide-white/[0.06] overflow-hidden">
                     {perms.map((perm) => {
                       const active = formPermissions.includes(perm.key);
                       return (
@@ -323,26 +325,26 @@ export function RolesTab() {
                           key={perm.key}
                           onClick={() => togglePermission(perm.key)}
                           className={clsx(
-                            'w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-left',
-                            active ? 'bg-ndp-accent/10 text-ndp-text' : 'text-ndp-text-muted hover:bg-white/5'
+                            'w-full flex items-start gap-3 px-3 py-2.5 min-h-[48px] transition-colors text-left',
+                            active ? 'bg-ndp-accent/[0.07] text-ndp-text' : 'text-ndp-text-muted hover:bg-white/[0.04]'
                           )}
                         >
                           <div className={clsx(
-                            'w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 mt-0.5',
-                            active ? 'bg-ndp-accent border-ndp-accent' : 'border-white/20'
+                            'w-[18px] h-[18px] rounded border flex items-center justify-center flex-shrink-0 mt-0.5',
+                            active ? 'bg-ndp-accent border-ndp-accent' : 'border-white/25'
                           )}>
                             {active && <Check className="w-3 h-3 text-white" />}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-mono">{perm.key}</span>
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                              <span className="text-xs font-mono break-all">{perm.key}</span>
                               {perm.source === 'plugin' && (
-                                <span className="text-[9px] bg-purple-500/10 text-purple-400 px-1.5 py-0.5 rounded-full">
+                                <span className="admin-chip bg-sky-500/15 text-sky-300 !text-[10px]">
                                   plugin
                                 </span>
                               )}
                             </div>
-                            <p className="text-[11px] text-ndp-text-dim mt-0.5">{perm.description}</p>
+                            <p className="text-[11px] text-ndp-text-dim mt-0.5 leading-snug">{perm.description}</p>
                           </div>
                         </button>
                       );
@@ -353,14 +355,14 @@ export function RolesTab() {
             </div>
 
             {/* Actions */}
-            <div className="flex gap-3 pt-4 border-t border-white/5">
-              <button onClick={closeModal} className="btn-secondary text-sm flex-1">
+            <div className="flex justify-end gap-2 px-5 sm:px-6 pt-4 pb-5 border-t border-white/[0.06]">
+              <button onClick={closeModal} className="btn-secondary text-sm">
                 {t('common.cancel')}
               </button>
               <button
                 onClick={handleSave}
                 disabled={saving || (!creating && !editingRole) || (!formName.trim() && creating)}
-                className="btn-primary text-sm flex-1 flex items-center justify-center gap-2"
+                className="btn-primary text-sm flex items-center justify-center gap-2 disabled:opacity-50"
               >
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                 {t('common.save')}
@@ -371,26 +373,26 @@ export function RolesTab() {
         document.body
       )}
 
-      {/* Delete confirmation — switches to a "migrate then delete" flow when
+      {/* Delete confirmation, switches to a "migrate then delete" flow when
           the backend reports the role is still assigned to users. */}
       {confirmDelete && createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
+        <div className="modal-overlay z-50">
           <div
             ref={confirmDeleteModal.dialogRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby={confirmDeleteModal.titleId}
-            className="card p-6 max-w-sm w-full mx-4 shadow-2xl"
+            className="modal-panel px-5 pt-7 pb-5 sm:p-6 max-w-sm w-full"
           >
             {deleteBlocker ? (
               <>
-                <h3 id={confirmDeleteModal.titleId} className="text-lg font-bold text-ndp-text mb-2">
+                <h3 id={confirmDeleteModal.titleId} className="text-lg font-semibold text-ndp-text mb-2">
                   {t('admin.roles.in_use_title', 'Role still in use')}
                 </h3>
-                <p className="text-sm text-ndp-text-muted mb-1">
+                <p className="text-sm text-ndp-text-muted leading-relaxed mb-1">
                   {t('admin.roles.in_use_desc', '{{count}} user(s) still have the role "{{name}}". Pick a role to migrate them to before deleting.', { count: deleteBlocker.userCount, name: confirmDelete.name })}
                 </p>
-                <label className="text-xs text-ndp-text-dim mt-4 mb-1.5 block font-medium">
+                <label className="text-xs text-ndp-text-muted mt-4 mb-1.5 block font-medium">
                   {t('admin.roles.reassign_to', 'Migrate users to')}
                 </label>
                 <select
@@ -402,18 +404,18 @@ export function RolesTab() {
                     .filter(r => r.id !== confirmDelete.id)
                     .map(r => (
                       <option key={r.id} value={r.name}>
-                        {r.name}{r.isDefault ? ` — ${t('admin.roles.default', 'Default')}` : ''}
+                        {r.name}{r.isDefault ? `, ${t('admin.roles.default', 'Default')}` : ''}
                       </option>
                     ))}
                 </select>
-                <div className="flex gap-3">
-                  <button onClick={closeDeleteModal} className="btn-secondary text-sm flex-1">
+                <div className="flex justify-end gap-2">
+                  <button onClick={closeDeleteModal} className="btn-secondary text-sm">
                     {t('common.cancel')}
                   </button>
                   <button
                     onClick={() => handleDelete({ reassignTo })}
                     disabled={deleting || !reassignTo}
-                    className="btn-danger text-sm flex-1 flex items-center justify-center gap-2"
+                    className="btn-danger text-sm flex items-center justify-center gap-2 disabled:opacity-50"
                   >
                     {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                     {t('admin.roles.migrate_and_delete', 'Migrate & delete')}
@@ -422,18 +424,18 @@ export function RolesTab() {
               </>
             ) : (
               <>
-                <h3 className="text-lg font-bold text-ndp-text mb-2">{t('admin.danger.confirm_title')}</h3>
-                <p className="text-sm text-ndp-text-muted mb-6">
+                <h3 className="text-lg font-semibold text-ndp-text mb-2">{t('admin.danger.confirm_title')}</h3>
+                <p className="text-sm text-ndp-text-muted leading-relaxed mb-6">
                   {t('admin.roles.confirm_delete', 'Are you sure you want to delete the role "{{name}}"?', { name: confirmDelete.name })}
                 </p>
-                <div className="flex gap-3">
-                  <button onClick={closeDeleteModal} className="btn-secondary text-sm flex-1">
+                <div className="flex justify-end gap-2">
+                  <button onClick={closeDeleteModal} className="btn-secondary text-sm">
                     {t('common.cancel')}
                   </button>
                   <button
                     onClick={() => handleDelete()}
                     disabled={deleting}
-                    className="btn-danger text-sm flex-1 flex items-center justify-center gap-2"
+                    className="btn-danger text-sm flex items-center justify-center gap-2 disabled:opacity-50"
                   >
                     {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                     {t('common.delete', 'Delete')}

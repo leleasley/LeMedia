@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   isCriterionField, criterionIdOf, criterionField, isAnyRuleField,
   operatorsForAnyField, isRuleField,
-} from '@oscarr/shared';
+} from '@lemedia/shared';
 
 /**
  * Folder rule fields come in two families: seven fixed ones, and one per criterion the admin

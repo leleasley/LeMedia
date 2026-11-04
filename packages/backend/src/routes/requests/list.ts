@@ -2,8 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../../utils/prisma.js';
 import { parseId, parsePage } from '../../utils/params.js';
-import { REQUEST_STATUSES, COMPLETABLE_REQUEST_STATUSES } from '@oscarr/shared';
-import { resolveServiceContext } from '../../services/requestService.js';
+import { REQUEST_STATUSES, COMPLETABLE_REQUEST_STATUSES } from '@lemedia/shared';
+import { promoteStaleStatuses, resolveServiceContext } from '../../services/requestService.js';
 import { getServiceTypeForMedia } from '../../providers/index.js';
 
 const VALID_STATUSES = new Set<string>(REQUEST_STATUSES);
@@ -18,7 +18,7 @@ export async function requestListRoutes(app: FastifyInstance) {
       querystring: {
         type: 'object',
         properties: {
-          status: { type: 'string', description: 'Filter by request status (pending, approved, declined, processing, available, failed)' },
+          status: { type: 'string', description: 'Filter by request status (pending, approved, declined, processing, available, failed, deleted, conflict)' },
           page: { type: 'string', description: 'Page number for pagination' },
           userId: { type: 'string', description: 'Filter by user ID (admin only)' },
           mediaType: { type: 'string', enum: ['movie', 'tv'], description: 'Filter by media type' },
@@ -50,6 +50,7 @@ export async function requestListRoutes(app: FastifyInstance) {
       if (qid) where.qualityOptionId = qid;
     }
 
+    await promoteStaleStatuses();
     // Select complete groups before fetching rows, so seasons cannot straddle pages.
     // The same permission/filter predicate applies to both queries.
     let groupedWhere: Prisma.MediaRequestWhereInput | undefined;
@@ -110,17 +111,19 @@ export async function requestListRoutes(app: FastifyInstance) {
     // `processing` was counting Media.status values ('searching'/'upcoming') which are
     // never written to MediaRequest.status, so it always returned 0. Use COMPLETABLE
     // (approved + processing + failed) — the real "in flight from dispatch to completion".
-    const [total, pending, approved, available, declined, failed, processing] = await Promise.all([
+    const [total, pending, approved, available, declined, failed, deleted, conflict, processing] = await Promise.all([
       prisma.mediaRequest.count({ where: userFilter }),
       prisma.mediaRequest.count({ where: { ...userFilter, status: 'pending' } }),
       prisma.mediaRequest.count({ where: { ...userFilter, status: 'approved' } }),
       prisma.mediaRequest.count({ where: { ...userFilter, status: 'available' } }),
       prisma.mediaRequest.count({ where: { ...userFilter, status: 'declined' } }),
       prisma.mediaRequest.count({ where: { ...userFilter, status: 'failed' } }),
+      prisma.mediaRequest.count({ where: { ...userFilter, status: 'deleted' } }),
+      prisma.mediaRequest.count({ where: { ...userFilter, status: 'conflict' } }),
       prisma.mediaRequest.count({ where: { ...userFilter, status: { in: [...COMPLETABLE_REQUEST_STATUSES] } } }),
     ]);
 
-    return { total, pending, approved, available, declined, failed, processing };
+    return { total, pending, approved, available, declined, failed, deleted, conflict, processing };
   });
 
   app.get('/:id/resolve', {
@@ -163,7 +166,7 @@ export async function requestListRoutes(app: FastifyInstance) {
         : await getArrClient(serviceType);
       const folders = await client.getRootFolders();
       availableRootFolders = folders.map((f) => ({ path: f.path }));
-    } catch { /* service unreachable — return empty list, the UI treats it as no routing options */ }
+    } catch { /* service unreachable, return empty list, the UI treats it as no routing options */ }
 
     const { getAllServices } = await import('../../utils/services.js');
     const availableServices = (await getAllServices(serviceType)).map((s) => ({ id: s.id, name: s.name }));

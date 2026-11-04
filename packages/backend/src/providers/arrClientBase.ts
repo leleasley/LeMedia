@@ -12,7 +12,10 @@ export abstract class ArrClientBase {
     this.api = attachAxiosRetry(axios.create({
       baseURL: `${url}/api/v3`,
       params: { apikey: apiKey },
-      timeout: 5000,
+      // Big libraries make even server-filtered *arr calls slow to serialize, and
+      // Sonarr's /series/lookup hits SkyHook externally (often 5-10s). A 5s timeout
+      // turned those into ECONNABORTED → retry, doubling the pain on every request.
+      timeout: 20000,
     }), serviceName);
   }
 
@@ -31,7 +34,7 @@ export abstract class ArrClientBase {
   }
 
   async getOrCreateTag(username: string): Promise<number> {
-    const label = `oscarr-${username}`.toLowerCase().replaceAll(/[^a-z0-9-]/g, '');
+    const label = `lemedia-${username}`.toLowerCase().replaceAll(/[^a-z0-9-]/g, '');
     const tags = await this.getTags();
     const existing = tags.find((t) => t.label === label);
     if (existing) return existing.id;
@@ -52,6 +55,21 @@ export abstract class ArrClientBase {
   async getSystemStatus(): Promise<{ version: string }> {
     const { data } = await this.api.get('/system/status');
     return data;
+  }
+
+  /** Import lists defined inside the *arr (Admin → Lists shows them and can take them over). */
+  async getImportLists(): Promise<Record<string, unknown>[]> {
+    const { data } = await this.api.get('/importlist');
+    return Array.isArray(data) ? data : [];
+  }
+
+  async getImportList(id: number): Promise<Record<string, unknown>> {
+    const { data } = await this.api.get(`/importlist/${id}`);
+    return data;
+  }
+
+  async updateImportList(id: number, body: Record<string, unknown>): Promise<void> {
+    await this.api.put(`/importlist/${id}`, body);
   }
 
   async removeWebhook(webhookId: number): Promise<void> {

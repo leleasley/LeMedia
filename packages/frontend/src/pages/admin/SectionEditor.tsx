@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import api from '@/lib/api';
 import { QueryBuilder, type DiscoverQuery } from './QueryBuilder';
+import Switch from '@/components/ui/Switch';
 
 interface HomepageSection {
   id: string;
@@ -22,6 +23,8 @@ interface HomepageSection {
     sortBy?: string;
     language?: string;
     releasedWithin?: string;
+    watchProviders?: number[];
+    watchRegion?: string;
     [key: string]: unknown;
   };
 }
@@ -31,6 +34,13 @@ interface SectionEditorProps {
   onSave: (section: HomepageSection) => void;
   onClose: () => void;
 }
+
+const FIELD_LABEL = 'block mb-1.5 text-xs font-medium text-ndp-text-muted';
+const SEGMENTED = 'inline-flex gap-1 p-1 rounded-lg bg-white/[0.05] ring-1 ring-inset ring-white/[0.06]';
+const segmentClass = (active: boolean) =>
+  `min-h-[34px] px-4 rounded-md text-[13px] font-semibold transition-colors ${
+    active ? 'bg-ndp-accent text-white' : 'text-ndp-text-dim hover:text-ndp-text'
+  }`;
 
 const DEFAULT_QUERY: DiscoverQuery = {
   mediaType: 'movie',
@@ -61,6 +71,8 @@ export function SectionEditor({ section, onSave, onClose }: Readonly<SectionEdit
         voteAverageGte: section.query.voteAverageGte,
         sortBy: section.query.sortBy || 'popularity.desc',
         language: section.query.language,
+        watchProviders: section.query.watchProviders?.map(Number) || [],
+        watchRegion: section.query.watchRegion,
       };
     }
     return { ...DEFAULT_QUERY };
@@ -81,6 +93,8 @@ export function SectionEditor({ section, onSave, onClose }: Readonly<SectionEdit
         voteAverageGte: q.voteAverageGte,
         sortBy: q.sortBy,
         language: q.language,
+        watchProviders: q.watchProviders?.length ? q.watchProviders : undefined,
+        watchRegion: q.watchRegion,
       });
       setPreviewResults(data.results || []);
     } catch (err) {
@@ -153,6 +167,8 @@ export function SectionEditor({ section, onSave, onClose }: Readonly<SectionEdit
           voteCountGte: query.voteCountGte,
           sortBy: query.sortBy,
           language: query.language,
+          watchProviders: query.watchProviders?.length ? query.watchProviders : undefined,
+          watchRegion: query.watchRegion,
         },
       };
     }
@@ -170,17 +186,14 @@ export function SectionEditor({ section, onSave, onClose }: Readonly<SectionEdit
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in"
+      className="modal-overlay z-50"
       onClick={onClose}
     >
       <div
-        className="bg-ndp-surface border border-white/10"
+        className="modal-panel"
         style={{
           maxWidth: 1024,
           width: '100%',
-          maxHeight: '90vh',
-          margin: '0 16px',
-          borderRadius: 16,
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
@@ -188,16 +201,8 @@ export function SectionEditor({ section, onSave, onClose }: Readonly<SectionEdit
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '16px 20px',
-            borderBottom: '1px solid rgba(255,255,255,0.06)',
-          }}
-        >
-          <h3 className="text-base font-semibold text-ndp-text">
+        <div className="flex items-center justify-between gap-3 pl-5 pr-3 pt-4 pb-3 sm:py-3 border-b border-white/[0.06] flex-shrink-0">
+          <h3 className="text-base font-semibold text-ndp-text truncate">
             {isNew
               ? t('admin.homepage.new_section', 'New custom section')
               : t('admin.homepage.edit_section', 'Edit section')}
@@ -205,124 +210,71 @@ export function SectionEditor({ section, onSave, onClose }: Readonly<SectionEdit
           <button
             onClick={onClose}
             aria-label={t('common.close')}
-            className="p-1.5 text-ndp-text-dim hover:text-ndp-text hover:bg-white/5 rounded-lg transition-colors"
+            className="w-10 h-10 flex items-center justify-center text-ndp-text-dim hover:text-ndp-text hover:bg-white/5 rounded-lg transition-colors flex-shrink-0"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Scrollable content */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-            {/* Title */}
-            <div>
-              <label htmlFor={`${fieldId}-title`} className="text-xs font-medium text-ndp-text-dim" style={{ display: 'block', marginBottom: 6 }}>
-                {t('admin.homepage.section_title', 'Section title')}
-              </label>
-              <input
-                id={`${fieldId}-title`}
-                className="input"
-                type="text"
-                value={title}
-                onChange={e => setTitle(e.target.value)}
-                placeholder={t('admin.homepage.title_placeholder', 'e.g. Best of 2025')}
-                style={{ width: '100%' }}
-              />
-            </div>
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-5">
+          <div className="flex flex-col gap-5">
+            <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-4 sm:items-end">
+              {/* Title */}
+              <div className="min-w-0">
+                <label htmlFor={`${fieldId}-title`} className={FIELD_LABEL}>
+                  {t('admin.homepage.section_title', 'Section title')}
+                </label>
+                <input
+                  id={`${fieldId}-title`}
+                  className="input w-full py-2.5 text-sm"
+                  type="text"
+                  value={title}
+                  onChange={e => setTitle(e.target.value)}
+                  placeholder={t('admin.homepage.title_placeholder', 'e.g. Best of 2025')}
+                />
+              </div>
 
-            {/* Size selector */}
-            <div>
-              <label className="text-xs font-medium text-ndp-text-dim" style={{ display: 'block', marginBottom: 6 }}>
-                {t('admin.homepage.card_size', 'Card size')}
-              </label>
-              <div style={{ display: 'flex', gap: 4, background: 'rgba(255,255,255,0.05)', borderRadius: 10, padding: 3, width: 'fit-content' }}>
-                <button
-                  type="button"
-                  onClick={() => setSize('default')}
-                  style={{
-                    padding: '6px 18px',
-                    borderRadius: 8,
-                    border: 'none',
-                    cursor: 'pointer',
-                    fontSize: 13,
-                    fontWeight: 600,
-                    background: size === 'default' ? 'var(--color-accent, #6366f1)' : 'transparent',
-                    color: size === 'default' ? '#fff' : 'var(--color-text-dim, #888)',
-                    transition: 'all 0.15s',
-                  }}
-                >
-                  {t('admin.homepage.size_default', 'Default')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSize('large')}
-                  style={{
-                    padding: '6px 18px',
-                    borderRadius: 8,
-                    border: 'none',
-                    cursor: 'pointer',
-                    fontSize: 13,
-                    fontWeight: 600,
-                    background: size === 'large' ? 'var(--color-accent, #6366f1)' : 'transparent',
-                    color: size === 'large' ? '#fff' : 'var(--color-text-dim, #888)',
-                    transition: 'all 0.15s',
-                  }}
-                >
-                  {t('admin.homepage.size_large', 'Large')}
-                </button>
+              {/* Size selector */}
+              <div>
+                <label className={FIELD_LABEL}>
+                  {t('admin.homepage.card_size', 'Card size')}
+                </label>
+                <div className={SEGMENTED}>
+                  <button type="button" onClick={() => setSize('default')} className={segmentClass(size === 'default')}>
+                    {t('admin.homepage.size_default', 'Default')}
+                  </button>
+                  <button type="button" onClick={() => setSize('large')} className={segmentClass(size === 'large')}>
+                    {t('admin.homepage.size_large', 'Large')}
+                  </button>
+                </div>
               </div>
             </div>
 
             {/* Enabled toggle (always shown for builtin, also for custom) */}
             {isBuiltin && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <button
-                  type="button"
-                  onClick={() => setEnabled(!enabled)}
-                  className="relative flex-shrink-0"
-                  style={{ width: 48, height: 24 }}
-                >
-                  <span
-                    className={`absolute inset-0 rounded-full transition-colors ${enabled ? 'bg-ndp-accent' : 'bg-white/10'}`}
-                  />
-                  <span
-                    className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${enabled ? 'translate-x-6' : ''}`}
-                  />
-                </button>
-                <span className="text-sm text-ndp-text">
-                  {enabled ? t('common.enabled', 'Enabled') : t('common.disabled', 'Disabled')}
-                </span>
+              <div className="admin-group">
+                <div className="admin-row justify-between">
+                  <span className="text-sm text-ndp-text">
+                    {enabled ? t('common.enabled', 'Enabled') : t('common.disabled', 'Disabled')}
+                  </span>
+                  <Switch checked={enabled} onChange={(next) => setEnabled(next)} label={enabled ? t('common.enabled', 'Enabled') : t('common.disabled', 'Disabled')} className="-mr-1.5" />
+                </div>
               </div>
             )}
 
             {/* Custom section mode selector + content */}
             {!isBuiltin && (
               <>
-                <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 16 }}>
+                <div className="border-t border-white/[0.06] pt-5">
                   {/* Mode toggle */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-                    <p className="text-xs font-medium text-ndp-text-dim">{t('admin.homepage.source', 'Data source')}</p>
-                    <div style={{ display: 'flex', gap: 4, background: 'rgba(255,255,255,0.05)', borderRadius: 10, padding: 3 }}>
-                      <button
-                        type="button"
-                        onClick={() => setCustomMode('discover')}
-                        style={{
-                          padding: '5px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                          background: customMode === 'discover' ? 'var(--color-accent, #6366f1)' : 'transparent',
-                          color: customMode === 'discover' ? '#fff' : 'var(--color-text-dim, #888)', transition: 'all 0.15s',
-                        }}
-                      >
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-4">
+                    <p className="text-xs font-medium text-ndp-text-muted">{t('admin.homepage.source', 'Data source')}</p>
+                    <div className={SEGMENTED}>
+                      <button type="button" onClick={() => setCustomMode('discover')} className={segmentClass(customMode === 'discover')}>
                         {t('admin.homepage.mode_discover', 'Discover')}
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => setCustomMode('endpoint')}
-                        style={{
-                          padding: '5px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                          background: customMode === 'endpoint' ? 'var(--color-accent, #6366f1)' : 'transparent',
-                          color: customMode === 'endpoint' ? '#fff' : 'var(--color-text-dim, #888)', transition: 'all 0.15s',
-                        }}
-                      >
+                      <button type="button" onClick={() => setCustomMode('endpoint')} className={segmentClass(customMode === 'endpoint')}>
                         {t('admin.homepage.mode_endpoint', 'Endpoint')}
                       </button>
                     </div>
@@ -330,21 +282,20 @@ export function SectionEditor({ section, onSave, onClose }: Readonly<SectionEdit
 
                   {/* Endpoint mode */}
                   {customMode === 'endpoint' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div className="flex flex-col gap-3">
                       <div>
-                        <label className="text-xs font-medium text-ndp-text-dim" style={{ display: 'block', marginBottom: 6 }}>
+                        <label className={FIELD_LABEL}>
                           {t('admin.homepage.endpoint_url', 'API endpoint')}
                         </label>
                         <input
-                          className="input font-mono"
+                          className="input w-full py-2.5 font-mono text-[13px]"
                           type="text"
                           value={endpoint}
                           onChange={e => setEndpoint(e.target.value)}
                           placeholder="/tmdb/movies/now_playing"
-                          style={{ width: '100%', fontSize: 13 }}
                         />
                       </div>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      <div className="flex flex-wrap gap-1.5">
                         {[
                           { label: 'Now Playing', value: '/tmdb/movies/now_playing' },
                           { label: 'Top Rated Movies', value: '/tmdb/movies/top_rated' },
@@ -356,13 +307,11 @@ export function SectionEditor({ section, onSave, onClose }: Readonly<SectionEdit
                             key={preset.value}
                             type="button"
                             onClick={() => { setEndpoint(preset.value); if (!title) setTitle(preset.label); }}
-                            style={{
-                              padding: '4px 10px', borderRadius: 999, fontSize: 11, fontWeight: 500, cursor: 'pointer',
-                              border: endpoint === preset.value ? '1px solid var(--color-accent, #6366f1)' : '1px solid rgba(255,255,255,0.1)',
-                              background: endpoint === preset.value ? 'rgba(99,102,241,0.15)' : 'transparent',
-                              color: endpoint === preset.value ? 'var(--color-accent, #6366f1)' : 'var(--color-text-dim, #888)',
-                              transition: 'all 0.15s',
-                            }}
+                            className={`min-h-[36px] px-3 rounded-lg text-xs font-medium ring-1 ring-inset transition-colors ${
+                              endpoint === preset.value
+                                ? 'bg-ndp-accent/10 ring-ndp-accent/40 text-ndp-accent'
+                                : 'ring-white/10 text-ndp-text-dim hover:text-ndp-text hover:bg-white/5'
+                            }`}
                           >
                             {preset.label}
                           </button>
@@ -370,33 +319,33 @@ export function SectionEditor({ section, onSave, onClose }: Readonly<SectionEdit
                       </div>
                       {/* Endpoint preview */}
                       <div>
-                        <label className="text-xs font-medium text-ndp-text-dim" style={{ display: 'block', marginBottom: 8 }}>
+                        <label className={FIELD_LABEL}>
                           {t('admin.homepage.preview', 'Preview')}
                           {endpointPreviewLoading && <span className="ml-2 text-ndp-text-dim">...</span>}
                         </label>
                         {endpointPreview.length > 0 ? (
-                          <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 8 }}>
+                          <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0">
                             {endpointPreview.slice(0, 10).map((item: any) => (
-                              <div key={item.id} style={{ flexShrink: 0, width: 80, textAlign: 'center' }}>
+                              <div key={item.id} className="flex-shrink-0 w-20 text-center">
                                 {item.poster_path ? (
                                   <img
                                     src={`https://image.tmdb.org/t/p/w154${item.poster_path}`}
                                     alt=""
-                                    style={{ width: 80, height: 120, objectFit: 'cover', borderRadius: 6 }}
+                                    className="w-20 h-[120px] object-cover rounded-md bg-ndp-surface-light"
                                   />
                                 ) : (
-                                  <div style={{ width: 80, height: 120, borderRadius: 6, background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                    <span className="text-ndp-text-dim" style={{ fontSize: 10 }}>No poster</span>
+                                  <div className="w-20 h-[120px] rounded-md bg-white/5 flex items-center justify-center">
+                                    <span className="text-ndp-text-dim text-[10px]">No poster</span>
                                   </div>
                                 )}
-                                <p className="text-ndp-text-dim" style={{ fontSize: 10, marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                <p className="text-ndp-text-dim text-[10px] mt-1 truncate">
                                   {item.title || item.name}
                                 </p>
                               </div>
                             ))}
                           </div>
                         ) : endpoint && !endpointPreviewLoading ? (
-                          <p className="text-ndp-text-dim" style={{ fontSize: 12 }}>{t('admin.homepage.preview_empty', 'No results or invalid endpoint.')}</p>
+                          <p className="text-ndp-text-dim text-xs">{t('admin.homepage.preview_empty', 'No results or invalid endpoint.')}</p>
                         ) : null}
                       </div>
                     </div>
@@ -405,7 +354,7 @@ export function SectionEditor({ section, onSave, onClose }: Readonly<SectionEdit
                   {/* Discover mode */}
                   {customMode === 'discover' && (
                     <>
-                      <p className="text-xs font-medium text-ndp-text-dim" style={{ marginBottom: 12 }}>
+                      <p className="text-xs font-medium text-ndp-text-muted mb-3">
                         {t('admin.homepage.query_builder', 'TMDB discover query')}
                       </p>
                       <QueryBuilder
@@ -423,26 +372,16 @@ export function SectionEditor({ section, onSave, onClose }: Readonly<SectionEdit
         </div>
 
         {/* Footer */}
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'flex-end',
-            gap: 8,
-            padding: '14px 20px',
-            borderTop: '1px solid rgba(255,255,255,0.06)',
-          }}
-        >
+        <div className="flex justify-end gap-2 px-4 sm:px-5 pt-3 pb-1 sm:pb-3 border-t border-white/[0.06] flex-shrink-0">
           <button
             onClick={onClose}
-            className="btn-secondary text-sm"
-            style={{ padding: '8px 20px' }}
+            className="btn-secondary text-sm px-5 py-2"
           >
             {t('common.cancel', 'Cancel')}
           </button>
           <button
             onClick={handleSave}
-            className="btn-primary text-sm"
-            style={{ padding: '8px 20px' }}
+            className="btn-primary text-sm px-5 py-2"
           >
             {t('common.save', 'Save')}
           </button>

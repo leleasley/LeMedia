@@ -1,5 +1,5 @@
-import type { Availability } from '@oscarr/shared';
-import { toMediaStateCategory, ACTIVE_REQUEST_STATUSES } from '@oscarr/shared';
+import type { Availability } from '@lemedia/shared';
+import { toMediaStateCategory, ACTIVE_REQUEST_STATUSES } from '@lemedia/shared';
 import { prisma } from '../utils/prisma.js';
 import { mediaKey } from '../utils/mediaKey.js';
 import { getServiceDefinition } from '../providers/index.js';
@@ -87,7 +87,7 @@ export async function recentLibraryFilter(): Promise<Record<string, unknown>> {
   };
 }
 
-/** Sole builder of the wire Availability object. BLACKLISTED is the only Oscarr-side override. */
+/** Sole builder of the wire Availability object. BLACKLISTED is the only LeMedia-side override. */
 export function buildAvailability(
   media: MediaRow,
   userRequest: RequestRow | null,

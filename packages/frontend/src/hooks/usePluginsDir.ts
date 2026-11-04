@@ -9,7 +9,7 @@ let inFlight: Promise<string> | null = null;
  *  de-dupes concurrent in-flight fetches. Falls back to a sensible default if the endpoint
  *  errors out (older backend, admin-only 403, …). */
 export function usePluginsDir(): string {
-  const [dir, setDir] = useState<string>(cached ?? '~/Oscarr/plugins');
+  const [dir, setDir] = useState<string>(cached ?? 'packages/plugins');
 
   useEffect(() => {
     if (cached) return;
@@ -20,7 +20,7 @@ export function usePluginsDir(): string {
           return cached;
         })
         .catch(() => {
-          cached = '~/Oscarr/plugins';
+          cached = 'packages/plugins';
           return cached;
         })
         .finally(() => { inFlight = null; });

@@ -15,7 +15,7 @@ async function fetchCount(): Promise<void> {
     lastCount = Object.values(data).filter((r) => r.available).length;
     initialized = true;
     subscribers.forEach((cb) => cb(lastCount));
-  } catch { /* silent — the dot just doesn't show */ }
+  } catch { /* silent, the dot just doesn't show */ }
 }
 
 /** Trigger a re-fetch and notify all mounted `usePluginUpdatesCount` consumers. Call after
