@@ -41,6 +41,16 @@ with accounts, quality choices, notifications and a mobile-first, installable UI
 
 ## Install with Docker
 
+Start with a fresh LeMedia data volume. Moving an existing Oscarr database to LeMedia has not
+been verified; keep a separate backup and do not reuse your production Oscarr volume.
+
+Clone this repository and change into its directory:
+
+```bash
+git clone https://github.com/leleasley/LeMedia.git
+cd LeMedia
+```
+
 1. Generate the three secrets. LeMedia refuses to start with a placeholder or short value.
    **Keep `LEMEDIA_SECRET_KEY` safe** — without it, saved service passwords can't be decrypted.
 
@@ -50,7 +60,8 @@ with accounts, quality choices, notifications and a mobile-first, installable UI
    echo "SETUP_SECRET=$(openssl rand -base64 32)"
    ```
 
-2. Copy `.env.example` to `.env` and paste the three values in (plus a `TMDB_API_KEY`).
+2. Copy `.env.example` to `.env` and paste the three values in. Optionally set
+   `TMDB_API_TOKEN` to your own TMDB read access token; otherwise LeMedia uses its bundled token.
 
 3. Build and start:
 
