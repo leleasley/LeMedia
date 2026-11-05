@@ -20,6 +20,8 @@ export default function PersonPage() {
     setLoading(true);
     setPerson(null);
     setShowFullBio(false);
+    setShowAllFilmo(false);
+    setAvailableOnly(false);
     api.get(`/tmdb/person/${id}`, { signal: controller.signal })
       .then(({ data }) => setPerson(data))
       .catch((err) => { if (err.name !== 'CanceledError') console.error('Person fetch failed:', err); })
@@ -28,6 +30,7 @@ export default function PersonPage() {
   }, [id]);
 
   const [showAllFilmo, setShowAllFilmo] = useState(false);
+  const [availableOnly, setAvailableOnly] = useState(false);
   const FILMO_INITIAL = 40;
 
   // Merge cast + crew so directors/producers (known_for_department ≠ Acting) get a real
@@ -48,12 +51,14 @@ export default function PersonPage() {
     return Array.from(byKey.values()).sort((a, b) => (b.vote_average ?? 0) - (a.vote_average ?? 0));
   }, [person]);
 
+  const statuses = useMediaStatus(allFilmography);
+  const filteredFilmography = useMemo(() => availableOnly
+    ? allFilmography.filter(item => getStatusForMedia(statuses, item.id, item.media_type || (item.title ? 'movie' : 'tv'))?.statusCategory === 'AVAILABLE')
+    : allFilmography, [allFilmography, availableOnly, statuses]);
   const filmography = useMemo(
-    () => showAllFilmo ? allFilmography : allFilmography.slice(0, FILMO_INITIAL),
-    [showAllFilmo, allFilmography],
+    () => showAllFilmo ? filteredFilmography : filteredFilmography.slice(0, FILMO_INITIAL),
+    [showAllFilmo, filteredFilmography],
   );
-
-  const statuses = useMediaStatus(filmography as TmdbMedia[]);
 
   if (loading) {
     return (
@@ -152,12 +157,16 @@ export default function PersonPage() {
         </div>
 
         {/* Filmography */}
-        {filmography.length > 0 && (
+        {allFilmography.length > 0 && (
           <div className="mt-12">
             <h3 className="text-xl font-bold text-ndp-text mb-6">
               {t('person.filmography')}
               <span className="text-sm font-normal text-ndp-text-dim ml-2">({allFilmography.length})</span>
             </h3>
+            <button type="button" aria-pressed={availableOnly} onClick={() => { setAvailableOnly(value => !value); setShowAllFilmo(false); }} className={`mb-4 rounded-lg px-3 py-2 text-sm ${availableOnly ? 'bg-ndp-accent text-white' : 'bg-white/5 text-ndp-text-muted'}`}>
+              {t('person.available_only', 'Available in your library')}
+            </button>
+            {availableOnly && !filmography.length && <p className="text-sm text-ndp-text-dim mb-4">{t('person.no_available', 'No available titles found yet.')}</p>}
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3">
               {filmography.map((item, i) => {
                 const type = item.media_type || (item.title ? 'movie' : 'tv');
@@ -171,12 +180,12 @@ export default function PersonPage() {
                 );
               })}
             </div>
-            {!showAllFilmo && allFilmography.length > FILMO_INITIAL && (
+            {!showAllFilmo && filteredFilmography.length > FILMO_INITIAL && (
               <button
                 onClick={() => setShowAllFilmo(true)}
                 className="mt-4 w-full py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-sm font-medium text-ndp-text-muted hover:text-ndp-text transition-colors"
               >
-                {t('common.show_more')} ({allFilmography.length - FILMO_INITIAL} {t('person.more_items')})
+                {t('common.show_more')} ({filteredFilmography.length - FILMO_INITIAL} {t('person.more_items')})
               </button>
             )}
           </div>

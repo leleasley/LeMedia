@@ -78,6 +78,7 @@ export function useMediaDetailData(id: string | undefined, type: 'movie' | 'tv',
   useEffect(() => {
     let cancelled = false;
     setLibraryLoading(true);
+    setRecommendations([]);
     // Keep dbMedia until fresh data arrives (prevents button flash)
     setInLibrary(false);
     setActiveQualityOptionIds([]);

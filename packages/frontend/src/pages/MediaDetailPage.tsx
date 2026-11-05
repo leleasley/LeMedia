@@ -27,6 +27,10 @@ import SeasonExplorer from '@/components/media/SeasonExplorer';
 import MediaDetailLoading from '@/components/media/MediaDetailLoading';
 import MediaBackButton from '@/components/media/MediaBackButton';
 import { useDragScroll } from '@/hooks/useDragScroll';
+import { useMediaStatus, getStatusForMedia } from '@/hooks/useMediaStatus';
+import type { TmdbMedia } from '@/types';
+
+const NO_RECOMMENDATIONS: TmdbMedia[] = [];
 
 interface Props {
   type: 'movie' | 'tv';
@@ -54,6 +58,8 @@ export default function MediaDetailPage({ type, shareId, shareToken, readOnly }:
     audioLanguages, subtitleLanguages, download, blacklisted, refreshDbData,
     catalog, seasonsLoading, seasonsError, refreshMetadata,
   } = useMediaDetailData(id, type, shareToken);
+  const recommendationStatuses = useMediaStatus(readOnly ? NO_RECOMMENDATIONS : recommendations);
+  const libraryRecommendations = recommendations.filter(item => getStatusForMedia(recommendationStatuses, item.id, item.media_type || (item.title ? 'movie' : 'tv'))?.statusCategory === 'AVAILABLE');
   const seasons = seasonsLoading || seasonsError ? [] : catalogSeasons(media?.seasons, catalog);
   const refreshDetail = useCallback(async () => { refreshMetadata(); await refreshDbData(); }, [refreshDbData, refreshMetadata]);
 
@@ -187,6 +193,10 @@ export default function MediaDetailPage({ type, shareId, shareToken, readOnly }:
         {cast.length > 0 && (
           <CastSection cast={cast} title={t('media.casting')} director={director} />
         )}
+
+        {!readOnly && libraryRecommendations.length > 0 && <div className="mt-12 -mx-4 sm:-mx-8">
+          <MediaRow title={t('media.more_like_library', 'More like this from your library')} media={libraryRecommendations} size="large" />
+        </div>}
 
         {/* Recommendations */}
         {recommendations.length > 0 && !readOnly && (

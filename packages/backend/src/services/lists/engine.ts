@@ -58,6 +58,8 @@ async function getKeys() {
   const cfg = await readConfig();
   return { traktClientId: decryptSecretValue(cfg.traktClientId), mdblistApiKey: decryptSecretValue(cfg.mdblistApiKey) };
 }
+/** Server-side access to the shared MDBList key; never returned to clients. */
+export async function getMdblistApiKey(): Promise<string | null> { return decryptSecretValue((await readConfig()).mdblistApiKey) || null; }
 export async function syncIntervalHours() { return Math.min(168, Math.max(1, Number((await readConfig()).syncIntervalHours) || 6)); }
 
 /** Settings for the admin page. Keys are never sent back, only whether they're set. */

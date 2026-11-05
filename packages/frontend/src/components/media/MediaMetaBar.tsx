@@ -49,7 +49,7 @@ export function MediaMetaBar({
         )}
         {!!voteAverage && voteAverage > 0 && (
           <Item icon={Star} className="text-ndp-gold" iconClassName="fill-ndp-gold">
-            {voteAverage.toFixed(1)} ({voteCount} {t('media.votes')})
+            TMDB {voteAverage.toFixed(1)} ({voteCount} {t('media.votes')})
           </Item>
         )}
         {type === 'tv' && !!numberOfSeasons && (

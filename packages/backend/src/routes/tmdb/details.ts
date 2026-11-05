@@ -1,3 +1,4 @@
+import { getTitleRatings, getTitleWatchOptions } from '../../services/mediaEnrichment.js';
 import type { FastifyInstance } from 'fastify';
 import {
   getMovieDetails,
@@ -16,6 +17,21 @@ import { getLang, idParamSchema } from './helpers.js';
  * fetches the full details, and kicks off a background keyword-tracking update when relevant.
  */
 export async function detailsRoutes(app: FastifyInstance) {
+  app.get('/:mediaType/:id/enrichment', {
+    schema: { params: { type: 'object', required: ['mediaType', 'id'], properties: {
+      mediaType: { type: 'string', enum: ['movie', 'tv'] }, id: { type: 'string', pattern: '^[0-9]+$' },
+    } } },
+  }, async (request, reply) => {
+    const { mediaType, id } = request.params as { mediaType: 'movie' | 'tv'; id: string };
+    const tmdbId = parseId(id);
+    if (!tmdbId) return reply.status(400).send({ error: 'Invalid ID' });
+    const [providers, ratings] = await Promise.all([
+      getTitleWatchOptions(mediaType, tmdbId).catch(() => null),
+      getTitleRatings(mediaType, tmdbId).catch(() => []),
+    ]);
+    return { providers, ratings };
+  });
+
   app.get('/tv/:id/season/:seasonNumber', {
     schema: { params: {
       type: 'object', required: ['id', 'seasonNumber'],

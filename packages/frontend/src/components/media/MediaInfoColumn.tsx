@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Play, Trash2, Download, Ticket, Repeat, CheckCircle2, XCircle, Calendar, Clapperboard, Tv, X } from 'lucide-react';
 import { PluginSlot } from '@/plugins/PluginSlot';
 import ActionButton from '@/components/ActionButton';
 import ShareButton from '@/components/media/ShareButton';
 import { MediaMetaBar } from '@/components/media/MediaMetaBar';
+import { RatingsStrip, WhereToWatch, useMediaEnrichment } from './MediaEnrichment';
 import { QualityPicker } from '@/components/media/QualityPicker';
 import CriteriaPicker from './CriteriaPicker';
 import { LanguageTags } from '@/components/media/LanguageTags';
@@ -65,6 +66,14 @@ export function MediaInfoColumn({
   const { t } = useTranslation();
   const { isAdmin } = useAuth();
   const [trailerOpen, setTrailerOpen] = useState(false);
+  const enrichment = useMediaEnrichment(type, media.id, !readOnly);
+  useEffect(() => { setTrailerOpen(false); }, [type, media.id]);
+  useEffect(() => {
+    if (!trailerOpen) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setTrailerOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [trailerOpen]);
 
   // Deep link into the plugin that manages this title. Only rendered when the media is actually
   // tracked by an *arr and the viewer can reach the admin area — a dead link is worse than none.
@@ -103,6 +112,8 @@ export function MediaInfoColumn({
           genres={genres}
           originalLanguage={media.original_language}
         />
+
+        <RatingsStrip ratings={enrichment?.ratings ?? []} />
 
         {/* Series / movie status + network, TMDB-driven. */}
         <div className="mt-3 flex flex-wrap gap-2">
@@ -221,8 +232,10 @@ export function MediaInfoColumn({
             <PluginSlot hookPoint="media.detail.actions" context={{ media, type, isAvailable, dbMedia }} />
           </div>
 
+          <WhereToWatch providers={enrichment?.providers ?? null} />
+
           {trailerOpen && trailer && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 animate-fade-in" onClick={() => setTrailerOpen(false)}>
+            <div role="dialog" aria-modal="true" aria-label={t('media.trailer')} className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 animate-fade-in" onClick={() => setTrailerOpen(false)}>
               <div className="w-full max-w-4xl" onClick={(e) => e.stopPropagation()}>
                 <div className="flex justify-end mb-2">
                   <button onClick={() => setTrailerOpen(false)} aria-label={t('common.close')} className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors">
@@ -231,7 +244,7 @@ export function MediaInfoColumn({
                 </div>
                 <div className="relative w-full rounded-xl overflow-hidden bg-black" style={{ aspectRatio: '16/9' }}>
                   <iframe
-                    src={`https://www.youtube-nocookie.com/embed/${trailer.key}?autoplay=1&rel=0`}
+                    src={`https://www.youtube-nocookie.com/embed/${encodeURIComponent(trailer.key)}?autoplay=1&rel=0`}
                     title={t('media.trailer')}
                     className="absolute inset-0 w-full h-full"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"

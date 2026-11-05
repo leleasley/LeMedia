@@ -1,3 +1,4 @@
+import { useAiredSeasonCounts } from '@/hooks/useAiredSeasonCounts';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SeasonQuickRequest, type SeasonRequestResult } from './SeasonQuickRequest';
@@ -44,6 +45,7 @@ function coversSeason(request: MediaRequest, number: number, numbering: string |
 
 export default function SeasonExplorer(props: Readonly<SeasonExplorerProps>) {
   const { t } = useTranslation();
+  const airedCounts = useAiredSeasonCounts(props.media.id, props.seasons, props.catalog);
   const { user } = useAuth();
   const { features, loading } = useFeatures();
   const downloads = catalogDownloads(useDownloads(), props.media.id, props.catalog);
@@ -99,7 +101,7 @@ export default function SeasonExplorer(props: Readonly<SeasonExplorerProps>) {
               allowed={state.defaultAllowed} result={submitted[season.seasonNumber]} onRefresh={props.onRefresh}
               onRequested={result => setSubmitted(previous => ({ ...previous, [season.seasonNumber]: result }))} />}
           </div>
-          <SeasonCardInfo season={season} />
+          <SeasonCardInfo season={season} airedCount={airedCounts[season.seasonNumber]} />
         </article>;
       })}
     </div>

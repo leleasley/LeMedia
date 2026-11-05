@@ -17,10 +17,12 @@ export default function CollectionSection({ collection }: Readonly<Props>) {
   const [parts, setParts] = useState<TmdbMedia[]>([]);
   const [statuses, setStatuses] = useState<Record<string, { statusCategory: MediaStateCategory; requestStatus?: RequestStatus }>>({});
   const [loading, setLoading] = useState(true);
+  const [statusesLoaded, setStatusesLoaded] = useState(false);
   const [requesting, setRequesting] = useState(false);
   const [result, setResult] = useState<{ requested: number; skipped: number; total: number } | null>(null);
 
   useEffect(() => {
+    setStatusesLoaded(false);
     api.get(`/tmdb/collection/${collection.id}`)
       .then(async ({ data }) => {
         const movies = data.parts?.map((p: TmdbMedia) => ({ ...p, media_type: 'movie' })) || [];
@@ -31,6 +33,7 @@ export default function CollectionSection({ collection }: Readonly<Props>) {
               ids: movies.map((m: TmdbMedia) => ({ tmdbId: m.id, mediaType: 'movie' })),
             });
             setStatuses(statusData);
+            setStatusesLoaded(true);
           } catch (err) { console.warn("[CollectionSection] batch-status item failed", err); }
         }
       })
@@ -73,7 +76,7 @@ export default function CollectionSection({ collection }: Readonly<Props>) {
         <div className="flex items-center gap-3 min-w-0">
           <h2 className="text-xl font-bold text-ndp-text">{t('media.collection')}</h2>
           {!loading && (
-            <span className="text-xs text-ndp-text-dim flex-shrink-0">{handledCount}/{totalCount}</span>
+            <span className="text-xs text-ndp-text-dim flex-shrink-0">{statusesLoaded ? t('media.collection_available_count', '{{available}} of {{total}} available', { available: availableCount, total: totalCount }) : '—'}</span>
           )}
         </div>
         {!allAvailable && (
