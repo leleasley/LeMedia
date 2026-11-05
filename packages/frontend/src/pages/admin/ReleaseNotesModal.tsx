@@ -26,7 +26,7 @@ function normalise(body: string): string {
     .trim();
 }
 
-/** Recent Zurg / rex releases with their notes; releases newer than the running one are marked. */
+/** Latest Zurg / rex release, with its notes and running-version marker. */
 export function ReleaseNotesModal({ kind, onClose }: Readonly<{ kind: 'zurg' | 'rex'; onClose: () => void }>) {
   const { t, i18n } = useTranslation();
   const [notes, setNotes] = useState<Notes | null>(null);
@@ -49,7 +49,7 @@ export function ReleaseNotesModal({ kind, onClose }: Readonly<{ kind: 'zurg' | '
   return (
     <div className="modal-overlay z-50" onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-labelledby="release-notes-title"
-        className="modal-panel w-full max-w-2xl flex flex-col p-0 overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        className="modal-panel w-full max-w-2xl min-w-0 flex flex-col p-0" style={{ overflow: 'hidden' }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-white/[0.06]">
           <div className="min-w-0">
             <h2 id="release-notes-title" className="text-lg font-semibold text-ndp-text">{t('admin.updates.changelog_title', '{{name}} changelog', { name })}</h2>
@@ -62,7 +62,7 @@ export function ReleaseNotesModal({ kind, onClose }: Readonly<{ kind: 'zurg' | '
           </button>
         </div>
 
-        <div className="overflow-y-auto px-5 py-5 space-y-8">
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-5 py-5 space-y-8">
           {!notes && !failed && (
             <p className="flex items-center gap-2 text-sm text-ndp-text-dim" role="status"><Loader2 className="w-4 h-4 animate-spin" />{t('common.loading', 'Loading…')}</p>
           )}
@@ -71,7 +71,7 @@ export function ReleaseNotesModal({ kind, onClose }: Readonly<{ kind: 'zurg' | '
           {notes?.error && <p className="text-sm text-ndp-danger" role="alert">{notes.error === 'not_visible' ? t('admin.updates.not_visible', 'The connected GitHub account can\'t see {{repo}}', { repo: notes.repo }) : notes.error}</p>}
           {notes?.connected && !notes.error && notes.releases.length === 0 && <p className="text-sm text-ndp-text-muted">{t('admin.updates.no_releases', 'No releases found')}</p>}
 
-          {notes?.releases.map((r, i) => {
+          {notes?.releases.slice(0, 1).map((r, i) => {
             const running = r.tag === notes.installed;
             const isNew = installedAt > 0 && i < installedAt;
             const body = r.body ? normalise(r.body) : '';
@@ -90,7 +90,7 @@ export function ReleaseNotesModal({ kind, onClose }: Readonly<{ kind: 'zurg' | '
                 </div>
                 <div className={clsx('pl-0', running && 'opacity-90')}>
                   {body
-                    ? <ReleaseNoteBody body={body} />
+                    ? <ReleaseNoteBody body={body} wrapLongLines />
                     : <p className="text-[13px] text-ndp-text-dim italic">{t('admin.updates.no_notes', 'No notes for this release')}</p>}
                 </div>
               </section>

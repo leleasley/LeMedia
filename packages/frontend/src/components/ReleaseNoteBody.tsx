@@ -11,7 +11,7 @@ import { parseReleaseNote, type Span } from '@/utils/releaseNotes';
  * `ndp-text-muted` (7.60:1) and inline code `ndp-accent-hover` (6.47:1). `ndp-text-dim` is left to
  * the bullet glyphs, which carry no reading.
  */
-function Spans({ spans }: Readonly<{ spans: Span[] }>) {
+function Spans({ spans, wrapLongLines = false }: Readonly<{ spans: Span[]; wrapLongLines?: boolean }>) {
   return (
     <>
       {spans.map((s, i) => {
@@ -21,7 +21,7 @@ function Spans({ spans }: Readonly<{ spans: Span[] }>) {
           return (
             <code
               key={key}
-              className="px-1.5 py-0.5 mx-px rounded bg-ndp-accent/[0.12] text-ndp-accent-hover text-[0.85em] font-mono whitespace-nowrap"
+              className={`px-1.5 py-0.5 mx-px rounded bg-ndp-accent/[0.12] text-ndp-accent-hover text-[0.85em] font-mono ${wrapLongLines ? 'whitespace-normal break-all' : 'whitespace-nowrap'}`}
             >
               {s.text}
             </code>
@@ -33,14 +33,14 @@ function Spans({ spans }: Readonly<{ spans: Span[] }>) {
   );
 }
 
-export default function ReleaseNoteBody({ body }: Readonly<{ body: string }>) {
+export default function ReleaseNoteBody({ body, wrapLongLines = false }: Readonly<{ body: string; wrapLongLines?: boolean }>) {
   const blocks = parseReleaseNote(body);
   if (blocks.length === 0) return null;
 
   return (
     // Long-form prose wants a measure, not the full dialog width: past roughly 70 characters the
     // eye loses the start of the next line.
-    <div className="max-w-[64ch]">
+    <div className={wrapLongLines ? "min-w-0 max-w-[64ch] [overflow-wrap:anywhere]" : "max-w-[64ch]"}>
       {blocks.map((block, i) => {
         const key = `${block.kind}-${i}`;
         const first = i === 0;
@@ -56,14 +56,14 @@ export default function ReleaseNoteBody({ body }: Readonly<{ body: string }>) {
                 className={`flex items-center gap-2.5 text-[13px] font-semibold text-ndp-text ${first ? '' : 'mt-8'} mb-3`}
               >
                 <span aria-hidden="true" className="w-0.5 h-3.5 rounded-full bg-ndp-accent flex-shrink-0" />
-                {block.text}
+                <span className="min-w-0">{block.text}</span>
               </h4>
             );
 
           case 'paragraph':
             return (
               <p key={key} className={`text-[13px] leading-[1.7] text-ndp-text-muted ${first ? '' : 'mt-3'}`}>
-                <Spans spans={block.spans} />
+                <Spans spans={block.spans} wrapLongLines={wrapLongLines} />
               </p>
             );
 
@@ -75,7 +75,7 @@ export default function ReleaseNoteBody({ body }: Readonly<{ body: string }>) {
                 key={key}
                 className={`text-[13px] leading-[1.7] text-ndp-text border-l-2 border-ndp-accent bg-ndp-accent/[0.07] pl-4 pr-4 py-3 rounded-r-lg ${first ? '' : 'mt-4'}`}
               >
-                <Spans spans={block.spans} />
+                <Spans spans={block.spans} wrapLongLines={wrapLongLines} />
               </p>
             );
 
@@ -89,7 +89,7 @@ export default function ReleaseNoteBody({ body }: Readonly<{ body: string }>) {
                   >
                     <span aria-hidden="true" className="text-ndp-accent/70 select-none leading-[1.7] text-[10px] pt-[3px]">●</span>
                     <span className="min-w-0">
-                      <Spans spans={item} />
+                      <Spans spans={item} wrapLongLines={wrapLongLines} />
                     </span>
                   </li>
                 ))}
@@ -100,7 +100,7 @@ export default function ReleaseNoteBody({ body }: Readonly<{ body: string }>) {
             return (
               <pre
                 key={key}
-                className={`text-xs font-mono text-ndp-text-muted bg-black/40 ring-1 ring-white/[0.06] rounded-lg px-4 py-3 overflow-x-auto ${first ? '' : 'mt-3'}`}
+                className={`text-xs font-mono text-ndp-text-muted bg-black/40 ring-1 ring-white/[0.06] rounded-lg px-4 py-3 ${wrapLongLines ? 'whitespace-pre-wrap break-all overflow-x-hidden' : 'overflow-x-auto'} ${first ? '' : 'mt-3'}`}
               >
                 <code>{block.text}</code>
               </pre>
