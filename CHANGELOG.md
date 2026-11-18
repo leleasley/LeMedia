@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.20.1 (2026-11-18)
+
+### Fixed
+- **"A new version is ready" when you were already on it.** The GitHub check compared a release tag
+  (`v0.20.0`) with the running version (`0.20.0`) as raw strings, so it never matched: the Instance
+  badge offered an update, and the stack-watch job pushed a notification — Apple included — even
+  when the running build was the latest release, or ahead of it. Tags are normalised before
+  comparing now, and only a strictly newer release counts, for LeMedia, Zurg and rex.
+
 ## 0.20.0 (2026-11-18)
 
 ### New

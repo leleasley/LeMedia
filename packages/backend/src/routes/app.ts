@@ -11,7 +11,7 @@ import { isQualityAllowedForRole } from '../utils/qualityAccess.js';
 import { getHomepageLayout } from './admin/homepage.js';
 import { isResetEnabled } from '../services/passwordReset.js';
 
-import { APP_VERSION, versionFromTag } from '../utils/version.js';
+import { APP_VERSION, compareVersions, versionFromTag } from '../utils/version.js';
 import { updateStatus } from '../services/githubIntegration.js';
 
 const AVATAR_HOSTS = ['googleusercontent.com', 'githubusercontent.com', 'discordapp.com', 'discordapp.net', 'plex.tv'];
@@ -40,7 +40,8 @@ export async function appRoutes(app: FastifyInstance) {
     if (status?.connected && status.latest) {
       const latest = versionFromTag(status.latest.tag);
       result.latest = latest;
-      result.updateAvailable = status.upToDate === false || (latest !== APP_VERSION && status.behind !== 0);
+      // Strictly newer only: running a build ahead of the published release is not an update.
+      result.updateAvailable = compareVersions(latest, APP_VERSION) > 0;
       result.releaseUrl = status.latest.url;
     }
     return result;

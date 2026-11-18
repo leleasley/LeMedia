@@ -10,6 +10,7 @@
 import { randomUUID } from 'node:crypto';
 import { prisma } from '../utils/prisma.js';
 import { getServiceConfig } from '../utils/services.js';
+import { compareVersions } from '../utils/version.js';
 import { logEvent } from '../utils/logEvent.js';
 import { helperCall, helperReady, HelperError } from './hostHelper.js';
 import { getZurgConn, zurgGet } from './zurg/client.js';
@@ -195,12 +196,6 @@ function whyNoUpdate(c: Record<string, any> | null): string | null {
   if (c.compose === false) return 'The container wasn\'t started by Docker Compose, so it\'s updated outside LeMedia';
   if (c.image && !/(^|\/)linuxserver\//.test(String(c.image))) return `Uses ${String(c.image).split('@')[0]}, which LeMedia doesn't update (LinuxServer images only)`;
   return null;
-}
-
-function compareVersions(a: string, b: string) {
-  const pa = a.split('.').map(Number); const pb = b.split('.').map(Number);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) { const d = (pa[i] || 0) - (pb[i] || 0); if (d) return d; }
-  return 0;
 }
 
 const countsCache = new Map<ArrApp, { at: number; data: unknown }>();

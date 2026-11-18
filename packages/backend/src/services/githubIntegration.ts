@@ -2,6 +2,7 @@ import { prisma } from '../utils/prisma.js';
 import { decryptSecretValue, encryptSecretValue } from '../utils/secrets.js';
 import { getProviderConfig } from '../providers/authSettings.js';
 import { logEvent } from '../utils/logEvent.js';
+import { versionFromTag } from '../utils/version.js';
 
 /**
  * LeMedia's own GitHub connection (not sign-in): an admin connects once, and LeMedia uses the
@@ -176,7 +177,11 @@ export async function updateStatus(kind: ReleaseKind, installed: string | null, 
   const feed = await fetchReleases(repo, token, fresh);
   const releases = feed.releases ?? [];
   const latest = releases[0] ?? null;
-  const idx = installed ? releases.findIndex((r) => r.tag === installed) : -1;
+  // Tags carry a `v` prefix, installed versions do not; compare the normalised form. Comparing
+  // raw strings made every check "not up to date", so the update badge and the stack-watch push
+  // fired even when the running build matched the published release.
+  const installedVersion = installed ? versionFromTag(installed) : null;
+  const idx = installedVersion ? releases.findIndex((r) => versionFromTag(r.tag) === installedVersion) : -1;
   return {
     ...base,
     // The notes are served by releaseNotes(); the status poll stays small.
@@ -184,6 +189,6 @@ export async function updateStatus(kind: ReleaseKind, installed: string | null, 
     error: feed.error,
     checkedAt: new Date(feed.at).toISOString(),
     behind: idx >= 0 ? idx : null,
-    upToDate: latest && installed ? latest.tag === installed : null,
+    upToDate: latest && installedVersion ? versionFromTag(latest.tag) === installedVersion : null,
   };
 }

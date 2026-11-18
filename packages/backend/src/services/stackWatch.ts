@@ -1,5 +1,5 @@
 import { rexDockerVersion } from './rexDockerUpdate.js';
-import { APP_VERSION, versionFromTag } from '../utils/version.js';
+import { APP_VERSION, isNewerVersion, versionFromTag } from '../utils/version.js';
 /**
  * Admin notifications about the stack (Admin → Notifications decides which providers get them):
  * - app_update: a newer Sonarr / Radarr / Prowlarr / Zurg / rex is out (once per version), and the
@@ -77,7 +77,8 @@ export async function watchStack() {
   for (const [kind, installed, url] of [['app', APP_VERSION, '/admin?tab=instance'], ['zurg', zurgVersion, '/admin?tab=zurg'], ['rex', rexVersion, '/admin?tab=rex']] as const) {
     if (!installed) continue;
     const st = await updateStatus(kind, installed).catch(() => null);
-    const tag = st?.connected && st.upToDate === false ? st.latest?.tag : null;
+    // A local build ahead of the published release (or the same version) must not notify.
+    const tag = st?.connected && isNewerVersion(st.latest?.tag, installed) ? st.latest?.tag : null;
     if (!tag || updates[kind] === tag) continue;
     updates[kind] = tag;
     const label = kind === 'zurg' ? 'Zurg' : kind === 'rex' ? 'rex' : 'LeMedia';
