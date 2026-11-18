@@ -122,7 +122,7 @@ interface SponsorLink {
 /** Sponsor tokens live seven days; keep one per key in memory and re-exchange on refusal. */
 let sponsorCache: (SponsorLink & { apiKey: string; expiresAt: number }) | null = null;
 
-async function dmmService(): Promise<{ id: number; apiKey: string } | null> {
+export async function dmmService(): Promise<{ id: number; apiKey: string } | null> {
   const rows = await prisma.service.findMany({ where: { type: 'dmm', enabled: true }, orderBy: { id: 'asc' } });
   for (const row of rows) {
     const key = parseServiceConfig(row.config).apiKey?.trim();

@@ -5,6 +5,7 @@ import { safeNotify, safeUserNotify, buildSiteLink } from '../../utils/safeNotif
 import { parseId } from '../../utils/params.js';
 import { sendToService } from '../../services/requestService.js';
 import { transitionRequestStatus } from '../../services/requestStatusTransition.js';
+import { maybeUnwant } from '../../services/dmmWantedList.js';
 
 /** Per-request state transitions — approve, decline, edit routing, delete. Owner-scoping on
  *  delete prevents a non-admin from deleting someone else's request. */
@@ -138,6 +139,9 @@ export async function requestLifecycleRoutes(app: FastifyInstance) {
     safeNotify('request_declined', { title: updated.media.title, mediaType: updated.mediaType as 'movie' | 'tv', username: updated.user?.displayName || 'User', posterPath: updated.media.posterPath, url: declinedUrl });
     safeUserNotify(updated.user.id, { type: 'request_declined', title: updated.media.title, message: 'notifications.msg.request_declined', metadata: { mediaId: updated.mediaId, tmdbId: updated.media.tmdbId, mediaType: updated.mediaType, msgParams: { title: updated.media.title } } });
     logEvent('info', 'Request', `Request "${updated.media.title}" declined`);
+    // Fire-and-forget: a declined title should leave DMM's wanted list, but only if no other
+    // request still wants it. Never hold the response on a third party.
+    void maybeUnwant(updated.media);
 
     return reply.send(updated);
   });
@@ -176,11 +180,12 @@ export async function requestLifecycleRoutes(app: FastifyInstance) {
     const requestId = parseId((request.params as { id: string }).id);
     if (!requestId) return reply.status(400).send({ error: 'Invalid ID' });
 
-    const mediaRequest = await prisma.mediaRequest.findUnique({ where: { id: requestId } });
+    const mediaRequest = await prisma.mediaRequest.findUnique({ where: { id: requestId }, include: { media: true } });
     if (!mediaRequest) return reply.status(404).send({ error: 'Request not found' });
     if (request.ownerScoped && mediaRequest.userId !== user.id) return reply.status(403).send({ error: 'Unauthorized' });
 
     await prisma.mediaRequest.delete({ where: { id: requestId } });
+    void maybeUnwant(mediaRequest.media);
     return reply.send({ ok: true });
   });
 }

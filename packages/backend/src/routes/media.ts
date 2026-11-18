@@ -14,6 +14,7 @@ import { seriesCatalogRoutes } from './seriesCatalog.js';
 import { getMissing, invalidateMissingCache, MISSING_SORTS, type MissingSort } from '../services/missing.js';
 import { findExclusion } from '../services/arrExclusions.js';
 import { isInMediaServerLibrary } from '../services/mediaServerLibrary.js';
+import { maybeUnwant } from '../services/dmmWantedList.js';
 
 
 
@@ -77,6 +78,10 @@ export async function mediaRoutes(app: FastifyInstance) {
       await prisma.season.deleteMany({ where: { mediaId: media.id } });
       await prisma.mediaRequest.deleteMany({ where: { mediaId: media.id } });
       await prisma.media.delete({ where: { id: media.id } });
+
+      // The title is gone from LeMedia, so it should stop being wanted in DMM — unless another
+      // row (a sibling TMDB entry) still has active requests for the same series.
+      void maybeUnwant(media);
 
       return { ok: true };
     },

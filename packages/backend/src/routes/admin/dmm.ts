@@ -4,6 +4,7 @@ import {
   dmmOverview, importFromArrBackup, importWantedFromBackup, recordImport,
 } from '../../services/dmmWantedImport.js';
 import { ArrBackupError, createBackup } from '../../services/arrBackups.js';
+import { wantedList, unwant, type WantedApp } from '../../services/dmmWantedList.js';
 
 /**
  * Admin → Media → DMM. Lists the backups Radarr/Sonarr already have, imports one without a file
@@ -29,6 +30,30 @@ export async function dmmAdminRoutes(app: FastifyInstance) {
   });
 
   app.get('/dmm/overview', async () => dmmOverview());
+
+  // The wanted list itself, read through DMM's arr API (the sponsor endpoint would mark it polled).
+  app.get('/dmm/wanted', async (request, reply) => {
+    try {
+      return await wantedList((request.query as { fresh?: string }).fresh === '1');
+    } catch (err) {
+      return reply.status(502).send({ error: err instanceof Error ? err.message : 'DMM did not answer' });
+    }
+  });
+
+  app.delete('/dmm/wanted/:app/:id', async (request, reply) => {
+    const { app, id } = request.params as { app: string; id: string };
+    const numeric = Number.parseInt(id, 10);
+    if ((app !== 'radarr' && app !== 'sonarr') || !Number.isSafeInteger(numeric) || numeric <= 0) {
+      return reply.status(400).send({ error: 'Invalid title' });
+    }
+    try {
+      const removed = await unwant(app as WantedApp, numeric);
+      if (!removed) return reply.status(404).send({ error: 'That title is not on the wanted list' });
+      return { ok: true };
+    } catch (err) {
+      return reply.status(502).send({ error: err instanceof Error ? err.message : 'DMM did not answer' });
+    }
+  });
 
   app.post('/dmm/import-backup', {
     schema: { body: { type: 'object', required: ['app', 'name'], properties: {

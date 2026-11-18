@@ -3,12 +3,13 @@ import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import {
   AlertTriangle, CheckCircle2, Clock, Database, ExternalLink, FileArchive, History,
-  Loader2, RefreshCw, Upload, XCircle,
+  Loader2, RefreshCw, Search, Trash2, Upload, XCircle,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { showToast, toastApiError } from '@/utils/toast';
 import { Spinner } from '@/components/Spinner';
 import { SwitchTrack } from '@/components/ui/Switch';
+import { ConfirmModal } from '@/components/ConfirmModal';
 
 type App = 'radarr' | 'sonarr';
 
@@ -70,6 +71,26 @@ interface ImportResult {
   seasonsTmdbLacks: { title: string; seasons: number[] }[];
 }
 
+interface WantedTitle {
+  app: App;
+  id: number;
+  title: string;
+  year: number | null;
+  imdbId: string | null;
+  wanted: boolean;
+  fetched: boolean;
+  seasons: number[] | null;
+  addedAt: string | null;
+}
+
+interface WantedSnapshot {
+  items: WantedTitle[];
+  total: number;
+  wanted: number;
+  fetched: number;
+  truncated: boolean;
+}
+
 type Sort = 'newest' | 'oldest' | 'largest';
 type Filter = 'all' | App;
 
@@ -98,6 +119,11 @@ export function DmmWanted() {
   const [busy, setBusy] = useState<string | null>(null);
   const [backingUp, setBackingUp] = useState<App | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
+  const [wanted, setWanted] = useState<WantedSnapshot | null>(null);
+  const [wantedError, setWantedError] = useState<string | null>(null);
+  const [wantedLoading, setWantedLoading] = useState(false);
+  const [wantedQuery, setWantedQuery] = useState('');
+  const [removeTarget, setRemoveTarget] = useState<WantedTitle | null>(null);
 
   // Upload fallback state.
   const [file, setFile] = useState<File | null>(null);
@@ -118,7 +144,20 @@ export function DmmWanted() {
     }
   }, [t]);
 
-  useEffect(() => { void load(); }, [load]);
+  const loadWanted = useCallback(async (fresh = false) => {
+    setWantedLoading(true);
+    try {
+      const { data: next } = await api.get<WantedSnapshot>(`/admin/dmm/wanted${fresh ? '?fresh=1' : ''}`);
+      setWanted(next);
+      setWantedError(null);
+    } catch (err: any) {
+      setWantedError(err?.response?.data?.error || t('admin.dmm.wanted_failed', 'Could not read the wanted list'));
+    } finally {
+      setWantedLoading(false);
+    }
+  }, [t]);
+
+  useEffect(() => { void load(); void loadWanted(); }, [load, loadWanted]);
 
   const importBackup = async (backup: Backup) => {
     const key = `${backup.app}:${backup.name}`;
@@ -176,6 +215,16 @@ export function DmmWanted() {
     }
   };
 
+  const removeWanted = async (title: WantedTitle) => {
+    try {
+      await api.delete(`/admin/dmm/wanted/${title.app}/${title.id}`);
+      showToast(t('admin.dmm.wanted_removed', 'Removed {{title}} from the wanted list', { title: title.title }), 'success');
+      await Promise.all([loadWanted(true), load()]);
+    } catch (err: any) {
+      toastApiError(err, t('admin.dmm.wanted_remove_failed', 'Could not remove that title'));
+    }
+  };
+
   const toggleAuto = async (enabled: boolean) => {
     setBusy('auto');
     try {
@@ -197,6 +246,12 @@ export function DmmWanted() {
       return sort === 'oldest' ? cmp : -cmp;
     });
   }, [data?.backups, filter, sort]);
+
+  const filteredWanted = useMemo(() => {
+    const needle = wantedQuery.trim().toLowerCase();
+    const items = wanted?.items ?? [];
+    return needle ? items.filter((w) => w.title.toLowerCase().includes(needle)) : items;
+  }, [wanted?.items, wantedQuery]);
 
   const stat = (label: string, value: number | string, tone = 'text-ndp-text') => (
     <div className="rounded-xl bg-ndp-surface ring-1 ring-inset ring-white/[0.06] px-4 py-3">
@@ -288,6 +343,93 @@ export function DmmWanted() {
           ))}
         </div>
         <p className="admin-hint">{t('admin.dmm.intro', 'Import what Radarr or Sonarr are still looking for. Everything they have not got is added to your DMM wanted list for zurg to fetch: monitored films without a file, and the missing seasons of monitored shows.')}</p>
+      </section>
+
+
+      {/* Wanted list — read through DMM's arr API, which (unlike the sponsor endpoint) does not
+          mark the list as polled by zurg. */}
+      <section>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+          <h3 className="admin-group-label !mb-0">{t('admin.dmm.wanted_title', 'Wanted list')}</h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-ndp-text-dim" aria-hidden />
+              <input
+                value={wantedQuery}
+                onChange={(e) => setWantedQuery(e.target.value)}
+                placeholder={t('admin.dmm.wanted_search', 'Search the list')}
+                aria-label={t('admin.dmm.wanted_search', 'Search the list')}
+                className="input py-2 pl-8 text-sm w-48"
+              />
+            </div>
+            <button type="button" onClick={() => void loadWanted(true)} disabled={wantedLoading} className="btn-secondary flex items-center gap-2 !px-3 !py-2 !text-sm disabled:opacity-50">
+              {wantedLoading ? <Spinner size="sm" /> : <RefreshCw className="w-4 h-4" />}
+              {t('admin.dmm.refresh', 'Refresh')}
+            </button>
+          </div>
+        </div>
+
+        {wanted && wanted.total > 0 && (
+          <div className="flex flex-wrap gap-2 text-xs mb-3">
+            <span className="admin-chip">{t('admin.dmm.wanted_to_fetch', '{{n}} to fetch', { n: wanted.wanted })}</span>
+            <span className="admin-chip">{t('admin.dmm.wanted_fetched', '{{n}} fetched', { n: wanted.fetched })}</span>
+            <span className="admin-chip">{t('admin.dmm.wanted_total', '{{n}} on the list', { n: wanted.total })}</span>
+          </div>
+        )}
+
+        {wantedError ? (
+          <div className="admin-group">
+            <div className="admin-row text-sm text-ndp-danger">{wantedError}</div>
+          </div>
+        ) : !wanted ? (
+          <div className="admin-group admin-row justify-center py-10 text-sm text-ndp-text-dim"><Spinner size="sm" />{t('common.loading')}</div>
+        ) : wanted.items.length === 0 ? (
+          <div className="admin-group">
+            <div className="admin-row text-sm text-ndp-text-dim">{t('admin.dmm.wanted_empty', 'Nothing on the wanted list yet. Import a backup above, or press Want on a title in DMM.')}</div>
+          </div>
+        ) : filteredWanted.length === 0 ? (
+          <p className="admin-hint">{t('admin.dmm.wanted_no_match', 'No title matches that search.')}</p>
+        ) : (
+          <div className="admin-group divide-y divide-white/[0.06]">
+            {filteredWanted.map((w) => (
+              <div key={`${w.app}:${w.id}`} className="admin-row">
+                <span className={clsx('admin-icon-tile', w.fetched ? 'bg-emerald-500/15 text-emerald-400' : '')}>
+                  {w.fetched ? <CheckCircle2 className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[15px] font-medium text-ndp-text truncate">
+                    {w.title}
+                    {w.year ? <span className="text-ndp-text-dim font-normal"> ({w.year})</span> : null}
+                  </p>
+                  <p className="text-xs text-ndp-text-dim mt-0.5">
+                    {[
+                      w.app === 'radarr' ? 'Radarr' : 'Sonarr',
+                      w.seasons?.length ? t('admin.dmm.wanted_seasons', 'season(s) {{list}}', { list: w.seasons.join(', ') }) : t('admin.dmm.wanted_all', 'whole show'),
+                      w.imdbId,
+                    ].filter(Boolean).join(' · ')}
+                  </p>
+                </div>
+                <span className={clsx('admin-chip flex-shrink-0', w.fetched ? 'text-emerald-300' : '')}>
+                  {w.fetched ? t('admin.dmm.wanted_state_fetched', 'fetched') : t('admin.dmm.wanted_state_wanted', 'wanted')}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setRemoveTarget(w)}
+                  aria-label={t('admin.dmm.wanted_remove', 'Remove from the wanted list')}
+                  title={t('admin.dmm.wanted_remove', 'Remove from the wanted list')}
+                  className="w-10 h-10 flex items-center justify-center rounded-lg text-ndp-text-muted hover:text-ndp-danger hover:bg-ndp-danger/10 transition-colors flex-shrink-0"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {wanted?.truncated && (
+          <p className="admin-hint">{t('admin.dmm.wanted_truncated', 'Showing the first {{n}} titles — use the search above to narrow it.', { n: wanted.items.length })}</p>
+        )}
+        <p className="admin-hint">{t('admin.dmm.wanted_hint', 'Read through DMM\u2019s Radarr/Sonarr API, so opening this page does not mark the list as polled by zurg. Removing a title leaves anything zurg already fetched alone.')}</p>
       </section>
 
       {error && <p className="px-1 text-sm text-ndp-danger">{error}</p>}
@@ -489,6 +631,19 @@ export function DmmWanted() {
         )}
         <p className="admin-hint">{t('admin.dmm.zurg_hint', 'Read from zurg’s own report. This page does not open DMM’s wanted list, because reading it marks the list as polled by zurg.')}</p>
       </section>
+
+
+      <ConfirmModal
+        open={removeTarget !== null}
+        tone="danger"
+        title={t('admin.dmm.wanted_remove_title', 'Remove from the DMM wanted list?')}
+        description={removeTarget
+          ? t('admin.dmm.wanted_remove_desc', '{{title}} stops being wanted. Anything zurg already fetched stays in your library.', { title: removeTarget.title })
+          : undefined}
+        confirmLabel={t('admin.dmm.wanted_remove', 'Remove from the wanted list')}
+        onConfirm={() => { if (removeTarget) void removeWanted(removeTarget); }}
+        onClose={() => setRemoveTarget(null)}
+      />
 
       <p className="admin-hint">{t('admin.dmm.quality_note', 'DMM and zurg choose releases with zurg’s own acquisition settings, not your Radarr/Sonarr quality profiles. Imports only add titles — removing one in DMM does not remove it from Radarr or Sonarr.')}</p>
     </div>

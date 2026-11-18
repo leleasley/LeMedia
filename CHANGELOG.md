@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.20.0 (2026-11-18)
+
+### New
+- **The DMM page shows the wanted list itself** — everything zurg is fetching, what it has already
+  fetched, and the seasons still wanted for each show, with a search box and a per-row **Remove**.
+  It is read through DMM's Radarr/Sonarr-compatible API rather than the sponsor endpoint, because
+  reading the sponsor list marks it as polled by zurg and would hide a stalled zurg.
+- **Removing a title from the wanted list happens automatically** when its last active request is
+  declined or deleted, or the title is deleted from LeMedia. A title someone is still waiting on
+  stays wanted, and anything zurg already fetched is untouched.
+
 ## 0.19.0 (2026-11-18)
 
 ### New
