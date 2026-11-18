@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Loader2 } from 'lucide-react';
 import api from '@/lib/api';
 import { WizardShell, type WizardStep } from './install/WizardShell';
 import SecretStep from './install/steps/SecretStep';
@@ -10,6 +9,7 @@ import ServicesStep from './install/steps/ServicesStep';
 import SyncStep from './install/steps/SyncStep';
 import DoneStep from './install/steps/DoneStep';
 import { useBackend } from '@/context/BackendGate';
+import { Spinner } from '@/components/Spinner';
 
 /**
  * Install wizard — kept to what a new LeMedia needs:
@@ -45,7 +45,7 @@ export default function InstallPage() {
   if (checking) {
     return (
       <div className="min-h-dvh bg-ndp-bg flex items-center justify-center">
-        <Loader2 className="w-12 h-12 text-ndp-accent animate-spin" />
+        <Spinner size="xl" />
       </div>
     );
   }

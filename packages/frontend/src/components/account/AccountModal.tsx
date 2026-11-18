@@ -6,6 +6,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { X, User as UserIcon, Sliders, Bell, LogOut, ChevronRight, ChevronLeft, type LucideIcon } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useAuth } from '@/context/AuthContext';
+import { useVersionInfo } from '@/hooks/useVersionInfo';
 import { useModal } from '@/hooks/useModal';
 import { usePluginUI } from '@/plugins/usePlugins';
 import { PluginHookComponent } from '@/plugins/PluginHookComponent';
@@ -75,6 +76,7 @@ interface AccountModalProps {
 }
 
 export default function AccountModal({ open, onClose, viewAsRole, onViewAsRoleChange }: AccountModalProps) {
+  const versionInfo = useVersionInfo();
   const { t } = useTranslation();
   const { user, logout, hasPermission } = useAuth();
   const navigate = useNavigate();
@@ -268,6 +270,15 @@ export default function AccountModal({ open, onClose, viewAsRole, onViewAsRoleCh
               </button>
             </div>
             <Link to="/privacy" onClick={onClose} className="block mt-4 px-2 py-2 text-center text-xs text-ndp-text-dim hover:text-ndp-text underline underline-offset-4">{t('privacy.title')}</Link>
+            <p className="mt-1 pb-2 text-center text-[11px] font-mono text-ndp-text-dim/80">
+              {versionInfo?.updateAvailable && versionInfo.releaseUrl ? (
+                <a href={versionInfo.releaseUrl} target="_blank" rel="noopener noreferrer" className="text-ndp-accent hover:underline">
+                  LeMedia {versionInfo.current} · update available
+                </a>
+              ) : (
+                <>LeMedia {versionInfo?.current ?? '…'}</>
+              )}
+            </p>
           </nav>
           <div className="pb-[env(safe-area-inset-bottom)]" />
         </aside>

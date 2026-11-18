@@ -196,10 +196,12 @@ export async function setupRoutes(app: FastifyInstance) {
       ? await prisma.service.findUnique({ where: { id: serviceId } })
       : await findServiceByTypeAndUrl(type, config.url);
     if (serviceId && (!existing || existing.type !== type)) return reply.status(404).send({ error: 'SERVICE_NOT_FOUND' });
+    const mergedConfig = existing && type === 'dmm' && !config.apiKey
+      ? { ...config, apiKey: parseServiceConfig(existing.config).apiKey ?? '' } : config;
     const data = {
       name,
       type,
-      config: serializeServiceConfig(config),
+      config: serializeServiceConfig(mergedConfig),
       isDefault: true,
       enabled: true,
     };
@@ -213,7 +215,7 @@ export async function setupRoutes(app: FastifyInstance) {
     }
 
     logEvent('info', 'Setup', `Service "${name}" (${type}) added during installation`);
-    return reply.status(201).send({ ok: true, service: { ...service, config: parseServiceConfig(service.config) } });
+    return reply.status(201).send({ ok: true, service: { id: service.id, name: service.name, type: service.type, enabled: service.enabled } });
   });
 
   // Run first full sync during install — marks installation as complete
@@ -221,8 +223,15 @@ export async function setupRoutes(app: FastifyInstance) {
     const arrService = await prisma.service.findFirst({
       where: { type: { in: ['radarr', 'sonarr'] }, enabled: true },
     });
-    if (!arrService) {
-      return reply.status(400).send({ error: 'Configure at least one Radarr or Sonarr service' });
+    const { selectedDmmService } = await import('../services/dmm.js');
+    const dmm = await selectedDmmService();
+    if (!arrService && !dmm) return reply.status(400).send({ error: 'Configure Radarr, Sonarr or DMM' });
+    if (dmm) {
+      if (!dmm.enabled) return reply.status(400).send({ error: 'DMM service is disabled' });
+      try {
+        const { dmmProvider } = await import('../providers/dmm/index.js');
+        await dmmProvider.service!.test(dmm.config);
+      } catch { return reply.status(400).send({ error: 'DMM connection test failed' }); }
     }
 
     // Without this the wizard could be driven API-side straight to /sync, marking the instance
@@ -234,6 +243,7 @@ export async function setupRoutes(app: FastifyInstance) {
 
     try {
       const result = await runFullSync();
+      if (dmm) await prisma.integration.upsert({ where: { id: 'dmm-initial-sync' }, create: { id: 'dmm-initial-sync', config: '{}' }, update: {} });
       await initScheduler();
       markInstalled();
       logEvent('info', 'Setup', 'First full sync completed');

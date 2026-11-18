@@ -53,6 +53,7 @@ export default function ServicesStep({ onNext, onBack }: Readonly<Props>) {
   const [showPlexFields, setShowPlexFields] = useState(false);
   const [plexManualHint, setPlexManualHint] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [requestMode, setRequestMode] = useState<'arr' | 'dmm'>('arr');
   const [error, setError] = useState('');
   const flowRef = useRef<PlexPinFlowHandle | null>(null);
 
@@ -62,6 +63,7 @@ export default function ServicesStep({ onNext, onBack }: Readonly<Props>) {
     void api.get<{ id: number; type: string; config: Record<string, string> }[]>('/setup/services')
       .then(({ data }) => {
         if (data.length === 0) return;
+        if (data.some(svc => svc.type === 'dmm' && svc.config.routeRequests === 'true')) setRequestMode('dmm');
         setServices((prev) => {
           const next = { ...prev };
           for (const svc of data) {
@@ -192,9 +194,10 @@ export default function ServicesStep({ onNext, onBack }: Readonly<Props>) {
     setError('');
     try {
       for (const svc of Object.values(services)) {
-        if (svc.saved || svc.testStatus !== 'ok') continue;
+        if (svc.type !== 'dmm' && (svc.saved || svc.testStatus !== 'ok')) continue;
+        if (svc.type === 'dmm' && !svc.saved && svc.testStatus !== 'ok') continue;
         const schema = SERVICE_SCHEMAS[svc.type];
-        const { data } = await api.post<{ service: { id: number } }>('/setup/service', { name: schema?.label || svc.type, type: svc.type, config: svc.config, ...(svc.id ? { serviceId: svc.id } : {}) });
+        const { data } = await api.post<{ service: { id: number } }>('/setup/service', { name: schema?.label || svc.type, type: svc.type, config: svc.type === 'dmm' ? { ...svc.config, routeRequests: requestMode === 'dmm' ? 'true' : 'false' } : svc.config, ...(svc.id ? { serviceId: svc.id } : {}) });
         updateService(svc.type, { saved: true, id: data.service.id });
       }
       onNext();
@@ -214,7 +217,7 @@ export default function ServicesStep({ onNext, onBack }: Readonly<Props>) {
       category: cat,
       required: requiredCategories.has(cat),
       types: Object.values(SERVICE_SCHEMAS)
-        .filter((s) => s.category === cat)
+        .filter((s) => s.category === cat && (requestMode === 'dmm' ? s.id === 'dmm' : s.id !== 'dmm'))
         .sort((a, b) => a.label.localeCompare(b.label))
         .map((s) => s.id),
     }))
@@ -223,9 +226,9 @@ export default function ServicesStep({ onNext, onBack }: Readonly<Props>) {
   // Validation: every required category must have at least one service that tests OK.
   const okTypes = new Set(Object.values(services).filter((s) => s.testStatus === 'ok').map((s) => s.type));
   const missingRequired = [...requiredCategories].filter((cat) =>
-    !Object.values(SERVICE_SCHEMAS).some((s) => s.category === cat && okTypes.has(s.id)),
+    !Object.values(SERVICE_SCHEMAS).some((s) => s.category === cat && s.id !== 'dmm' && okTypes.has(s.id)),
   );
-  const canContinue = missingRequired.length === 0 && requiredCategories.size > 0 && !plexPolling && !plexDiscoveryToken;
+  const canContinue = (requestMode === 'dmm' ? okTypes.has('dmm') : missingRequired.length === 0 && requiredCategories.size > 0) && !plexPolling && !plexDiscoveryToken;
   const editingSvc = editingType ? services[editingType] : null;
   const editingSchema = editingType ? SERVICE_SCHEMAS[editingType] : null;
 
@@ -236,6 +239,11 @@ export default function ServicesStep({ onNext, onBack }: Readonly<Props>) {
         <p className="text-sm text-ndp-text-muted">{t('install.services.desc')}</p>
       </header>
 
+      <label className="block text-sm text-ndp-text">Request destination
+        <select className="input w-full mt-2" value={requestMode} onChange={e => setRequestMode(e.target.value as 'arr' | 'dmm')}>
+          <option value="arr">Radarr / Sonarr</option><option value="dmm">DMM Want</option>
+        </select>
+      </label>
       {groupedByCategory.map((group) => (
         <section key={group.category} className="space-y-2">
           <div className="flex items-center gap-2 px-0.5">
@@ -468,7 +476,7 @@ export default function ServicesStep({ onNext, onBack }: Readonly<Props>) {
         document.body,
       )}
 
-      {!canContinue && missingRequired.length > 0 && (
+      {requestMode === 'arr' && !canContinue && missingRequired.length > 0 && (
         <p className="text-xs text-ndp-text-dim">
           {t('install.services.required_missing', {
             categories: missingRequired.map((c) => t(CATEGORY_LABEL_KEY[c])).join(', '),

@@ -1,3 +1,6 @@
+import { selectedDmmService, sendToDmm } from './dmm.js';
+import { isInMediaServerLibrary } from './mediaServerLibrary.js';
+import { clearExclusion, findExclusion } from './arrExclusions.js';
 import { createRequestVariantMatcher } from './requestVariants.js';
 import { prisma } from '../utils/prisma.js';
 import { getAppSettings } from '../utils/appSettings.js';
@@ -18,9 +21,9 @@ import { transitionRequestStatus } from './requestStatusTransition.js';
 import { Prisma } from '@prisma/client';
 import axios from 'axios';
 import { trimTrailingSlashes } from '../utils/trimTrailingSlashes.js';
-import { checkRequestGuard, resolveRequestApproval, validateRequestCriteria } from './requestCreationPolicy.js';
+import { ADMIN_ROLE, checkRequestGuard, resolveRequestApproval, validateRequestCriteria } from './requestCreationPolicy.js';
 import { validateSeasonSelection } from './seriesCatalog.js';
-import { resolveSeriesIdentity } from './mediaIdentity.js';
+import { resolveSeriesIdentity, SeriesIdentityError } from './mediaIdentity.js';
 
 // ---------------------------------------------------------------------------
 // Validation
@@ -247,9 +250,19 @@ async function sendToArrService(
   let externalId: number;
   try {
     externalId = mediaType === 'movie' ? media.tmdbId : await resolveSeriesIdentity(client, media);
-  } catch {
+  } catch (err) {
     // Do not include upstream URLs/errors: an Axios error may contain the instance API key.
-    throw new Error(`Cannot resolve ${mediaType} TMDB ${media.tmdbId} on service #${ctx.targetService?.id ?? 'default'}; check the service metadata lookup`);
+    // The classified reason is ours, and names the one action that fixes each case.
+    const instance = ctx.targetService ? ` on service #${ctx.targetService.id}` : '';
+    const reason = err instanceof SeriesIdentityError ? err.reason : null;
+    const detail = reason === 'not-found'
+      ? 'this service has no series for that TMDB id (split shows are keyed under a different TVDB id) — link the correct series from the title page'
+      : reason === 'lookup-failed'
+        ? `the service metadata lookup failed${err instanceof SeriesIdentityError && err.upstreamStatus ? ` (HTTP ${err.upstreamStatus})` : ''}`
+        : reason === 'conflict' || reason === 'invalid'
+          ? 'the stored TVDB identity disagrees with the service — re-link the series from the title page'
+          : 'check the service metadata lookup';
+    throw new Error(`Cannot resolve ${mediaType} TMDB ${media.tmdbId} "${media.title}"${instance}: ${detail}`);
   }
   if (!externalId) throw new Error(`Missing external ID for ${mediaType} "${media.title}"`);
   if (mediaType === 'tv' && seasons?.length) {
@@ -282,6 +295,8 @@ async function sendToArrService(
     if (mediaType === 'tv' && seasons?.length) {
       if (!client.requestSeasons) throw new Error('This service does not support season requests');
       await client.requestSeasons(existing.id, seasons);
+    } else if (mediaType === 'tv' && client.requestAllSeasons) {
+      await client.requestAllSeasons(existing.id);
     } else {
       await client.searchMedia(existing.id);
     }
@@ -295,6 +310,12 @@ async function sendToArrService(
   // with a validator 400. resolveAddConflict adopts the occupant when it is the same
   // title (returns its service id, claimed by the caller below) or throws a named
   // conflict; anything else rethrows unchanged.
+  // Reaching here means the request was approved (auto or by an admin). An import-list exclusion
+  // is the service's "never add this again"; an approval is the explicit decision to overturn it.
+  await clearExclusion(client, mediaType, media.tmdbId, mediaType === 'tv' ? externalId : null).catch((err) => {
+    logEvent('warn', 'Request', `Could not clear an import-list exclusion for "${media.title}": ${String(err)}`);
+  });
+
   const adoptedId: number | null = await client.addMedia({
     title: media.title,
     externalId: externalId ?? (0 as unknown as number),
@@ -339,8 +360,15 @@ export async function sendToService(
   /** Last, so the three callers that have no criteria to pass stay untouched. */
   criterionValueIds: number[] = [],
   seasonNumbering?: string | null,
+  targetDmmServiceId?: number | null,
 ): Promise<SendOutcome> {
   try {
+    if (targetDmmServiceId) {
+      if (qualityOptionId || rootFolderOverride || criterionValueIds.length) throw new Error('DMM does not support quality, folder or routing criteria');
+      if (mediaType !== 'movie' && mediaType !== 'tv') throw new Error('Unsupported DMM media type');
+      await sendToDmm(targetDmmServiceId, mediaType, media.tmdbId, seasons, seasonNumbering);
+      return 'sent';
+    }
     const ctx = await resolveServiceContext(mediaType as 'movie' | 'tv', media.tmdbId, userId, qualityOptionId, criterionValueIds);
 
     const arrMediaId = await sendToArrService(media, mediaType, username, ctx, seasons, rootFolderOverride, seasonNumbering);
@@ -383,7 +411,7 @@ export async function sendToService(
       if (raw) detail += ` :: HTTP ${err.response.status} ${raw.slice(0, 500)}`;
     }
     logEvent('debug', 'Request', `Failed to send ${mediaType} "${media.title}" to service: ${detail}`);
-    logEvent('error', 'Request', `Failed to send "${media.title}" to ${getServiceTypeForMedia(mediaType)}: ${detail}`);
+    logEvent('error', 'Request', `Failed to send "${media.title}" to ${targetDmmServiceId ? 'DMM' : getServiceTypeForMedia(mediaType)}: ${detail}`);
     return 'failed';
   }
 }
@@ -472,12 +500,26 @@ export async function createUserRequest(input: CreateRequestInput): Promise<Crea
     return { ok: false, status: 403, code: 'BLACKLISTED', error: bl.reason || 'This media has been blocked by an administrator.' };
   }
 
+  const targetDmm = await selectedDmmService();
+  if (targetDmm && (input.qualityOptionId || input.rootFolder || input.criterionValueIds?.length)) {
+    return { ok: false, status: 400, code: 'INVALID_INPUT', error: 'DMM does not support LeMedia quality, folder or routing criteria' };
+  }
   const media = await findOrCreateMedia(tmdbId, mediaType);
+  // Without Radarr/Sonarr there is no synced row to say "you already have this"; the media
+  // server scan answers it instead, so a DMM user doesn't request something they can watch.
+  if (isInMediaServerLibrary(mediaType, tmdbId, media.tvdbId)) {
+    return { ok: false, status: 409, code: 'DUPLICATE', error: 'This title is already in your library' };
+  }
 
   const settings = await getAppSettings();
   const approval = await resolveRequestApproval(user.role, settings?.autoApproveRequests ?? false, input.qualityOptionId);
   if (!approval.ok) return approval;
-  const shouldAutoApprove = approval.autoApprove;
+  // An import-list exclusion would make the service reject the add, so the request is held for an
+  // admin even when auto-approve is on. Approving it removes the exclusion (see sendToArrService).
+  const exclusion = targetDmm ? null : await findExclusion(mediaType, tmdbId, media.tvdbId);
+  const excluded = !!exclusion;
+  // An admin is the approver, so their own request goes through; a normal user's waits for one.
+  const shouldAutoApprove = approval.autoApprove && (!excluded || user.role === ADMIN_ROLE);
 
   // Criterion values, checked before anything is written. Two guards, both about a request that
   // could never be served: an id that does not exist, and two values of the same criterion — a
@@ -509,8 +551,15 @@ export async function createUserRequest(input: CreateRequestInput): Promise<Crea
     const wanted = new Set(criterionValueIds);
     const dup = candidates.find((c) => {
       if (!matchesVariant(c)) return false;
-      // Different seasons of the same variant are separate requests. A whole-series request
-      // overlaps every season; malformed legacy scopes remain conservative.
+      // A new whole-series request extends an existing season-only request. Unknown or
+      // malformed legacy scopes remain conservative to avoid creating duplicate requests.
+      if (mediaType === 'tv' && !validSeasons?.length && c.seasons) {
+        try {
+          const existing: unknown = JSON.parse(c.seasons);
+          if (Array.isArray(existing) && existing.length > 0 && existing.every(s => Number.isInteger(s) && s > 0)) return false;
+        } catch { /* Treat invalid legacy data as a whole-series request. */ }
+      }
+      // Different seasons of the same variant are separate requests.
       if (mediaType === 'tv' && validSeasons?.length && c.seasons) {
         if (c.seasonNumbering !== seasonNumbering) return false;
         try {
@@ -533,6 +582,8 @@ export async function createUserRequest(input: CreateRequestInput): Promise<Crea
           mediaType,
           seasons: validSeasons ? JSON.stringify(validSeasons) : null,
           seasonNumbering,
+          targetDmmServiceId: targetDmm?.id ?? null,
+          excluded,
           rootFolder: typeof input.rootFolder === 'string' ? input.rootFolder : null,
           qualityOptionId: input.qualityOptionId ?? null,
           status: initialStatus,
@@ -555,7 +606,7 @@ export async function createUserRequest(input: CreateRequestInput): Promise<Crea
   let sendFailed = false;
   if (shouldAutoApprove) {
     const tagName = await getUserTagName(user.id);
-    const outcome = await sendToService(media, mediaType, tagName, user.id, validSeasons, input.qualityOptionId, undefined, criterionValueIds, seasonNumbering);
+    const outcome = await sendToService(media, mediaType, tagName, user.id, validSeasons, input.qualityOptionId, undefined, criterionValueIds, seasonNumbering, targetDmm?.id);
 
     await recordRequestDispatch(outcome, media, mediaRequest);
     sendFailed = outcome !== 'sent';
@@ -643,29 +694,38 @@ export async function requestCollectionMovie(
     where: { tmdbId_mediaType: { tmdbId: movieTmdbId, mediaType: 'movie' } },
   });
   if (dbMedia?.statusCategory === 'AVAILABLE') return false;
+  // Same check as a single request: the media server may hold it without a synced row.
+  if (isInMediaServerLibrary('movie', movieTmdbId, null)) return false;
 
   const media = dbMedia ?? await findOrCreateMedia(movieTmdbId, 'movie');
+  const targetDmm = await selectedDmmService();
 
-  // Collections use the same default approval policy as individual movie requests.
+  // Collections use the same default approval policy as individual movie requests, and the
+  // same exclusion hold: an excluded film is never auto-approved, whatever the policy says.
+  const exclusion = targetDmm ? null : await findExclusion('movie', movieTmdbId, media.tvdbId);
+  const excluded = !!exclusion;
   const approval = await resolveRequestApproval(user.role, settings?.autoApproveRequests ?? false);
   if (!approval.ok) return false;
-  const collectionInitialStatus: RequestStatusKind = approval.autoApprove ? 'approved' : 'pending';
+  const autoApprove = approval.autoApprove && (!excluded || user.role === ADMIN_ROLE);
+  const collectionInitialStatus: RequestStatusKind = autoApprove ? 'approved' : 'pending';
   const req = await transitionRequestStatus(
-    { requestId: undefined, from: undefined, to: collectionInitialStatus, why: approval.autoApprove ? 'collection-request-auto-approve' : 'collection-request-create' },
+    { requestId: undefined, from: undefined, to: collectionInitialStatus, why: autoApprove ? 'collection-request-auto-approve' : 'collection-request-create' },
     () => prisma.mediaRequest.create({
       data: {
         mediaId: media.id,
         userId: user.id,
         mediaType: 'movie',
+        targetDmmServiceId: targetDmm?.id ?? null,
         status: collectionInitialStatus,
-        approvedById: approval.autoApprove ? user.id : null,
+        excluded,
+        approvedById: autoApprove ? user.id : null,
       },
     }),
   );
 
-  if (approval.autoApprove) {
+  if (autoApprove) {
     const tagName = await getUserTagName(user.id);
-    const outcome = await sendToService(media, 'movie', tagName, user.id);
+    const outcome = await sendToService(media, 'movie', tagName, user.id, undefined, undefined, undefined, [], null, targetDmm?.id);
     if (outcome !== 'sent') {
       const nextStatus: RequestStatusKind = outcome === 'conflict' ? 'conflict' : 'failed';
       await transitionRequestStatus(
@@ -726,7 +786,7 @@ export async function retryFailedRequests(): Promise<{ retried: number; succeede
     const seasons = req.seasons ? JSON.parse(req.seasons) : undefined;
     const outcome = await sendToService(
       req.media, req.mediaType, tagName, req.userId, seasons, req.qualityOptionId ?? undefined,
-      undefined, req.criteria?.map((c) => c.valueId) ?? [], req.seasonNumbering,
+      undefined, req.criteria?.map((c) => c.valueId) ?? [], req.seasonNumbering, req.targetDmmServiceId,
     );
     if (outcome === 'sent') {
       await transitionRequestStatus(

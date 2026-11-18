@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import { Loader2 } from 'lucide-react';
 import api, { posterUrl } from '@/lib/api';
+import { Spinner } from '@/components/Spinner';
 
 export interface DiscoverQuery {
   mediaType: 'movie' | 'tv';
@@ -184,7 +185,7 @@ export function QueryBuilder({ query, onChange, previewResults, previewLoading }
         </span>
         {genresLoading ? (
           <div className="flex items-center gap-1.5 py-2">
-            <Loader2 className="w-4 h-4 animate-spin text-ndp-text-dim" />
+            <Spinner size="sm" />
             <span className="text-xs text-ndp-text-dim">{t('common.loading', 'Loading...')}</span>
           </div>
         ) : (
@@ -218,7 +219,7 @@ export function QueryBuilder({ query, onChange, previewResults, previewLoading }
         </span>
         {providersLoading ? (
           <div className="flex items-center gap-1.5 py-2">
-            <Loader2 className="w-4 h-4 animate-spin text-ndp-text-dim" />
+            <Spinner size="sm" />
             <span className="text-xs text-ndp-text-dim">{t('common.loading', 'Loading...')}</span>
           </div>
         ) : providers.length > 0 ? (

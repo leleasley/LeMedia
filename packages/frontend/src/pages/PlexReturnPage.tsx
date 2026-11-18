@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Loader2 } from 'lucide-react';
 import api from '@/lib/api';
+import { Spinner } from '@/components/Spinner';
 
 /**
  * Landing page Plex forwards the OAuth tab to after sign-in (via the `forwardUrl` on the auth URL,
@@ -39,7 +39,7 @@ export default function PlexReturnPage() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-ndp-bg text-ndp-text">
-      <Loader2 className="w-8 h-8 animate-spin text-ndp-accent" />
+      <Spinner size="lg" />
       <p className="text-sm text-ndp-text-dim">{t('login.plex_returning')}</p>
     </div>
   );

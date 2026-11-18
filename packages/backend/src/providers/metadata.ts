@@ -20,8 +20,10 @@ export function parseMetadata(raw: unknown, identity: { tmdbId: number; tvdbId?:
   if (!item) return null;
   // Older Sonarr versions may omit tmdbId when an already verified TVDB identity was used.
   const knownTvdb = mediaType === 'tv' && identity.tvdbId != null;
+  // When we asked by TVDB id, that id is the identity: TVDB is what Sonarr keys series on, and
+  // TMDB may hold the show as a sibling record (Top Boy 2011 = TMDB 41889, 2019 = TMDB 93544,
+  // both TVDB 253138). Comparing TMDB ids here rejected the exact series that was linked.
   if ((knownTvdb && item.tvdbId !== identity.tvdbId)
-    || (item.tmdbId && item.tmdbId !== identity.tmdbId)
     || (!knownTvdb && item.tmdbId !== identity.tmdbId)
     || (mediaType === 'tv' && !item.tvdbId)) {
     throw new Error('Service metadata identity mismatch');

@@ -51,7 +51,13 @@ export function useMediaRequestActions(
         setJustRequested(true);
         // Toast so the confirmation is visible wherever the user is on the page, and so
         // successive requests don't require waiting on an inline state change.
-        showToast(t('status.request_sent'), 'success');
+        if (reqData.excluded && reqData.status === 'pending') {
+          showToast(t('status.request_held_excluded', 'Sent for approval — this title is on {{service}}\'s exclusions, so an admin has to approve it.', {
+            service: type === 'movie' ? 'Radarr' : 'Sonarr',
+          }), 'info');
+        } else {
+          showToast(t('status.request_sent'), 'success');
+        }
       }
       invalidateMediaStatus(media.id, type);
       // A failed refresh must not turn a successfully created request into a retryable error.
@@ -67,7 +73,8 @@ export function useMediaRequestActions(
     }
   };
 
-  const handleRequest = () => submitRequest(selectedSeasons);
+  // The main series action requests the whole series; season buttons use handleSeasonRequest.
+  const handleRequest = () => submitRequest([]);
   const handleSeasonRequest = (seasonNumber: number) => submitRequest([seasonNumber]);
 
   const handleSearchMissing = async () => {

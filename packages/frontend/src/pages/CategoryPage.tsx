@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { clsx } from 'clsx';
 import MediaGrid from '@/components/MediaGrid';
 import FilterBar, { DEFAULT_FILTERS, type FilterValues } from '@/components/FilterBar';
@@ -9,6 +9,7 @@ import { useMediaStatus } from '@/hooks/useMediaStatus';
 import { usePaginatedDiscovery } from '@/hooks/usePaginatedDiscovery';
 import { buildDiscoverParams } from '@/utils/buildDiscoverParams';
 import type { TmdbMedia } from '@/types';
+import { Spinner } from '@/components/Spinner';
 
 const CURRENT_YEAR = new Date().getFullYear();
 
@@ -178,7 +179,7 @@ export default function CategoryPage() {
 
       {!loading && page < totalPages && (
         <div ref={sentinelRef} className="flex justify-center py-8">
-          {loadingMore && <Loader2 className="w-6 h-6 text-ndp-accent animate-spin" />}
+          {loadingMore && <Spinner />}
         </div>
       )}
     </div>

@@ -55,7 +55,7 @@ export interface Job {
 }
 
 export interface ArrChoice { profiles: { id: number; name: string }[]; roots: { path: string; accessible: boolean }[] }
-export interface ArrChoices { movie: ArrChoice | null; show: ArrChoice | null }
+export interface ArrChoices { movie: ArrChoice | null; show: ArrChoice | null; dmm?: { id: number; name: string } | null }
 
 export type FilterKey = 'foreign' | 'anime' | 'kids' | 'gameShows' | 'talkShows' | 'reality' | 'documentary';
 export interface ListsSettings {

@@ -16,6 +16,7 @@ import {
   Workflow,
   Tag,
   Ban,
+  MessageSquareWarning,
   Cog,
   SlidersHorizontal,
   Archive,
@@ -31,11 +32,16 @@ import {
   ListPlus,
 } from 'lucide-react';
 
+/** Service page a tab needs. Tabs without one are always shown; the rest appear only when the
+ *  matching service is configured (see GET /api/admin/nav-services). */
+export type NavServiceKey = 'arr' | 'prowlarr' | 'zurg' | 'rex' | 'dmm';
+
 /** Individual page inside a group — rendered as a sub-tab when the group has >1 entry. */
 export interface AdminTabDef {
   id: AdminTabId;
   label: string;
   icon: LucideIcon;
+  requires?: NavServiceKey;
 }
 
 /** Top-level bucket in the admin sidebar. Multi-tab groups derive their sidebar subtitle from
@@ -113,11 +119,13 @@ export const ADMIN_GROUPS: AdminGroupDef[] = [
       { id: 'rules', label: 'admin.tab.rules', icon: Workflow },
       { id: 'keywords', label: 'admin.tab.keywords', icon: Tag },
       { id: 'blacklist', label: 'admin.tab.blacklist', icon: Ban },
+      { id: 'issues', label: 'admin.tab.issues', icon: MessageSquareWarning },
       { id: 'lists', label: 'admin.tab.lists', icon: ListPlus },
-      { id: 'arr', label: 'admin.tab.arr', icon: Boxes },
-      { id: 'prowlarr', label: 'admin.tab.prowlarr', icon: Radar },
-      { id: 'zurg', label: 'admin.tab.zurg', icon: HardDrive },
-      { id: 'rex', label: 'admin.tab.rex', icon: MonitorPlay },
+      { id: 'arr', label: 'admin.tab.arr', icon: Boxes, requires: 'arr' },
+      { id: 'prowlarr', label: 'admin.tab.prowlarr', icon: Radar, requires: 'prowlarr' },
+      { id: 'zurg', label: 'admin.tab.zurg', icon: HardDrive, requires: 'zurg' },
+      { id: 'rex', label: 'admin.tab.rex', icon: MonitorPlay, requires: 'rex' },
+      { id: 'dmm', label: 'admin.tab.dmm', icon: DownloadCloud, requires: 'dmm' },
     ],
   },
   {

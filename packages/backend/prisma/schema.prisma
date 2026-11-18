@@ -26,6 +26,8 @@ model User {
   notifications         UserNotification[]
   blacklistedMedia      BlacklistedMedia[] @relation("BlacklistCreatedBy")
   pushSubscriptions     PushSubscription[]
+  issues                MediaIssue[]
+  resolvedIssues        MediaIssue[]  @relation("MediaIssueResolvedBy")
   apiKeys               UserApiKey[]
   passwordResets        PasswordResetToken[]
   shareLinks            ShareLink[]
@@ -144,6 +146,11 @@ model Media {
   id                  Int       @id @default(autoincrement())
   tmdbId              Int
   tvdbId              Int?
+  /// Set when an admin explicitly linked this title to a *arr series whose TVDB record carries a
+  /// different TMDB id (split shows: Top Boy 2011/2019, Doctor Who, etc.). TVDB is the series
+  /// authority for Sonarr, so the link outranks the TMDB mapping — sync keeps matching it even
+  /// when Sonarr reports the sibling TMDB id.
+  tvdbLinkedAt        DateTime?
   mediaType           String    // "movie" | "tv"
   title               String
   overview            String?
@@ -179,6 +186,7 @@ model Media {
 
   requests            MediaRequest[]
   seasons             Season[]
+  issues              MediaIssue[]
 
   @@unique([tmdbId, mediaType])
   @@index([tvdbId])
@@ -210,6 +218,10 @@ model MediaRequest {
   status        String    @default("pending") // "pending" | "approved" | "declined" | "processing" | "available" | "failed" | "deleted"
   mediaType     String    // "movie" | "tv"
   seasons       String?   // JSON array of season numbers for TV requests, null = all seasons
+  targetDmmServiceId Int? // Frozen request destination; null retains existing Radarr/Sonarr routing
+  // The title was on the service's import-list exclusions when it was requested. Such requests
+  // are always held for approval; approving removes the exclusion so the add can go through.
+  excluded      Boolean   @default(false)
   seasonNumbering String? // Provider numbering at selection time; null = unknown legacy provenance
   rootFolder    String?   // Root folder path override
   qualityOptionId Int?    // Selected quality option
@@ -333,6 +345,22 @@ model PostMigrationJob {
   createdAt     DateTime  @default(dbgenerated("(CAST(strftime('%s', 'now') AS INTEGER) * 1000)"))
 
   @@index([completedAt, nextAttemptAt])
+}
+
+/// One DMM wanted-list import. Doubles as the scheduled job's dedupe: a backup already recorded
+/// here is never sent again automatically, so a nightly run cannot re-upload the same archive.
+model DmmImport {
+  id            Int      @id @default(autoincrement())
+  app           String   // "radarr" | "sonarr"
+  backupName    String   // zip file name, or the uploaded file's name
+  source        String   // "upload" | "backup" | "auto"
+  found         Int      @default(0)
+  added         Int      @default(0)
+  alreadyWanted Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([app, backupName])
 }
 
 model CronJob {
@@ -534,13 +562,21 @@ model ShareLink {
 }
 
 model PushSubscription {
-  id        Int      @id @default(autoincrement())
-  userId    Int
-  endpoint  String   @unique
-  p256dh    String
-  auth      String
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id         Int       @id @default(autoincrement())
+  userId     Int
+  endpoint   String    @unique
+  p256dh     String
+  auth       String
+  // Stable id kept in the browser (localStorage). A subscription replaced by the same browser
+  // carries the same id, so the old endpoint can be removed instead of pushing twice.
+  deviceId   String?
+  userAgent  String?
+  // Last time the device opened the app (or re-registered). Older rows are stale candidates.
+  lastSeenAt DateTime?
+  createdAt  DateTime  @default(now())
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model PluginLog {
@@ -582,4 +618,30 @@ model CustomList {
   items     String   @default("[]")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// A user-reported problem with a title they already have ("wrong file", "audio missing"…).
+/// Admins triage these from Admin → Issues; nothing is changed automatically.
+model MediaIssue {
+  id           Int       @id @default(autoincrement())
+  mediaId      Int?
+  tmdbId       Int
+  mediaType    String
+  title        String
+  userId       Int
+  category     String    @default("other") // playback | wrong_file | audio | subtitles | other
+  message      String
+  status       String    @default("open")  // open | resolved
+  adminNote    String?
+  createdAt    DateTime  @default(now())
+  resolvedAt   DateTime?
+  resolvedById Int?
+
+  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resolvedBy User?   @relation("MediaIssueResolvedBy", fields: [resolvedById], references: [id])
+  media      Media?  @relation(fields: [mediaId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([mediaId])
+  @@index([userId])
 }

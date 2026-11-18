@@ -112,6 +112,8 @@ const ROUTE_PERMISSIONS: Record<string, RouteRule> = {
   'GET:/api/media/tmdb/:tmdbId/:mediaType': { permission: AUTH },
   'GET:/api/media/recent':               { permission: AUTH },
   'GET:/api/media/missing':              { permission: AUTH },
+  'GET:/api/media/exclusion':            { permission: AUTH },
+  'POST:/api/issues/':                   { permission: AUTH },
   'DELETE:/api/media/:tmdbId':          { permission: AUTH },
   'POST:/api/media/batch-status':        { permission: AUTH },
   'GET:/api/media/episodes':             { permission: AUTH },
@@ -160,6 +162,8 @@ const ROUTE_PERMISSIONS: Record<string, RouteRule> = {
   'POST:/api/push/subscribe':    { permission: AUTH },
   'DELETE:/api/push/unsubscribe': { permission: AUTH },
   'POST:/api/push/test':         { permission: AUTH },
+  'GET:/api/push/devices':       { permission: AUTH },
+  'DELETE:/api/push/devices/:id': { permission: AUTH },
 
   // ── Plugins ──
   'GET:/api/plugins/':                   { permission: 'admin.plugins' },

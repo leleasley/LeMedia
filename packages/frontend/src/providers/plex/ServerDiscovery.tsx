@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Loader2, Server } from 'lucide-react';
+import { Server } from 'lucide-react';
 import api from '@/lib/api';
+import { Spinner } from '@/components/Spinner';
 
 interface PlexServer { machineId: string; name: string; owned: boolean }
 export interface PlexConnection { url: string; machineId: string; token: string; accountToken: string }
@@ -61,7 +62,7 @@ export function PlexServerDiscovery({ accountToken, endpointPrefix, onConnected,
 
   return (
     <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3 space-y-3">
-      {(loading || connecting) && <p className="flex items-center gap-2 text-sm text-ndp-text-muted"><Loader2 className="w-4 h-4 animate-spin" />{connecting ? t('plex.discovery.connecting') : t('plex.discovery.searching')}</p>}
+      {(loading || connecting) && <p className="flex items-center gap-2 text-sm text-ndp-text-muted"><Spinner size="sm" />{connecting ? t('plex.discovery.connecting') : t('plex.discovery.searching')}</p>}
       {!loading && !connecting && servers.length > 0 && (
         <div className="space-y-2">
           <p className="text-sm font-medium text-ndp-text">{t('plex.discovery.choose')}</p>

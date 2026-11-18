@@ -1,3 +1,5 @@
+import { selectedDmmService } from './dmm.js';
+import { getTvDetails } from './tmdb.js';
 import { createHash } from 'node:crypto';
 import type { ServiceMetadata } from '@lemedia/shared';
 import { prisma } from '../utils/prisma.js';
@@ -70,6 +72,21 @@ export async function loadServiceMetadata(source: MetadataSource, forceFresh = f
 }
 
 export async function getServiceMetadata(tmdbId: number, mediaType: 'movie' | 'tv', options: { userId?: number | null; forceFresh?: boolean; refresh?: boolean } = {}): Promise<ServiceMetadata | null> {
+  const dmm = await selectedDmmService();
+  if (dmm && mediaType === 'tv') {
+    const show = await getTvDetails(tmdbId);
+    return { tmdbId, tvdbId: show.external_ids?.tvdb_id ?? null, serviceMediaId: null,
+      title: show.name, overview: show.overview ?? null, posterPath: show.poster_path ?? null,
+      backdropPath: show.backdrop_path ?? null, releaseDate: show.first_air_date ?? null, runtime: null,
+      source: { serviceId: dmm.id, serviceName: dmm.name, provider: 'dmm', token: hash(`dmm:${dmm.id}:${tmdbId}`) },
+      fetchedAt: new Date().toISOString(), stale: false,
+      seasonCatalog: { numbering: 'tmdb:official', tracked: false,
+        seasons: (show.seasons ?? []).filter(s => s.season_number > 0).map(s => ({
+          seasonNumber: s.season_number, title: s.name ?? null, posterPath: s.poster_path ?? null,
+          episodeCount: s.episode_count ?? null, episodeFileCount: null, monitored: false,
+        })) },
+    };
+  }
   const source = await resolveMetadataSource(tmdbId, mediaType, options.userId);
   return source ? loadServiceMetadata(source, options.forceFresh, options.refresh) : null;
 }

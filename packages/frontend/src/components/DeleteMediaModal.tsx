@@ -8,9 +8,11 @@ interface Props {
   mediaType: 'movie' | 'tv';
   tmdbId: number;
   onClose: () => void;
+  /** Called only after the delete succeeded — dismissing must not move the user. */
+  onDeleted?: () => void;
 }
 
-export default function DeleteMediaModal({ title, mediaType, tmdbId, onClose }: Props) {
+export default function DeleteMediaModal({ title, mediaType, tmdbId, onClose, onDeleted }: Props) {
   const [loading, setLoading] = useState(false);
   const [deleteFromService, setDeleteFromService] = useState(true);
   const [deleteFiles, setDeleteFiles] = useState(true);
@@ -22,7 +24,7 @@ export default function DeleteMediaModal({ title, mediaType, tmdbId, onClose }: 
         params: { deleteFromService: String(deleteFromService), deleteFiles: String(deleteFiles) },
       });
       showToast(`${title} deleted`, 'success');
-      onClose();
+      (onDeleted ?? onClose)();
     } catch (err: any) {
       const msg = err?.response?.data?.error || 'Delete failed';
       showToast(msg, 'error');

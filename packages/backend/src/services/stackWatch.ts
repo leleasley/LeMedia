@@ -1,3 +1,5 @@
+import { rexDockerVersion } from './rexDockerUpdate.js';
+import { APP_VERSION, versionFromTag } from '../utils/version.js';
 /**
  * Admin notifications about the stack (Admin → Notifications decides which providers get them):
  * - app_update: a newer Sonarr / Radarr / Prowlarr / Zurg / rex is out (once per version), and the
@@ -71,13 +73,15 @@ export async function watchStack() {
 
   const conn = await getZurgConn().catch(() => null);
   const zurgVersion = conn ? (await zurgGet<{ version?: string }>(conn, '/stats', 8_000).catch(() => null))?.version ?? null : null;
-  for (const [kind, installed, url] of [['zurg', zurgVersion, '/admin?tab=zurg'], ['rex', getRexHostReport()?.report.rexVersion ?? null, '/admin?tab=rex']] as const) {
+  const rexVersion = await rexDockerVersion() ?? getRexHostReport()?.report.rexVersion ?? null;
+  for (const [kind, installed, url] of [['app', APP_VERSION, '/admin?tab=instance'], ['zurg', zurgVersion, '/admin?tab=zurg'], ['rex', rexVersion, '/admin?tab=rex']] as const) {
     if (!installed) continue;
     const st = await updateStatus(kind, installed).catch(() => null);
     const tag = st?.connected && st.upToDate === false ? st.latest?.tag : null;
     if (!tag || updates[kind] === tag) continue;
     updates[kind] = tag;
-    notifyAppUpdate(`${kind === 'zurg' ? 'Zurg' : 'rex'} ${tag} is available`, `Running ${installed}.`, url);
+    const label = kind === 'zurg' ? 'Zurg' : kind === 'rex' ? 'rex' : 'LeMedia';
+    notifyAppUpdate(`${label} ${versionFromTag(tag)} is available`, `Running ${installed}.`, url);
     sent.push(kind);
   }
 

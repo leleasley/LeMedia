@@ -6,6 +6,7 @@ import Switch from '@/components/ui/Switch';
 import { showToast, toastApiError } from '@/utils/toast';
 import { ArrTargets, targetsComplete } from './ArrTargets';
 import { typeLabel, useArrChoices, useJob, type AddResult, type AddSettings, type ItemType, type Job, type ListItem, type Preview } from './shared';
+import { Spinner } from '@/components/Spinner';
 
 type Show = 'new' | 'existing' | 'blocked' | 'all';
 const PAGE = 200;
@@ -77,7 +78,7 @@ export function ListAdd({ initialUrl, defaults, onSubscribed }: Readonly<{ initi
 
   const addable = (preview?.items ?? []).filter((i) => !i.existing && !i.blocked);
   const toggle = (key: string) => setSelected((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
-  const ready = !!preview && targetsComplete(types, settings) && (selected.size > 0 || subscribe);
+  const ready = !!preview && targetsComplete(types, settings, !!choices?.dmm) && (selected.size > 0 || subscribe);
 
   const add = async () => {
     if (!preview) return;
@@ -105,7 +106,7 @@ export function ListAdd({ initialUrl, defaults, onSubscribed }: Readonly<{ initi
 
       {running && (
         <div className="admin-group admin-row justify-center gap-3 py-8 text-sm text-ndp-text-dim">
-          <Loader2 className="w-4 h-4 animate-spin" /> Reading the list and checking it against Radarr and Sonarr…
+          <Spinner size="sm" /> Reading the list and checking it against Radarr and Sonarr…
         </div>
       )}
 
@@ -178,7 +179,7 @@ export function ListAdd({ initialUrl, defaults, onSubscribed }: Readonly<{ initi
               {adding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
               {selected.size ? `Add ${selected.size} title${selected.size === 1 ? '' : 's'}${subscribe ? ' and subscribe' : ''}` : 'Subscribe'}
             </button>
-            {!targetsComplete(types, settings) && <p className="text-xs text-ndp-text-dim">Choose a quality profile and root folder first.</p>}
+            {!targetsComplete(types, settings, !!choices?.dmm) && <p className="text-xs text-ndp-text-dim">Choose a quality profile and root folder first.</p>}
             {adding && aJob?.progress && <p className="text-sm text-ndp-text-dim">{aJob.progress.done} of {aJob.progress.total} · {aJob.progress.phase}</p>}
           </div>
 

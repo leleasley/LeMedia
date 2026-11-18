@@ -6,6 +6,7 @@ import { ConfirmModal } from '@/components/ConfirmModal';
 import { useLiveSearch } from '@/hooks/useLiveSearch';
 import { showToast, toastApiError } from '@/utils/toast';
 import type { ListItem } from './shared';
+import { Spinner } from '@/components/Spinner';
 
 interface CustomList { id: string; name: string; items: ListItem[]; updatedAt: string }
 
@@ -31,7 +32,7 @@ export function ListCustom({ onPreview }: Readonly<{ onPreview: (url: string) =>
 
   const list = lists?.find((l) => l.id === current) ?? null;
 
-  if (!lists) return <div className="admin-group admin-row justify-center py-10 text-sm text-ndp-text-dim"><Loader2 className="w-4 h-4 animate-spin mr-2" />Loading…</div>;
+  if (!lists) return <div className="admin-group admin-row justify-center py-10 text-sm text-ndp-text-dim"><Spinner size="sm" className="mr-2" />Loading…</div>;
 
   return (
     <div className="space-y-5">
@@ -113,7 +114,7 @@ function TitleSearch({ listId, existing, onAdded }: Readonly<{ listId: string; e
       <div className="relative">
         <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-ndp-text-dim" />
         <input className="input w-full !pl-9" placeholder="Search movies and TV" value={q} onChange={(e) => setQ(e.target.value)} />
-        {loading && <Loader2 className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-ndp-text-dim" />}
+        {loading && <Spinner size="sm" className="absolute right-3 top-1/2 -translate-y-1/2" />}
       </div>
       {items.length > 0 && (
         <div className="admin-group divide-y divide-white/[0.06] mt-2 max-h-96 overflow-auto">

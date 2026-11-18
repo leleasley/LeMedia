@@ -1,3 +1,4 @@
+import { installScript as rexInstallScript } from '../services/rexDockerHelper.js';
 import crypto from 'node:crypto';
 import { installScript } from '../services/hostHelper.js';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
@@ -10,6 +11,7 @@ import { logEvent } from '../utils/logEvent.js';
 import { transitionRequestStatus } from '../services/requestStatusTransition.js';
 import { runZurgSync } from '../services/zurg/watcher.js';
 import { setRexHostReport } from '../services/rexHost.js';
+import { invalidateMissingCache } from '../services/missing.js';
 
 function sanitize(input: string): string {
   return input.replaceAll(/[\r\n\t]/g, '');
@@ -170,6 +172,9 @@ async function handleAdded(serviceType: string, client: ArrClient, event: Webhoo
 }
 
 async function handleDeleted(serviceType: string, client: ArrClient, event: WebhookEvent): Promise<Ack> {
+  // The Missing rows/pages are read live from the *arr; drop the cached copy so a deleted title
+  // is gone on the next look instead of lingering for the cache window.
+  invalidateMissingCache();
   const media = await findMediaByExternalId(client.mediaType, event.externalId);
   if (media && media.statusCategory !== 'UNAVAILABLE' && media.statusCategory !== 'BLACKLISTED') {
     await prisma.media.update({ where: { id: media.id }, data: { statusCategory: 'UNAVAILABLE', availableAt: null } });
@@ -257,6 +262,12 @@ export async function webhookRoutes(app: FastifyInstance) {
   app.get('/host-helper/install', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (request, reply) => {
     const script = await installScript(String((request.query as { t?: string }).t ?? ''));
     if (!script) return reply.status(403).type('text/plain').send('echo "This LeMedia install link has expired. Make a new one in Admin, Radarr & Sonarr, Settings." >&2; exit 1\n');
+    return reply.type('text/x-shellscript; charset=utf-8').header('Cache-Control', 'no-store').send(script);
+  });
+
+  app.get('/rex-helper/install', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (request, reply) => {
+    const script = await rexInstallScript(String((request.query as { t?: string }).t ?? ''));
+    if (!script) return reply.status(403).type('text/plain').send('echo "This install link has expired" >&2; exit 1\n');
     return reply.type('text/x-shellscript; charset=utf-8').header('Cache-Control', 'no-store').send(script);
   });
 

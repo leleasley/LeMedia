@@ -113,6 +113,12 @@ export interface ArrClient extends ServiceTagClient {
 
   // Request dispatch
   findByExternalId(externalId: number): Promise<{ id: number } | null>;
+  /** Rescan one item's folder (Radarr RescanMovie / Sonarr RescanSeries). */
+  rescanMedia?(serviceMediaId: number): Promise<void>;
+  /** Import-list exclusions ("never add this again"). Each *arr names these differently. */
+  getExclusions?(): Promise<{ id: number; tmdbId?: number; movieTitle?: string; movieYear?: number }[]>;
+  getImportListExclusions?(): Promise<{ id: number; tvdbId?: number; title?: string }[]>;
+  deleteExclusion?(id: number): Promise<void>;
   findByTitle?(title: string): Promise<{ id: number } | null>;
   lookupByTitle?(title: string): Promise<unknown | null>;
   /** Find the entry holding a library path (Radarr movie.path / Sonarr series.path).
@@ -124,6 +130,8 @@ export interface ArrClient extends ServiceTagClient {
   searchMedia(serviceMediaId: number): Promise<void>;
   /** Monitor and search only these seasons of an existing series. */
   requestSeasons?(serviceMediaId: number, seasons: number[]): Promise<void>;
+  /** Monitor and search every regular season on an existing series. */
+  requestAllSeasons?(serviceMediaId: number): Promise<void>;
   deleteMedia(serviceMediaId: number, deleteFiles?: boolean): Promise<void>;
 
   // Normalized history

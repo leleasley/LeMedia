@@ -34,6 +34,7 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(tmdbRoutes, { prefix: '/api/tmdb' });
   await app.register(requestRoutes, { prefix: '/api/requests' });
   await app.register(mediaRoutes, { prefix: '/api/media' });
+  await app.register((await import('../routes/issues.js')).issueRoutes, { prefix: '/api/issues' });
   await app.register(radarrSonarrRoutes, { prefix: '/api/services' });
   await app.register(adminRoutes, { prefix: '/api/admin' });
   await app.register(setupStatusRoutes, { prefix: '/api/setup' });

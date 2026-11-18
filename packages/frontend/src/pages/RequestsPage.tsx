@@ -19,7 +19,8 @@ import {
   Eraser,
   ChevronDown,
   SlidersHorizontal,
-  AlertTriangle, } from 'lucide-react';
+  AlertTriangle,
+} from 'lucide-react';
 import { clsx } from 'clsx';
 import api, { posterUrl, backdropUrl } from '@/lib/api';
 import MediaLink from '@/components/MediaLink';
@@ -32,6 +33,7 @@ import EmptyState from '@/components/ui/EmptyState';
 import { parseRequestSeasons } from '@/utils/requestSeasons';
 import { groupRequests, sortRequestsBySeason } from '@/utils/requestGroups';
 import { useExpandableRequestCard } from '@/hooks/useExpandableRequestCard';
+import { Spinner } from '@/components/Spinner';
 
 const STATUS_CONFIG: Record<string, { labelKey: string; icon: typeof Clock; color: string; bg: string; dot: string }> = {
   pending: { labelKey: 'pending', icon: Clock, color: 'text-ndp-warning', bg: 'bg-ndp-warning', dot: 'bg-ndp-warning' },
@@ -322,7 +324,7 @@ export default function RequestsPage() {
           <div ref={sentinelRef} className="h-1" />
           {loadingMore && (
             <div className="flex justify-center py-6">
-              <Loader2 className="w-6 h-6 text-ndp-accent animate-spin" />
+              <Spinner />
             </div>
           )}
         </>
@@ -662,6 +664,17 @@ function RequestCardInner({
           )}
 
           {groupDetails && <div className="mt-auto pt-1">{groupDetails}</div>}
+
+          {req.excluded && req.status === 'pending' && (
+            <div className={compact ? '' : 'mt-1.5'}>
+              <span
+                className="inline-flex text-[11px] font-semibold px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-300"
+                title={t('requests.excluded_hint', 'This title is on the import-list exclusions. Approving the request removes the exclusion and adds it.')}
+              >
+                {t('requests.excluded', 'Excluded')}
+              </span>
+            </div>
+          )}
 
           {/* Download progress */}
           {download && !compact && (

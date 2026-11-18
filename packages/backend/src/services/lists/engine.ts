@@ -18,6 +18,7 @@ import { fetchListItems, fetchListTitle, ListError, MAX_IMPORT_ITEMS, parseListU
 import { DEFAULT_FILTERS, filterReason, normalizeFilters, type ListFilters } from './filters.js';
 import { fetchWweItems, WWE_LABEL, WWE_URL, type WweListItem } from './wwe.js';
 import { notifyListAdded } from '../stackWatch.js';
+import { selectedDmmService, sendToDmm } from '../dmm.js';
 
 const WORKERS = 3;
 const HISTORY_MAX = 50;
@@ -120,7 +121,8 @@ export async function arrChoices() {
   };
   const [r, s] = await Promise.all([radarr(), sonarr()]);
   const [movie, show] = await Promise.all([one(r), one(s)]);
-  return { movie, show };
+  const dmm = await selectedDmmService();
+  return { movie, show, dmm: dmm ? { id: dmm.id, name: dmm.name } : null };
 }
 
 interface Library { primary: Set<string>; imdb: Set<string> }
@@ -139,6 +141,35 @@ async function loadLibrary(t: ItemType): Promise<Library | null> {
 }
 
 const normTitle = (v: unknown) => String(v ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+/** When requests go to DMM there may be no Radarr/Sonarr at all; treat a title LeMedia already
+ *  shows as available as "in the library" so a list sync doesn't re-send it every time. */
+async function loadLocalLibrary(t: ItemType): Promise<Library> {
+  const rows = await prisma.media.findMany({
+    where: { mediaType: t === 'movie' ? 'movie' : 'tv', statusCategory: 'AVAILABLE' },
+    select: { tmdbId: true, tvdbId: true },
+  });
+  return {
+    primary: new Set(rows.map((r) => String(t === 'movie' ? r.tmdbId : r.tvdbId ?? '')).filter(Boolean)),
+    imdb: new Set(),
+  };
+}
+
+/** TMDB id for a list item, resolving from IMDb/TVDB when the source didn't carry one. */
+async function tmdbIdFor(item: ListItem): Promise<number | null> {
+  if (item.ids.tmdb) return Number(item.ids.tmdb);
+  const api = getTmdbApi();
+  const find = async (id: string, source: 'imdb_id' | 'tvdb_id') => {
+    try {
+      const { data } = await api.get(`/find/${encodeURIComponent(id)}`, { params: { external_source: source } });
+      const hit = item.mediaType === 'movie' ? data?.movie_results?.[0] : data?.tv_results?.[0];
+      return hit?.id ? Number(hit.id) : null;
+    } catch { return null; }
+  };
+  if (item.ids.imdb) { const id = await find(String(item.ids.imdb), 'imdb_id'); if (id) return id; }
+  if (item.mediaType === 'show' && item.ids.tvdb) return find(String(item.ids.tvdb), 'tvdb_id');
+  return null;
+}
 
 // ─── Preview ─────────────────────────────────────────────────────────
 
@@ -162,6 +193,7 @@ export function getPreview(id: string) { return previews.get(id) ?? null; }
 
 /** Mark each item as already in the library, blocked (with a reason) or new. */
 async function annotate(items: ListItem[], filters: ListFilters): Promise<{ counts: Preview['counts']; arrMissing: ItemType[] }> {
+  const dmm = await selectedDmmService();
   const types = new Set(items.map((i) => i.mediaType));
   const libs: Partial<Record<ItemType, Library | null>> = {};
   const arrMissing: ItemType[] = [];
@@ -169,7 +201,8 @@ async function annotate(items: ListItem[], filters: ListFilters): Promise<{ coun
   let radarrExcluded = { tmdb: new Set<string>(), titleYear: new Set<string>() };
   if (types.has('movie')) {
     libs.movie = await loadLibrary('movie');
-    if (!libs.movie) arrMissing.push('movie');
+    if (!libs.movie && dmm) libs.movie = await loadLocalLibrary('movie');
+    else if (!libs.movie) arrMissing.push('movie');
     const ex = await (await radarr())?.getExclusions().catch(() => []) ?? [];
     radarrExcluded = {
       tmdb: new Set(ex.map((e) => String(e.tmdbId ?? '')).filter(Boolean)),
@@ -178,7 +211,8 @@ async function annotate(items: ListItem[], filters: ListFilters): Promise<{ coun
   }
   if (types.has('show')) {
     libs.show = await loadLibrary('show');
-    if (!libs.show) arrMissing.push('show');
+    if (!libs.show && dmm) libs.show = await loadLocalLibrary('show');
+    else if (!libs.show) arrMissing.push('show');
     const ex = await (await sonarr())?.getImportListExclusions().catch(() => []) ?? [];
     sonarrExcluded = new Set(ex.map((e) => String(e.tvdbId ?? '')).filter(Boolean));
   }
@@ -280,6 +314,8 @@ async function exactLookup(item: ListItem): Promise<Record<string, unknown>> {
 }
 
 async function validateSettings(types: Set<ItemType>, s: AddSettings) {
+  // DMM picks quality and location itself (Zurg's settings); no profile/folder to validate.
+  if (await selectedDmmService()) return;
   const choices = await arrChoices();
   for (const t of types) {
     const c = t === 'movie' ? choices.movie : choices.show;
@@ -302,11 +338,14 @@ export async function addItems(items: ListItem[], keys: string[], settingsIn: Ad
   if (selected.length > MAX_IMPORT_ITEMS) throw new ListError(`Add at most ${MAX_IMPORT_ITEMS} titles at once`);
   const chosen = selected.map((k) => byKey.get(k)!);
   const types = new Set(chosen.map((i) => i.mediaType));
+  const dmm = await selectedDmmService();
   await validateSettings(types, settings);
   const filters = await getFilters();
 
   const libs: Partial<Record<ItemType, Library>> = {};
-  for (const t of types) libs[t] = (await loadLibrary(t)) ?? { primary: new Set(), imdb: new Set() };
+  for (const t of types) {
+    libs[t] = (await loadLibrary(t)) ?? (dmm ? await loadLocalLibrary(t) : { primary: new Set(), imdb: new Set() });
+  }
 
   const result: AddResult = { requested: chosen.length, added: [], skipped: [], failed: [], search: settings.search };
   let done = 0;
@@ -327,6 +366,17 @@ export async function addItems(items: ListItem[], keys: string[], settingsIn: Ad
     }
     claimed.add(`${item.mediaType}:${primary}:${imdb}`);
     try {
+      if (dmm) {
+        // DMM's wanted list is the destination — Zurg does the fetching, so there is no
+        // quality profile, root folder or *arr record involved.
+        const tmdbId = await tmdbIdFor(item);
+        if (!tmdbId) throw new Error('No TMDB id for this title');
+        await sendToDmm(dmm.id, item.mediaType === 'movie' ? 'movie' : 'tv', tmdbId);
+        if (primary) lib.primary.add(primary);
+        if (imdb) lib.imdb.add(imdb);
+        result.added.push({ key: item.key, title: item.title, service: 'dmm' });
+        return report(`Sent ${item.title} to DMM`);
+      }
       const record = structuredClone(await exactLookup(item));
       // Second check on the *arr's own metadata (lists don't always carry language or genres).
       const reason = filterReason({ mediaType: item.mediaType, genres: record.genres, originalLanguage: record.originalLanguage, seriesType: record.seriesType }, filters);

@@ -115,9 +115,14 @@ export class SonarrClient extends ArrClientBase implements ArrClient {
   }
 
   /** Import-list exclusions ("never add this again"). */
-  async getImportListExclusions(): Promise<{ tvdbId?: number; title?: string }[]> {
+  async getImportListExclusions(): Promise<{ id: number; tvdbId?: number; title?: string }[]> {
     const { data } = await this.api.get('/importlistexclusion');
     return Array.isArray(data) ? data : [];
+  }
+
+  /** Remove an import-list exclusion so an approved request can add the series. */
+  async deleteExclusion(id: number): Promise<void> {
+    await this.api.delete(`/importlistexclusion/${id}`);
   }
 
   async lookupByTvdbId(tvdbId: number): Promise<SonarrSeries | null> {
@@ -167,6 +172,11 @@ export class SonarrClient extends ArrClientBase implements ArrClient {
   async getEpisodeFiles(seriesId: number): Promise<SonarrEpisodeFile[]> {
     const { data } = await this.api.get('/episodefile', { params: { seriesId } });
     return data;
+  }
+
+  /** Rescan one series' folders — imports files that appeared there without a search. */
+  async rescanMedia(seriesId: number): Promise<void> {
+    await this.api.post('/command', { name: 'RescanSeries', seriesId });
   }
 
   async searchMissingEpisodes(seriesId: number): Promise<void> {
@@ -398,6 +408,13 @@ export class SonarrClient extends ArrClientBase implements ArrClient {
       if (episodeIds.length) await this.api.put('/episode/monitor', { episodeIds, monitored: true });
       await this.api.post('/command', { name: 'SeasonSearch', seriesId, seasonNumber });
     }
+  }
+
+  async requestAllSeasons(seriesId: number): Promise<void> {
+    const series = await this.getSeriesById(seriesId);
+    const seasons = series.seasons.map(s => s.seasonNumber).filter(n => Number.isInteger(n) && n > 0);
+    if (seasons.length) await this.requestSeasons(seriesId, seasons);
+    else await this.searchMissingEpisodes(seriesId);
   }
 
   async searchMedia(seriesId: number): Promise<void> {

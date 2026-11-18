@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, Calendar, MapPin, Loader2, User } from 'lucide-react';
+import { ArrowLeft, Calendar, MapPin, User } from 'lucide-react';
 import api from '@/lib/api';
 import MediaCard from '@/components/MediaCard';
 import { useMediaStatus, getStatusForMedia } from '@/hooks/useMediaStatus';
 import type { TmdbPerson, TmdbMedia } from '@/types';
+import { Spinner } from '@/components/Spinner';
 
 export default function PersonPage() {
   const { id } = useParams<{ id: string }>();
@@ -63,7 +64,7 @@ export default function PersonPage() {
   if (loading) {
     return (
       <div className="min-h-dvh flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-ndp-accent animate-spin" />
+        <Spinner size="lg" />
       </div>
     );
   }

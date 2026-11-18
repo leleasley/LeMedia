@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { ArrowRightLeft, Copy, Loader2, Trash2, Wrench } from 'lucide-react';
+import { ArrowRightLeft, Copy, Trash2, Wrench } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import api from '@/lib/api';
 import { toastApiError } from '@/utils/toast';
@@ -11,6 +11,7 @@ import { ZurgSwaps } from './zurg/ZurgSwaps';
 import { ZurgDuplicates, gb, useAnalysisNote, type DupReport } from './zurg/ZurgDuplicates';
 import { ZurgBroken } from './zurg/ZurgBroken';
 import { ZurgTrash } from './zurg/ZurgTrash';
+import { Spinner } from '@/components/Spinner';
 
 type View = 'swaps' | 'duplicates' | 'broken' | 'trash';
 const VIEWS: View[] = ['swaps', 'duplicates', 'broken', 'trash'];
@@ -139,7 +140,7 @@ export function CleanupTab() {
         {/* Background work in progress */}
         {busyJobs > 0 && summary && (
           <div className="flex items-center gap-3 rounded-xl bg-ndp-accent/10 ring-1 ring-inset ring-ndp-accent/25 px-4 py-2.5">
-            <Loader2 className="w-4 h-4 animate-spin text-ndp-accent flex-shrink-0" />
+            <Spinner size="sm" />
             <p className="flex-1 min-w-0 text-sm text-ndp-text">
               {[summary.swapJobs.active ? t('admin.cleanup.swaps_running', '{{n}} swap(s) in the queue', { n: summary.swapJobs.active }) : null,
                 summary.repairJobs.active ? t('admin.cleanup.repairs_running', '{{n}} repair(s) in the queue', { n: summary.repairJobs.active }) : null].filter(Boolean).join(' · ')}
@@ -178,7 +179,7 @@ export function CleanupTab() {
             ? <ZurgSwaps swaps={dups.swaps} onSwapped={() => void loadDups(true)} />
             : (
               <div className="admin-group admin-row justify-center gap-3 py-10 text-sm text-ndp-text-dim">
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Spinner size="sm" />
                 <span className="text-center">
                   {dups?.refreshing ? t('admin.cleanup.analysing', 'Zurg is re-reading Radarr and Sonarr, swaps appear when it\'s done.') : t('common.loading', 'Loading…')}
                   {analysisNote && <span className="block text-xs mt-1">{analysisNote.charAt(0).toUpperCase() + analysisNote.slice(1)}.</span>}

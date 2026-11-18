@@ -2,10 +2,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { ArrowUpCircle, CheckCircle2, HelpCircle, Loader2, RefreshCw, ScrollText } from 'lucide-react';
+import { ArrowUpCircle, CheckCircle2, HelpCircle, RefreshCw, ScrollText } from 'lucide-react';
 import api from '@/lib/api';
 import { GithubMark } from '@/icons/GithubMark';
 import { ReleaseNotesModal } from './ReleaseNotesModal';
+import { Spinner } from '@/components/Spinner';
 
 interface Release { tag: string; name: string | null; publishedAt: string | null; url: string }
 interface UpdateStatus {
@@ -34,7 +35,7 @@ export function UpdateStatusRow({ kind }: Readonly<{ kind: 'zurg' | 'rex' }>) {
   const name = kind === 'zurg' ? 'Zurg' : 'rex';
 
   if (s === undefined) {
-    return <div className="admin-row"><span className="admin-icon-tile"><Loader2 className="w-4 h-4 animate-spin" /></span><span className="text-sm text-ndp-text-dim">{t('admin.updates.checking', 'Checking for updates…')}</span></div>;
+    return <div className="admin-row"><span className="admin-icon-tile"><Spinner size="sm" /></span><span className="text-sm text-ndp-text-dim">{t('admin.updates.checking', 'Checking for updates…')}</span></div>;
   }
   if (s === null) return null;
 

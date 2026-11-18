@@ -1,20 +1,22 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { clsx } from 'clsx';
-import { Loader2, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import api from '@/lib/api';
 import { toastApiError } from '@/utils/toast';
 import { AdminTabLayout } from './AdminTabLayout';
 import { ArrOverview } from './arr/ArrOverview';
 import { ArrActivity, ArrQueue, ArrWanted } from './arr/ArrLists';
 import { ArrSettings } from './arr/ArrSettings';
+import { ArrExclusions } from './arr/ArrExclusions';
 import { LogConsole } from './arr/LogConsole';
 import { APP_META, type AppOverview, type ArrApp, type ArrJob } from './arr/shared';
+import { Spinner } from '@/components/Spinner';
 
-type View = 'overview' | 'queue' | 'activity' | 'wanted' | 'console' | 'settings';
+type View = 'overview' | 'queue' | 'activity' | 'wanted' | 'exclusions' | 'console' | 'settings';
 const VIEWS: { id: View; label: string }[] = [
   { id: 'overview', label: 'Overview' }, { id: 'queue', label: 'Queue' }, { id: 'activity', label: 'Activity' },
-  { id: 'wanted', label: 'Wanted' }, { id: 'console', label: 'Console' }, { id: 'settings', label: 'Settings' },
+  { id: 'wanted', label: 'Wanted' }, { id: 'exclusions', label: 'Exclusions' }, { id: 'console', label: 'Console' }, { id: 'settings', label: 'Settings' },
 ];
 
 interface OverviewResp { apps: AppOverview[]; helper: boolean; jobs: ArrJob[] }
@@ -62,10 +64,11 @@ export function ArrTab() {
         <div role="tabpanel">
           {view === 'overview' && (data
             ? <ArrOverview apps={apps} helper={data.helper} jobs={data.jobs} onChanged={() => void load(true)} onSettings={() => setView('settings')} />
-            : <div className="admin-group admin-row justify-center py-12 text-sm text-ndp-text-dim"><Loader2 className="w-4 h-4 animate-spin" />Asking Sonarr and Radarr…</div>)}
+            : <div className="admin-group admin-row justify-center py-12 text-sm text-ndp-text-dim"><Spinner size="sm" />Asking Sonarr and Radarr…</div>)}
           {view === 'queue' && <ArrQueue />}
           {view === 'activity' && <ArrActivity />}
           {view === 'wanted' && <ArrWanted />}
+          {view === 'exclusions' && <ArrExclusions />}
           {view === 'console' && (
             <div className="space-y-3">
               <div className="flex flex-wrap gap-2">

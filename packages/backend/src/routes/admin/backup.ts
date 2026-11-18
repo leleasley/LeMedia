@@ -9,6 +9,8 @@ import { verifyPassword } from '../../utils/password.js';
 import {
   createBackupZip,
   runAutoBackup,
+  backupRetention,
+  pruneBackups,
   getBackupAppVersion,
   getBackupDir,
   safeBackupPath,
@@ -56,6 +58,9 @@ export async function backupRoutes(app: FastifyInstance) {
   // ─── List saved backups ─────────────────────────────────────────
   app.get('/backup/list', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async () => {
     const dir = getBackupDir();
+    // Self-healing: a folder left over from a larger retention drops to the limit on the next
+    // look rather than waiting for the next scheduled backup.
+    pruneBackups();
     const files = readdirSync(dir)
       .filter((f) => f.endsWith('.zip'))
       .map((f) => {
@@ -63,7 +68,7 @@ export async function backupRoutes(app: FastifyInstance) {
         return { filename: f, size: stat.size, createdAt: stat.mtime.toISOString() };
       })
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    return files;
+    return { files, retention: backupRetention() };
   });
 
   // ─── Download a saved backup ────────────────────────────────────

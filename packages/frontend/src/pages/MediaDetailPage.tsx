@@ -17,6 +17,9 @@ import type { TmdbCast, TmdbCrew } from '@/types';
 import { useMediaAvailability } from '@/hooks/useMediaAvailability';
 import { NsfwRevealModal } from '@/components/media/NsfwRevealModal';
 import DeleteMediaModal from '@/components/DeleteMediaModal';
+import LinkSeriesModal from '@/components/media/LinkSeriesModal';
+import { useMediaExclusion } from '@/hooks/useMediaExclusion';
+import { ReportIssueModal } from '@/components/media/ReportIssueModal';
 import { MediaInfoColumn } from '@/components/media/MediaInfoColumn';
 import { MediaBackdrop } from '@/components/media/MediaHeroArt';
 import '@/components/media/media-detail.css';
@@ -45,12 +48,15 @@ export default function MediaDetailPage({ type, shareId, shareToken, readOnly }:
   const { t } = useTranslation();
   const params = useParams<{ id: string }>();
   const id = shareId ?? params.id;
+  const exclusion = useMediaExclusion(type, Number(id) || null);
   const navigate = useNavigate();
   const { user } = useAuth();
   const { isNsfw, disableBlur } = useNsfwFilter();
   const [revealed, setRevealed] = useState(false);
   const [showNsfwModal, setShowNsfwModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showLinkSeriesModal, setShowLinkSeriesModal] = useState(false);
+  const [showIssueModal, setShowIssueModal] = useState(false);
 
   const {
     media, dbMedia, inLibrary, recommendations,
@@ -132,6 +138,8 @@ export default function MediaDetailPage({ type, shareId, shareToken, readOnly }:
               </button>
             )}
             <MediaInfoColumn
+              excludedBy={exclusion?.excluded && !exclusion.inLibrary ? exclusion.service : null}
+              onReportIssue={() => setShowIssueModal(true)}
               onBrowseSeasons={showExplorer && seasons.length > 0 ? () => {
                 const section = document.getElementById('season-explorer');
                 section?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
@@ -157,6 +165,7 @@ export default function MediaDetailPage({ type, shareId, shareToken, readOnly }:
               onRequest={handleRequest}
               onSearchMissing={handleSearchMissing}
               onDeleteMedia={() => setShowDeleteModal(true)}
+              onLinkSeries={() => setShowLinkSeriesModal(true)}
               qualityOptions={qualityOptions}
               takenQualityIds={takenQualityIds}
               selectedQuality={selectedQuality}
@@ -214,12 +223,38 @@ export default function MediaDetailPage({ type, shareId, shareToken, readOnly }:
           onClose={() => setShowNsfwModal(false)}
         />
       )}
+      {showIssueModal && media && (
+        <ReportIssueModal
+          open
+          onClose={() => setShowIssueModal(false)}
+          tmdbId={Number(id)}
+          mediaType={type}
+          title={title}
+        />
+      )}
+      {showLinkSeriesModal && (
+        <LinkSeriesModal
+          tmdbId={Number(id)}
+          title={title}
+          currentTvdbId={dbMedia?.tvdbId ?? null}
+          linkedManually={!!dbMedia?.tvdbLinkedAt}
+          onClose={() => setShowLinkSeriesModal(false)}
+          onChanged={() => { void refreshDetail(); }}
+        />
+      )}
       {showDeleteModal && (
         <DeleteMediaModal
           title={title}
           mediaType={type}
           tmdbId={Number(id)}
-          onClose={() => { setShowDeleteModal(false); navigate('/', { replace: true }); }}
+          onClose={() => setShowDeleteModal(false)}
+          onDeleted={() => {
+            setShowDeleteModal(false);
+            // Back to the list they came from (Missing page keeps its sort in the URL), not home.
+            const canGoBack = (window.history.state?.idx ?? 0) > 0;
+            if (canGoBack) navigate(-1);
+            else navigate('/', { replace: true });
+          }}
         />
       )}
     </div>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Play, Trash2, Download, Ticket, Repeat, CheckCircle2, XCircle, Calendar, Clapperboard, Tv, X } from 'lucide-react';
+import { Play, Trash2, Download, Ticket, Repeat, CheckCircle2, XCircle, Calendar, Clapperboard, Tv, X, Link2 } from 'lucide-react';
 import { PluginSlot } from '@/plugins/PluginSlot';
 import ActionButton from '@/components/ActionButton';
 import ShareButton from '@/components/media/ShareButton';
@@ -16,6 +16,7 @@ import type { ButtonState } from '@/utils/resolveButtonState';
 import { Link } from 'react-router-dom';
 import { ExternalLink } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { MessageSquareWarning } from 'lucide-react';
 
 interface Props {
   onBrowseSeasons?: () => void;
@@ -38,6 +39,8 @@ interface Props {
   onRequest: () => void;
   onSearchMissing: () => void;
   onDeleteMedia?: () => void;
+  onLinkSeries?: () => void;
+  onReportIssue?: () => void;
   qualityOptions: { id: number; label: string }[];
   selectedCriteria: Record<number, number>;
   setSelectedCriteria: (next: Record<number, number>) => void;
@@ -50,6 +53,8 @@ interface Props {
   readOnly?: boolean;
   /** The viewer has an active request for this title (drives the 'still searching' note). */
   userHasRequest?: boolean;
+  /** Which service holds an import-list exclusion for this title, if any. */
+  excludedBy?: 'radarr' | 'sonarr' | null;
 }
 
 /** Title, facts, synopsis, actions and request options in the hero's readable left column. */
@@ -58,10 +63,10 @@ export function MediaInfoColumn({
   media, dbMedia, type, title, year, genres, director, trailer,
   isAvailable, buttonState,
   requesting, justRequested, requestError, download, blacklisted, searchMissingError,
-  onRequest, onSearchMissing, onDeleteMedia,
+  onRequest, onSearchMissing, onDeleteMedia, onLinkSeries, onReportIssue,
   qualityOptions, takenQualityIds, selectedQuality, setSelectedQuality,
   selectedCriteria, setSelectedCriteria,
-  audioLanguages, subtitleLanguages, libraryLoading, readOnly, userHasRequest,
+  audioLanguages, subtitleLanguages, libraryLoading, readOnly, userHasRequest, excludedBy,
 }: Readonly<Props>) {
   const { t } = useTranslation();
   const { isAdmin } = useAuth();
@@ -172,8 +177,8 @@ export function MediaInfoColumn({
                 download={download}
                 searchMissingError={searchMissingError}
                 blacklistReason={blacklisted?.reason ?? undefined}
-                onRequest={onBrowseSeasons ?? onRequest}
-                onSearchMissing={onBrowseSeasons ?? onSearchMissing}
+                onRequest={onRequest}
+                onSearchMissing={type === 'tv' ? onRequest : onSearchMissing}
                 t={t}
               />
             </div>
@@ -181,6 +186,18 @@ export function MediaInfoColumn({
           {readOnly && (
             <Link to="/login" className="btn-primary inline-flex w-full sm:w-auto justify-center">Sign in to request</Link>
           )}
+          {excludedBy && !readOnly && !isAvailable && (
+            <div className="px-3 py-2.5 rounded-lg bg-amber-500/10 ring-1 ring-inset ring-amber-500/20 text-amber-200 text-xs leading-relaxed">
+              {isAdmin
+                ? t('media.excluded_note_admin', 'This title is on {{service}}\'s import-list exclusions. Requesting it removes the exclusion and adds it.', {
+                    service: excludedBy === 'radarr' ? 'Radarr' : 'Sonarr',
+                  })
+                : t('media.excluded_note', 'This title is on {{service}}\'s import-list exclusions. You can still request it — an admin approves the request, which removes the exclusion and adds it.', {
+                    service: excludedBy === 'radarr' ? 'Radarr' : 'Sonarr',
+                  })}
+            </div>
+          )}
+
           {buttonState === 'searching' && userHasRequest && (
             <div className="px-3 py-2.5 rounded-lg bg-amber-500/10 ring-1 ring-inset ring-amber-500/20 text-amber-200 text-xs leading-relaxed">
               No torrents found yet, Radarr is still searching in the background and will retry automatically. Try a different quality above if you want to broaden the search.
@@ -217,7 +234,24 @@ export function MediaInfoColumn({
                 {t('media.trailer')}
               </button>
             )}
+            {!readOnly && onReportIssue && (
+              <button type="button" onClick={onReportIssue} className="btn-secondary flex items-center gap-2 !px-4">
+                <MessageSquareWarning className="w-4 h-4" />
+                {t('media.report_issue', 'Report an issue')}
+              </button>
+            )}
             {!readOnly && <ShareButton tmdbId={media.id} mediaType={type} title={title} />}
+            {!readOnly && isAdmin && type === 'tv' && onLinkSeries && (
+              <button
+                type="button"
+                onClick={onLinkSeries}
+                className="btn-secondary flex items-center gap-2 !px-4"
+                title={t('media.link_series.hint', 'Use this when TMDB and TVDB disagree about a show. The link follows TVDB season numbering.')}
+              >
+                <Link2 className="w-4 h-4" />
+                {t('media.link_series.button', 'Link to Sonarr')}
+              </button>
+            )}
             {isAdmin && onDeleteMedia && (
               <button
                 type="button"

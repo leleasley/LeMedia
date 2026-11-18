@@ -180,7 +180,33 @@ export async function createBackupZip(
   return { manifest, size };
 }
 
-/** Scheduled auto-backup — rotates down to BACKUP_RETENTION (default 7). */
+/**
+ * How many saved archives are kept. `BACKUP_RETENTION` overrides it; the default is 5 so the
+ * folder cannot grow without bound (a 6-hourly schedule then covers about a day).
+ */
+export function backupRetention(): number {
+  const raw = Number.parseInt(process.env.BACKUP_RETENTION || '5', 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : 5;
+}
+
+/** Delete the oldest saved archives past the limit. Returns what was removed. */
+export function pruneBackups(limit = backupRetention()): string[] {
+  const dir = getBackupDir();
+  let files: string[];
+  try {
+    files = readdirSync(dir).filter((f) => f.startsWith('lemedia-backup-') && f.endsWith('.zip'));
+  } catch { return []; }
+  const newestFirst = files
+    .map((f) => ({ f, mtime: statSync(join(dir, f)).mtimeMs }))
+    .sort((a, b) => b.mtime - a.mtime);
+  const removed: string[] = [];
+  for (const { f } of newestFirst.slice(limit)) {
+    try { unlinkSync(join(dir, f)); removed.push(f); } catch { /* held by another handle */ }
+  }
+  return removed;
+}
+
+/** Scheduled auto-backup — prunes to the retention limit after each run. */
 export async function runAutoBackup(): Promise<{ filename: string; size: number }> {
   const dir = getBackupDir();
   const timestamp = new Date().toISOString().replaceAll(/[:.]/g, '-').slice(0, 16);
@@ -189,15 +215,10 @@ export async function runAutoBackup(): Promise<{ filename: string; size: number 
 
   const { size } = await createBackupZip(false, outputPath);
 
-  // 6-hourly schedule × 28 files = 7 days of history. The old default of 7 gave 42 hours,
-  // which is thin: a corruption discovered on day 3 would have had nothing older to roll back to.
-  const maxBackups = Number.parseInt(process.env.BACKUP_RETENTION || '28', 10);
-  const autoBackups = readdirSync(dir)
-    .filter((f) => f.startsWith('lemedia-backup-auto-') && f.endsWith('.zip'))
-    .sort((a, b) => statSync(join(dir, b)).mtimeMs - statSync(join(dir, a)).mtimeMs);
-
-  for (const old of autoBackups.slice(maxBackups)) {
-    try { unlinkSync(join(dir, old)); } catch { /* ignore */ }
+  // Every saved archive counts towards the limit, not just the auto ones.
+  const removed = pruneBackups();
+  if (removed.length > 0) {
+    logEvent('info', 'Backup', `Removed ${removed.length} old backup(s), keeping the newest ${backupRetention()}`);
   }
 
   logEvent('info', 'Backup', `Auto-backup created: ${filename} (${(size / 1024 / 1024).toFixed(1)} MB)`);

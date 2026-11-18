@@ -1,3 +1,4 @@
+import { selectedDmmService } from '../services/dmm.js';
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '../utils/prisma.js';
 import { getArrClientForMedia, getServiceTypeForMedia } from '../providers/index.js';
@@ -10,6 +11,9 @@ import type { Availability } from '@lemedia/shared';
 import { buildAvailability, loadBlacklistedKeys, loadLibraryGate, loadFreeQualityMediaIds, loadSatisfiedQualityOptions, gateCategory, recentLibraryFilter } from '../services/availability.js';
 import { mediaKey } from '../utils/mediaKey.js';
 import { seriesCatalogRoutes } from './seriesCatalog.js';
+import { getMissing, invalidateMissingCache, MISSING_SORTS, type MissingSort } from '../services/missing.js';
+import { findExclusion } from '../services/arrExclusions.js';
+import { isInMediaServerLibrary } from '../services/mediaServerLibrary.js';
 
 
 
@@ -59,6 +63,9 @@ export async function mediaRoutes(app: FastifyInstance) {
             // type and skipping the await meant this always threw and nothing was removed.
             const client = await getArrClientForMedia(getServiceTypeForMedia(media.mediaType), media.serviceId);
             await client.deleteMedia(serviceMediaId, doDeleteFiles);
+            // The Missing page reads the *arr live; drop its cached copy so the title is gone the
+            // moment the user lands back on the list.
+            invalidateMissingCache();
           } catch (err) {
             const { logEvent } = await import('../utils/logEvent.js');
             logEvent('warn', 'Media', `Failed to delete from ${media.mediaType === 'movie' ? 'Radarr' : 'Sonarr'}: ${err}`);
@@ -203,13 +210,35 @@ export async function mediaRoutes(app: FastifyInstance) {
     return assembleDetailResponse(media, live, languages, await resolveActiveQualityOptions(media, live.liveAvailable));
   });
 
-  // Recently added media (from Radarr/Sonarr sync)
-  // Homepage "Missing movies / episodes" rows — any signed-in user (was admin-only, which made
-  // every non-admin home load end in a 403 "access denied" toast).
+  // Is this title on the service's import-list exclusions? Drives the warning beside Request.
+  app.get('/exclusion', async (request) => {
+    const { tmdbId, mediaType } = request.query as { tmdbId?: string; mediaType?: string };
+    const id = parseId(tmdbId);
+    if (!id || (mediaType !== 'movie' && mediaType !== 'tv')) return { excluded: false, service: null };
+    const media = await prisma.media.findUnique({
+      where: { tmdbId_mediaType: { tmdbId: id, mediaType } },
+      select: { tvdbId: true },
+    }).catch(() => null);
+    const hit = await findExclusion(mediaType, id, media?.tvdbId ?? null);
+    const inLibrary = isInMediaServerLibrary(mediaType, id, media?.tvdbId ?? null) === true;
+    return { excluded: !!hit, service: hit?.service ?? null, inLibrary };
+  });
+
+  // Homepage "Missing movies / episodes" rows + the full Missing browse page — any signed-in user
+  // (was admin-only, which made every non-admin home load end in a 403 "access denied" toast).
+  // Sourced live from Radarr/Sonarr so a title deleted there disappears here (see services/missing).
   app.get('/missing', async (request) => {
-    const { type } = request.query as { type?: string };
-    const { getMissingWanted } = await import('./admin/homepage.js');
-    return getMissingWanted(type);
+    const { type, page, pageSize, sort, order } = request.query as {
+      type?: string; page?: string; pageSize?: string; sort?: string; order?: string;
+    };
+    const wanted = type === 'tv' ? 'tv' : 'movie';
+    const sortKey = sort && MISSING_SORTS.includes(sort as MissingSort) ? (sort as MissingSort) : 'recent';
+    return getMissing(wanted, {
+      page: Number.parseInt(page ?? '', 10) || 1,
+      pageSize: Number.parseInt(pageSize ?? '', 10) || undefined,
+      sort: sortKey,
+      order: order === 'asc' || order === 'desc' ? order : undefined,
+    });
   });
 
   app.get('/recent', {
@@ -234,10 +263,8 @@ export async function mediaRoutes(app: FastifyInstance) {
         // When the admin requires library confirmation, an unconfirmed title is not "recently
         // added" from the user's point of view — their player cannot open it.
         ...(await recentLibraryFilter()),
-        OR: [
-          { radarrId: { not: null } },
-          { sonarrId: { not: null } },
-        ],
+        // No *arr id required: a DMM-only install has none, and a title Zurg placed is still
+        // "recently added" from the user's point of view.
       },
       orderBy: { availableAt: 'desc' },
       take,
@@ -266,7 +293,7 @@ export async function mediaRoutes(app: FastifyInstance) {
    * Only those the admin marked visible: the others exist purely to drive folder rules and are
    * none of a user's business. Values come along so the picker needs a single call.
    */
-  app.get('/request-criteria', async () => prisma.requestCriterion.findMany({
+  app.get('/request-criteria', async () => (await selectedDmmService()) ? [] : prisma.requestCriterion.findMany({
     where: { showOnRequest: true },
     orderBy: { position: 'asc' },
     select: {
@@ -522,6 +549,9 @@ async function assembleDetailResponse(
   result.statusCategory = gateCategory(media.statusCategory, media.mediaType, media.libraryConfirmedAt, await loadLibraryGate());
   if (live.sonarrSeasonStats) result.sonarrSeasons = live.sonarrSeasonStats;
   if (live.liveAvailable) result.inLibrary = true;
+  // The media server can hold a title the *arr never had a row for; the request guard already
+  // refuses those ("already in your library"), so the page must agree.
+  if (!result.inLibrary && isInMediaServerLibrary(media.mediaType, media.tmdbId, media.tvdbId)) result.inLibrary = true;
   if (activeQualityOptionIds.length > 0) result.activeQualityOptionIds = activeQualityOptionIds;
   if (languages.audio) result.audioLanguages = languages.audio;
   if (languages.subs) result.subtitleLanguages = languages.subs;

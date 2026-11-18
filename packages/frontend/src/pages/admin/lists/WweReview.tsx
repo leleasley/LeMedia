@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ExternalLink, Loader2, Pin, X } from 'lucide-react';
+import { ExternalLink, Pin, X } from 'lucide-react';
 import api from '@/lib/api';
 import Switch from '@/components/ui/Switch';
 import { showToast, toastApiError } from '@/utils/toast';
+import { Spinner } from '@/components/Spinner';
 
 interface WweSettings {
   include_types: string[]; include_nxt: boolean; include_big_four: boolean; include_snme: boolean; include_non_wwe: boolean; include_future: boolean;
@@ -48,7 +49,7 @@ export function WweReview() {
     catch (err) { toastApiError(err, 'Could not pin it'); }
   };
 
-  if (!st) return <p className="text-sm text-ndp-text-dim flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Loading WWE events…</p>;
+  if (!st) return <p className="text-sm text-ndp-text-dim flex items-center gap-2"><Spinner size="sm" />Loading WWE events…</p>;
   const s = st.settings;
 
   return (

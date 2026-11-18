@@ -7,6 +7,7 @@ import { loadPluginModule, hasLoaded, getCached, pluginFrontendUrl, PLUGIN_SCOPE
 import type { ComponentType } from 'react';
 import { PluginErrorBoundary } from './PluginErrorBoundary';
 import { extractApiError } from '@/utils/toast';
+import { Spinner } from '@/components/Spinner';
 
 interface PluginAdminTabProps {
   pluginId: string;
@@ -77,7 +78,7 @@ export function PluginAdminTab({ pluginId }: Readonly<PluginAdminTabProps>) {
   if (frontendLoading) {
     return (
       <div className="flex justify-center py-12">
-        <Loader2 className="w-6 h-6 animate-spin text-ndp-accent" />
+        <Spinner />
       </div>
     );
   }
@@ -100,7 +101,7 @@ export function PluginAdminTab({ pluginId }: Readonly<PluginAdminTabProps>) {
   if (!settings) {
     return (
       <div className="flex justify-center py-12">
-        <Loader2 className="w-6 h-6 animate-spin text-ndp-accent" />
+        <Spinner />
       </div>
     );
   }

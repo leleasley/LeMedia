@@ -7,6 +7,7 @@ import { qbittorrentProvider } from './qbittorrent/index.js';
 import { jackettProvider } from './jackett/index.js';
 import { prowlarrProvider } from './prowlarr/index.js';
 import { zurgProvider } from './zurg/index.js';
+import { dmmProvider } from './dmm/index.js';
 import { rexProvider } from './rex/index.js';
 import { nzbgetProvider } from './nzbget/index.js';
 import { sabnzbdProvider } from './sabnzbd/index.js';
@@ -39,6 +40,7 @@ const ALL_PROVIDERS: Provider[] = [
   jackettProvider,
   prowlarrProvider,
   zurgProvider,
+  dmmProvider,
   rexProvider,
   tautulliProvider,
   emailProvider,

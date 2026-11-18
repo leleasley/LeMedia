@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import {
   ARR_APPS, ArrAdminError, activeArrJobs, activity, getArrJob, getArrSettings, logs, overviewAll, queue, removeFromQueue,
-  saveArrSettings, searchItems, setAutoUpdate, startRestart, startRollback, startUpdate, wanted, type ArrApp,
+  saveArrSettings, searchItems, setAutoUpdate, startRestart, startRollback, startUpdate, wanted, exclusions, removeExclusion, type ArrApp,
 } from '../../services/arrAdmin.js';
 import { applications, history as prowlarrHistory, indexers, syncToApps, testAll, testIndexer, updateIndexer } from '../../services/prowlarrAdmin.js';
 import { DEFAULT_HELPER_APPS, HelperError, clearHelper, createInstallToken, generateKey, helperStatus, setTarget, testHelper } from '../../services/hostHelper.js';
@@ -45,6 +45,12 @@ export async function arrAdminRoutes(app: FastifyInstance) {
   }));
   app.get('/arr/:app/activity', async (request, reply) => run(reply, () => activity(libApp((request.params as { app: string }).app), Number((request.query as { page?: string }).page) || 1)));
   app.get('/arr/:app/wanted', async (request, reply) => run(reply, () => wanted(libApp((request.params as { app: string }).app), Number((request.query as { page?: string }).page) || 1)));
+  app.get('/arr/:app/exclusions', async (request, reply) => run(reply, () => exclusions(libApp((request.params as { app: string }).app))));
+  app.delete('/arr/:app/exclusions/:id', async (request, reply) => run(reply, async () => {
+    const p = request.params as { app: string; id: string };
+    await removeExclusion(libApp(p.app), Number(p.id));
+    return { ok: true };
+  }));
   app.post('/arr/:app/search', {
     schema: { body: obj({ ids: { type: 'array', items: { type: 'integer' }, maxItems: 500 }, all: { type: 'boolean' } }) },
   }, async (request, reply) => run(reply, async () => {

@@ -17,7 +17,8 @@ import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { useFeatures } from '@/context/FeaturesContext';
 import { usePluginUpdatesCount } from '@/hooks/usePluginUpdatesCount';
-import { ADMIN_GROUPS, ADMIN_TABS } from '@/pages/admin/tabsConfig';
+import { ADMIN_TABS } from '@/pages/admin/tabsConfig';
+import { useAdminGroups } from '@/components/layouts/useAdminGroups';
 import { usePluginUI } from '@/plugins/usePlugins';
 import { DynamicIcon } from '@/plugins/DynamicIcon';
 import { UserCluster } from '@/components/nav/UserCluster';
@@ -27,6 +28,8 @@ import SetupChecklistMenu from '@/components/nav/SetupChecklistMenu';
 import { EncryptionUpgradeBanner } from '@/pages/admin/EncryptionUpgradeBanner';
 
 export default function AdminLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  // Service-backed pages (Zurg, Rex, Prowlarr, DMM, Radarr & Sonarr) only appear when configured.
+  const adminGroups = useAdminGroups();
   const { t } = useTranslation();
   const { hasPermission } = useAuth();
   const { features } = useFeatures();
@@ -114,7 +117,7 @@ export default function AdminLayout({ children }: Readonly<{ children: React.Rea
 
   const pluginGroupLabel = t('admin.sidebar.plugin_pages', 'Pages de plugins');
   const searchableTabs: SearchEntry[] = useMemo(() => {
-    const nativeEntries: SearchEntry[] = ADMIN_GROUPS.flatMap((group) => {
+    const nativeEntries: SearchEntry[] = adminGroups.flatMap((group) => {
       const groupLabel = t(group.label);
       return group.tabs.map((tab) => ({
         id: tab.id,
@@ -133,7 +136,7 @@ export default function AdminLayout({ children }: Readonly<{ children: React.Rea
       hasWarning: !!warnings[tb.id],
     }));
     return [...nativeEntries, ...pluginEntries];
-  }, [t, warnings, pluginTabItems, pluginGroupLabel]);
+  }, [adminGroups, t, warnings, pluginTabItems, pluginGroupLabel]);
 
   const trimmedQuery = searchQuery.trim();
   const searchResults = useMemo(() => {
@@ -285,7 +288,7 @@ export default function AdminLayout({ children }: Readonly<{ children: React.Rea
 
   const tabList = (
     <>
-      {ADMIN_GROUPS.map((group) => (
+      {adminGroups.map((group) => (
         <div key={group.id} className={group.id === 'dashboard' ? '' : 'pt-5'}>
           {group.id !== 'dashboard' && navHeading(t(group.label))}
           <div className="space-y-0.5">
@@ -378,7 +381,7 @@ export default function AdminLayout({ children }: Readonly<{ children: React.Rea
         </div>
       ) : (
         <>
-          {ADMIN_GROUPS.map((group) => (
+          {adminGroups.map((group) => (
             <section key={group.id}>
               <h3 className="px-1 mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-ndp-text-dim">{t(group.label)}</h3>
               <div className="rounded-xl bg-ndp-surface ring-1 ring-inset ring-white/[0.06] overflow-hidden divide-y divide-white/[0.06]">

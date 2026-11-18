@@ -4,7 +4,7 @@ import { pluginEngine } from '../plugins/engine.js';
 import type { CreateRequestResult } from './requestService.js';
 
 type RequestFailure = Extract<CreateRequestResult, { ok: false }>;
-const ADMIN_ROLE = 'admin';
+export const ADMIN_ROLE = 'admin';
 
 export async function checkRequestGuard(input: {
   userId: number;

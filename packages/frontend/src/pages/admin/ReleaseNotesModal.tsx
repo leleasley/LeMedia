@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { ExternalLink, Loader2, X } from 'lucide-react';
+import { ExternalLink, X } from 'lucide-react';
 import api from '@/lib/api';
 import ReleaseNoteBody from '@/components/ReleaseNoteBody';
+import { Spinner } from '@/components/Spinner';
 
 interface Release { tag: string; name: string | null; publishedAt: string | null; url: string; prerelease: boolean; body: string | null }
 interface Notes { repo: string; connected: boolean; installed: string | null; error: string | null; releases: Release[] }
@@ -64,7 +65,7 @@ export function ReleaseNotesModal({ kind, onClose }: Readonly<{ kind: 'zurg' | '
 
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-5 py-5 space-y-8">
           {!notes && !failed && (
-            <p className="flex items-center gap-2 text-sm text-ndp-text-dim" role="status"><Loader2 className="w-4 h-4 animate-spin" />{t('common.loading', 'Loading…')}</p>
+            <p className="flex items-center gap-2 text-sm text-ndp-text-dim" role="status"><Spinner size="sm" />{t('common.loading', 'Loading…')}</p>
           )}
           {failed && <p className="text-sm text-ndp-danger" role="alert">{t('admin.updates.changelog_failed', 'Could not load the releases')}</p>}
           {notes && !notes.connected && <p className="text-sm text-ndp-text-muted">{t('admin.updates.connect', 'Connect GitHub to see when a new {{name}} is out', { name })}</p>}

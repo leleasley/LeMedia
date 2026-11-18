@@ -36,6 +36,7 @@ import NoAccessPage from '@/pages/NoAccessPage';
 const DiscoverGenrePage = lazyWithReload(() => import('@/pages/DiscoverGenrePage'));
 const DiscoverProviderPage = lazyWithReload(() => import('@/pages/DiscoverProviderPage'));
 const CategoryPage = lazyWithReload(() => import('@/pages/CategoryPage'));
+const MissingPage = lazyWithReload(() => import('@/pages/MissingPage'));
 const CalendarPage = lazyWithReload(() => import('@/pages/CalendarPage'));
 import { PluginPage } from '@/plugins/PluginPage';
 import { NsfwFilterContext, useNsfwFilterProvider } from '@/hooks/useNsfwFilter';
@@ -176,6 +177,7 @@ export default function App() {
                   <Route path="/discover/:mediaType/genre/:genreId" element={<RequireAccess><DiscoverGenrePage /></RequireAccess>} />
                   <Route path="/discover/:mediaType/provider/:providerId" element={<RequireAccess><DiscoverProviderPage /></RequireAccess>} />
                   <Route path="/category/:slug" element={<RequireAccess><CategoryPage /></RequireAccess>} />
+                  <Route path="/missing/:type" element={<RequireAccess><MissingPage /></RequireAccess>} />
                   <Route path="/calendar" element={<RequireFeature feature="calendarEnabled"><RequireAccess><CalendarPage /></RequireAccess></RequireFeature>} />
                   <Route path="/p/:pluginId/*" element={<PluginPage />} />
                   <Route path="/install" element={<Navigate to="/" replace />} />

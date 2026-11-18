@@ -63,6 +63,8 @@ export interface Media {
   id: number;
   tmdbId: number;
   tvdbId: number | null;
+  /** Set when an admin bound this title to the Sonarr series by hand (TMDB/TVDB split shows). */
+  tvdbLinkedAt?: string | null;
   mediaType: 'movie' | 'tv';
   title: string;
   overview: string | null;
@@ -99,6 +101,8 @@ export interface MediaRequest {
   rootFolder: string | null;
   qualityOptionId: number | null;
   approvedById: number | null;
+  /** On the service's import-list exclusions when requested; approving removes it. */
+  excluded?: boolean;
   createdAt: string;
   updatedAt: string;
   media?: Media;

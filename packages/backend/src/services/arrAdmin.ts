@@ -433,6 +433,40 @@ export async function wanted(app: 'sonarr' | 'radarr', page = 1) {
   };
 }
 
+export interface ArrExclusion {
+  id: number;
+  app: 'sonarr' | 'radarr';
+  title: string;
+  year: number | null;
+  tmdbId: number | null;
+  tvdbId: number | null;
+  imdbId: string | null;
+}
+
+/** The service's "never add this again" list, normalised across Sonarr and Radarr. */
+export async function exclusions(app: 'sonarr' | 'radarr'): Promise<ArrExclusion[]> {
+  const c = await need(app);
+  const rows = await call<Record<string, any>[]>(c, 'GET', app === 'sonarr' ? '/importlistexclusion' : '/exclusions');
+  return (Array.isArray(rows) ? rows : [])
+    .map((r) => ({
+      id: Number(r.id),
+      app,
+      title: String(r.title ?? r.movieTitle ?? 'Unknown'),
+      year: Number(r.year ?? r.movieYear) || null,
+      tmdbId: Number(r.tmdbId) || null,
+      tvdbId: Number(r.tvdbId) || null,
+      imdbId: typeof r.imdbId === 'string' ? r.imdbId : null,
+    }))
+    .filter((r) => Number.isFinite(r.id))
+    .sort((a, b) => a.title.localeCompare(b.title));
+}
+
+/** Remove one exclusion. An approved request does this automatically; this is the manual path. */
+export async function removeExclusion(app: 'sonarr' | 'radarr', id: number): Promise<void> {
+  const c = await need(app);
+  await call(c, 'DELETE', app === 'sonarr' ? `/importlistexclusion/${id}` : `/exclusions/${id}`);
+}
+
 export async function searchItems(app: 'sonarr' | 'radarr', ids: number[] | 'all') {
   const c = await need(app);
   const body = ids === 'all'

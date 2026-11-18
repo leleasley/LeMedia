@@ -2,12 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { Clock, Film, Loader2, Search, Star, Tv, User, X } from 'lucide-react';
+import { Clock, Film, Search, Star, Tv, User, X } from 'lucide-react';
 import api, { posterUrl } from '@/lib/api';
 import type { TmdbMedia } from '@/types';
 import { useMediaStatus, getStatusForMedia } from '@/hooks/useMediaStatus';
 import { MediaStateBadge } from '@/utils/mediaStateDisplay';
 import { getRecentSearches, removeRecentSearch } from '@/utils/recentSearches';
+import { Spinner } from '@/components/Spinner';
 
 type SuggestItem = TmdbMedia & { media_type: string };
 interface SuggestPerson { id: number; name: string; profile_path: string | null; known_for_department: string | null }
@@ -176,7 +177,7 @@ export default function SearchAutocomplete({ value, onChange, onSubmit, placehol
         )}
       />
       {searching ? (
-        <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ndp-text-dim animate-spin" />
+        <Spinner size="sm" className="absolute right-3 top-1/2 -translate-y-1/2" />
       ) : value ? (
         <button
           type="button"

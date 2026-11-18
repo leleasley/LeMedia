@@ -25,10 +25,12 @@ interface MediaCardProps {
     /** Set by the batch endpoint: an option nobody has taken is still on offer for this title. */
     hasFreeQualityOption?: boolean;
   } | null;
+  /** Short caption meta (runtime, missing episodes…). Replaces the movie/series label. */
+  meta?: string;
   index?: number;
 }
 
-export default function MediaCard({ media, className, availability, index = 0 }: Readonly<MediaCardProps>) {
+export default function MediaCard({ media, className, availability, meta, index = 0 }: Readonly<MediaCardProps>) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { features, loading: featuresLoading } = useFeatures();
@@ -46,7 +48,7 @@ export default function MediaCard({ media, className, availability, index = 0 }:
   const type = media.media_type || (media.title ? 'movie' : 'tv');
   const link = `/${type}/${media.id}`;
 
-  const requestAction = cardRequestAction(availability, !featuresLoading && features.requestsEnabled, type);
+  const requestAction = cardRequestAction(availability, !featuresLoading && features.requestsEnabled);
   const showRequest = requestAction !== 'none';
 
   // Foreign-titled films get a small language badge on the poster, so a foreign title is
@@ -60,6 +62,7 @@ export default function MediaCard({ media, className, availability, index = 0 }:
     e.preventDefault();
     e.stopPropagation();
     if (submitting.current || requested || !showRequest) return;
+    // An upgrade of an available title still needs its quality picked on the page.
     if (requestAction === 'details') { navigate(link); return; }
     submitting.current = true;
     setRequesting(true);
@@ -169,7 +172,7 @@ export default function MediaCard({ media, className, availability, index = 0 }:
 
       {/* Top-right: rating (hidden on hover) */}
       {media.vote_average > 0 && (
-        <div className="absolute top-2 right-2 flex items-center gap-1 bg-black/70 px-1.5 py-0.5 rounded-full transition-opacity duration-300 group-hover:opacity-0">
+        <div className={clsx('absolute top-2 flex items-center gap-1 bg-black/70 px-1.5 py-0.5 rounded-full transition-opacity duration-300 group-hover:opacity-0', showRequest ? 'right-10' : 'right-2')}>
           <Star className="w-3 h-3 fill-ndp-gold text-ndp-gold" />
           <span className="text-xs font-medium text-white">{media.vote_average.toFixed(1)}</span>
         </div>
@@ -194,7 +197,7 @@ export default function MediaCard({ media, className, availability, index = 0 }:
       <div className="mt-2 px-0.5">
         <p className="text-[13px] font-medium text-ndp-text leading-snug truncate">{title}</p>
         <p className="text-xs text-ndp-text-dim mt-0.5">
-          {[year, type === 'movie' ? t('common.movie') : t('common.series')].filter(Boolean).join(' · ')}
+          {[year, meta ?? (type === 'movie' ? t('common.movie') : t('common.series'))].filter(Boolean).join(' · ')}
         </p>
       </div>
       </MediaLink>
@@ -206,7 +209,7 @@ export default function MediaCard({ media, className, availability, index = 0 }:
         <PosterRequestButton onClick={handleRequest} loading={requesting} label={t('media.request')} />
       )}
       {requested && (
-        <div className="absolute top-2 right-2 p-1.5 bg-ndp-success rounded-full shadow-lg opacity-0 group-hover:opacity-100 z-10 pointer-events-none">
+        <div className="absolute top-2 right-2 p-1.5 bg-ndp-success rounded-full shadow-lg z-10 pointer-events-none">
           <CheckCircle className="w-4 h-4 text-white" />
         </div>
       )}

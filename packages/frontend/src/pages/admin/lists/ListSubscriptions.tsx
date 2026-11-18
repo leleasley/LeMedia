@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { clsx } from 'clsx';
-import { AlertTriangle, ChevronDown, Loader2, Pencil, RefreshCw, RotateCcw, Trash2 } from 'lucide-react';
+import { AlertTriangle, ChevronDown, Pencil, RefreshCw, RotateCcw, Trash2 } from 'lucide-react';
 import api from '@/lib/api';
 import Switch from '@/components/ui/Switch';
 import { ConfirmModal } from '@/components/ConfirmModal';
@@ -8,6 +8,7 @@ import { showToast, toastApiError } from '@/utils/toast';
 import { ArrTargets, targetsComplete } from './ArrTargets';
 import { WweReview } from './WweReview';
 import { timeAgo, typeLabel, useArrChoices, useJob, type AddResult, type AddSettings, type ItemType, type Job } from './shared';
+import { Spinner } from '@/components/Spinner';
 
 interface Subscription {
   id: number;
@@ -68,14 +69,14 @@ export function ListSubscriptions({ onAdd }: Readonly<{ onAdd: () => void }>) {
     catch (err) { toastApiError(err, 'Could not save'); }
   };
 
-  if (!data) return <div className="admin-group admin-row justify-center py-10 text-sm text-ndp-text-dim"><Loader2 className="w-4 h-4 animate-spin mr-2" />Loading…</div>;
+  if (!data) return <div className="admin-group admin-row justify-center py-10 text-sm text-ndp-text-dim"><Spinner size="sm" className="mr-2" />Loading…</div>;
 
   const busy = !!jobId;
   return (
     <div className="space-y-4">
       {busy && (
         <div className="flex items-center gap-3 rounded-xl bg-ndp-accent/10 ring-1 ring-inset ring-ndp-accent/25 px-4 py-2.5">
-          <Loader2 className="w-4 h-4 animate-spin text-ndp-accent flex-shrink-0" />
+          <Spinner size="sm" />
           <p className="flex-1 min-w-0 text-sm text-ndp-text truncate">
             {job?.progress?.phase ?? 'Working…'}{job?.progress?.total ? ` (${job.progress.done} of ${job.progress.total})` : ''}
             <span className="text-ndp-text-dim">, runs in the background, you can leave this page</span>
@@ -176,7 +177,7 @@ function EditSubscription({ sub, onSave }: Readonly<{ sub: Subscription; onSave:
     <div className="space-y-3 rounded-xl bg-white/[0.02] ring-1 ring-inset ring-white/[0.06] p-3">
       <input className="input !py-2 w-full" value={name} maxLength={120} onChange={(e) => setName(e.target.value)} aria-label="Name" />
       <ArrTargets choices={choices} types={types} value={settings} onChange={setSettings} showOnlyNew />
-      <button type="button" className="btn-primary !py-1.5 text-sm" disabled={!targetsComplete(types, settings)} onClick={() => void onSave({ name, settings })}>Save</button>
+      <button type="button" className="btn-primary !py-1.5 text-sm" disabled={!targetsComplete(types, settings, !!choices?.dmm)} onClick={() => void onSave({ name, settings })}>Save</button>
     </div>
   );
 }

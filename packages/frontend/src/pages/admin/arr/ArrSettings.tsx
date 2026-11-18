@@ -6,6 +6,7 @@ import Switch from '@/components/ui/Switch';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { showToast, toastApiError } from '@/utils/toast';
 import { APP_META, ago, type ArrApp } from './shared';
+import { Spinner } from '@/components/Spinner';
 
 interface Helper { configured: boolean; host: string; port: number; user: string; hasKey: boolean; authorizedKeysLine: string | null; verifiedAt: string | null; hostname: string | null; helperVersion: number | null; apps: string[] | null }
 interface Settings { links: Partial<Record<ArrApp, string>>; helper: Helper }
@@ -82,7 +83,7 @@ export function ArrSettings({ onChanged }: Readonly<{ onChanged: () => void }>) 
     finally { setBusy(null); }
   };
 
-  if (!s) return <div className="admin-group admin-row justify-center py-10 text-sm text-ndp-text-dim"><Loader2 className="w-4 h-4 animate-spin" />Loading…</div>;
+  if (!s) return <div className="admin-group admin-row justify-center py-10 text-sm text-ndp-text-dim"><Spinner size="sm" />Loading…</div>;
   const h = s.helper;
   const hostOk = /^[A-Za-z0-9.-]+$/.test(host.trim());
 

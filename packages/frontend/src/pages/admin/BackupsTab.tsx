@@ -29,6 +29,7 @@ export function BackupsTab() {
   const [restoreError, setRestoreError] = useState<string | null>(null);
   const [includeCache, setIncludeCache] = useState(false);
   const [savedBackups, setSavedBackups] = useState<{ filename: string; size: number; createdAt: string }[]>([]);
+  const [retention, setRetention] = useState<number | null>(null);
   const [restorePassword, setRestorePassword] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -36,7 +37,11 @@ export function BackupsTab() {
 
   useEffect(() => {
     api.get('/admin/backup/list')
-      .then(({ data }) => setSavedBackups(data))
+      .then(({ data }) => {
+        // `{ files, retention }`; older servers returned a bare array.
+        setSavedBackups(Array.isArray(data) ? data : data.files ?? []);
+        if (!Array.isArray(data) && typeof data.retention === 'number') setRetention(data.retention);
+      })
       .catch((err) => {
         console.error('BackupsTab list load failed', err);
         showToast(t('admin.backup.list_failed'), 'error');
@@ -223,6 +228,9 @@ export function BackupsTab() {
                 </div>
               ))}
             </div>
+            {retention !== null && (
+              <p className="admin-hint">{t('admin.backup.retention_hint', 'The newest {{count}} backups are kept; older ones are deleted automatically.', { count: retention })}</p>
+            )}
           </section>
         )}
 

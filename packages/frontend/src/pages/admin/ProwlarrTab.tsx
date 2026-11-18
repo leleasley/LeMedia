@@ -9,6 +9,7 @@ import { AdminTabLayout } from './AdminTabLayout';
 import { ArrOverview } from './arr/ArrOverview';
 import { LogConsole } from './arr/LogConsole';
 import { ago, type AppOverview, type ArrJob } from './arr/shared';
+import { Spinner } from '@/components/Spinner';
 
 type View = 'overview' | 'indexers' | 'apps' | 'history' | 'console';
 const VIEWS: { id: View; label: string }[] = [
@@ -59,7 +60,7 @@ function Overview({ onSettings }: Readonly<{ onSettings: () => void }>) {
     try { const { data: d } = await api.get(`/admin/arr/overview${fresh ? '?fresh=1' : ''}`); setData(d); } catch { /* keep */ }
   }, []);
   useEffect(() => { void load(); }, [load]);
-  if (!data) return <div className="admin-group admin-row justify-center py-12 text-sm text-ndp-text-dim"><Loader2 className="w-4 h-4 animate-spin" />Asking Prowlarr…</div>;
+  if (!data) return <div className="admin-group admin-row justify-center py-12 text-sm text-ndp-text-dim"><Spinner size="sm" />Asking Prowlarr…</div>;
   return (
     <div className="max-w-2xl">
       <ArrOverview apps={data.apps.filter((a) => a.app === 'prowlarr')} helper={data.helper} jobs={data.jobs} onChanged={() => void load(true)} onSettings={onSettings} />
@@ -101,7 +102,7 @@ function Indexers() {
     finally { setTestingAll(false); }
   };
 
-  if (!list) return <div className="admin-group admin-row justify-center py-12 text-sm text-ndp-text-dim"><Loader2 className="w-4 h-4 animate-spin" />Loading indexers…</div>;
+  if (!list) return <div className="admin-group admin-row justify-center py-12 text-sm text-ndp-text-dim"><Spinner size="sm" />Loading indexers…</div>;
   const totals = list.reduce((t, i) => ({ q: t.q + (i.stats?.queries ?? 0), g: t.g + (i.stats?.grabs ?? 0) }), { q: 0, g: 0 });
 
   return (
@@ -219,7 +220,7 @@ function Apps() {
   return (
     <div className="space-y-4 max-w-3xl">
       <div className="admin-group divide-y divide-white/[0.06]">
-        {!apps && <p className="admin-row text-sm text-ndp-text-dim"><Loader2 className="w-4 h-4 animate-spin" />Loading…</p>}
+        {!apps && <p className="admin-row text-sm text-ndp-text-dim"><Spinner size="sm" />Loading…</p>}
         {apps?.length === 0 && <p className="admin-row text-sm text-ndp-text-dim">Prowlarr isn't connected to any apps.</p>}
         {apps?.map((a) => (
           <div key={a.id} className="admin-row">
@@ -264,7 +265,7 @@ function History() {
         ))}
       </div>
       <div className="admin-group divide-y divide-white/[0.06]">
-        {!items && <p className="admin-row text-sm text-ndp-text-dim"><Loader2 className="w-4 h-4 animate-spin" />Loading…</p>}
+        {!items && <p className="admin-row text-sm text-ndp-text-dim"><Spinner size="sm" />Loading…</p>}
         {items && shown.length === 0 && <p className="admin-row text-sm text-ndp-text-dim">Nothing here in the loaded history.</p>}
         {shown.map((i) => {
           const Icon = ICON[i.kind] ?? Search;

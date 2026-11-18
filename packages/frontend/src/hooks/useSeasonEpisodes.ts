@@ -29,7 +29,7 @@ export function useSeasonEpisodes(tmdbId: number, seasonNumber: number, expanded
       pending = true;
       setLoading(true);
       try {
-        if (sourceToken) {
+        if (sourceToken && catalog?.source.provider !== 'dmm') {
           const { data } = await api.get<SeriesEpisodes>(`/media/tv/${tmdbId}/seasons/${seasonNumber}/episodes`, {
             params: { source: sourceToken }, signal: controller.signal,
           });
@@ -56,7 +56,7 @@ export function useSeasonEpisodes(tmdbId: number, seasonNumber: number, expanded
     void load();
     const timer = setInterval(load, 60000);
     return () => { controller.abort(); clearInterval(timer); };
-  }, [tmdbId, seasonNumber, expanded, revision, i18n.language, sourceToken, tracked]);
+  }, [tmdbId, seasonNumber, expanded, revision, i18n.language, sourceToken, tracked, catalog?.source.provider]);
 
   return { episodes, loading, error, now, stale, retry: () => setRevision(value => value + 1) };
 }

@@ -7,6 +7,7 @@ import { showToast } from '@/utils/toast';
 import { useFeatures } from '@/context/FeaturesContext';
 import { IconPicker } from '@/pages/admin/dashboard/IconPicker';
 import { LinkIcon } from '@/icons/LinkIcon';
+import { Spinner } from '@/components/Spinner';
 
 interface CustomLink {
   id: string;
@@ -124,7 +125,7 @@ export function CustomLinksEditor() {
   if (loading) {
     return (
       <div className="admin-group p-6 flex items-center justify-center">
-        <Loader2 className="w-5 h-5 animate-spin text-ndp-text-dim" />
+        <Spinner />
       </div>
     );
   }

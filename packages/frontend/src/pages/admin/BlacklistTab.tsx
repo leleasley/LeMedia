@@ -5,9 +5,10 @@ import { clsx } from 'clsx';
 import { Loader2, Trash2, ShieldBan, Search, Film, X } from 'lucide-react';
 import api, { posterUrl } from '@/lib/api';
 import { toastApiError } from '@/utils/toast';
-import { Spinner } from './Spinner';
+import { Spinner as SectionSpinner } from './Spinner';
 import { AdminTabLayout } from './AdminTabLayout';
 import { useModal } from '@/hooks/useModal';
+import { Spinner } from '@/components/Spinner';
 
 interface BlacklistEntry {
   id: number;
@@ -119,7 +120,7 @@ export function BlacklistTab() {
   const isBlocked = (tmdbId: number, mediaType: string) =>
     entries.some(e => e.tmdbId === tmdbId && e.mediaType === mediaType);
 
-  if (loading) return <Spinner />;
+  if (loading) return <SectionSpinner />;
 
   return (
     <AdminTabLayout title={t('admin.blacklist.title')} count={entries.length}>
@@ -135,7 +136,7 @@ export function BlacklistTab() {
             placeholder={t('admin.blacklist.search_placeholder')}
             className="input w-full text-sm py-2.5 pl-10 pr-10"
           />
-          {searching && <Loader2 className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-ndp-text-dim animate-spin" />}
+          {searching && <Spinner size="sm" className="absolute right-3.5 top-1/2 -translate-y-1/2" />}
         </div>
 
         {/* Results dropdown */}

@@ -10,6 +10,8 @@ import {
   getZurgConn, getZurgStatus, zurgPlacedExists, parseJobTarget,
   type ZurgConn, type ZurgJob, type ZurgStatus,
 } from './client.js';
+import { getWantedMap, wantedIdFromJob, type DmmWantedItem } from '../dmmWanted.js';
+import { syncDmmToArr } from '../dmmArrSync.js';
 
 /**
  * Zurg → LeMedia availability.
@@ -114,8 +116,13 @@ async function syncOnce(reason: string): Promise<ZurgSyncResult> {
 
   await alertOnStalls(status.jobs ?? []).catch((err) => logEvent('debug', 'Zurg', `stall alerts failed: ${String(err)}`));
 
-  const done = (status.jobs ?? []).filter((j) => j.state === 'done' && !!j.placed && !!parseJobTarget(j));
-  if (done.length === 0) return { checked: 0, promoted: 0 };
+  // Jobs tied to Radarr/Sonarr targets, and jobs from DMM's wanted source (which carry DMM's own
+  // ids and need the wanted list to become a title).
+  const dmmSources = new Set((status.sources ?? []).filter((s) => s.type === 'dmm').map((s) => s.id));
+  const jobs = status.jobs ?? [];
+  const done = jobs.filter((j) => j.state === 'done' && !!j.placed && !dmmSources.has(j.source) && !!parseJobTarget(j));
+  const dmmDone = jobs.filter((j) => j.state === 'done' && !!j.placed && dmmSources.has(j.source));
+  if (done.length === 0 && dmmDone.length === 0) return { checked: 0, promoted: 0 };
 
   const radarrIds = new Set<number>();
   const sonarrIds = new Set<number>();
@@ -177,6 +184,18 @@ async function syncOnce(reason: string): Promise<ZurgSyncResult> {
       confirmed.set(key, job.updated_at ?? '');
     } catch (err) {
       logEvent('warn', 'Zurg', `promote failed for "${m.title}": ${String(err)}`);
+    }
+  }
+
+  if (dmmDone.length > 0) {
+    // Only read DMM's list when Zurg actually reports DMM work: reading it stamps "last polled"
+    // on DMM's side, which would otherwise fake Zurg's health.
+    let wanted: Map<string, DmmWantedItem> | null = null;
+    try { wanted = await getWantedMap(); } catch { wanted = null; }
+    if (wanted) {
+      const dmm = await promoteDmmPlacements(conn, dmmDone, wanted);
+      checked += dmm.checked;
+      promoted += dmm.promoted;
     }
   }
 
@@ -256,6 +275,125 @@ async function promoteSeason(
 /** Tell requesters when zurg gives up on (or keeps failing at) something they asked for.
  *  Fires only on a transition observed during this process's lifetime, so a restart never
  *  replays old failures. */
+
+// ─── DMM wanted jobs ─────────────────────────────────────────────────
+
+const DMM_MEDIA_SELECT = {
+  id: true, mediaType: true, title: true, posterPath: true, tmdbId: true,
+  statusCategory: true, availableAt: true, tvdbId: true, releaseDate: true,
+  seasons: { select: { seasonNumber: true, statusCategory: true, episodeCount: true } },
+};
+
+const norm = (v: unknown) => String(v ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+/** Season a release name points at. A single episode is returned with its number so the
+ *  existing partial-season guard refuses to mark the whole season from one file. */
+export function releaseSeason(release: string | undefined): { season: number; firstEp: number | null; lastEp: number | null } | null {
+  if (!release) return null;
+  const single = release.match(/\bS(\d{1,2})E(\d{1,3})\b/i);
+  if (single) {
+    const ep = Number(single[2]);
+    return { season: Number(single[1]), firstEp: ep, lastEp: ep };
+  }
+  const pack = release.match(/\bS(\d{1,2})\b/i) ?? release.match(/\bSeason[ .](\d{1,2})\b/i);
+  return pack ? { season: Number(pack[1]), firstEp: null, lastEp: null } : null;
+}
+
+function yearFromRelease(release: string | undefined): number | null {
+  const hits = String(release ?? '').match(/(?:19|20)\d{2}/g);
+  return hits?.length ? Number(hits[hits.length - 1]) : null;
+}
+
+async function resolveDmmMedia(item: DmmWantedItem | undefined): Promise<MediaRow | null> {
+  if (!item) return null;
+  if (item.tmdb) {
+    const byTmdb = await prisma.media.findFirst({
+      where: { tmdbId: item.tmdb, mediaType: item.kind === 'movie' ? 'movie' : 'tv' },
+      select: DMM_MEDIA_SELECT,
+    }).catch(() => null);
+    if (byTmdb) return byTmdb as MediaRow;
+  }
+  if (item.kind === 'show' && item.tvdb) {
+    const byTvdb = await prisma.media.findFirst({ where: { mediaType: 'tv', tvdbId: item.tvdb }, select: DMM_MEDIA_SELECT }).catch(() => null);
+    if (byTvdb) return byTvdb as MediaRow;
+  }
+  return null;
+}
+
+/** A fetched film leaves DMM's wanted list, so fall back to the job's own title and year. */
+let movieIndex: Map<string, MediaRow[]> | null = null;
+async function movieByTitleYear(job: ZurgJob): Promise<MediaRow | null> {
+  const title = norm(job.title ?? job.item);
+  if (!title) return null;
+  if (!movieIndex) {
+    const rows = await prisma.media.findMany({ where: { mediaType: 'movie' }, select: DMM_MEDIA_SELECT }).catch(() => []);
+    movieIndex = new Map();
+    for (const row of rows as MediaRow[]) {
+      const key = norm(row.title);
+      const list = movieIndex.get(key) ?? [];
+      list.push(row);
+      movieIndex.set(key, list);
+    }
+  }
+  const hits = movieIndex.get(title) ?? [];
+  if (hits.length === 0) return null;
+  const year = job.year ?? yearFromRelease(job.release);
+  if (!year) return hits.length === 1 ? hits[0] : null;
+  const exact = hits.filter((m) => {
+    const release = (m as MediaRow & { releaseDate?: string | null }).releaseDate;
+    return release ? release.slice(0, 4) === String(year) : false;
+  });
+  return exact.length === 1 ? exact[0] : null;
+}
+
+async function promoteDmmPlacements(conn: ZurgConn, jobs: ZurgJob[], wanted: Map<string, DmmWantedItem>): Promise<{ checked: number; promoted: number }> {
+  movieIndex = null;
+  let checked = 0;
+  let promoted = 0;
+  const now = Date.now();
+  for (const job of jobs) {
+    if (checked >= MAX_CHECKS_PER_RUN) break;
+    const key = jobKey(job);
+    if (confirmed.get(key) === (job.updated_at ?? '')) continue;
+    if ((missingUntil.get(key) ?? 0) > now) continue;
+
+    const item = wanted.get(wantedIdFromJob(job.id));
+    let media = await resolveDmmMedia(item);
+    if (!media && (!item || item.kind === 'movie')) media = await movieByTitleYear(job);
+    if (!media) {
+      // Not something LeMedia tracks — remember the state so it isn't re-read every pass.
+      confirmed.set(key, job.updated_at ?? '');
+      continue;
+    }
+
+    checked++;
+    const exists = await zurgPlacedExists(conn, job.placed!);
+    if (exists === null) break;
+    if (!exists) {
+      missingUntil.set(key, now + MISSING_BACKOFF_MS);
+      continue;
+    }
+
+    try {
+      if (media.mediaType === 'movie') {
+        if (media.statusCategory !== 'AVAILABLE') {
+          await promoteMovie(media, job);
+          promoted++;
+        }
+      } else {
+        const season = releaseSeason(job.release);
+        if (season && (await promoteSeason(media, job, season.season, season.firstEp, season.lastEp))) promoted++;
+      }
+      confirmed.set(key, job.updated_at ?? '');
+      // Optional mirror into Radarr/Sonarr (add unmonitored + rescan). Never a search.
+      await syncDmmToArr({ mediaType: media.mediaType, title: media.title, tmdbId: media.tmdbId, tvdbId: media.tvdbId ?? null });
+    } catch (err) {
+      logEvent('warn', 'Zurg', `DMM promote failed for "${media.title}": ${String(err)}`);
+    }
+  }
+  return { checked, promoted };
+}
+
 async function alertOnStalls(jobs: ZurgJob[]): Promise<void> {
   const firstRun = previous.size === 0;
   const stalled: ZurgJob[] = [];

@@ -6,6 +6,7 @@ import api from '@/lib/api';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { showToast, toastApiError } from '@/utils/toast';
 import { APP_META, ago, bytes, type LibApp } from './shared';
+import { Spinner } from '@/components/Spinner';
 
 const LIB_APPS: LibApp[] = ['sonarr', 'radarr'];
 
@@ -58,7 +59,7 @@ export function ArrQueue() {
       <AppFilter value={filter} onChange={setFilter} counts={items ? { all: items.length, sonarr: items.filter((i) => i.app === 'sonarr').length, radarr: items.filter((i) => i.app === 'radarr').length } : undefined} />
       {problems.length > 0 && <p className="text-sm text-amber-300 flex items-center gap-2"><AlertTriangle className="w-4 h-4" />{problems.length} item{problems.length === 1 ? '' : 's'} need attention</p>}
       <div className="admin-group divide-y divide-white/[0.06]">
-        {items === null && <p className="admin-row text-sm text-ndp-text-dim"><Loader2 className="w-4 h-4 animate-spin" />Loading the queues…</p>}
+        {items === null && <p className="admin-row text-sm text-ndp-text-dim"><Spinner size="sm" />Loading the queues…</p>}
         {items && shown.length === 0 && <p className="admin-row text-sm text-ndp-text-dim"><CheckCircle2 className="w-4 h-4 text-emerald-400" />Nothing in the queue.</p>}
         {shown.map((i) => {
           const pct = i.size ? Math.round((1 - i.left / i.size) * 100) : 0;
@@ -160,7 +161,7 @@ export function ArrActivity() {
         </select>
       </div>
       <div className="admin-group divide-y divide-white/[0.06]">
-        {!data && <p className="admin-row text-sm text-ndp-text-dim"><Loader2 className="w-4 h-4 animate-spin" />Loading activity…</p>}
+        {!data && <p className="admin-row text-sm text-ndp-text-dim"><Spinner size="sm" />Loading activity…</p>}
         {data && all.length === 0 && <p className="admin-row text-sm text-ndp-text-dim">No activity.</p>}
         {all.map((i) => {
           const k = KIND[i.kind] ?? { label: i.kind, icon: CheckCircle2, tone: 'bg-white/[0.08] text-ndp-text-muted' };
@@ -231,7 +232,7 @@ export function ArrWanted() {
         <button type="button" className="btn-secondary !py-1.5 text-sm inline-flex items-center gap-1.5 ml-auto" disabled={!total} onClick={() => setAskAll(true)}><Search className="w-3.5 h-3.5" />Search all</button>
       </div>
       <div className="admin-group divide-y divide-white/[0.06]">
-        {items === null && <p className="admin-row text-sm text-ndp-text-dim"><Loader2 className="w-4 h-4 animate-spin" />Loading…</p>}
+        {items === null && <p className="admin-row text-sm text-ndp-text-dim"><Spinner size="sm" />Loading…</p>}
         {items && items.length === 0 && <p className="admin-row text-sm text-ndp-text-dim"><CheckCircle2 className="w-4 h-4 text-emerald-400" />Nothing missing.</p>}
         {items?.map((i) => (
           <div key={`${i.app}-${i.id}`} className="admin-row !py-2">

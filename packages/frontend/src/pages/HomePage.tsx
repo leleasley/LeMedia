@@ -7,7 +7,7 @@ import { PluginSlot } from '@/plugins/PluginSlot';
 import GenreRow from '@/components/GenreRow';
 import StreamingRow from '@/components/StreamingRow';
 import type { TmdbMedia } from '@/types';
-import { dbMediaToTmdbShape } from '@/utils/mediaMapper';
+import { dbMediaToTmdbShape, missingResponseToCards } from '@/utils/mediaMapper';
 import { buildDiscoverUrl } from '@/utils/tmdbDiscoverQuery';
 import { useTmdbList } from '@/hooks/useTmdbList';
 import { useHomepageLayout, type HomepageSection } from '@/hooks/useHomepageLayout';
@@ -29,6 +29,8 @@ const BUILTIN_ENDPOINTS: Record<string, string> = {
 };
 
 const BUILTIN_HREF: Record<string, string> = {
+  missing_movies: '/missing/movies',
+  missing_tv: '/missing/series',
   trending: '/category/trending',
   popular_movies: '/category/movies-popular',
   popular_tv: '/category/tv-popular',
@@ -65,6 +67,7 @@ const BUILTIN_TITLE_KEY: Record<string, string> = {
 function BuiltinSection({ builtinKey, title, size }: Readonly<{ builtinKey: string; title: string; size?: 'default' | 'large' }>) {
   const { t } = useTranslation();
   const isRecent = builtinKey === 'recently_added';
+  const isMissing = builtinKey === 'missing_movies' || builtinKey === 'missing_tv';
   const endpoint = BUILTIN_ENDPOINTS[builtinKey] ?? null;
 
   const { data, loading } = useTmdbList<TmdbMedia>(endpoint, '', isRecent ? {
@@ -73,6 +76,9 @@ function BuiltinSection({ builtinKey, title, size }: Readonly<{ builtinKey: stri
       if (!Array.isArray(arr)) return [];
       try { return arr.map(dbMediaToTmdbShape); } catch { return []; }
     },
+  } : isMissing ? {
+    // /media/missing returns camelCase rows straight from Radarr/Sonarr — cards need TMDB keys.
+    transform: missingResponseToCards,
   } : undefined);
 
   const displayTitle = title || t(BUILTIN_TITLE_KEY[builtinKey] ?? builtinKey);

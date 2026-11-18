@@ -6,6 +6,7 @@ import { Loader2, Plus, X, Check, Trash2, Shield, Link2, CheckCircle, Clock } fr
 import api from '@/lib/api';
 import { toastApiError, showToast } from '@/utils/toast';
 import { useModal } from '@/hooks/useModal';
+import { Spinner } from '@/components/Spinner';
 
 interface QualityMappingType {
   id: number;
@@ -204,7 +205,7 @@ export function QualityTab() {
     }
   };
 
-  if (loading) return <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-ndp-accent" /></div>;
+  if (loading) return <div className="flex justify-center py-12"><Spinner /></div>;
 
   return (
     <div className="space-y-6">
@@ -462,7 +463,7 @@ export function QualityTab() {
               {options.find(o => o.id === editingMapping.qualityOptionId)?.label} → {services.find(s => s.id === editingMapping.serviceId)?.name}
             </p>
             {loadingProfiles ? (
-              <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-ndp-accent" /></div>
+              <div className="flex justify-center py-8"><Spinner /></div>
             ) : profiles.length === 0 ? (
               <p className="text-ndp-text-muted text-sm py-4">{t('admin.quality.profiles_error')}</p>
             ) : (

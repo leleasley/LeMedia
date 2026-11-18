@@ -23,11 +23,15 @@ import { apiKeysAdminRoutes } from './apiKeys.js';
 import { securityAdminRoutes } from './security.js';
 import { importRoutes } from './import.js';
 import { feedbackRoutes } from './feedback.js';
+import { issuesAdminRoutes } from './issues.js';
 import { mailAdminRoutes } from './mail.js';
 import { zurgAdminRoutes } from './zurg.js';
 import { githubAdminRoutes } from './github.js';
 import { listsAdminRoutes } from './lists.js';
 import { arrAdminRoutes } from './arr.js';
+import { seriesLinkRoutes } from './seriesLink.js';
+import { dmmAdminRoutes } from './dmm.js';
+import { navRoutes } from './nav.js';
 import { logEvent } from '../../utils/logEvent.js';
 
 export async function adminRoutes(app: FastifyInstance) {
@@ -59,6 +63,10 @@ export async function adminRoutes(app: FastifyInstance) {
   await githubAdminRoutes(app);
   await listsAdminRoutes(app);
   await arrAdminRoutes(app);
+  await seriesLinkRoutes(app);
+  await dmmAdminRoutes(app);
+  await navRoutes(app);
+  await issuesAdminRoutes(app);
   await feedbackRoutes(app);
 
   // Graceful restart — rate-limited + confirm body + actor logged.

@@ -39,6 +39,7 @@ function mergeServiceConfig(
   const def = getServiceDefinition(type);
   const allowed = new Set(def?.fields.map((f) => f.key) ?? Object.keys(patch));
   if (type === 'plex') allowed.add('accountToken');
+  if (type === 'dmm') { allowed.add('routeRequests'); allowed.add('syncToArr'); }
   const out: Record<string, unknown> = Object.create(null);
   for (const key of allowed) {
     const incoming = patch[key];
@@ -131,6 +132,7 @@ export async function servicesCrudRoutes(app: FastifyInstance) {
         throw err;
       }
     }
+    if (type === 'dmm' && await prisma.service.count({ where: { type: 'dmm' } })) return reply.status(409).send({ error: 'Only one DMM account can be configured' });
     // Only one default per type — clear the previous one before setting this.
     if (isDefault) {
       await prisma.service.updateMany({ where: { type, isDefault: true }, data: { isDefault: false } });
@@ -215,6 +217,10 @@ export async function servicesCrudRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string };
     const serviceId = parseId(id);
     if (!serviceId) return reply.status(400).send({ error: 'Invalid ID' });
+    const existing = await prisma.service.findUnique({ where: { id: serviceId } });
+    if (existing?.type === 'dmm' && parseServiceConfig(existing.config).routeRequests === 'true') {
+      return reply.status(409).send({ error: 'Switch requests back to Radarr and Sonarr before deleting DMM' });
+    }
     const deleted = await prisma.service.delete({ where: { id: serviceId } });
     logEvent('info', 'Service', `Service "${deleted.name}" deleted`);
     return { ok: true };

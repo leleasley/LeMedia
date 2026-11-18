@@ -7,6 +7,8 @@ import api from '@/lib/api';
 import { AdminTabLayout } from './AdminTabLayout';
 import { UpdateStatusRow } from './UpdateStatusRow';
 import { RexCoverage } from './RexCoverage';
+import { RexUpdateSettings } from './rex/RexUpdateSettings';
+import { Spinner } from '@/components/Spinner';
 
 interface RexData {
   configured: boolean;
@@ -59,6 +61,7 @@ function Meter({ value }: Readonly<{ value: number | null }>) {
 export function RexTab() {
   const { t, i18n } = useTranslation();
   const [data, setData] = useState<RexData | null>(null);
+  const [view, setView] = useState<'overview' | 'series' | 'settings'>('overview');
 
   const load = useCallback(async () => {
     try { const { data } = await api.get<RexData>('/admin/rex/health'); setData(data); }
@@ -81,7 +84,7 @@ export function RexTab() {
     return d.toLocaleDateString(i18n.language, { day: 'numeric', month: 'short' });
   };
 
-  if (!data) return <AdminTabLayout><div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-ndp-text-dim" /></div></AdminTabLayout>;
+  if (!data) return <AdminTabLayout><div className="flex justify-center py-16"><Spinner /></div></AdminTabLayout>;
 
   if (!data.configured) {
     return (
@@ -112,7 +115,36 @@ export function RexTab() {
   return (
     <AdminTabLayout>
       <div className="space-y-7">
-        <RexCoverage />
+        <nav aria-label="REX sections" className="flex flex-wrap gap-2">
+          {([
+            ['overview', 'Overview'],
+            ['series', 'Series Manager'],
+            ['settings', 'Settings'],
+          ] as const).map(([id, label]) => (
+            <button key={id} type="button" onClick={() => setView(id)} aria-current={view === id ? 'page' : undefined}
+              className={clsx('rounded-lg px-4 py-2 text-sm font-medium', view === id ? 'bg-ndp-accent text-white' : 'bg-white/5 text-ndp-text-muted hover:bg-white/10')}>
+              {label}
+            </button>
+          ))}
+        </nav>
+        {view === 'series' && <RexCoverage />}
+        {view === 'settings' && (
+          <section>
+            <h3 className="admin-group-label">REX settings</h3>
+            <div className="admin-group divide-y divide-white/[0.06]">
+              <UpdateStatusRow kind="rex" />
+              <RexUpdateSettings />
+              <div className="admin-row">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-ndp-text">REX connection</p>
+                  <p className="text-xs text-ndp-text-dim">Manage the REX address and access token in Services.</p>
+                </div>
+                <Link to="/admin?tab=services" className="btn-secondary !py-1.5 !px-3 text-sm">Open Services</Link>
+              </div>
+            </div>
+          </section>
+        )}
+        {view === 'overview' && <>
         <section>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {stat(t('admin.rex.status', 'Status'), data.reachable ? t('admin.rex.online', 'Online') : t('admin.rex.offline', 'Offline'), data.reachable ? 'text-emerald-400' : 'text-red-400')}
@@ -370,6 +402,7 @@ export function RexTab() {
             </div>
           </section>
         )}
+        </>}
       </div>
     </AdminTabLayout>
   );

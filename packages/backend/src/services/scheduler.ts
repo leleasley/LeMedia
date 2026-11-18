@@ -1,3 +1,4 @@
+import { nightlyRexUpdate } from './rexDockerUpdate.js';
 import cron, { type ScheduledTask } from 'node-cron';
 import { prisma } from '../utils/prisma.js';
 import { getAppSettings } from '../utils/appSettings.js';
@@ -9,7 +10,7 @@ import { retryFailedRequests } from './requestService.js';
 import { getGenreBackdrops } from './tmdb.js';
 import { syncMissingKeywords } from './sync/keywordSync.js';
 import { syncDigitalReleases } from './sync/digitalReleaseSync.js';
-import { runAutoBackup } from './backupService.js';
+import { pruneBackups, runAutoBackup } from './backupService.js';
 import { clearExpiredCache } from '../utils/cache.js';
 import type { PluginEngine } from '../plugins/engine.js';
 import { logEvent, pruneOldLogs } from '../utils/logEvent.js';
@@ -24,6 +25,7 @@ import { runAutoUpdates } from './arrAdmin.js';
 import { runRexCoverage } from './rexCoverageJob.js';
 import { runPostMigrationJobs } from './postMigrationJobs.js';
 import { maintenanceReason } from '../utils/maintenance.js';
+import { autoImportNewestBackups } from './dmmWantedImport.js';
 
 /** Strip control characters (newlines, tabs, etc.) to prevent log injection */
 function sanitize(input: string): string {
@@ -67,10 +69,13 @@ const JOB_HANDLERS: Record<string, (opts?: { force?: boolean }) => Promise<unkno
   zurg_placement_import: async () => runPlacementGuard(true),
   // Only acts when auto-update is switched on (Zurg → Overview) and the host helper is set up.
   zurg_auto_update: async () => nightlyZurgUpdate(),
+  rex_auto_update: async () => nightlyRexUpdate(),
   // Admin notifications: new app versions and newly broken Zurg releases.
   stack_watch: async () => watchStack(),
   // Radarr / Sonarr / Prowlarr with automatic updates on, in their chosen hour.
   arr_auto_update: async () => runAutoUpdates((title, message) => notifyAppUpdate(title, message)),
+  // Admin → DMM: import each app's newest backup once. Disabled by default; the DMM page toggles it.
+  dmm_auto_import: async () => autoImportNewestBackups(),
 };
 
 // `label` is an i18n key resolved by the frontend; plugin jobs with free-text labels fall through.
@@ -98,10 +103,14 @@ const DEFAULT_JOBS = [
   { key: 'zurg_duplicates_refresh', label: 'admin.jobs.labels.zurg_duplicates_refresh', cronExpression: '15 4 * * *', enabled: true },
   { key: 'list_sync',              label: 'admin.jobs.labels.list_sync',              cronExpression: '*/15 * * * *', enabled: true },
   { key: 'zurg_placement_import',  label: 'admin.jobs.labels.zurg_placement_import',  cronExpression: '7,22,37,52 * * * *', enabled: true },
+  { key: 'rex_auto_update', label: 'admin.jobs.labels.rex_auto_update', cronExpression: '45 6 * * *', enabled: true },
   { key: 'zurg_auto_update',       label: 'admin.jobs.labels.zurg_auto_update',       cronExpression: '30 6 * * *',   enabled: true },
   { key: 'stack_watch',            label: 'admin.jobs.labels.stack_watch',            cronExpression: '*/30 * * * *', enabled: true },
   { key: 'arr_auto_update',        label: 'admin.jobs.labels.arr_auto_update',        cronExpression: '5 * * * *',    enabled: true },
   { key: 'log_cleanup',            label: 'admin.jobs.labels.log_cleanup',            cronExpression: '0 4 * * *',    enabled: true },
+  // Off by default: it adds whatever Radarr/Sonarr are missing to the DMM wanted list, and zurg
+  // then fetches it. Opt-in from Admin → DMM.
+  { key: 'dmm_auto_import',        label: 'admin.jobs.labels.dmm_auto_import',        cronExpression: '0 4 * * *',    enabled: false },
 ];
 
 const activeTasks = new Map<string, ScheduledTask>();
@@ -221,7 +230,8 @@ function scheduleJob(key: string, cronExpression: string) {
 /** Check if a first full sync has been completed */
 async function hasCompletedFirstSync(): Promise<boolean> {
   const settings = await getAppSettings();
-  return !!(settings?.lastRadarrSync || settings?.lastSonarrSync);
+  if (settings?.lastRadarrSync || settings?.lastSonarrSync) return true;
+  return !!(await prisma.integration.findUnique({ where: { id: 'dmm-initial-sync' } }));
 }
 
 /** Start all enabled cron schedules */
@@ -308,6 +318,12 @@ export async function initScheduler(pluginEngine?: PluginEngine) {
 
   await seedJobs();
 
+  // The backup folder may predate a smaller retention (or a crash between runs): trim it now.
+  try {
+    const removed = pruneBackups();
+    if (removed.length > 0) logEvent('info', 'Backup', `Removed ${removed.length} old backup(s) on boot`);
+  } catch { /* a missing folder is not an error */ }
+
   // Only start cron schedules if a first full sync has been done
   if (await hasCompletedFirstSync()) {
     await startAllJobs();
@@ -315,6 +331,10 @@ export async function initScheduler(pluginEngine?: PluginEngine) {
     logEvent('debug', 'Job', 'Jobs seeded but not started, waiting for first full sync');
   }
   startPostMigrationJobs();
+
+  // The media-server snapshot backs "already in your library" (request guard, title page) and the
+  // catalogue for installs without an *arr. Refresh it at boot instead of waiting up to 30 minutes.
+  void syncLibraryConfirmations().catch(() => { /* no media server or unreachable: try later */ });
 }
 
 export async function updateJobSchedule(key: string, cronExpression: string, enabled: boolean) {

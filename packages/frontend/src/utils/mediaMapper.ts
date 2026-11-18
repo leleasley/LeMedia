@@ -25,3 +25,47 @@ export function dbMediaToTmdbShape(m: {
     lastEpisodeInfo: m.lastEpisodeInfo,
   };
 }
+
+/** A row from /media/missing (services/missing.ts). Keys are camelCase there, while the card
+ *  components consume TMDB's snake_case shape — this is the single place that bridges them, so
+ *  the homepage row and the Missing page can never drift apart again. */
+export interface MissingApiRow {
+  id: number;
+  mediaType: 'movie' | 'tv';
+  title: string;
+  posterPath: string | null;
+  backdropPath: string | null;
+  releaseDate: string | null;
+  year: number | null;
+  runtime: number | null;
+  rating: number | null;
+  certification: string | null;
+  missingEpisodes?: number;
+  totalEpisodes?: number;
+}
+
+export function missingRowToTmdbShape(row: MissingApiRow): TmdbMedia {
+  return {
+    id: row.id,
+    media_type: row.mediaType,
+    title: row.mediaType === 'movie' ? row.title : undefined,
+    name: row.mediaType === 'tv' ? row.title : undefined,
+    poster_path: row.posterPath,
+    backdrop_path: row.backdropPath,
+    release_date: row.mediaType === 'movie' ? (row.releaseDate ?? undefined) : undefined,
+    first_air_date: row.mediaType === 'tv' ? (row.releaseDate ?? undefined) : undefined,
+    vote_average: row.rating ?? 0,
+  } as TmdbMedia;
+}
+
+/** Map the { results } envelope (or a plain array) coming back from /media/missing. */
+export function missingResponseToCards(data: unknown): TmdbMedia[] {
+  const rows = Array.isArray(data)
+    ? data
+    : data && typeof data === 'object' && Array.isArray((data as { results?: unknown }).results)
+      ? ((data as { results: unknown[] }).results)
+      : [];
+  return rows
+    .filter((row): row is MissingApiRow => !!row && typeof row === 'object' && 'posterPath' in (row as object))
+    .map(missingRowToTmdbShape);
+}

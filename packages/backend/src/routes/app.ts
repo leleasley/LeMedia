@@ -1,5 +1,6 @@
+import { selectedDmmService } from '../services/dmm.js';
 import type { FastifyInstance } from 'fastify';
-import { readFileSync, statfsSync } from 'node:fs';
+import { statfsSync } from 'node:fs';
 import crypto from 'node:crypto';
 import { prisma } from '../utils/prisma.js';
 import { getAppSettings, parseInstanceLanguages } from '../utils/appSettings.js';
@@ -7,13 +8,11 @@ import { pluginEngine } from '../plugins/engine.js';
 import { getArrClient } from '../providers/index.js';
 import { getServiceConfig } from '../utils/services.js';
 import { isQualityAllowedForRole } from '../utils/qualityAccess.js';
-import { PROJECT_PACKAGE_JSON } from '../utils/paths.js';
 import { getHomepageLayout } from './admin/homepage.js';
 import { isResetEnabled } from '../services/passwordReset.js';
 
-const APP_VERSION = JSON.parse(
-  readFileSync(PROJECT_PACKAGE_JSON, 'utf-8')
-).version as string;
+import { APP_VERSION, versionFromTag } from '../utils/version.js';
+import { updateStatus } from '../services/githubIntegration.js';
 
 const AVATAR_HOSTS = ['googleusercontent.com', 'githubusercontent.com', 'discordapp.com', 'discordapp.net', 'plex.tv'];
 const AVATAR_TTL_MS = 6 * 3600_000;
@@ -35,6 +34,15 @@ export async function appRoutes(app: FastifyInstance) {
     const result: { current: string; latest?: string; updateAvailable?: boolean; releaseUrl?: string } = {
       current: APP_VERSION,
     };
+    // When the admin has connected GitHub and the app's repo has releases, say whether a newer
+    // LeMedia is out. Cached hourly by the release feed; no token, no call.
+    const status = await updateStatus('app', APP_VERSION).catch(() => null);
+    if (status?.connected && status.latest) {
+      const latest = versionFromTag(status.latest.tag);
+      result.latest = latest;
+      result.updateAvailable = status.upToDate === false || (latest !== APP_VERSION && status.behind !== 0);
+      result.releaseUrl = status.latest.url;
+    }
     return result;
   });
 
@@ -76,6 +84,7 @@ export async function appRoutes(app: FastifyInstance) {
 
   // Quality options available for requests (only those with at least one mapping)
   app.get('/quality-options', async (request) => {
+    if (await selectedDmmService()) return [];
     const user = request.user;
     const options = await prisma.qualityOption.findMany({
       where: { mappings: { some: {} } },

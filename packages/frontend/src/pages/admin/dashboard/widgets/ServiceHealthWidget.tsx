@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { CheckCircle2, AlertCircle } from 'lucide-react';
 import { clsx } from 'clsx';
 import api from '@/lib/api';
+import { Spinner } from '@/components/Spinner';
 
 interface Service { id: number; name: string; type: string; enabled: boolean }
 interface HealthState { status: 'loading' | 'ok' | 'error'; version?: string; error?: string }
@@ -55,7 +56,7 @@ export function ServiceHealthWidget() {
               <span className={clsx('admin-icon-tile',
                 h?.status === 'ok' && 'bg-emerald-500/15 text-emerald-400',
                 h?.status === 'error' && 'bg-red-500/15 text-red-400')}>
-                {h?.status === 'error' ? <AlertCircle className="h-4 w-4" /> : h?.status === 'ok' ? <CheckCircle2 className="h-4 w-4" /> : <Loader2 className="h-4 w-4 animate-spin text-ndp-text-dim" />}
+                {h?.status === 'error' ? <AlertCircle className="h-4 w-4" /> : h?.status === 'ok' ? <CheckCircle2 className="h-4 w-4" /> : <Spinner size="sm" />}
               </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[15px] font-medium text-ndp-text">{s.name}</p>

@@ -35,9 +35,15 @@ export async function setCache(key: string, data: unknown, ttlHours = CACHE_TTL_
   });
 }
 
+/** Drop one key so the next read refetches. Used when a fact the key was derived from changes
+ *  (e.g. an operator links a different TVDB series), where the cached payload is now wrong but
+ *  is still inside its TTL. */
+export async function deleteCached(key: string): Promise<void> {
+  await prisma.tmdbCache.deleteMany({ where: { cacheKey: key } });
+}
+
 /** Nightly cleanup — only entries beyond the stale grace window, so stale-while-revalidate
- *  still has something to serve. */
-export async function clearExpiredCache(): Promise<number> {
+ *  still has something to serve. */export async function clearExpiredCache(): Promise<number> {
   const result = await prisma.tmdbCache.deleteMany({
     where: { expiresAt: { lt: new Date(Date.now() - STALE_GRACE_HOURS * 3600_000) } },
   });

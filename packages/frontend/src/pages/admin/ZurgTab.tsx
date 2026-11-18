@@ -9,6 +9,7 @@ import { UpdateStatusRow } from './UpdateStatusRow';
 import { ZurgUpdateRow } from './zurg/ZurgUpdateRow';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { showToast, toastApiError } from '@/utils/toast';
+import { Spinner } from '@/components/Spinner';
 
 interface JobView {
   source: string; item: string; state: string; detail: string | null; nextRetry: string | null;
@@ -25,6 +26,7 @@ interface Overview {
     started: boolean | null;
     sources: { id: string; name: string; type: string | null }[];
     counts: Record<string, number>;
+    dmm: { sources: { id: string; name: string }[]; total: number; counts: Record<string, number>; recent: JobView[] } | null;
     total: number;
     recentGrabs: JobView[];
     retrying: JobView[];
@@ -91,7 +93,7 @@ export function ZurgTab() {
   };
 
   if (!data) {
-    return <AdminTabLayout><div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-ndp-text-dim" /></div></AdminTabLayout>;
+    return <AdminTabLayout><div className="flex justify-center py-16"><Spinner /></div></AdminTabLayout>;
   }
 
   if (!data.configured) {
@@ -121,10 +123,10 @@ export function ZurgTab() {
   );
   const mountOk = data.mount?.state === 'running';
 
-  const jobRow = (j: JobView, i: number, kind: 'grab' | 'retry' | 'flight') => (
+  const jobRow = (j: JobView, i: number, kind: 'grab' | 'retry' | 'flight' | 'aside') => (
     <div key={`${j.source}-${j.item}-${i}`} className="admin-row items-start">
-      <span className={clsx('admin-icon-tile', kind === 'grab' ? 'bg-emerald-500/15 text-emerald-400' : kind === 'retry' ? 'bg-amber-500/15 text-amber-400' : 'bg-sky-500/15 text-sky-300')}>
-        {kind === 'grab' ? <CheckCircle2 className="w-4 h-4" /> : kind === 'retry' ? <RefreshCw className="w-4 h-4" /> : <Loader2 className="w-4 h-4 animate-spin" />}
+      <span className={clsx('admin-icon-tile', kind === 'grab' ? 'bg-emerald-500/15 text-emerald-400' : kind === 'retry' ? 'bg-amber-500/15 text-amber-400' : kind === 'aside' ? 'bg-white/5 text-ndp-text-dim' : 'bg-sky-500/15 text-sky-300')}>
+        {kind === 'grab' ? <CheckCircle2 className="w-4 h-4" /> : kind === 'retry' ? <RefreshCw className="w-4 h-4" /> : kind === 'aside' ? <XCircle className="w-4 h-4" /> : <Loader2 className="w-4 h-4 animate-spin" />}
       </span>
       <div className="flex-1 min-w-0">
         <p className="text-[15px] font-medium text-ndp-text truncate">{j.item}</p>
@@ -133,7 +135,7 @@ export function ZurgTab() {
             ? [j.release, j.quality].filter(Boolean).join(' · ')
             : kind === 'retry'
               ? [j.detail, j.attempts ? t('admin.zurg.attempts', '{{n}} attempts', { n: j.attempts }) : null, j.nextRetry ? t('zurg.next_try', 'next try {{when}}', { when: when(j.nextRetry, i18n.language) }) : null].filter(Boolean).join(' · ')
-              : j.state}
+              : kind === 'aside' ? [j.state, j.detail].filter(Boolean).join(' · ') : j.state}
         </p>
       </div>
       <span className="text-[11px] text-ndp-text-dim whitespace-nowrap mt-0.5">{when(j.updatedAt, i18n.language)}</span>
@@ -271,6 +273,33 @@ export function ZurgTab() {
                 {data.fetchedAt ? ` · ${t('admin.zurg.updated', 'updated {{when}}', { when: when(data.fetchedAt, i18n.language) })}` : ''}
               </p>
             </section>
+
+            {acq.dmm && (
+              <section>
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+                  <h3 className="admin-group-label !mb-0">{t('admin.zurg.dmm_want', 'DMM Want')}</h3>
+                  <a href="https://debridmediamanager.com/wanted" target="_blank" rel="noopener noreferrer" className="btn-secondary !px-3 !py-2 !text-sm">{t('admin.zurg.dmm_open', 'Open wanted list')} ↗</a>
+                </div>
+                <div className="admin-group divide-y divide-white/[0.06]">
+                  <div className="admin-row items-start">
+                    <span className="admin-icon-tile"><Library className="w-4 h-4" /></span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[15px] font-medium text-ndp-text">{acq.dmm.sources.length ? t('admin.zurg.dmm_source_reported', 'DMM Want source reported by Zurg') : t('admin.zurg.dmm_source_missing', 'No DMM Want source reported')}</p>
+                      <p className="text-xs text-ndp-text-dim mt-1">{acq.dmm.sources.length ? t('admin.zurg.dmm_source_desc', 'These are acquisition jobs reported by Zurg, not the full DMM wanted list.') : t('admin.zurg.dmm_source_setup', 'A sponsored DMM API key must be configured in Zurg for its wanted source.')}</p>
+                      {!acq.dmm.sources.length && <a className="text-xs text-ndp-accent inline-block mt-2" href="https://notes.debridmediamanager.com/zurg/guides/dmm-wanted/" target="_blank" rel="noopener noreferrer">{t('admin.zurg.dmm_setup', 'DMM Want setup guide')} ↗</a>}
+                    </div>
+                  </div>
+                  {acq.dmm.sources.length > 0 && <div className="admin-row flex-wrap gap-2 text-xs text-ndp-text-muted">
+                    <span className="admin-chip">{t('admin.zurg.dmm_done', '{{n}} fetched', { n: acq.dmm.counts.done ?? 0 })}</span>
+                    <span className="admin-chip">{t('admin.zurg.dmm_retrying', '{{n}} retrying', { n: acq.dmm.counts.retrying ?? 0 })}</span>
+                    <span className="admin-chip">{t('admin.zurg.dmm_other', '{{n}} other jobs', { n: acq.dmm.total - (acq.dmm.counts.done ?? 0) - (acq.dmm.counts.retrying ?? 0) })}</span>
+                  </div>}
+                  {acq.dmm.sources.length > 0 && (acq.dmm.recent.length
+                    ? acq.dmm.recent.map((j, i) => jobRow(j, i, j.state === 'done' ? 'grab' : j.state === 'retrying' ? 'retry' : j.state === 'set aside' ? 'aside' : 'flight'))
+                    : <p className="admin-row text-sm text-ndp-text-dim">{t('admin.zurg.dmm_no_jobs', 'Zurg has not reported any DMM Want jobs yet.')}</p>)}
+                </div>
+              </section>
+            )}
 
             {acq.inFlight.length > 0 && (
               <section>

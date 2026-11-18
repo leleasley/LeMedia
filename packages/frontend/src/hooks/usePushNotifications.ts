@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import api from '@/lib/api';
+import { getDeviceId } from '@/utils/deviceId';
 
 interface PushState {
   supported: boolean;
@@ -32,6 +33,16 @@ export function usePushNotifications() {
         const registration = await navigator.serviceWorker.ready;
         const subscription = await registration.pushManager.getSubscription();
         subscribed = !!subscription;
+        // Re-register on load: refreshes "last seen" and, on an older install, attaches the
+        // device id so a future endpoint rotation can replace this row instead of adding one.
+        if (subscription) {
+          const deviceId = getDeviceId();
+          await api.post('/push/subscribe', {
+            ...subscription.toJSON(),
+            deviceId,
+            userAgent: navigator.userAgent,
+          }).catch(() => {});
+        }
       } catch {
         // Service worker not ready yet
       }
@@ -64,7 +75,11 @@ export function usePushNotifications() {
       });
 
       // Send to backend
-      await api.post('/push/subscribe', subscription.toJSON());
+      await api.post('/push/subscribe', {
+        ...subscription.toJSON(),
+        deviceId: getDeviceId(),
+        userAgent: navigator.userAgent,
+      });
 
       setState({ supported: true, permission: 'granted', subscribed: true, loading: false });
       return true;

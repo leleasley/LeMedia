@@ -1,3 +1,4 @@
+import { rexDockerVersion } from '../../services/rexDockerUpdate.js';
 import type { FastifyInstance } from 'fastify';
 import { connectGithub, disconnectGithub, githubStatus, releaseNotes, setReleaseRepos, updateStatus } from '../../services/githubIntegration.js';
 import { getZurgConn, zurgGet } from '../../services/zurg/client.js';
@@ -31,11 +32,11 @@ export async function githubAdminRoutes(app: FastifyInstance) {
     schema: {
       body: {
         type: 'object' as const,
-        properties: { zurg: { type: 'string' as const, pattern: REPO }, rex: { type: 'string' as const, pattern: REPO } },
+        properties: { zurg: { type: 'string' as const, pattern: REPO }, rex: { type: 'string' as const, pattern: REPO }, app: { type: 'string' as const, pattern: REPO } },
       },
     },
   }, async (request) => {
-    await setReleaseRepos(request.body as { zurg?: string; rex?: string });
+    await setReleaseRepos(request.body as { zurg?: string; rex?: string; app?: string });
     return githubStatus();
   });
 
@@ -45,7 +46,7 @@ export async function githubAdminRoutes(app: FastifyInstance) {
     const fresh = (request.query as { fresh?: string }).fresh === '1';
     const conn = await getZurgConn().catch(() => null);
     const zurgVersion = conn ? (await zurgGet<{ version?: string }>(conn, '/stats', 8_000).catch(() => null))?.version ?? null : null;
-    const rexVersion = getRexHostReport()?.report.rexVersion ?? null;
+    const rexVersion = await rexDockerVersion() ?? getRexHostReport()?.report.rexVersion ?? null;
     const [zurg, rex] = await Promise.all([
       conn ? updateStatus('zurg', zurgVersion, fresh) : null,
       updateStatus('rex', rexVersion, fresh),
@@ -63,7 +64,7 @@ export async function githubAdminRoutes(app: FastifyInstance) {
       const conn = await getZurgConn().catch(() => null);
       installed = conn ? (await zurgGet<{ version?: string }>(conn, '/stats', 8_000).catch(() => null))?.version ?? null : null;
     } else {
-      installed = getRexHostReport()?.report.rexVersion ?? null;
+      installed = await rexDockerVersion() ?? getRexHostReport()?.report.rexVersion ?? null;
     }
     return releaseNotes(kind, installed);
   });

@@ -5,6 +5,7 @@ import { Info, Loader2, RotateCcw, Search, Trash2, X } from 'lucide-react';
 import api from '@/lib/api';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { showToast, toastApiError } from '@/utils/toast';
+import { Spinner } from '@/components/Spinner';
 
 interface TrashItem { id: string; name: string; size: string; why: string; removed: string; accounts: string; deletedOnService: string }
 type Group = 'all' | 'dropped' | 'cleanup' | 'arr' | 'other';
@@ -102,7 +103,7 @@ export function ZurgTrash({ onChanged }: Readonly<{ onChanged?: () => void }>) {
     finally { setBusy(null); }
   };
 
-  if (!items) return <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-ndp-text-dim" /></div>;
+  if (!items) return <div className="flex justify-center py-12"><Spinner /></div>;
   if (items.length === 0) return <p className="admin-group admin-row text-sm text-ndp-text-dim">{t('admin.zurg.trash.empty', 'The trash is empty.')}</p>;
 
   const chipGroups: Group[] = ['all', 'dropped', 'cleanup', 'arr', 'other'];

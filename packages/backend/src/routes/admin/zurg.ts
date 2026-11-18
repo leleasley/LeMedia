@@ -1,8 +1,11 @@
+import * as rexHelper from '../../services/rexDockerHelper.js';
+import { rexUpdateSettings, setRexAutoUpdate, startRexUpdate, getRexUpdateJob } from '../../services/rexDockerUpdate.js';
 import { getRexCoverageSnapshot } from '../../services/rexCoverageJob.js';
 import { rexShows, rexShowCoverage } from '../../services/rexCoverage.js';
 import axios from 'axios';
 import type { FastifyInstance } from 'fastify';
 import { getZurgSnapshot, runZurgSync } from '../../services/zurg/watcher.js';
+import { summarizeDmmSources } from '../../services/zurg/dmmStatus.js';
 import { getZurgConn, zurgGet, zurgPost, type ZurgConn, type ZurgJob } from '../../services/zurg/client.js';
 import { getAllServices } from '../../utils/services.js';
 import { getRexConn, getRexHealth } from '../../services/rex.js';
@@ -109,6 +112,7 @@ export async function zurgAdminRoutes(app: FastifyInstance) {
         started: snap.status?.started ?? null,
         sources: (snap.status?.sources ?? []).map((s) => ({ id: s.id, name: s.name ?? s.id, type: s.type ?? null })),
         counts,
+        dmm: summarizeDmmSources(snap.status),
         total: jobs.length,
         recentGrabs: jobs.filter((j) => j.state === 'done').sort(byUpdatedDesc).slice(0, 8).map(pick),
         retrying: jobs.filter((j) => j.state === 'retrying').sort(byUpdatedDesc).slice(0, 10).map(pick),
@@ -159,6 +163,15 @@ export async function zurgAdminRoutes(app: FastifyInstance) {
     if (!conn) return { configured: false };
     return { configured: true, ...(await getRexHealth(conn)), host: getRexHostReport(), sync: getRexSync() };
   });
+
+  app.get('/rex/update', async () => rexUpdateSettings());
+  app.put('/rex/update', async (request, reply) => { const b = request.body as { autoUpdate?: unknown }; if (typeof b?.autoUpdate !== 'boolean') return reply.status(400).send({ error: 'Invalid setting' }); try { return await setRexAutoUpdate(b.autoUpdate); } catch (err) { return reply.status(400).send({ error: (err as Error).message }); } });
+  app.post('/rex/update', async (_request, reply) => { try { return { jobId: (await startRexUpdate('admin')).id }; } catch (err) { return reply.status(400).send({ error: (err as Error).message }); } });
+  app.get('/rex/update/jobs/:id', async (request, reply) => getRexUpdateJob((request.params as { id: string }).id) ?? reply.status(404).send({ error: 'NOT_FOUND' }));
+  app.put('/rex/helper', async (request, reply) => { try { const b = request.body as { host: string; port?: number; user?: string }; if (typeof b?.host !== 'string') return reply.status(400).send({ error: 'Host required' }); return await rexHelper.setTarget(b); } catch (err) { return reply.status(400).send({ error: (err as Error).message }); } });
+  app.post('/rex/helper/key', async (_request, reply) => { try { return await rexHelper.generateKey(); } catch (err) { return reply.status(400).send({ error: (err as Error).message }); } });
+  app.post('/rex/helper/install', async (_request, reply) => { try { return await rexHelper.createInstallToken({ rex: { mode: 'tag' } }); } catch (err) { return reply.status(400).send({ error: (err as Error).message }); } });
+  app.post('/rex/helper/test', async (_request, reply) => { try { const status = await rexHelper.testHelper(); if (!status.apps?.includes('rex')) return reply.status(400).send({ error: 'Helper does not manage REX' }); return status; } catch (err) { return reply.status(400).send({ error: (err as Error).message }); } });
 
   // Zurg update through the host helper (pull the nightly image, recreate, verify).
   app.get('/zurg/update', async () => ({ ...(await zurgUpdateSettings()), running: runningZurgUpdate() }));

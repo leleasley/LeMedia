@@ -22,6 +22,7 @@ import { BlacklistTab } from './admin/BlacklistTab';
 import { NotificationsTab } from './admin/NotificationsTab';
 import { JobsTab } from './admin/JobsTab';
 import { LogsTab } from './admin/LogsTab';
+import { IssuesTab } from './admin/IssuesTab';
 import { RolesTab } from './admin/RolesTab';
 import { HomepageTab } from './admin/HomepageTab';
 import { LinksTab } from './admin/LinksTab';
@@ -31,6 +32,7 @@ import { ApiKeysTab } from './admin/ApiKeysTab';
 import { ImportTab } from './admin/ImportTab';
 import { ZurgPage } from './admin/ZurgPage';
 import { ArrTab } from './admin/ArrTab';
+import { DmmTab } from './admin/DmmTab';
 import { ProwlarrTab } from './admin/ProwlarrTab';
 import { RexTab } from './admin/RexTab';
 import { ListsTab } from './admin/ListsTab';
@@ -104,7 +106,9 @@ export default function AdminPage() {
       {activeTab === 'rules' && <RoutingRulesTab />}
       {activeTab === 'keywords' && <KeywordsTab />}
       {activeTab === 'blacklist' && <BlacklistTab />}
+      {activeTab === 'issues' && <IssuesTab />}
       {activeTab === 'arr' && <ArrTab />}
+      {activeTab === 'dmm' && <DmmTab />}
       {activeTab === 'prowlarr' && <ProwlarrTab />}
       {activeTab === 'zurg' && <ZurgPage />}
       {activeTab === 'lists' && <ListsTab />}

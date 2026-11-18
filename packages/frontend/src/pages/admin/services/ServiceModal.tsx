@@ -262,6 +262,16 @@ export function ServiceModal({ service, onClose, onSaved }: ServiceModalProps) {
             <input id={`${fieldId}-name`} type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder={`${schema?.label || type} Principal`} className="input w-full" required />
           </div>
 
+          {type === 'dmm' && <p className="text-xs text-ndp-text-dim">{t('admin.services.dmm_hint', 'Use your DMM sponsor API key from Gatekeeper. Zurg also needs its own configured key.')} <a href="https://gatekeeper.debridmediamanager.com/" target="_blank" rel="noopener noreferrer" className="text-ndp-accent underline">Gatekeeper ↗</a></p>}
+          {type === 'dmm' && <label className="flex items-start gap-2 text-sm text-ndp-text">
+            <input type="checkbox" checked={config.routeRequests === 'true'} onChange={e => handleConfigChange('routeRequests', e.target.checked ? 'true' : 'false')} />
+            <span>Send all users’ new requests to this DMM account. Leave off to use Radarr and Sonarr. Existing pending requests keep their original destination.</span>
+          </label>}
+          {type === 'dmm' && <label className="flex items-start gap-2 text-sm text-ndp-text">
+            <input type="checkbox" checked={config.syncToArr === 'true'} onChange={e => handleConfigChange('syncToArr', e.target.checked ? 'true' : 'false')} />
+            <span>After Zurg fetches something, also add it to Radarr/Sonarr (unmonitored, no search) and rescan it. Only works when Zurg writes into that app’s library folder.</span>
+          </label>}
+
           {type === 'plex' && (
             <div className="space-y-2">
               <button type="button" onClick={fetchPlexToken} disabled={fetchingPlexToken} className="btn-secondary w-full flex items-center justify-center gap-2 text-sm py-2.5 disabled:opacity-60">

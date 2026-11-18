@@ -6,6 +6,7 @@ import { ConfirmModal } from '@/components/ConfirmModal';
 import Switch from '@/components/ui/Switch';
 import { showToast, toastApiError } from '@/utils/toast';
 import { APP_META, ago, bytes, uptime, useArrJob, type AppOverview, type ArrJob } from './shared';
+import { Spinner } from '@/components/Spinner';
 
 /** One card per app: status, version and update, restart, library numbers, health and disks. */
 export function ArrOverview({ apps, helper, jobs, onChanged, onSettings }: Readonly<{
@@ -152,7 +153,7 @@ function AppCard({ a, helper, running, onChanged, onSettings }: Readonly<{ a: Ap
       {/* Job progress */}
       {busy && (
         <div className="mx-5 mb-4 flex items-center gap-2.5 rounded-xl bg-sky-500/10 ring-1 ring-inset ring-sky-500/25 px-4 py-2.5 text-sm text-ndp-text">
-          <Loader2 className="w-4 h-4 animate-spin text-sky-300 flex-shrink-0" />{job?.phase ?? 'Starting…'}
+          <Spinner size="sm" />{job?.phase ?? 'Starting…'}
         </div>
       )}
 

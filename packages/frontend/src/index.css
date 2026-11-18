@@ -306,13 +306,13 @@
 
 /* Keep plugin sections usable without shifting the centered search field. */
 .lemedia-header-grid { display: grid; grid-template-columns: minmax(0, 1fr) clamp(16rem, 34vw, 30rem) minmax(0, 1fr); align-items: center; gap: 16px; min-height: 64px; }
-.lemedia-header-start { display: flex; align-items: center; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; container: primary-nav / inline-size; }
+.lemedia-header-start { grid-column: 1; display: flex; align-items: center; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; container: primary-nav / inline-size; }
 .lemedia-header-start > * { flex-shrink: 0; }
 .lemedia-header-start::-webkit-scrollbar { display: none; }
 .lemedia-nav-label { display: none; white-space: nowrap; }
 @container primary-nav (width >= 480px) { .lemedia-nav-label { display: inline; } }
 .lemedia-header-search { min-width: 0; }
-.lemedia-header-end { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; min-width: 0; position: relative; }
+.lemedia-header-end { grid-column: 3; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; min-width: 0; position: relative; }
 
 /* Mouse panning keeps ordinary clicks and native touch scrolling available. */
 [data-drag-scroll="ready"], [data-drag-scroll="ready"] a { cursor: grab; }

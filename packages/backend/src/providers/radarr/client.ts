@@ -39,6 +39,11 @@ export class RadarrClient extends ArrClientBase implements ArrClient {
     await this.api.post('/command', { name: 'MoviesSearch', movieIds: [movieId] });
   }
 
+  /** Rescan one movie's folder — imports files that appeared there without a search. */
+  async rescanMedia(movieId: number): Promise<void> {
+    await this.api.post('/command', { name: 'RescanMovie', movieId });
+  }
+
   async getMovieByTmdbId(tmdbId: number): Promise<RadarrMovie | null> {
     const { data } = await this.api.get('/movie', { params: { tmdbId } });
     return data[0] ?? null;
@@ -80,9 +85,14 @@ export class RadarrClient extends ArrClientBase implements ArrClient {
   }
 
   /** Import-list exclusions ("never add this again"). */
-  async getExclusions(): Promise<{ tmdbId?: number; movieTitle?: string; movieYear?: number }[]> {
+  async getExclusions(): Promise<{ id: number; tmdbId?: number; movieTitle?: string; movieYear?: number }[]> {
     const { data } = await this.api.get('/exclusions');
     return Array.isArray(data) ? data : [];
+  }
+
+  /** Remove an import-list exclusion so an approved request can add the film. */
+  async deleteExclusion(id: number): Promise<void> {
+    await this.api.delete(`/exclusions/${id}`);
   }
 
   async getCalendar(start: string, end: string): Promise<RadarrMovie[]> {

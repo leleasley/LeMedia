@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { clsx } from 'clsx';
-import { Copy, Loader2, Pause, Play, Search } from 'lucide-react';
+import { Copy, Pause, Play, Search } from 'lucide-react';
 import api from '@/lib/api';
 import { showToast, toastApiError } from '@/utils/toast';
+import { Spinner } from '@/components/Spinner';
 
 type Level = 'error' | 'warn' | 'info' | 'debug';
 interface Line { time: string; level: Level; text: string }
@@ -92,7 +93,7 @@ export function LogConsole({ app, height = 'h-[60vh]' }: Readonly<{ app: string;
       </div>
       <div ref={box} onScroll={(e) => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; }}
         className={clsx('rounded-xl bg-black/60 ring-1 ring-inset ring-white/[0.06] overflow-auto font-mono text-[12px] leading-[1.55] p-3', height)}>
-        {lines === null ? <p className="text-ndp-text-dim flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Reading the log…</p>
+        {lines === null ? <p className="text-ndp-text-dim flex items-center gap-2"><Spinner size="sm" />Reading the log…</p>
           : shown.length === 0 ? <p className="text-ndp-text-dim">{lines.length ? 'No lines match.' : 'The log is empty.'}</p>
           : shown.map((l, i) => (
             <div key={i} className={clsx('whitespace-pre-wrap break-all flex gap-3', TONE[l.level], l.level === 'error' && 'bg-red-500/[0.06]')}>

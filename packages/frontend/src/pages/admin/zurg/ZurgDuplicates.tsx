@@ -6,6 +6,7 @@ import api from '@/lib/api';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { showToast, toastApiError } from '@/utils/toast';
 import type { SwapCandidate } from './ZurgSwaps';
+import { Spinner } from '@/components/Spinner';
 
 export interface DupMember { hash: string; name: string; sizeBytes: number | null; added: string | null; quality: string | null; state: 'referenced' | 'no_reference' | 'unknown'; reasons: string[] }
 export interface DupGroup { key: string; kind: string; title: string; members: DupMember[] }
@@ -116,7 +117,7 @@ export function ZurgDuplicates({ dups, onReload }: Readonly<{ dups: DupReport | 
     finally { setBusy(null); }
   };
 
-  if (!dups) return <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-ndp-text-dim" /></div>;
+  if (!dups) return <div className="flex justify-center py-12"><Spinner /></div>;
 
   const analysed = dups.builtAt ? new Date(dups.builtAt).toLocaleString(i18n.language, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : null;
   const chips: { id: Filter; label: string }[] = [
@@ -157,7 +158,7 @@ export function ZurgDuplicates({ dups, onReload }: Readonly<{ dups: DupReport | 
       {/* While zurg re-reads Radarr/Sonarr the old list is stale, hold it back until the new one lands. */}
       {dups.refreshing ? (
         <div className="admin-group admin-row justify-center gap-3 py-10 text-sm text-ndp-text-dim">
-          <Loader2 className="w-4 h-4 animate-spin" />
+          <Spinner size="sm" />
           <span className="text-center">
             {t('admin.zurg.dup.wait_for_analysis_v2', 'The list appears when the analysis is done.')}
             {analysisNote && <span className="block text-xs mt-1">{analysisNote.charAt(0).toUpperCase() + analysisNote.slice(1)}.</span>}

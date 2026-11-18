@@ -16,8 +16,8 @@ const ID = 'github';
 const API = 'https://api.github.com';
 const RELEASE_TTL_MS = 60 * 60_000;
 
-export type ReleaseKind = 'zurg' | 'rex';
-export const DEFAULT_REPOS: Record<ReleaseKind, string> = { zurg: 'debridmediamanager/zurg', rex: 'debridmediamanager/rex' };
+export type ReleaseKind = 'zurg' | 'rex' | 'app';
+export const DEFAULT_REPOS: Record<ReleaseKind, string> = { zurg: 'debridmediamanager/zurg', rex: 'debridmediamanager/rex', app: 'leleasley/LeMedia' };
 
 interface StoredConfig {
   token?: string;              // encrypted

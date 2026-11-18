@@ -6,9 +6,11 @@ interface MediaGridProps {
   media: TmdbMedia[];
   loading?: boolean;
   skeletonCount?: number;
+  /** Optional short meta line under each title (runtime, missing episodes…). */
+  meta?: (item: TmdbMedia) => string | undefined;
 }
 
-export default function MediaGrid({ media, loading, skeletonCount = 14 }: Readonly<MediaGridProps>) {
+export default function MediaGrid({ media, loading, skeletonCount = 14, meta }: Readonly<MediaGridProps>) {
   const statuses = useMediaStatus(media);
 
   return (
@@ -22,6 +24,7 @@ export default function MediaGrid({ media, loading, skeletonCount = 14 }: Readon
                 key={`${type}-${item.id}`}
                 media={item}
                 availability={getStatusForMedia(statuses, item.id, type)}
+                meta={meta?.(item)}
                 index={i}
               />
             );

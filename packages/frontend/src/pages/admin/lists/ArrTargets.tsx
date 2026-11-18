@@ -10,6 +10,18 @@ export function ArrTargets({ choices, types, value, onChange, showOnlyNew }: Rea
   showOnlyNew?: boolean;
 }>) {
   const set = (patch: Partial<AddSettings>) => onChange({ ...value, ...patch });
+  if (choices?.dmm) {
+    return (
+      <div className="admin-group divide-y divide-white/[0.06]">
+        <div className="admin-row">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-ndp-text">Sent to {choices.dmm.name} (DMM)</p>
+            <p className="text-xs text-ndp-text-dim">New requests go to your DMM wanted list and Zurg fetches them. Quality and storage are decided by Zurg, so there is no profile or root folder to pick.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
   const rows: { type: ItemType; name: string; profile: 'radarrProfileId' | 'sonarrProfileId'; root: 'radarrRoot' | 'sonarrRoot' }[] = [
     { type: 'movie', name: 'Radarr', profile: 'radarrProfileId', root: 'radarrRoot' },
     { type: 'show', name: 'Sonarr', profile: 'sonarrProfileId', root: 'sonarrRoot' },
@@ -60,6 +72,7 @@ export function ArrTargets({ choices, types, value, onChange, showOnlyNew }: Rea
   );
 }
 
-export function targetsComplete(types: ItemType[], s: AddSettings) {
+export function targetsComplete(types: ItemType[], s: AddSettings, dmm = false) {
+  if (dmm) return true;
   return (!types.includes('movie') || (!!s.radarrProfileId && !!s.radarrRoot)) && (!types.includes('show') || (!!s.sonarrProfileId && !!s.sonarrRoot));
 }

@@ -9,6 +9,7 @@ import { sendAvailabilityNotifications } from './helpers.js';
 import { isTmdbMediaTypeConflict, mergeTvPlaceholderInto, cascadeRequestsForCategory } from '../mediaService.js';
 import { transitionRequestStatus } from '../requestStatusTransition.js';
 import { selectVanished } from './vanished.js';
+import { invalidateMissingCache } from '../missing.js';
 import type { Media } from '@prisma/client';
 
 /** Every enabled instance, not just the default: requests are dispatched to any of them.
@@ -233,6 +234,7 @@ async function reconcileVanished(
     ).catch(() => {});
   }
 
+  invalidateMissingCache();
   logEvent(
     'info',
     'Sync',
@@ -372,6 +374,10 @@ function canClaimMedia(existing: Media, serviceId: number, incomingState: string
 /** Changing a known TVDB mapping requires the same TMDB identity AND the same instance-local
  *  series. Native TMDB alone may fill a missing mapping, but must not replace an unrelated one. */
 function assertSeriesSyncIdentity(existing: Media, item: ArrMediaItem, serviceId: number): void {
+  // An operator link (Admin → Link to a Sonarr series) outranks the TMDB mapping. TVDB keeps one
+  // record for shows TMDB has split in two, so a sibling TMDB id is the expected answer, not a
+  // conflict — rejecting it would leave the linked row permanently un-synced and "missing".
+  if (existing.tvdbLinkedAt && existing.tvdbId === item.externalId) return;
   const tmdbId = Number.isSafeInteger(item.tmdbId) && item.tmdbId! > 0 ? item.tmdbId : null;
   if (tmdbId && existing.tmdbId > 0 && existing.tmdbId !== tmdbId) {
     throw new Error(`Conflicting TMDB identity for TVDB ${item.externalId}`);

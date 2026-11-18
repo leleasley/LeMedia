@@ -15,7 +15,7 @@ export default defineConfig({
         name: 'LeMedia',
         short_name: 'LeMedia',
         description:
-          'Ask for a film. Watch it tonight. Requests for Radarr and Sonarr.',
+          'LeMedia is a requester app for you, your friends and family — backed by your own media setup.',
         theme_color: '#0b0b0f',
         background_color: '#0b0b0f',
         display: 'standalone',

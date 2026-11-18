@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, ArrowUpCircle, BellRing, ListPlus, Puzzle, CalendarClock, CheckCircle2, Clapperboard, Disc3, Loader2, Send, Share, SquarePlus, XCircle, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, ArrowUpCircle, BellRing, ListPlus, Puzzle, CalendarClock, CheckCircle2, Clapperboard, Disc3, Loader2, Send, Share, Smartphone, SquarePlus, Trash2, XCircle, type LucideIcon } from 'lucide-react';
 import api from '@/lib/api';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
+import { getDeviceId } from '@/utils/deviceId';
 import Switch from '@/components/ui/Switch';
 import { showToast } from '@/utils/toast';
 import { useAuth } from '@/context/AuthContext';
+import { Spinner } from '@/components/Spinner';
+
+type DeviceRow = { id: number; current: boolean; platform: string; createdAt: string; lastSeenAt: string };
 
 const isIOS = typeof navigator !== 'undefined'
   && (/iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
@@ -35,12 +39,37 @@ const PUSH_TYPE_ROWS: { type: PushType; icon: LucideIcon; tone: string; labelKey
 /** Per-device phone/desktop push toggle. iOS only allows web push for the Home Screen app,
  *  and only after a tap — so this explains the "why not" states instead of hiding itself. */
 export default function PushNotificationCard() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { hasPermission } = useAuth();
   const isAdmin = hasPermission('admin.*');
   const push = usePushNotifications();
   const [testing, setTesting] = useState(false);
   const [prefs, setPrefs] = useState<Record<PushType, boolean> | null>(null);
+  const [devices, setDevices] = useState<DeviceRow[] | null>(null);
+  const [removing, setRemoving] = useState<number | null>(null);
+
+  // Every subscription this account has. Two rows for one phone is exactly how an alert gets
+  // delivered twice, so the list is visible and an old entry can be removed.
+  useEffect(() => {
+    let alive = true;
+    api.get('/push/devices', { params: { deviceId: getDeviceId() } })
+      .then(({ data }) => { if (alive) setDevices((data as { devices: DeviceRow[] }).devices ?? []); })
+      .catch(() => { if (alive) setDevices([]); });
+    return () => { alive = false; };
+  }, [push.subscribed]);
+
+  const removeDevice = async (id: number) => {
+    setRemoving(id);
+    try {
+      await api.delete(`/push/devices/${id}`);
+      setDevices((rows) => rows?.filter((d) => d.id !== id) ?? null);
+      showToast(t('account.push.device_removed', 'Device removed'), 'success');
+    } catch {
+      showToast(t('account.push.device_remove_failed', 'Could not remove that device'), 'error');
+    } finally {
+      setRemoving(null);
+    }
+  };
 
   // Which types reach this user's devices (stored per user, applies to every device).
   useEffect(() => {
@@ -103,7 +132,7 @@ export default function PushNotificationCard() {
           </div>
           {push.supported && !blocked && (
             push.loading
-              ? <span className="w-14 h-10 flex items-center justify-center"><Loader2 className="w-4 h-4 animate-spin text-ndp-text-dim" /></span>
+              ? <span className="w-14 h-10 flex items-center justify-center"><Spinner size="sm" /></span>
               : <Switch checked={push.subscribed} onChange={() => void toggle()} label={t('account.push.row', 'Notifications on this device')} className="-mr-1.5" />
           )}
         </div>
@@ -121,6 +150,38 @@ export default function PushNotificationCard() {
         )}
 
       </div>
+
+      {devices && devices.length > 1 && (
+        <>
+          <h3 className="admin-group-label mt-6">{t('account.push.devices_title', 'Devices')}</h3>
+          <div className="admin-group divide-y divide-white/[0.06]">
+            {devices.map((d) => (
+              <div key={d.id} className="admin-row">
+                <span className="admin-icon-tile bg-ndp-accent/15 text-ndp-accent"><Smartphone className="w-[17px] h-[17px]" /></span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[15px] font-medium text-ndp-text truncate">
+                    {d.platform}
+                    {d.current && <span className="ml-2 rounded-full bg-white/[0.08] px-2 py-0.5 text-[11px] font-medium text-ndp-text-dim align-middle">{t('account.push.this_device', 'This device')}</span>}
+                  </p>
+                  <p className="text-xs text-ndp-text-dim mt-0.5">{t('account.push.last_seen', 'Last opened {{when}}', { when: new Date(d.lastSeenAt).toLocaleDateString(i18n.language, { day: 'numeric', month: 'short' }) })}</p>
+                </div>
+                {!d.current && (
+                  <button
+                    type="button"
+                    onClick={() => void removeDevice(d.id)}
+                    disabled={removing === d.id}
+                    aria-label={t('account.push.remove_device', 'Remove this device')}
+                    className="p-2 -mr-2 rounded-lg text-ndp-text-dim hover:text-red-400 active:bg-white/[0.06] transition-colors disabled:opacity-50"
+                  >
+                    {removing === d.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+          <p className="admin-hint">{t('account.push.devices_hint', 'Each device gets its own alert. If a phone buzzes twice for the same film, remove the older entry — that is a leftover install still registered for push.')}</p>
+        </>
+      )}
 
       {push.subscribed && prefs && (
         <>
