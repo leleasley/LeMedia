@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.24.1 (2026-11-19)
+
+### Fixed
+- **Zurg inventory also reads `__all__`.** Season packs whose `tv/<Show>` folder is empty (or that
+  were never sorted there) live as release-named folders under `__magic__/__all__`; the inventory
+  now matches those by release name and counts their seasons and episodes.
+- When Zurg knows the show folder but exposes **no files** in it, the series page says so instead
+  of showing nothing — that is Zurg not having indexed the release, not LeMedia missing it.
+
 ## 0.24.0 (2026-11-19)
 
 ### New

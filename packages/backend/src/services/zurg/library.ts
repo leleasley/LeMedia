@@ -87,6 +87,29 @@ async function showFolder(conn: ZurgConn, title: string, zurgPath?: string | nul
   return withoutYear?.path ?? null;
 }
 
+/**
+ * `__all__` is zurg's flat list of every release folder, named after the release rather than the
+ * title (`Phineas.and.Ferb.S01.1080p…`). It catches shows whose `tv/<Show>` folder is empty or
+ * missing, which is common for season packs. Cached briefly: the listing is ~1,400 entries and
+ * changes slowly.
+ */
+let allCache: { at: number; entries: DavEntry[] } | null = null;
+
+async function allReleases(conn: ZurgConn): Promise<DavEntry[]> {
+  if (allCache && Date.now() - allCache.at < 5 * 60_000) return allCache.entries;
+  const entries = (await propfind(conn, '/dav/__magic__/__all__').catch(() => [])).filter((e) => e.isDir);
+  allCache = { at: Date.now(), entries };
+  return entries;
+}
+
+async function allReleasesFor(conn: ZurgConn, title: string): Promise<DavEntry[]> {
+  const wanted = normalise(title);
+  if (!wanted) return [];
+  // Compare on the first few words so "Phineas and Ferb S01 1080p" matches the show name.
+  const words = wanted.split(' ').slice(0, 4).join(' ');
+  return (await allReleases(conn)).filter((entry) => normalise(entry.name).startsWith(words));
+}
+
 /** Releases Zurg could not sort into `tv/<Show>` sit at the mount root, named after the release. */
 async function unsortedFolders(conn: ZurgConn, title: string): Promise<DavEntry[]> {
   const wanted = normalise(title);
@@ -139,9 +162,15 @@ export async function zurgTvInventory(media: { title: string; zurgPath?: string 
 
   if (path) await readContainer(conn, path, seasons, counts);
 
-  // Nothing under the show's own folder: the release may still be sitting unsorted at the root.
+  // Nothing under the show's own folder: the release may still be sitting unsorted at the root,
+  // or only be listed in `__all__` under its release name.
   if (seasons.size === 0) {
     for (const entry of await unsortedFolders(conn, media.title)) {
+      if (await readContainer(conn, entry.path, seasons, counts)) { used = entry.path; break; }
+    }
+  }
+  if (seasons.size === 0) {
+    for (const entry of await allReleasesFor(conn, media.title)) {
       if (await readContainer(conn, entry.path, seasons, counts)) { used = entry.path; break; }
     }
   }

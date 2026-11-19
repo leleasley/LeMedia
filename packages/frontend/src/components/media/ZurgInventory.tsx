@@ -38,16 +38,18 @@ const HOURS = 3600_000;
 export function ZurgInventory({ tmdbId, sonarrSeasons, onRequestSeasons, requesting, readOnly }: Readonly<Props>) {
   const { t } = useTranslation();
   const [seasons, setSeasons] = useState<ZurgSeason[] | null>(null);
+  const [path, setPath] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async (fresh = false) => {
     setLoading(true);
     try {
-      const { data } = await api.get<{ seasons: ZurgSeason[]; fetchedAt: string | null }>(
+      const { data } = await api.get<{ seasons: ZurgSeason[]; path: string | null; fetchedAt: string | null }>(
         `/media/${tmdbId}/zurg-inventory${fresh ? '?fresh=1' : ''}`,
       );
       setSeasons(Array.isArray(data.seasons) ? data.seasons : []);
+      setPath(data.path ?? null);
       setError(null);
     } catch (err: any) {
       setError(err?.response?.data?.error || t('media.zurg_inventory_failed', 'Could not read Zurg’s library'));
@@ -74,7 +76,30 @@ export function ZurgInventory({ tmdbId, sonarrSeasons, onRequestSeasons, request
     );
   }
 
-  if (!seasons || seasons.length === 0) return null;
+  if (!seasons) return null;
+
+  if (seasons.length === 0) {
+    // Zurg knows the show folder but lists no files in it — usually an unindexed release. Say so
+    // instead of staying silent, or the page looks like Zurg has nothing at all.
+    if (!path) return null;
+    return (
+      <section className="mt-10">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+          <h2 className="text-xl font-bold text-ndp-text inline-flex items-center gap-2">
+            <Cloud className="w-5 h-5 text-sky-400" />
+            {t('media.zurg_inventory_title', 'In your Zurg library')}
+          </h2>
+          <button type="button" onClick={() => void load(true)} disabled={loading} className="btn-secondary !px-2.5 !py-1.5 !text-xs flex items-center gap-1.5 disabled:opacity-50">
+            {loading ? <Spinner size="sm" /> : <RefreshCw className="w-3.5 h-3.5" />}
+            {t('admin.dmm.refresh', 'Refresh')}
+          </button>
+        </div>
+        <p className="admin-hint">
+          {t('media.zurg_inventory_empty', 'Zurg lists {{path}} but exposes no episode files in it — usually a release it has not indexed yet.', { path })}
+        </p>
+      </section>
+    );
+  }
 
   const bySeason = new Map((sonarrSeasons ?? []).map((s) => [s.seasonNumber, s]));
   const rows = seasons.map((s) => {
