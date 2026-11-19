@@ -23,6 +23,7 @@ import LinkSeriesModal from '@/components/media/LinkSeriesModal';
 import { useMediaExclusion } from '@/hooks/useMediaExclusion';
 import { ReportIssueModal } from '@/components/media/ReportIssueModal';
 import { MediaInfoColumn } from '@/components/media/MediaInfoColumn';
+import { ZurgInventory } from '@/components/media/ZurgInventory';
 import { MediaBackdrop } from '@/components/media/MediaHeroArt';
 import '@/components/media/media-detail.css';
 import { mediaSummary } from '@/utils/mediaSummary';
@@ -84,9 +85,9 @@ export default function MediaDetailPage({ type, shareId, shareToken, readOnly }:
     selectedQuality, setSelectedQuality,
     selectedCriteria, setSelectedCriteria,
     searchMissingState, searchMissingError,
-    handleRequest, handleSearchMissing,
+    handleRequest, handleSeasonsRequest, handleSearchMissing,
     resetOnNavigation,
-  } = useMediaRequestActions(media, id, type, refreshDetail);
+  } = useMediaRequestActions(media, id, type, refreshDetail, catalog?.numbering);
 
   // Reset local UI state on navigation
   useEffect(() => {
@@ -199,6 +200,17 @@ export default function MediaDetailPage({ type, shareId, shareToken, readOnly }:
             catalog={catalog} requests={dbMedia?.requests ?? []}
             qualityOptions={qualityOptions} activeQualityOptionIds={activeQualityOptionIds}
             blocked={blacklisted.blocked} blurred={nsfw} onRefresh={refreshDetail} />}
+        </div>
+      )}
+
+      {type === 'tv' && !readOnly && (
+        <div className="media-detail-container relative">
+          <ZurgInventory
+            tmdbId={Number(id)}
+            sonarrSeasons={catalog?.source.provider === 'sonarr' ? catalog.seasons : null}
+            onRequestSeasons={handleSeasonsRequest}
+            requesting={requesting}
+          />
         </div>
       )}
 

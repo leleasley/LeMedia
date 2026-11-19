@@ -111,6 +111,7 @@ const ROUTE_PERMISSIONS: Record<string, RouteRule> = {
   'GET:/api/media/:id':                  { permission: AUTH },
   'GET:/api/media/tmdb/:tmdbId/:mediaType': { permission: AUTH },
   'GET:/api/media/recent':               { permission: AUTH },
+  'GET:/api/media/:tmdbId/zurg-inventory': { permission: AUTH },
   'GET:/api/media/missing':              { permission: AUTH },
   'GET:/api/media/exclusion':            { permission: AUTH },
   'POST:/api/issues/':                   { permission: AUTH },

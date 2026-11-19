@@ -1907,5 +1907,17 @@
   "media.zurg_source": "Trouvé dans Zurg — absent de Radarr et Sonarr",
   "media.zurg_only": "Trouvé dans Zurg — absent de Radarr et Sonarr",
   "media.zurg_add_to_arr": "L’ajouter à Radarr/Sonarr",
-  "media.zurg_add_failed": "Impossible de l’ajouter à Radarr/Sonarr"
+  "media.zurg_add_failed": "Impossible de l’ajouter à Radarr/Sonarr",
+  "media.zurg_inventory_failed": "Impossible de lire la bibliothèque Zurg",
+  "media.zurg_inventory_title": "Dans votre bibliothèque Zurg",
+  "media.zurg_inventory_summary": "{{seasons}} saison(s) · {{episodes}} épisode(s)",
+  "media.zurg_specials": "Spéciaux",
+  "media.season_n": "Saison {{n}}",
+  "media.zurg_episodes": "{{n}} épisode(s) dans Zurg",
+  "media.zurg_in_sonarr": "{{n}} dans Sonarr",
+  "media.zurg_state_complete": "dans Sonarr",
+  "media.zurg_state_partial": "partiellement dans Sonarr",
+  "media.zurg_state_absent": "absent de Sonarr",
+  "media.zurg_request_missing": "Ajouter les saisons manquantes à Sonarr",
+  "media.zurg_request_missing_hint": "Saison(s) {{list}} — Sonarr les recherchera ; ce qui est déjà dans Zurg reste."
 }

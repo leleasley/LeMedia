@@ -157,6 +157,12 @@ model Media {
   /// WebDAV path of the title's folder in Zurg (e.g. `/dav/__magic__/movies/Heat (1995)/`),
   /// recorded so deleting the title can remove the release from the debrid account.
   zurgPath            String?
+  /// When the release landed in the debrid account, per Zurg's folder date. Separate from
+  /// `availableAt` so a Zurg scan never rewrites what Radarr/Sonarr reported.
+  zurgAddedAt         DateTime?
+  /// JSON inventory of a series in Zurg: [{ season, episodes: number[] }]. Filled on demand.
+  zurgSeasons         String?
+  zurgInventoryAt     DateTime?
   mediaType           String    // "movie" | "tv"
   title               String
   overview            String?

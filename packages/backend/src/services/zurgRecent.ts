@@ -127,7 +127,7 @@ export async function scanZurgRecent(): Promise<ZurgRecentResult> {
   // "and" differ between TMDB and Zurg's folder names). One query instead of one per folder.
   const rows = await prisma.media.findMany({
     where: { mediaType: { in: ['movie', 'tv'] } },
-    select: { id: true, tmdbId: true, title: true, mediaType: true, availableAt: true, statusCategory: true },
+    select: { id: true, tmdbId: true, title: true, mediaType: true, availableAt: true, statusCategory: true, radarrId: true, sonarrId: true },
   });
   const byTitle = new Map<string, (typeof rows)[number]>();
   for (const row of rows) {
@@ -141,18 +141,21 @@ export async function scanZurgRecent(): Promise<ZurgRecentResult> {
       const known = byTitle.get(`${entry.kind}:${strip(entry.title)}`);
 
       if (known) {
+        // An *arr owns the availability for its titles. Only record what Zurg knows about the
+        // file, so turning the Zurg source off returns the row to what the *arr reported.
+        const inArr = !!(known.radarrId || known.sonarrId);
         const newer = !known.availableAt || known.availableAt.getTime() < entry.addedAt.getTime();
         await prisma.media.update({
           where: { id: known.id },
           data: {
-            ...(newer ? { availableAt: entry.addedAt } : {}),
-            ...(known.statusCategory === 'AVAILABLE' ? {} : { statusCategory: 'AVAILABLE' }),
-            libraryConfirmedAt: new Date(),
-            zurgPath: entry.path,
-            // "Found in Zurg" is independent of the *arrs: the file is in Zurg's library, so the
-            // badge applies even when Radarr/Sonarr also know the title. The "not in Radarr or
-            // Sonarr" prompt keys on the *arr ids being absent instead.
             source: 'zurg',
+            zurgPath: entry.path,
+            zurgAddedAt: entry.addedAt,
+            ...(inArr ? {} : {
+              ...(newer ? { availableAt: entry.addedAt } : {}),
+              ...(known.statusCategory === 'AVAILABLE' ? {} : { statusCategory: 'AVAILABLE' }),
+              libraryConfirmedAt: new Date(),
+            }),
           },
         });
         updated++;
@@ -180,6 +183,7 @@ export async function scanZurgRecent(): Promise<ZurgRecentResult> {
           libraryConfirmedAt: new Date(),
           source: 'zurg',
           zurgPath: entry.path,
+          zurgAddedAt: entry.addedAt,
         },
         update: {
           statusCategory: 'AVAILABLE',

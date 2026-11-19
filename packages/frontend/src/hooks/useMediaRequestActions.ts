@@ -82,6 +82,8 @@ export function useMediaRequestActions(
   // The main series action requests the whole series; season buttons use handleSeasonRequest.
   const handleRequest = () => submitRequest([]);
   const handleSeasonRequest = (seasonNumber: number) => submitRequest([seasonNumber]);
+  /** Several seasons in one request — used by the Zurg inventory's "request missing" action. */
+  const handleSeasonsRequest = (seasons: number[]) => submitRequest(seasons);
 
   const handleSearchMissing = async () => {
     if (!media) return;
@@ -121,6 +123,7 @@ export function useMediaRequestActions(
     searchMissingError,
     handleRequest,
     handleSeasonRequest,
+    handleSeasonsRequest,
     handleSearchMissing,
     resetOnNavigation,
   };

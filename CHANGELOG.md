@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.24.0 (2026-11-19)
+
+### New
+- **Per-season view of Zurg's library on a series page.** Zurg's `__magic__/tv/<Show>/Season NN`
+  folders are read on demand (cached six hours) and shown beside Sonarr's counts: how many
+  episodes each season has in Zurg, how many Sonarr has, and whether the season is missing or
+  partly there. **Add the missing seasons to Sonarr** requests exactly those seasons.
+- This is the episode-level answer a series-level "is it in Sonarr?" check could never give —
+  a show can exist in Sonarr while Zurg holds seasons Sonarr never imported.
+
+### Fixed
+- **A Zurg scan no longer rewrites what the *arrs report.** For a title Radarr/Sonarr also know,
+  the scan now records only Zurg's path and its own date (`zurgAddedAt`); it leaves `availableAt`
+  and the availability category alone. Previously it overwrote them with Zurg's folder date, which
+  made the Zurg source look as though it owned titles the *arrs added.
+- Consequently, turning **Recently added from Zurg** off returns the row to exactly what the
+  *arrs reported: titles only Zurg knows disappear, titles the *arrs list stay.
+
 ## 0.23.1 (2026-11-19)
 
 ### Fixed

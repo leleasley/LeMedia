@@ -3,6 +3,7 @@ import { getAppSettings } from '../utils/appSettings.js';
 import { logEvent } from '../utils/logEvent.js';
 import { sendToService } from '../services/requestService.js';
 import { deleteFromZurg, ZurgDeleteError } from '../services/zurg/delete.js';
+import { zurgTvInventory } from '../services/zurg/library.js';
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '../utils/prisma.js';
 import { getArrClientForMedia, getServiceTypeForMedia } from '../providers/index.js';
@@ -102,6 +103,34 @@ export async function mediaRoutes(app: FastifyInstance) {
     },
   );
 
+
+  /** What Zurg holds for this series, season by season. Cached for six hours on the row. */
+  app.get<{ Params: { tmdbId: string } }>('/:tmdbId/zurg-inventory', async (request, reply) => {
+    const tmdbId = Number(request.params.tmdbId);
+    if (!Number.isFinite(tmdbId) || tmdbId <= 0) return reply.status(400).send({ error: 'Invalid TMDB ID' });
+    const media = await prisma.media.findFirst({ where: { tmdbId, mediaType: 'tv' } });
+    if (!media) return reply.status(404).send({ error: 'Media not found' });
+
+    const fresh = (request.query as { fresh?: string }).fresh === '1';
+    if (!fresh && media.zurgSeasons && media.zurgInventoryAt
+      && Date.now() - media.zurgInventoryAt.getTime() < 6 * 3600_000) {
+      return { seasons: JSON.parse(media.zurgSeasons), path: media.zurgPath, fetchedAt: media.zurgInventoryAt };
+    }
+
+    const inventory = await zurgTvInventory(media);
+    if (!inventory) return { seasons: [], path: null, fetchedAt: null };
+
+    await prisma.media.update({
+      where: { id: media.id },
+      data: {
+        zurgSeasons: JSON.stringify(inventory.seasons),
+        zurgInventoryAt: new Date(),
+        zurgPath: media.zurgPath ?? inventory.path,
+        source: media.source ?? 'zurg',
+      },
+    });
+    return { seasons: inventory.seasons, path: inventory.path, fetchedAt: new Date().toISOString() };
+  });
 
   // "Found in Zurg, not in Radarr/Sonarr — add it?" — admin action from the title page. Uses the
   // normal dispatch path so the *arr row is stamped exactly like a request.
