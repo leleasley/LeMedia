@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.23.1 (2026-11-19)
+
+### Fixed
+- **The "Found in Zurg" badge only appeared on titles missing from Radarr/Sonarr.** It now marks
+  anything present in Zurg's library, which is what it says — a title in both is still found in
+  Zurg. The "not in Radarr or Sonarr" prompt and the add action still key on the *arr ids being
+  absent, and switching the Zurg source off hides only the rows that Zurg alone knows about.
+- Folder names are matched against existing rows with a normalised title, so Zurg's
+  `Power Book II - Ghost` now lines up with TMDB's `Power Book II: Ghost` instead of creating a
+  second row that never carried the badge.
+- The delete dialog offers **Delete from Zurg** alongside the Radarr/Sonarr option when both hold
+  the title, instead of hiding the Zurg one whenever an *arr row existed.
+
 ## 0.23.0 (2026-11-19)
 
 ### New

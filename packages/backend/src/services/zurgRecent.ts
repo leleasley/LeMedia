@@ -123,15 +123,22 @@ export async function scanZurgRecent(): Promise<ZurgRecentResult> {
     .filter((e) => e.addedAt.getTime() >= cutoff)
     .sort((a, b) => b.addedAt.getTime() - a.addedAt.getTime());
 
+  // Match folders against existing rows by a normalised title (case, punctuation and "&" vs
+  // "and" differ between TMDB and Zurg's folder names). One query instead of one per folder.
+  const rows = await prisma.media.findMany({
+    where: { mediaType: { in: ['movie', 'tv'] } },
+    select: { id: true, tmdbId: true, title: true, mediaType: true, availableAt: true, statusCategory: true },
+  });
+  const byTitle = new Map<string, (typeof rows)[number]>();
+  for (const row of rows) {
+    const key = `${row.mediaType}:${strip(row.title)}`;
+    if (!byTitle.has(key)) byTitle.set(key, row);
+  }
+
   let matched = 0, created = 0, updated = 0, unmatched = 0, lookups = 0;
   for (const entry of fresh) {
     try {
-      // Skip the TMDB call when the row already exists: the folder name has not changed since
-      // it was matched, and a library scan over thousands of titles must stay cheap.
-      const known = await prisma.media.findFirst({
-        where: { mediaType: entry.kind, title: entry.title },
-        select: { id: true, tmdbId: true, availableAt: true, statusCategory: true, radarrId: true, sonarrId: true },
-      });
+      const known = byTitle.get(`${entry.kind}:${strip(entry.title)}`);
 
       if (known) {
         const newer = !known.availableAt || known.availableAt.getTime() < entry.addedAt.getTime();
@@ -142,9 +149,10 @@ export async function scanZurgRecent(): Promise<ZurgRecentResult> {
             ...(known.statusCategory === 'AVAILABLE' ? {} : { statusCategory: 'AVAILABLE' }),
             libraryConfirmedAt: new Date(),
             zurgPath: entry.path,
-            // An *arr-linked row is an *arr title; the Zurg marker is only for titles Zurg found
-            // on its own, which is what the badge and the "add to Radarr/Sonarr" prompt key on.
-            source: known.radarrId || known.sonarrId ? null : 'zurg',
+            // "Found in Zurg" is independent of the *arrs: the file is in Zurg's library, so the
+            // badge applies even when Radarr/Sonarr also know the title. The "not in Radarr or
+            // Sonarr" prompt keys on the *arr ids being absent instead.
+            source: 'zurg',
           },
         });
         updated++;

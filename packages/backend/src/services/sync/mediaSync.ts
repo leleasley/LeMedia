@@ -420,9 +420,6 @@ async function processSingleMedia(
   }
 
   const updateData: Record<string, unknown> = {
-    // An *arr now owns this title, so it is no longer Zurg-only — the badge and the
-    // "add to Radarr/Sonarr" prompt key on that.
-    source: null,
     [arrIdFieldForClient(client)]: item.serviceMediaId,
     serviceId,
     statusCategory: item.statusCategory,

@@ -297,7 +297,7 @@ export async function mediaRoutes(app: FastifyInstance) {
         tmdbId: { gt: 0 },
         statusCategory: 'AVAILABLE',
         availableAt: { not: null },
-        ...(zurgRecent ? {} : { OR: [{ source: null }, { source: { not: 'zurg' } }] }),
+        ...(zurgRecent ? {} : { NOT: { source: 'zurg', radarrId: null, sonarrId: null } }),
         // When the admin requires library confirmation, an unconfirmed title is not "recently
         // added" from the user's point of view — their player cannot open it.
         ...(await recentLibraryFilter()),

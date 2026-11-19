@@ -258,7 +258,8 @@ export default function MediaDetailPage({ type, shareId, shareToken, readOnly }:
           mediaType={type}
           tmdbId={Number(id)}
           onClose={() => setShowDeleteModal(false)}
-          zurgSource={dbMedia?.source === 'zurg' && !dbMedia?.radarrId && !dbMedia?.sonarrId}
+          zurgSource={dbMedia?.source === 'zurg'}
+          hasArr={(type === 'movie' ? dbMedia?.radarrId : dbMedia?.sonarrId) != null}
           onDeleted={() => {
             setShowDeleteModal(false);
             // Back to the list they came from (Missing page keeps its sort in the URL), not home.
