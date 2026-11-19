@@ -1,4 +1,8 @@
 import { selectedDmmService } from '../services/dmm.js';
+import { getAppSettings } from '../utils/appSettings.js';
+import { logEvent } from '../utils/logEvent.js';
+import { sendToService } from '../services/requestService.js';
+import { deleteFromZurg, ZurgDeleteError } from '../services/zurg/delete.js';
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '../utils/prisma.js';
 import { getArrClientForMedia, getServiceTypeForMedia } from '../providers/index.js';
@@ -31,7 +35,7 @@ function parseEpisodeInfo(raw: string): { season: number; episode: number; title
 
 export async function mediaRoutes(app: FastifyInstance) {
   // DELETE /media/:tmdbId — delete media from Radarr/Sonarr and/or LeMedia
-  app.delete<{ Params: { tmdbId: string }; Querystring: { deleteFromService?: string; deleteFiles?: string } }>(
+  app.delete<{ Params: { tmdbId: string }; Querystring: { deleteFromService?: string; deleteFiles?: string; deleteFromZurg?: string } }>(
     '/:tmdbId',
     {
       schema: {
@@ -41,6 +45,7 @@ export async function mediaRoutes(app: FastifyInstance) {
           properties: {
             deleteFromService: { type: 'string', enum: ['true', 'false'], default: 'true' },
             deleteFiles: { type: 'string', enum: ['true', 'false'], default: 'true' },
+            deleteFromZurg: { type: 'string', enum: ['true', 'false'], default: 'false' },
           },
         },
       },
@@ -74,6 +79,16 @@ export async function mediaRoutes(app: FastifyInstance) {
         }
       }
 
+      // Zurg owns the debrid-side release for titles it found; deleting through the mount is
+      // what removes the file, not an *arr (which may have no row for it at all).
+      if (request.query.deleteFromZurg === 'true') {
+        try {
+          await deleteFromZurg(media);
+        } catch (err) {
+          logEvent('warn', 'Media', `Failed to delete "${media.title}" from Zurg: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
       // Delete from LeMedia
       await prisma.season.deleteMany({ where: { mediaId: media.id } });
       await prisma.mediaRequest.deleteMany({ where: { mediaId: media.id } });
@@ -87,6 +102,19 @@ export async function mediaRoutes(app: FastifyInstance) {
     },
   );
 
+
+  // "Found in Zurg, not in Radarr/Sonarr — add it?" — admin action from the title page. Uses the
+  // normal dispatch path so the *arr row is stamped exactly like a request.
+  app.post<{ Params: { tmdbId: string } }>('/:tmdbId/add-to-arr', async (request, reply) => {
+    if (request.user?.role !== 'admin') return reply.status(403).send({ error: 'FORBIDDEN' });
+    const tmdbId = Number(request.params.tmdbId);
+    if (!Number.isFinite(tmdbId) || tmdbId <= 0) return reply.status(400).send({ error: 'Invalid TMDB ID' });
+    const media = await prisma.media.findFirst({ where: { tmdbId } });
+    if (!media) return reply.status(404).send({ error: 'Media not found' });
+    const outcome = await sendToService(media, media.mediaType, request.user.email || 'admin', request.user.id);
+    if (outcome !== 'sent') return reply.status(502).send({ error: outcome === 'conflict' ? 'CONFLICT' : 'Could not add it to Radarr/Sonarr' });
+    return { ok: true };
+  });
 
   await app.register(seriesCatalogRoutes);
   app.get('/', {
@@ -260,11 +288,16 @@ export async function mediaRoutes(app: FastifyInstance) {
     const { limit } = request.query as { limit?: string };
     const take = Math.min(Number.parseInt(limit || '20', 10) || 20, 50);
 
+    // Zurg-derived rows only count as "recently added" while the admin has that source switched
+    // on — turning it off must take them out of the row, not just stop new scans.
+    const zurgRecent = (await getAppSettings())?.zurgRecentEnabled === true;
+
     const media = await prisma.media.findMany({
       where: {
         tmdbId: { gt: 0 },
         statusCategory: 'AVAILABLE',
         availableAt: { not: null },
+        ...(zurgRecent ? {} : { OR: [{ source: null }, { source: { not: 'zurg' } }] }),
         // When the admin requires library confirmation, an unconfirmed title is not "recently
         // added" from the user's point of view — their player cannot open it.
         ...(await recentLibraryFilter()),
@@ -283,6 +316,7 @@ export async function mediaRoutes(app: FastifyInstance) {
         voteAverage: true,
         statusCategory: true,
         lastEpisodeInfo: true,
+        source: true,
       },
     });
 

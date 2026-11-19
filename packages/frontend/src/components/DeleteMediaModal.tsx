@@ -10,18 +10,25 @@ interface Props {
   onClose: () => void;
   /** Called only after the delete succeeded — dismissing must not move the user. */
   onDeleted?: () => void;
+  /** Title came from Zurg's library: deleting it means removing the release from debrid. */
+  zurgSource?: boolean;
 }
 
-export default function DeleteMediaModal({ title, mediaType, tmdbId, onClose, onDeleted }: Props) {
+export default function DeleteMediaModal({ title, mediaType, tmdbId, onClose, onDeleted, zurgSource }: Props) {
   const [loading, setLoading] = useState(false);
-  const [deleteFromService, setDeleteFromService] = useState(true);
+  const [deleteFromService, setDeleteFromService] = useState(!zurgSource);
   const [deleteFiles, setDeleteFiles] = useState(true);
+  const [deleteFromZurg, setDeleteFromZurg] = useState(!!zurgSource);
 
   const handleDelete = async () => {
     setLoading(true);
     try {
       await api.delete(`/media/${tmdbId}`, {
-        params: { deleteFromService: String(deleteFromService), deleteFiles: String(deleteFiles) },
+        params: {
+          deleteFromService: String(deleteFromService && !zurgSource),
+          deleteFiles: String(deleteFiles),
+          deleteFromZurg: String(deleteFromZurg),
+        },
       });
       showToast(`${title} deleted`, 'success');
       (onDeleted ?? onClose)();
@@ -46,20 +53,37 @@ export default function DeleteMediaModal({ title, mediaType, tmdbId, onClose, on
           Remove <span className="text-ndp-text font-medium">{title}</span> from your library?
         </p>
         <div className="space-y-3 mb-6">
-          <label className="flex items-start gap-3 p-3 rounded-lg bg-white/[0.03] border border-white/5 cursor-pointer hover:bg-white/[0.05] transition-colors">
-            <input
-              type="checkbox"
-              checked={deleteFromService}
-              onChange={(e) => { setDeleteFromService(e.target.checked); if (!e.target.checked) setDeleteFiles(false); }}
-              className="mt-0.5"
-            />
-            <div>
-              <p className="text-sm text-ndp-text font-medium">
-                Delete from {mediaType === 'movie' ? 'Radarr' : 'Sonarr'}
-              </p>
-              <p className="text-xs text-ndp-text-dim">Remove from your {mediaType === 'movie' ? 'Radarr' : 'Sonarr'} library</p>
-            </div>
-          </label>
+          {zurgSource ? (
+            <label className="flex items-start gap-3 p-3 rounded-lg bg-white/[0.03] border border-white/5 cursor-pointer hover:bg-white/[0.05] transition-colors">
+              <input
+                type="checkbox"
+                checked={deleteFromZurg}
+                onChange={(e) => setDeleteFromZurg(e.target.checked)}
+                className="mt-0.5"
+              />
+              <div>
+                <p className="text-sm text-ndp-text font-medium">Delete from Zurg</p>
+                <p className="text-xs text-ndp-text-dim">
+                  Removes the release from your debrid account. Zurg owns this file — Radarr/Sonarr have no copy of it.
+                </p>
+              </div>
+            </label>
+          ) : (
+            <label className="flex items-start gap-3 p-3 rounded-lg bg-white/[0.03] border border-white/5 cursor-pointer hover:bg-white/[0.05] transition-colors">
+              <input
+                type="checkbox"
+                checked={deleteFromService}
+                onChange={(e) => { setDeleteFromService(e.target.checked); if (!e.target.checked) setDeleteFiles(false); }}
+                className="mt-0.5"
+              />
+              <div>
+                <p className="text-sm text-ndp-text font-medium">
+                  Delete from {mediaType === 'movie' ? 'Radarr' : 'Sonarr'}
+                </p>
+                <p className="text-xs text-ndp-text-dim">Remove from your {mediaType === 'movie' ? 'Radarr' : 'Sonarr'} library</p>
+              </div>
+            </label>
+          )}
           {deleteFromService && (
             <label className="flex items-start gap-3 p-3 rounded-lg bg-white/[0.03] border border-white/5 cursor-pointer hover:bg-white/[0.05] transition-colors ml-6">
               <input
@@ -79,7 +103,7 @@ export default function DeleteMediaModal({ title, mediaType, tmdbId, onClose, on
           <button onClick={onClose} className="btn-secondary flex-1 text-sm">Cancel</button>
           <button
             onClick={handleDelete}
-            disabled={loading || (!deleteFromService)}
+            disabled={loading || (zurgSource ? !deleteFromZurg : !deleteFromService)}
             className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-semibold bg-red-500/20 text-red-300 border border-red-500/30 hover:bg-red-500/30 transition-colors disabled:opacity-50"
           >
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}

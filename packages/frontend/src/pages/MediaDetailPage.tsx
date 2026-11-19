@@ -12,6 +12,8 @@ import MediaRow from '@/components/MediaRow';
 import CollectionSection from '@/components/CollectionSection';
 import { ScrollArrows } from '@/components/ScrollArrows';
 import { useMediaDetailData } from '@/hooks/useMediaDetailData';
+import api from '@/lib/api';
+import { toastApiError } from '@/utils/toast';
 import { useMediaRequestActions } from '@/hooks/useMediaRequestActions';
 import type { TmdbCast, TmdbCrew } from '@/types';
 import { useMediaAvailability } from '@/hooks/useMediaAvailability';
@@ -166,6 +168,14 @@ export default function MediaDetailPage({ type, shareId, shareToken, readOnly }:
               onSearchMissing={handleSearchMissing}
               onDeleteMedia={() => setShowDeleteModal(true)}
               onLinkSeries={() => setShowLinkSeriesModal(true)}
+              onAddToArr={async () => {
+                try {
+                  await api.post(`/media/${media.id}/add-to-arr`);
+                  await refreshDetail();
+                } catch (err) {
+                  toastApiError(err, t('media.zurg_add_failed', 'Could not add it to Radarr/Sonarr'));
+                }
+              }}
               qualityOptions={qualityOptions}
               takenQualityIds={takenQualityIds}
               selectedQuality={selectedQuality}
@@ -248,6 +258,7 @@ export default function MediaDetailPage({ type, shareId, shareToken, readOnly }:
           mediaType={type}
           tmdbId={Number(id)}
           onClose={() => setShowDeleteModal(false)}
+          zurgSource={dbMedia?.source === 'zurg' && !dbMedia?.radarrId && !dbMedia?.sonarrId}
           onDeleted={() => {
             setShowDeleteModal(false);
             // Back to the list they came from (Missing page keeps its sort in the URL), not home.

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.23.0 (2026-11-19)
+
+### New
+- **Zurg-sourced titles are labelled and switch off cleanly.** A row discovered by the Zurg
+  recently-added scan is marked `source: zurg`; cards carry a small **Zurg** badge, and with the
+  toggle off those rows leave Recently Added immediately (the scan stops *and* the listing hides
+  them — turning it back on restores them).
+- **"Found in Zurg — not in Radarr or Sonarr"** on a Zurg-only title, with an admin **Add it to
+  Radarr/Sonarr** action. Both appear only when Radarr/Sonarr are actually configured.
+- **Deleting a Zurg title removes it from Zurg.** The delete dialog swaps the *arr checkbox for
+  **Delete from Zurg**, which deletes the title's folder through Zurg's WebDAV mount so the
+  release is removed from the debrid account. The WebDAV path recorded by the scan is used, with a
+  folder-name lookup for older rows.
+
 ## 0.22.0 (2026-11-19)
 
 ### New

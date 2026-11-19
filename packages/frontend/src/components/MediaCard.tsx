@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import MediaLink from './MediaLink';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Star, CheckCircle, Film, Tv, Plus, Loader2, EyeOff, Globe } from 'lucide-react';
+import { Star, CheckCircle, Film, Tv, Plus, Loader2, EyeOff, Globe, Cloud } from 'lucide-react';
 import { PosterRequestButton } from './PosterRequestButton';
 import api, { posterUrl } from '@/lib/api';
 import { type MediaStateCategory, type RequestStatus } from '@lemedia/shared';
@@ -166,6 +166,15 @@ export default function MediaCard({ media, className, availability, meta, index 
           >
             <Globe className="w-2.5 h-2.5" />
             {foreignBadge}
+          </span>
+        )}
+        {media.source === 'zurg' && (
+          <span
+            title={t('media.zurg_source', 'Found in Zurg — not in Radarr or Sonarr')}
+            className="flex items-center gap-0.5 bg-sky-500/80 rounded-full px-1.5 py-1 text-[10px] font-semibold text-white leading-none"
+          >
+            <Cloud className="w-2.5 h-2.5" />
+            Zurg
           </span>
         )}
       </div>

@@ -158,6 +158,8 @@ export interface TmdbMedia {
   /** Actor/director name whose known_for credit surfaced this row in search. */
   via_person?: string | null;
   lastEpisodeInfo?: { season: number; episode: number; title: string } | null;
+  /** Where a DB-backed row came from when it is not an *arr: "zurg" for Zurg-only titles. */
+  source?: string | null;
   genre_ids?: number[];
   genres?: { id: number; name: string }[];
   runtime?: number;

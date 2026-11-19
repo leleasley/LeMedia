@@ -381,7 +381,8 @@ export async function sendToService(
     if (ctx.targetService && arrIdField) {
       await prisma.media.updateMany({
         where: { tmdbId: media.tmdbId, mediaType },
-        data: { serviceId: ctx.targetService.id, [arrIdField]: arrMediaId },
+        // The *arr owns it now, so it is no longer a Zurg-only row (badge/prompt key on source).
+        data: { serviceId: ctx.targetService.id, [arrIdField]: arrMediaId, source: null },
       }).catch((err) => logEvent('debug', 'Request', `Failed to stamp serviceId on "${media.title}": ${err}`));
     }
     return 'sent';

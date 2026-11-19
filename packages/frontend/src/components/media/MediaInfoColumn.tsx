@@ -17,6 +17,8 @@ import { Link } from 'react-router-dom';
 import { ExternalLink } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { MessageSquareWarning } from 'lucide-react';
+import { Cloud } from 'lucide-react';
+import api from '@/lib/api';
 
 interface Props {
   onBrowseSeasons?: () => void;
@@ -40,6 +42,8 @@ interface Props {
   onSearchMissing: () => void;
   onDeleteMedia?: () => void;
   onLinkSeries?: () => void;
+  /** Admin action: add this Zurg-only title to Radarr/Sonarr. */
+  onAddToArr?: () => void | Promise<void>;
   onReportIssue?: () => void;
   qualityOptions: { id: number; label: string }[];
   selectedCriteria: Record<number, number>;
@@ -63,7 +67,7 @@ export function MediaInfoColumn({
   media, dbMedia, type, title, year, genres, director, trailer,
   isAvailable, buttonState,
   requesting, justRequested, requestError, download, blacklisted, searchMissingError,
-  onRequest, onSearchMissing, onDeleteMedia, onLinkSeries, onReportIssue,
+  onRequest, onSearchMissing, onDeleteMedia, onLinkSeries, onAddToArr, onReportIssue,
   qualityOptions, takenQualityIds, selectedQuality, setSelectedQuality,
   selectedCriteria, setSelectedCriteria,
   audioLanguages, subtitleLanguages, libraryLoading, readOnly, userHasRequest, excludedBy,
@@ -76,6 +80,17 @@ export function MediaInfoColumn({
   // Radarr-flavoured "still searching" note.
   const dmmRequest = ((dbMedia?.requests ?? []) as { targetDmmServiceId?: number | null; status?: string; createdAt?: string }[])
     .find((r) => r?.targetDmmServiceId != null) ?? null;
+
+  // A title Zurg found on its own has no Radarr/Sonarr row. Only offer to add it when those
+  // apps actually exist, and only to an admin (adding is an admin action, not a request).
+  const zurgOnly = dbMedia?.source === 'zurg' && !dbMedia?.radarrId && !dbMedia?.sonarrId;
+  const [arrConfigured, setArrConfigured] = useState(false);
+  useEffect(() => {
+    if (!isAdmin || !zurgOnly) return;
+    api.get<{ arr: boolean }>('/admin/nav-services')
+      .then(({ data }) => setArrConfigured(!!data?.arr))
+      .catch(() => { /* leave the prompt hidden */ });
+  }, [isAdmin, zurgOnly]);
   useEffect(() => { setTrailerOpen(false); }, [type, media.id]);
   useEffect(() => {
     if (!trailerOpen) return;
@@ -199,6 +214,26 @@ export function MediaInfoColumn({
                 : t('media.excluded_note', 'This title is on {{service}}\'s import-list exclusions. You can still request it — an admin approves the request, which removes the exclusion and adds it.', {
                     service: excludedBy === 'radarr' ? 'Radarr' : 'Sonarr',
                   })}
+            </div>
+          )}
+
+          {zurgOnly && arrConfigured && (
+            <div className="px-3 py-2.5 rounded-lg bg-sky-500/10 ring-1 ring-inset ring-sky-500/20 text-sky-200 text-xs leading-relaxed">
+              <p className="flex items-center gap-1.5 font-medium">
+                <Cloud className="w-3.5 h-3.5" />
+                {t('media.zurg_only', 'Found in Zurg — not in Radarr or Sonarr')}
+              </p>
+              {isAdmin && onAddToArr && (
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={() => void onAddToArr()}
+                    className="btn-secondary !py-1.5 !px-3 text-xs"
+                  >
+                    {t('media.zurg_add_to_arr', 'Add it to Radarr/Sonarr')}
+                  </button>
+                </div>
+              )}
             </div>
           )}
 

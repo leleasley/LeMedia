@@ -65,6 +65,10 @@ export interface Media {
   tvdbId: number | null;
   /** Set when an admin bound this title to the Sonarr series by hand (TMDB/TVDB split shows). */
   tvdbLinkedAt?: string | null;
+  /** "zurg" when the row was discovered in Zurg's library rather than synced from an *arr. */
+  source?: string | null;
+  /** Zurg's WebDAV folder for this title, used to delete the release from debrid. */
+  zurgPath?: string | null;
   mediaType: 'movie' | 'tv';
   title: string;
   overview: string | null;

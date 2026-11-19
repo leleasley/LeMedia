@@ -1951,5 +1951,9 @@
   },
   "admin.features.zurg_recent": "Recently added from Zurg",
   "admin.features.zurg_recent_desc": "Read what is on your debrid account from Zurg's WebDAV library every 30 minutes, for installs without Radarr/Sonarr. Leave off if your *arrs already report additions.",
-  "admin.jobs.labels.zurg_recent_scan": "Zurg recently-added scan"
+  "admin.jobs.labels.zurg_recent_scan": "Zurg recently-added scan",
+  "media.zurg_source": "Found in Zurg — not in Radarr or Sonarr",
+  "media.zurg_only": "Found in Zurg — not in Radarr or Sonarr",
+  "media.zurg_add_to_arr": "Add it to Radarr/Sonarr",
+  "media.zurg_add_failed": "Could not add it to Radarr/Sonarr"
 }

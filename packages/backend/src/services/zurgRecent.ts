@@ -30,7 +30,7 @@ export interface ZurgRecentResult {
   unmatched: number;
 }
 
-interface Entry { title: string; year: number | null; addedAt: Date }
+interface Entry { title: string; year: number | null; addedAt: Date; path: string }
 
 const strip = (s: string) => s
   .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -69,7 +69,7 @@ async function propfind(conn: ZurgConn, path: string): Promise<Entry[]> {
     if (Number.isNaN(addedAt.getTime())) continue;
     const { title, year } = parseFolder(name);
     if (!title) continue;
-    out.push({ title, year, addedAt });
+    out.push({ title, year, addedAt, path: decodeURIComponent(href) });
   }
   return out;
 }
@@ -130,7 +130,7 @@ export async function scanZurgRecent(): Promise<ZurgRecentResult> {
       // it was matched, and a library scan over thousands of titles must stay cheap.
       const known = await prisma.media.findFirst({
         where: { mediaType: entry.kind, title: entry.title },
-        select: { id: true, tmdbId: true, availableAt: true, statusCategory: true },
+        select: { id: true, tmdbId: true, availableAt: true, statusCategory: true, radarrId: true, sonarrId: true },
       });
 
       if (known) {
@@ -141,6 +141,10 @@ export async function scanZurgRecent(): Promise<ZurgRecentResult> {
             ...(newer ? { availableAt: entry.addedAt } : {}),
             ...(known.statusCategory === 'AVAILABLE' ? {} : { statusCategory: 'AVAILABLE' }),
             libraryConfirmedAt: new Date(),
+            zurgPath: entry.path,
+            // An *arr-linked row is an *arr title; the Zurg marker is only for titles Zurg found
+            // on its own, which is what the badge and the "add to Radarr/Sonarr" prompt key on.
+            source: known.radarrId || known.sonarrId ? null : 'zurg',
           },
         });
         updated++;
@@ -166,11 +170,17 @@ export async function scanZurgRecent(): Promise<ZurgRecentResult> {
           statusCategory: 'AVAILABLE',
           availableAt: entry.addedAt,
           libraryConfirmedAt: new Date(),
+          source: 'zurg',
+          zurgPath: entry.path,
         },
         update: {
           statusCategory: 'AVAILABLE',
           availableAt: entry.addedAt,
           libraryConfirmedAt: new Date(),
+          // Never overwrite the marker here: this branch also catches rows that already belong
+          // to an *arr, and those are not "Zurg-only". The create branch below is the only place
+          // a row is born as Zurg-sourced.
+          zurgPath: entry.path,
         },
       });
       created++;

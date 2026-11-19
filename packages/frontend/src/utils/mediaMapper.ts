@@ -9,6 +9,7 @@ export function dbMediaToTmdbShape(m: {
   releaseDate?: string | null;
   voteAverage?: number | null;
   lastEpisodeInfo?: { season: number; episode: number; title: string } | null;
+  source?: string | null;
 }): TmdbMedia {
   return {
     id: m.tmdbId > 0 ? m.tmdbId : 0,
@@ -23,6 +24,7 @@ export function dbMediaToTmdbShape(m: {
     overview: '',
     media_type: m.mediaType,
     lastEpisodeInfo: m.lastEpisodeInfo,
+    source: m.source ?? null,
   };
 }
 

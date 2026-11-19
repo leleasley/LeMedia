@@ -151,6 +151,12 @@ model Media {
   /// authority for Sonarr, so the link outranks the TMDB mapping — sync keeps matching it even
   /// when Sonarr reports the sibling TMDB id.
   tvdbLinkedAt        DateTime?
+  /// Where this row came from when it is not an *arr: "zurg" for titles discovered in Zurg's
+  /// WebDAV library. Null for *arr synced rows and anything else.
+  source              String?
+  /// WebDAV path of the title's folder in Zurg (e.g. `/dav/__magic__/movies/Heat (1995)/`),
+  /// recorded so deleting the title can remove the release from the debrid account.
+  zurgPath            String?
   mediaType           String    // "movie" | "tv"
   title               String
   overview            String?
