@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.24.2 (2026-11-19)
+
+### Fixed
+- **Deleting from Zurg no longer stops at an empty placeholder folder.** A title can exist as an
+  empty `tv/<Show>` folder while its release sits unsorted at the mount root or under `__all__`.
+  The delete now removes every folder that represents the title, not just the recorded one — which
+  is what removes the release from the debrid account.
+- Zurg answers `DELETE` with 204 even for a path that does not exist, so each candidate is checked
+  with a depth-0 `PROPFIND` first. A delete that had nothing to remove now reports that honestly
+  instead of claiming success.
+
 ## 0.24.1 (2026-11-19)
 
 ### Fixed

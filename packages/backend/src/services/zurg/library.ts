@@ -182,3 +182,20 @@ export async function zurgTvInventory(media: { title: string; zurgPath?: string 
     .map(([season, episodes]) => ({ season, episodes: [...episodes].sort((a, b) => a - b), files: counts.get(season) ?? episodes.size }));
   return { path: used, seasons: result };
 }
+
+
+/** Every folder that could represent this title in Zurg: the recorded path, the show folder, and
+ *  any unsorted/`__all__` release folder matching its name. Used when deleting a title — the show
+ *  folder is often an empty placeholder while the files sit in an unsorted release. */
+export async function zurgTitleFolders(media: { title: string; zurgPath?: string | null }): Promise<string[]> {
+  const conn = await getZurgConn().catch(() => null);
+  if (!conn) return media.zurgPath ? [media.zurgPath] : [];
+
+  const paths = new Set<string>();
+  if (media.zurgPath) paths.add(media.zurgPath);
+  const show = await showFolder(conn, media.title, media.zurgPath).catch(() => null);
+  if (show) paths.add(show);
+  for (const entry of await unsortedFolders(conn, media.title).catch(() => [])) paths.add(entry.path);
+  for (const entry of await allReleasesFor(conn, media.title).catch(() => [])) paths.add(entry.path);
+  return [...paths];
+}
