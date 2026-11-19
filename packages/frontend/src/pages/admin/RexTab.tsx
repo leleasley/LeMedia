@@ -2,13 +2,14 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { clsx } from 'clsx';
-import { CheckCircle2, Clock, Cpu, Database, Film, Globe, HardDrive, History, Loader2, MemoryStick, MonitorPlay, Plug, Server, Tv, Users, XCircle } from 'lucide-react';
+import { CheckCircle2, Clock, Cpu, Database, Film, Globe, HardDrive, History, Loader2, MemoryStick, MonitorPlay, Plug, RefreshCw, Server, Tv, Users, XCircle } from 'lucide-react';
 import api from '@/lib/api';
 import { AdminTabLayout } from './AdminTabLayout';
 import { UpdateStatusRow } from './UpdateStatusRow';
 import { RexCoverage } from './RexCoverage';
 import { RexUpdateSettings } from './rex/RexUpdateSettings';
 import { Spinner } from '@/components/Spinner';
+import { showToast, toastApiError } from '@/utils/toast';
 
 interface RexData {
   configured: boolean;
@@ -62,6 +63,9 @@ export function RexTab() {
   const { t, i18n } = useTranslation();
   const [data, setData] = useState<RexData | null>(null);
   const [view, setView] = useState<'overview' | 'series' | 'settings'>('overview');
+  const [scan, setScan] = useState<{ lastRunAt: string | null; lastStatus: string | null; running: boolean } | null>(null);
+  const [avail, setAvail] = useState<{ movie: string; tv: string; labels: Record<string, string> } | null>(null);
+  const [scanning, setScanning] = useState(false);
 
   const load = useCallback(async () => {
     try { const { data } = await api.get<RexData>('/admin/rex/health'); setData(data); }
@@ -73,6 +77,46 @@ export function RexTab() {
     const id = window.setInterval(load, 15_000);
     return () => window.clearInterval(id);
   }, [load]);
+
+  // Library scan state + which service decides availability: the two things that explain why a
+  // title already on disk can still look missing, and the two things an admin can act on here.
+  const loadScan = useCallback(async () => {
+    const [jobs, settings, sources] = await Promise.allSettled([
+      api.get<{ key: string; lastRunAt: string | null; lastStatus: string | null; running: boolean }[]>('/admin/jobs'),
+      api.get<{ movieAvailabilitySource?: string; tvAvailabilitySource?: string }>('/admin/settings'),
+      api.get<{ movie: { id: string; label: string }[]; tv: { id: string; label: string }[] }>('/admin/availability-sources'),
+    ]);
+    if (jobs.status === 'fulfilled') {
+      const row = jobs.value.data.find((j) => j.key === 'library_scan');
+      setScan(row ? { lastRunAt: row.lastRunAt, lastStatus: row.lastStatus, running: row.running } : null);
+    }
+    if (settings.status === 'fulfilled') {
+      const labels: Record<string, string> = {};
+      if (sources.status === 'fulfilled') {
+        for (const s of [...sources.value.data.movie, ...sources.value.data.tv]) labels[s.id] = s.label;
+      }
+      setAvail({
+        movie: settings.value.data.movieAvailabilitySource || 'radarr',
+        tv: settings.value.data.tvAvailabilitySource || 'sonarr',
+        labels,
+      });
+    }
+  }, []);
+
+  useEffect(() => { void loadScan(); }, [loadScan]);
+
+  const scanNow = async () => {
+    setScanning(true);
+    try {
+      await api.post('/admin/jobs/library_scan/run');
+      showToast(t('admin.rex.scan_started', 'Scanning the library now.'), 'success');
+      window.setTimeout(() => { void loadScan(); void load(); }, 6000);
+    } catch (err) {
+      toastApiError(err, t('admin.rex.scan_failed', 'Could not start a library scan'));
+    } finally {
+      setScanning(false);
+    }
+  };
 
   const when = (iso: string | null) => {
     if (!iso) return '-';
@@ -151,6 +195,50 @@ export function RexTab() {
             {stat(t('admin.rex.watching', 'Watching'), data.nowPlaying?.length ?? 0, (data.nowPlaying?.length ?? 0) > 0 ? 'text-ndp-accent' : 'text-ndp-text')}
             {stat(t('admin.rex.movies', 'Movies'), movies.toLocaleString(i18n.language))}
             {stat(t('admin.rex.shows', 'Shows'), shows.toLocaleString(i18n.language))}
+          </div>
+        </section>
+
+        <section>
+          <h3 className="admin-group-label">{t('admin.rex.library_scan', 'Library scan')}</h3>
+          <div className="admin-group divide-y divide-white/[0.06]">
+            <div className="admin-row">
+              <span className="admin-icon-tile"><RefreshCw className="w-4 h-4" /></span>
+              <div className="flex-1 min-w-0">
+                <p className="text-[15px] font-medium text-ndp-text">
+                  {scan?.lastRunAt
+                    ? t('admin.rex.scan_last', 'Last scanned {{when}}', { when: when(scan.lastRunAt) })
+                    : t('admin.rex.scan_never', 'No library scan has run yet')}
+                </p>
+                <p className="text-xs text-ndp-text-dim mt-0.5">
+                  {t('admin.rex.scan_desc', 'Titles already on this server are matched by this scan; it also runs at startup and every 30 minutes.')}
+                </p>
+              </div>
+              <button type="button" onClick={() => void scanNow()} disabled={scanning || scan?.running} className="btn-secondary !py-2 !px-3 text-sm flex items-center gap-2 flex-shrink-0 disabled:opacity-50">
+                {scanning || scan?.running ? <Spinner size="sm" /> : <RefreshCw className="w-4 h-4" />}
+                {t('admin.rex.scan_now', 'Scan now')}
+              </button>
+            </div>
+            {avail && (
+              <div className="admin-row">
+                <span className={clsx('admin-icon-tile', ['plex', 'jellyfin', 'emby', 'rex'].includes(avail.movie) && ['plex', 'jellyfin', 'emby', 'rex'].includes(avail.tv) ? '' : 'bg-amber-500/15 text-amber-300')}>
+                  <Database className="w-4 h-4" />
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[15px] font-medium text-ndp-text">
+                    {t('admin.rex.availability_source', 'Availability is decided by {{movie}} and {{tv}}', {
+                      movie: avail.labels[avail.movie] ?? avail.movie,
+                      tv: avail.labels[avail.tv] ?? avail.tv,
+                    })}
+                  </p>
+                  <p className="text-xs text-ndp-text-dim mt-0.5">
+                    {['plex', 'jellyfin', 'emby', 'rex'].includes(avail.movie) && ['plex', 'jellyfin', 'emby', 'rex'].includes(avail.tv)
+                      ? t('admin.rex.availability_ok', 'Existing titles in this library count as available.')
+                      : t('admin.rex.availability_mismatch', 'Titles only in this library will not count as available. Set both sources to this server in Features.')}
+                  </p>
+                </div>
+                <Link to="/admin?tab=features" className="btn-secondary !py-2 !px-3 text-sm flex-shrink-0">{t('admin.rex.availability_change', 'Features')}</Link>
+              </div>
+            )}
           </div>
         </section>
 

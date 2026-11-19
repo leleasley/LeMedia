@@ -429,7 +429,9 @@ class DuplicateRequestError extends Error {}
  *  Extending with a new failure mode means adding one variant + its mapping — callers stay
  *  exhaustive via the discriminant. */
 export type CreateRequestResult =
-  | { ok: true; status: 201 | 202; request: Awaited<ReturnType<typeof prisma.mediaRequest.create>>; sendFailed?: boolean }
+  | { ok: true; status: 201 | 202; request: Awaited<ReturnType<typeof prisma.mediaRequest.create>>; sendFailed?: boolean;
+      /** Where it was sent (or will be, once approved): DMM's wanted list or an *arr. */
+      destination: 'dmm' | 'radarr' | 'sonarr' }
   | { ok: false; status: 400; code: 'INVALID_INPUT'; error: string }
   | { ok: false; status: 403; code: 'BLOCKED_BY_GUARD'; error: string }
   | { ok: false; status: 403; code: 'BLACKLISTED'; error: string }
@@ -639,9 +641,13 @@ export async function createUserRequest(input: CreateRequestInput): Promise<Crea
   }
   logEvent('info', 'Request', `${username} requested "${media.title}"`);
 
+  // Where this request is headed, so the UI can name the destination instead of saying
+  // "request sent" and leaving people to guess between DMM's wanted list and the *arrs.
+  const destination = targetDmm ? 'dmm' as const : getServiceTypeForMedia(mediaType) as 'radarr' | 'sonarr';
+
   return sendFailed
-    ? { ok: true, status: 202, request: mediaRequest, sendFailed: true }
-    : { ok: true, status: 201, request: mediaRequest };
+    ? { ok: true, status: 202, request: mediaRequest, sendFailed: true, destination }
+    : { ok: true, status: 201, request: mediaRequest, destination };
 }
 
 async function recordRequestDispatch(

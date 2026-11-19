@@ -38,6 +38,7 @@ export function FeaturesTab() {
   const [missingSearchCooldownMin, setMissingSearchCooldownMin] = useState(60);
   const [disabledLoginMode, setDisabledLoginMode] = useState<'block' | 'friendly'>('friendly');
   const [arrUserTaggingEnabled, setArrUserTaggingEnabled] = useState(false);
+  const [zurgRecentEnabled, setZurgRecentEnabled] = useState(false);
   // Availability threshold — split by media type because a movie lands as one file while a series
   // imports episode by episode into a library rescanned on a schedule.
   const [movieAvailabilitySource, setMovieAvailabilitySource] = useState('radarr');
@@ -64,6 +65,7 @@ export function FeaturesTab() {
         missingSearchCooldownMin: data.missingSearchCooldownMin ?? 60,
         disabledLoginMode: (data.disabledLoginMode === 'block' ? 'block' : 'friendly') as 'block' | 'friendly',
         arrUserTaggingEnabled: data.arrUserTaggingEnabled ?? false,
+        zurgRecentEnabled: data.zurgRecentEnabled ?? false,
         movieAvailabilitySource: data.movieAvailabilitySource ?? 'radarr',
         tvAvailabilitySource: data.tvAvailabilitySource ?? 'sonarr',
         importedStateLabel: data.importedStateLabel ?? '',
@@ -76,6 +78,7 @@ export function FeaturesTab() {
       setMissingSearchCooldownMin(vals.missingSearchCooldownMin);
       setDisabledLoginMode(vals.disabledLoginMode);
       setArrUserTaggingEnabled(vals.arrUserTaggingEnabled);
+      setZurgRecentEnabled(vals.zurgRecentEnabled);
       setMovieAvailabilitySource(vals.movieAvailabilitySource);
       setTvAvailabilitySource(vals.tvAvailabilitySource);
       try {
@@ -96,8 +99,8 @@ export function FeaturesTab() {
   useEffect(() => { loadAll(); }, [loadAll]);
 
   const currentValues = useMemo(
-    () => ({ autoApproveRequests, requestsEnabled, calendarEnabled, nsfwBlurEnabled, missingSearchCooldownMin, disabledLoginMode, arrUserTaggingEnabled, movieAvailabilitySource, tvAvailabilitySource, importedStateLabel, importedStateColor }),
-    [autoApproveRequests, requestsEnabled, calendarEnabled, nsfwBlurEnabled, missingSearchCooldownMin, disabledLoginMode, arrUserTaggingEnabled, movieAvailabilitySource, tvAvailabilitySource, importedStateLabel, importedStateColor]
+    () => ({ autoApproveRequests, requestsEnabled, calendarEnabled, nsfwBlurEnabled, missingSearchCooldownMin, disabledLoginMode, arrUserTaggingEnabled, zurgRecentEnabled, movieAvailabilitySource, tvAvailabilitySource, importedStateLabel, importedStateColor }),
+    [autoApproveRequests, requestsEnabled, calendarEnabled, nsfwBlurEnabled, missingSearchCooldownMin, disabledLoginMode, arrUserTaggingEnabled, zurgRecentEnabled, movieAvailabilitySource, tvAvailabilitySource, importedStateLabel, importedStateColor]
   );
 
   const hasChanges = !loading && Object.keys(initialValues.current).length > 0 &&
@@ -112,6 +115,7 @@ export function FeaturesTab() {
     setMissingSearchCooldownMin(iv.missingSearchCooldownMin as number);
     setDisabledLoginMode(iv.disabledLoginMode as 'block' | 'friendly');
     setArrUserTaggingEnabled(iv.arrUserTaggingEnabled as boolean);
+    setZurgRecentEnabled(iv.zurgRecentEnabled as boolean);
     setMovieAvailabilitySource(iv.movieAvailabilitySource as string);
     setTvAvailabilitySource(iv.tvAvailabilitySource as string);
     setImportedStateLabel(iv.importedStateLabel as string);
@@ -129,6 +133,7 @@ export function FeaturesTab() {
         missingSearchCooldownMin,
         disabledLoginMode,
         arrUserTaggingEnabled,
+        zurgRecentEnabled,
         movieAvailabilitySource,
         tvAvailabilitySource,
         importedStateLabel: importedStateLabel.trim() || null,
@@ -168,6 +173,7 @@ export function FeaturesTab() {
     { label: t('admin.features.calendar'), desc: t('admin.features.calendar_desc'), value: calendarEnabled, set: setCalendarEnabled },
     { label: t('admin.features.nsfw_blur'), desc: t('admin.features.nsfw_blur_desc'), value: nsfwBlurEnabled, set: setNsfwBlurEnabled },
     { label: t('admin.features.arr_user_tagging'), desc: t('admin.features.arr_user_tagging_desc'), value: arrUserTaggingEnabled, set: setArrUserTaggingEnabled },
+    { label: t('admin.features.zurg_recent'), desc: t('admin.features.zurg_recent_desc'), value: zurgRecentEnabled, set: setZurgRecentEnabled },
   ];
 
   return (

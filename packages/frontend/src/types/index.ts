@@ -103,6 +103,8 @@ export interface MediaRequest {
   approvedById: number | null;
   /** On the service's import-list exclusions when requested; approving removes it. */
   excluded?: boolean;
+  /** Set when the request was routed to a DMM service (its wanted list) instead of an *arr. */
+  targetDmmServiceId?: number | null;
   createdAt: string;
   updatedAt: string;
   media?: Media;

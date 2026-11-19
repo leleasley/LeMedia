@@ -72,6 +72,10 @@ export function MediaInfoColumn({
   const { isAdmin } = useAuth();
   const [trailerOpen, setTrailerOpen] = useState(false);
   const enrichment = useMediaEnrichment(type, media.id, !readOnly);
+  // Newest request routed to DMM's wanted list (if any) — drives honest copy instead of the
+  // Radarr-flavoured "still searching" note.
+  const dmmRequest = ((dbMedia?.requests ?? []) as { targetDmmServiceId?: number | null; status?: string; createdAt?: string }[])
+    .find((r) => r?.targetDmmServiceId != null) ?? null;
   useEffect(() => { setTrailerOpen(false); }, [type, media.id]);
   useEffect(() => {
     if (!trailerOpen) return;
@@ -198,7 +202,21 @@ export function MediaInfoColumn({
             </div>
           )}
 
-          {buttonState === 'searching' && userHasRequest && (
+          {dmmRequest?.status === 'pending' && (
+            <div className="px-3 py-2.5 rounded-lg bg-amber-500/10 ring-1 ring-inset ring-amber-500/20 text-amber-200 text-xs leading-relaxed">
+              {t('media.dmm_pending', 'Waiting for approval. Once approved it goes to your DMM wanted list, and zurg fetches it in the background.')}
+            </div>
+          )}
+
+          {dmmRequest && dmmRequest.status !== 'pending' && !isAvailable && (
+            <div className="px-3 py-2.5 rounded-lg bg-sky-500/10 ring-1 ring-inset ring-sky-500/20 text-sky-200 text-xs leading-relaxed">
+              {dmmRequest.createdAt
+                ? t('media.dmm_wanted_since', 'On your DMM wanted list since {{when}}. zurg fetches it in the background — minutes to hours, longer for new releases.', { when: new Date(dmmRequest.createdAt).toLocaleString() })
+                : t('media.dmm_wanted', 'On your DMM wanted list. zurg fetches it in the background — minutes to hours, longer for new releases.')}
+            </div>
+          )}
+
+          {buttonState === 'searching' && userHasRequest && !dmmRequest && (
             <div className="px-3 py-2.5 rounded-lg bg-amber-500/10 ring-1 ring-inset ring-amber-500/20 text-amber-200 text-xs leading-relaxed">
               No torrents found yet, Radarr is still searching in the background and will retry automatically. Try a different quality above if you want to broaden the search.
             </div>

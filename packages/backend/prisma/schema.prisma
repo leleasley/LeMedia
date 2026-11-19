@@ -315,6 +315,9 @@ model AppSettings {
   importedStateLabel    String?
   importedStateColor    String?
   nsfwBlurEnabled       Boolean   @default(true)
+  /// Read "recently added" from Zurg's WebDAV library as well as the *arr/media-server sync.
+  /// Off by default: an *arr install already gets this from Radarr/Sonarr webhooks.
+  zurgRecentEnabled     Boolean   @default(false)
   missingSearchCooldownMin Int   @default(60) // Minutes before allowing another missing search
   instanceLanguages     String    @default("[\"en\"]") // JSON array of ISO 639-1 codes, e.g. ["fr","en"]
   siteUrl               String?   // Public URL of the instance (e.g. https://lemedia.example.com) for notification links

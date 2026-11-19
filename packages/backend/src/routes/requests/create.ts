@@ -52,8 +52,8 @@ export async function requestCreateRoutes(app: FastifyInstance) {
     });
 
     if (!result.ok) return reply.status(result.status).send({ error: result.error });
-    if (result.sendFailed) return reply.status(202).send({ ...result.request, status: 'failed', sendError: true });
-    return reply.status(201).send(result.request);
+    if (result.sendFailed) return reply.status(202).send({ ...result.request, status: 'failed', sendError: true, destination: result.destination });
+    return reply.status(201).send({ ...result.request, destination: result.destination });
   });
 
   app.post('/collection', {

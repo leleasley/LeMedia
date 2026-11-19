@@ -93,6 +93,7 @@ export async function settingsRoutes(app: FastifyInstance) {
           nsfwBlurEnabled: { type: 'boolean', description: 'Enable NSFW content blur' },
           calendarEnabled: { type: 'boolean', description: 'Enable the calendar feature' },
           passwordResetEnabled: { type: 'boolean', description: 'Allow local accounts to reset their password by email' },
+          zurgRecentEnabled: { type: 'boolean', description: "Read recently added from Zurg's WebDAV library" },
           movieAvailabilitySource: { type: 'string', description: 'Service id that decides a movie is available' },
           tvAvailabilitySource: { type: 'string', description: 'Service id that decides a series is available' },
           importedStateLabel: { type: 'string', nullable: true, description: 'Custom label for the IMPORTED state' },
@@ -120,6 +121,7 @@ export async function settingsRoutes(app: FastifyInstance) {
       nsfwBlurEnabled?: boolean;
       calendarEnabled?: boolean;
       passwordResetEnabled?: boolean;
+      zurgRecentEnabled?: boolean;
       movieAvailabilitySource?: string;
       tvAvailabilitySource?: string;
       importedStateLabel?: string | null;
@@ -146,6 +148,7 @@ export async function settingsRoutes(app: FastifyInstance) {
       passwordResetEnabled: body.passwordResetEnabled ?? undefined,
       // Validated against the declared capability: an id the connector cannot honour would
       // silently freeze every title in the in-between state.
+      zurgRecentEnabled: body.zurgRecentEnabled ?? undefined,
       movieAvailabilitySource: await validAvailabilitySource(body.movieAvailabilitySource, 'movie'),
       tvAvailabilitySource: await validAvailabilitySource(body.tvAvailabilitySource, 'tv'),
       importedStateLabel: body.importedStateLabel !== undefined ? (body.importedStateLabel?.trim() || null) : undefined,

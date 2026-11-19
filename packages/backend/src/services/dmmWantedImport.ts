@@ -5,6 +5,7 @@ import { parseServiceConfig } from '../utils/services.js';
 import { logEvent } from '../utils/logEvent.js';
 import { type BackupApp, backupOverview, downloadBackup, listBackups } from './arrBackups.js';
 import { getZurgConn, getZurgStatus } from './zurg/client.js';
+import { selectedDmmService } from './dmm.js';
 import { summarizeDmmSources } from './zurg/dmmStatus.js';
 
 /**
@@ -332,9 +333,12 @@ export async function dmmOverview(limit = 15) {
   ]);
   const job = await prisma.cronJob.findUnique({ where: { key: 'dmm_auto_import' } });
   const zurg = await dmmZurgSummary();
+  // Whether new requests go here or to the *arrs — the page states it so nobody has to guess.
+  const routing = !!(await selectedDmmService().catch(() => null));
 
   return {
     ...status,
+    routing,
     backups,
     imports,
     zurg,

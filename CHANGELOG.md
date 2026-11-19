@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.22.0 (2026-11-19)
+
+### New
+- **Recently added from Zurg** (opt-in, Admin → Features). Installations that do not run
+  Radarr/Sonarr can now take "recently added" from Zurg's own WebDAV library: a background job
+  (every 30 minutes, and only when the toggle is on) lists `__magic__/movies` and
+  `__magic__/tv`, reads each folder's modified time as the date it landed, matches the folder name
+  to TMDB, and records the title like any other addition. Existing rows are only ever refreshed —
+  a newer date wins, and nothing is downgraded. Capped at 40 new TMDB lookups per run so a large
+  library cannot stampede the API.
+- The job is a no-op until the toggle is switched on; an *arr install keeps using webhooks and
+  the normal sync as before.
+
+## 0.21.0 (2026-11-19)
+
+### New
+- **Requests say where they went.** The confirmation now names the destination — "Sent to your
+  DMM wanted list. zurg fetches it in the background — minutes to hours, longer for new releases."
+  or "Request sent to Radarr/Sonarr" — and a pending request says so instead of implying it was
+  dispatched. The same copy appears on the title page for a DMM-routed request, with the time it
+  was added, replacing the Radarr-specific "still searching" note.
+- **Request cards show a DMM chip** (`DMM · waiting for zurg`, then `DMM · fetched`) so the list
+  no longer looks identical whether a request went to an *arr or to DMM.
+- **Routing is visible.** The DMM service row carries a **Taking requests** badge when it owns new
+  requests, and the DMM page has a row stating whether new requests go to DMM or to Radarr/Sonarr,
+  with a link straight to Services.
+- **rex → Library scan**: last scan time, a **Scan now** button, and the availability source
+  (e.g. "decided by Radarr and Sonarr") with a warning when it is not this library — the reason a
+  title already on disk can still look missing. The scan still also runs at startup and every
+  30 minutes.
+
 ## 0.20.1 (2026-11-18)
 
 ### Fixed

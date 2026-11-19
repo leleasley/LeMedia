@@ -26,6 +26,7 @@ import { runRexCoverage } from './rexCoverageJob.js';
 import { runPostMigrationJobs } from './postMigrationJobs.js';
 import { maintenanceReason } from '../utils/maintenance.js';
 import { autoImportNewestBackups } from './dmmWantedImport.js';
+import { scanZurgRecent } from './zurgRecent.js';
 
 /** Strip control characters (newlines, tabs, etc.) to prevent log injection */
 function sanitize(input: string): string {
@@ -76,6 +77,8 @@ const JOB_HANDLERS: Record<string, (opts?: { force?: boolean }) => Promise<unkno
   arr_auto_update: async () => runAutoUpdates((title, message) => notifyAppUpdate(title, message)),
   // Admin → DMM: import each app's newest backup once. Disabled by default; the DMM page toggles it.
   dmm_auto_import: async () => autoImportNewestBackups(),
+  // Opt-in (AppSettings.zurgRecentEnabled): recently added straight from Zurg's WebDAV library.
+  zurg_recent_scan: async () => scanZurgRecent(),
 };
 
 // `label` is an i18n key resolved by the frontend; plugin jobs with free-text labels fall through.
@@ -111,6 +114,7 @@ const DEFAULT_JOBS = [
   // Off by default: it adds whatever Radarr/Sonarr are missing to the DMM wanted list, and zurg
   // then fetches it. Opt-in from Admin → DMM.
   { key: 'dmm_auto_import',        label: 'admin.jobs.labels.dmm_auto_import',        cronExpression: '0 4 * * *',    enabled: false },
+  { key: 'zurg_recent_scan',       label: 'admin.jobs.labels.zurg_recent_scan',       cronExpression: '*/30 * * * *', enabled: true },
 ];
 
 const activeTasks = new Map<string, ScheduledTask>();

@@ -3,8 +3,9 @@ import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import {
   AlertTriangle, CheckCircle2, Clock, Database, ExternalLink, FileArchive, History,
-  Loader2, RefreshCw, Search, Trash2, Upload, XCircle,
+  Loader2, Plug, RefreshCw, Search, Trash2, Upload, XCircle,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import api from '@/lib/api';
 import { showToast, toastApiError } from '@/utils/toast';
 import { Spinner } from '@/components/Spinner';
@@ -53,6 +54,7 @@ interface Overview {
   sponsor: 'active' | 'lapsed' | 'unknown';
   sponsorName: string | null;
   error: string | null;
+  routing: boolean;
   backups: BackupList[];
   imports: ImportRow[];
   zurg: ZurgSummary | null;
@@ -323,6 +325,27 @@ export function DmmWanted() {
               </p>
             </div>
             <span className="admin-chip flex-shrink-0">{t('admin.dmm.limit_chip', '{{n}} imports an hour', { n: data.limits.importsPerHour })}</span>
+          </div>
+
+          <div className="admin-row">
+            <span className={clsx('admin-icon-tile', data.routing ? 'bg-emerald-500/15 text-emerald-400' : 'bg-white/5 text-ndp-text-dim')}>
+              <Plug className="w-4 h-4" />
+            </span>
+            <div className="flex-1 min-w-0">
+              <p className="text-[15px] font-medium text-ndp-text">
+                {data.routing
+                  ? t('admin.dmm.routing_on', 'New requests go to your DMM wanted list')
+                  : t('admin.dmm.routing_off', 'New requests go to Radarr and Sonarr')}
+              </p>
+              <p className="text-xs text-ndp-text-dim mt-0.5">
+                {data.routing
+                  ? t('admin.dmm.routing_on_desc', 'zurg fetches them in the background; approval rules still apply.')
+                  : t('admin.dmm.routing_off_desc', 'Tick “Send all users’ new requests to this DMM account” in Services → DMM to route them here.')}
+              </p>
+            </div>
+            <Link to="/admin?tab=services" className="btn-secondary !py-2 !px-3 text-sm flex-shrink-0">
+              {t('admin.dmm.routing_change', 'Services')}
+            </Link>
           </div>
 
           {[

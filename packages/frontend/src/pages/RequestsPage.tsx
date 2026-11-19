@@ -665,6 +665,20 @@ function RequestCardInner({
 
           {groupDetails && <div className="mt-auto pt-1">{groupDetails}</div>}
 
+          {!groupDetails && req.targetDmmServiceId != null && (
+            <div className={compact ? '' : 'mt-1.5'}>
+              <span
+                className={clsx(
+                  'inline-flex text-[11px] font-semibold px-2 py-0.5 rounded-md',
+                  req.status === 'available' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-sky-500/15 text-sky-300',
+                )}
+                title={t('requests.dmm_hint', 'Routed to your DMM wanted list — zurg fetches it in the background.')}
+              >
+                {req.status === 'available' ? t('requests.dmm_fetched', 'DMM · fetched') : t('requests.dmm_waiting', 'DMM · waiting for zurg')}
+              </span>
+            </div>
+          )}
+
           {req.excluded && req.status === 'pending' && (
             <div className={compact ? '' : 'mt-1.5'}>
               <span

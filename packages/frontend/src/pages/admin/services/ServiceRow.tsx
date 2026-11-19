@@ -44,6 +44,9 @@ export function ServiceRow({
             {service.isDefault && (
               <span className="admin-chip bg-ndp-accent/15 text-ndp-accent flex-shrink-0">{t('common.default_badge')}</span>
             )}
+            {service.type === 'dmm' && service.config?.routeRequests === 'true' && (
+              <span className="admin-chip bg-emerald-500/15 text-emerald-300 flex-shrink-0">{t('admin.services.dmm_taking_requests', 'Taking requests')}</span>
+            )}
             {flagReason && (
               <span
                 className={clsx(

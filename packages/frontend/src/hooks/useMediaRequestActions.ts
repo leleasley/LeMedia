@@ -51,12 +51,18 @@ export function useMediaRequestActions(
         setJustRequested(true);
         // Toast so the confirmation is visible wherever the user is on the page, and so
         // successive requests don't require waiting on an inline state change.
+        const destination = typeof reqData.destination === 'string' ? reqData.destination : null;
+        const target = destination === 'dmm' ? 'DMM' : destination === 'radarr' ? 'Radarr' : 'Sonarr';
         if (reqData.excluded && reqData.status === 'pending') {
           showToast(t('status.request_held_excluded', 'Sent for approval — this title is on {{service}}\'s exclusions, so an admin has to approve it.', {
             service: type === 'movie' ? 'Radarr' : 'Sonarr',
           }), 'info');
+        } else if (reqData.status === 'pending') {
+          showToast(t('status.request_pending_destination', 'Sent for approval. Once approved it goes to {{target}}.', { target }), 'info');
+        } else if (destination === 'dmm') {
+          showToast(t('status.request_sent_dmm', 'Sent to your DMM wanted list. zurg fetches it in the background — minutes to hours, longer for new releases.'), 'success');
         } else {
-          showToast(t('status.request_sent'), 'success');
+          showToast(t('status.request_sent_service', 'Request sent to {{target}}.', { target }), 'success');
         }
       }
       invalidateMediaStatus(media.id, type);
