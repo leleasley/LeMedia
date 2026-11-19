@@ -1967,6 +1967,7 @@
   "media.zurg_state_partial": "partly in Sonarr",
   "media.zurg_state_absent": "not in Sonarr",
   "media.zurg_request_missing": "Add the missing seasons to Sonarr",
-  "media.zurg_request_missing_hint": "Season(s) {{list}} — Sonarr will search for them; anything already in Zurg stays.",
-  "media.zurg_inventory_empty": "Zurg lists {{path}} but exposes no episode files in it — usually a release it has not indexed yet."
+  "media.zurg_request_missing_hint": "Season(s) {{list}} — marked monitored in Sonarr, so your acquisition (zurg reads missing items from the *arrs) can fetch them.",
+  "media.zurg_inventory_empty": "Zurg lists {{path}} but exposes no episode files in it — usually a release it has not indexed yet.",
+  "media.zurg_state_nofiles": "no files listed"
 }

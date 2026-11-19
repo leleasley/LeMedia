@@ -114,7 +114,12 @@ export function ZurgInventory({ tmdbId, sonarrSeasons, onRequestSeasons, request
     };
   });
   // Specials (season 0) cannot be requested through the normal season path.
-  const toRequest = rows.filter((r) => r.season > 0 && r.state !== 'complete').map((r) => r.season);
+  // Seasons Sonarr does not have at all are worth adding whatever Zurg shows — if Zurg lists the
+  // season but no files, Sonarr is still the thing that will actually fetch it. Seasons Sonyarr
+  // partly has are only added when Zurg shows files the *arr is missing.
+  const toRequest = rows
+    .filter((r) => r.season > 0 && (r.state === 'absent' || (r.state === 'partial' && r.zurgCount > 0)))
+    .map((r) => r.season);
   const totalEpisodes = rows.reduce((n, r) => n + r.zurgCount, 0);
 
   return (
@@ -147,17 +152,18 @@ export function ZurgInventory({ tmdbId, sonarrSeasons, onRequestSeasons, request
                 <> · {t('media.zurg_in_sonarr', '{{n}} in Sonarr', { n: row.have })}</>
               )}
             </span>
-            {sonarrSeasons && row.season > 0 && (
+            {row.zurgCount === 0 && (
+              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-white/10 text-ndp-text-dim">
+                {t('media.zurg_state_nofiles', 'no files listed')}
+              </span>
+            )}
+            {sonarrSeasons && row.season > 0 && row.state !== 'complete' && (
               <span className={clsx('text-[11px] font-semibold px-2 py-0.5 rounded-md',
-                row.state === 'complete' ? 'bg-emerald-500/15 text-emerald-300'
-                  : row.state === 'partial' ? 'bg-amber-500/15 text-amber-300'
-                    : 'bg-sky-500/15 text-sky-300')}
+                row.state === 'partial' ? 'bg-amber-500/15 text-amber-300' : 'bg-sky-500/15 text-sky-300')}
               >
-                {row.state === 'complete'
-                  ? t('media.zurg_state_complete', 'in Sonarr')
-                  : row.state === 'partial'
-                    ? t('media.zurg_state_partial', 'partly in Sonarr')
-                    : t('media.zurg_state_absent', 'not in Sonarr')}
+                {row.state === 'partial'
+                  ? t('media.zurg_state_partial', 'partly in Sonarr')
+                  : t('media.zurg_state_absent', 'not in Sonarr')}
               </span>
             )}
           </div>
@@ -176,7 +182,7 @@ export function ZurgInventory({ tmdbId, sonarrSeasons, onRequestSeasons, request
             {t('media.zurg_request_missing', 'Add the missing seasons to Sonarr')}
           </button>
           <span className="text-xs text-ndp-text-dim">
-            {t('media.zurg_request_missing_hint', 'Season(s) {{list}} — Sonarr will search for them; anything already in Zurg stays.', { list: toRequest.join(', ') })}
+            {t('media.zurg_request_missing_hint', 'Season(s) {{list}} — marked monitored in Sonarr, so your acquisition (zurg reads missing items from the *arrs) can fetch them.', { list: toRequest.join(', ') })}
           </span>
         </div>
       )}

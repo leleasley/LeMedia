@@ -137,6 +137,9 @@ async function readContainer(conn: ZurgConn, path: string, seasons: Map<number, 
     const seasonHint = specials ? 0 : named ? Number(named[1]) : undefined;
 
     if (seasonHint !== undefined) {
+      // Zurg can list a season folder with no files in it (unindexed release). Record the season
+      // anyway, so the page can say "Season 2 — no files listed" instead of hiding it.
+      if (!seasons.has(seasonHint)) seasons.set(seasonHint, new Set());
       const files = await propfind(conn, dir.path).catch(() => []);
       addEpisodes(seasons, counts, files, seasonHint);
       // A season folder that only holds release subfolders (e.g. "Season 1/Show.S01.1080p/").

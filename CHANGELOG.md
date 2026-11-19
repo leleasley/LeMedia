@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.24.3 (2026-11-19)
+
+### Fixed
+- **Season folders Zurg lists but leaves empty are shown, not hidden.** Phineas and Ferb, for
+  example, has `Season 1`–`Season 4` in Zurg with no files inside them; the inventory now lists
+  those seasons as **no files listed** instead of reporting nothing at all.
+- **Seasons Sonarr does not have at all are offered for adding even when Zurg lists no files for
+  them.** Marking them monitored is what lets an acquisition source pick them up — including zurg's
+  own *arr fetch, which reads missing items from Sonarr/Radarr. Seasons Sonarr has only partly are
+  added when Zurg shows files it is missing.
+
 ## 0.24.2 (2026-11-19)
 
 ### Fixed
