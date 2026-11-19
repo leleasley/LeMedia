@@ -1921,5 +1921,12 @@
   "media.zurg_request_missing": "Ajouter les saisons manquantes à Sonarr",
   "media.zurg_request_missing_hint": "Saison(s) {{list}} — marquées comme surveillées dans Sonarr, votre acquisition (zurg lit les manquants depuis les *arr) pourra les récupérer.",
   "media.zurg_inventory_empty": "Zurg liste {{path}} mais n’y expose aucun fichier d’épisode — généralement une release qu’il n’a pas encore indexée.",
-  "media.zurg_state_nofiles": "aucun fichier listé"
+  "media.zurg_state_nofiles": "aucun fichier listé",
+  "media.zurg_state_empty": "rien dans Sonarr",
+  "media.zurg_remove_season": "Retirer la saison {{n}} de Sonarr",
+  "media.zurg_remove_season_title": "Retirer cette saison de Sonarr ?",
+  "media.zurg_remove_season_desc": "La saison {{n}} est dé-surveillée et ses fichiers téléchargés sont supprimés de Sonarr. Ce qui est dans Zurg n’est pas touché.",
+  "media.zurg_remove_season_confirm": "Retirer de Sonarr",
+  "media.zurg_remove_season_done": "Saison {{n}} retirée de Sonarr",
+  "media.zurg_remove_season_failed": "Impossible de retirer cette saison"
 }

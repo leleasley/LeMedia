@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { Cloud, Loader2, RefreshCw } from 'lucide-react';
+import { Cloud, Loader2, RefreshCw, Trash2 } from 'lucide-react';
 import api from '@/lib/api';
 import { Spinner } from '@/components/Spinner';
+import { ConfirmModal } from '@/components/ConfirmModal';
+import { showToast, toastApiError } from '@/utils/toast';
 
 interface ZurgSeason {
   season: number;
@@ -24,6 +26,8 @@ interface Props {
   onRequestSeasons: (seasons: number[]) => void | Promise<unknown>;
   requesting?: boolean;
   readOnly?: boolean;
+  /** Sonarr's internal series id, when this show is already in Sonarr. */
+  sonarrSeriesId?: number | null;
 }
 
 const HOURS = 3600_000;
@@ -35,10 +39,12 @@ const HOURS = 3600_000;
  * episodes that never reached Sonarr, which a series-level "is it in Sonarr?" check cannot see.
  * Reading it on demand (cached six hours) keeps it exact without scanning every show.
  */
-export function ZurgInventory({ tmdbId, sonarrSeasons, onRequestSeasons, requesting, readOnly }: Readonly<Props>) {
+export function ZurgInventory({ tmdbId, sonarrSeasons, onRequestSeasons, requesting, readOnly, sonarrSeriesId }: Readonly<Props>) {
   const { t } = useTranslation();
   const [seasons, setSeasons] = useState<ZurgSeason[] | null>(null);
   const [path, setPath] = useState<string | null>(null);
+  const [removeSeason, setRemoveSeason] = useState<number | null>(null);
+  const [removing, setRemoving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -110,15 +116,18 @@ export function ZurgInventory({ tmdbId, sonarrSeasons, onRequestSeasons, request
       ...s,
       zurgCount,
       have,
-      state: !sonarr ? 'absent' as const : have >= zurgCount && zurgCount > 0 ? 'complete' as const : 'partial' as const,
+      state: !sonarr ? ('absent' as const)
+        : have <= 0 ? ('empty' as const)
+          : zurgCount > 0 && have < zurgCount ? ('partial' as const)
+            : ('complete' as const),
     };
   });
   // Specials (season 0) cannot be requested through the normal season path.
-  // Seasons Sonarr does not have at all are worth adding whatever Zurg shows — if Zurg lists the
-  // season but no files, Sonarr is still the thing that will actually fetch it. Seasons Sonyarr
-  // partly has are only added when Zurg shows files the *arr is missing.
+  // A season Sonarr lacks entirely (or has with no files) is worth adding whatever Zurg shows —
+  // monitoring it is what lets an acquisition source pick it up. A partly-present season is only
+  // added when Zurg shows files the *arr is missing.
   const toRequest = rows
-    .filter((r) => r.season > 0 && (r.state === 'absent' || (r.state === 'partial' && r.zurgCount > 0)))
+    .filter((r) => r.season > 0 && (r.state === 'absent' || r.state === 'empty' || (r.state === 'partial' && r.zurgCount > 0)))
     .map((r) => r.season);
   const totalEpisodes = rows.reduce((n, r) => n + r.zurgCount, 0);
 
@@ -163,12 +172,55 @@ export function ZurgInventory({ tmdbId, sonarrSeasons, onRequestSeasons, request
               >
                 {row.state === 'partial'
                   ? t('media.zurg_state_partial', 'partly in Sonarr')
-                  : t('media.zurg_state_absent', 'not in Sonarr')}
+                  : row.state === 'empty'
+                    ? t('media.zurg_state_empty', 'nothing in Sonarr')
+                    : t('media.zurg_state_absent', 'not in Sonarr')}
               </span>
+            )}
+            {sonarrSeasons && row.season > 0 && row.state === 'complete' && (
+              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300">
+                {t('media.zurg_state_complete', 'in Sonarr')}
+              </span>
+            )}
+            {!readOnly && sonarrSeriesId && row.season > 0 && row.state !== 'absent' && (
+              <button
+                type="button"
+                onClick={() => setRemoveSeason(row.season)}
+                title={t('media.zurg_remove_season', 'Remove season {{n}} from Sonarr', { n: row.season })}
+                aria-label={t('media.zurg_remove_season', 'Remove season {{n}} from Sonarr', { n: row.season })}
+                className="w-8 h-8 flex items-center justify-center rounded-lg text-ndp-text-muted hover:text-ndp-danger hover:bg-ndp-danger/10 transition-colors flex-shrink-0"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
             )}
           </div>
         ))}
       </div>
+
+      <ConfirmModal
+        open={removeSeason !== null}
+        tone="danger"
+        title={t('media.zurg_remove_season_title', 'Remove this season from Sonarr?')}
+        description={removeSeason !== null
+          ? t('media.zurg_remove_season_desc', 'Season {{n}} is unmonitored and its downloaded files are deleted from Sonarr. Anything in Zurg is untouched.', { n: removeSeason })
+          : undefined}
+        confirmLabel={t('media.zurg_remove_season_confirm', 'Remove from Sonarr')}
+        onConfirm={async () => {
+          if (removeSeason === null) return;
+          setRemoving(true);
+          try {
+            await api.post(`/media/${tmdbId}/remove-season`, { season: removeSeason });
+            showToast(t('media.zurg_remove_season_done', 'Season {{n}} removed from Sonarr', { n: removeSeason }), 'success');
+            await load(true);
+          } catch (err) {
+            toastApiError(err, t('media.zurg_remove_season_failed', 'Could not remove that season'));
+          } finally {
+            setRemoving(false);
+            setRemoveSeason(null);
+          }
+        }}
+        onClose={() => { if (!removing) setRemoveSeason(null); }}
+      />
 
       {!readOnly && sonarrSeasons && toRequest.length > 0 && (
         <div className="mt-3 flex flex-wrap items-center gap-3">

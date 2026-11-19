@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.24.4 (2026-11-19)
+
+### Fixed
+- **"0 in Sonarr" no longer reads as "partly in Sonarr".** A season Sonarr has with no files is
+  labelled **nothing in Sonarr**; a season Sonarr lacks entirely is **not in Sonarr**; only a
+  season with some but not all of Zurg's episodes is **partly in Sonarr**. The add action now
+  includes "nothing in Sonarr" seasons too.
+
+### New
+- **Remove a season from Sonarr** from the Zurg inventory: unmonitors the season and deletes its
+  downloaded episode files (Zurg's copy is untouched), behind a confirmation. Useful when Zurg
+  has a season Sonarr picked up but you do not want it there.
+
 ## 0.24.3 (2026-11-19)
 
 ### Fixed

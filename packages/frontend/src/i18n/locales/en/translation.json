@@ -1969,5 +1969,12 @@
   "media.zurg_request_missing": "Add the missing seasons to Sonarr",
   "media.zurg_request_missing_hint": "Season(s) {{list}} — marked monitored in Sonarr, so your acquisition (zurg reads missing items from the *arrs) can fetch them.",
   "media.zurg_inventory_empty": "Zurg lists {{path}} but exposes no episode files in it — usually a release it has not indexed yet.",
-  "media.zurg_state_nofiles": "no files listed"
+  "media.zurg_state_nofiles": "no files listed",
+  "media.zurg_state_empty": "nothing in Sonarr",
+  "media.zurg_remove_season": "Remove season {{n}} from Sonarr",
+  "media.zurg_remove_season_title": "Remove this season from Sonarr?",
+  "media.zurg_remove_season_desc": "Season {{n}} is unmonitored and its downloaded files are deleted from Sonarr. Anything in Zurg is untouched.",
+  "media.zurg_remove_season_confirm": "Remove from Sonarr",
+  "media.zurg_remove_season_done": "Season {{n}} removed from Sonarr",
+  "media.zurg_remove_season_failed": "Could not remove that season"
 }

@@ -210,6 +210,7 @@ export default function MediaDetailPage({ type, shareId, shareToken, readOnly }:
             sonarrSeasons={catalog?.source.provider === 'sonarr' ? catalog.seasons : null}
             onRequestSeasons={handleSeasonsRequest}
             requesting={requesting}
+            sonarrSeriesId={dbMedia?.sonarrId ?? null}
           />
         </div>
       )}

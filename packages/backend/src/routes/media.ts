@@ -132,6 +132,35 @@ export async function mediaRoutes(app: FastifyInstance) {
     return { seasons: inventory.seasons, path: inventory.path, fetchedAt: new Date().toISOString() };
   });
 
+  /** Remove one season from Sonarr: unmonitor it and delete its episode files. Offered by the
+   *  Zurg inventory when a season exists in the *arr but is not wanted there. */
+  app.post<{ Params: { tmdbId: string } }>('/:tmdbId/remove-season', {
+    schema: { body: { type: 'object', required: ['season'], properties: { season: { type: 'integer', minimum: 1, maximum: 100 } } } },
+  }, async (request, reply) => {
+    if (request.user?.role !== 'admin') return reply.status(403).send({ error: 'FORBIDDEN' });
+    const tmdbId = Number(request.params.tmdbId);
+    if (!Number.isFinite(tmdbId) || tmdbId <= 0) return reply.status(400).send({ error: 'Invalid TMDB ID' });
+    const season = (request.body as { season: number }).season;
+
+    const media = await prisma.media.findFirst({ where: { tmdbId, mediaType: 'tv' } });
+    if (!media) return reply.status(404).send({ error: 'Media not found' });
+    if (!media.sonarrId) return reply.status(400).send({ error: 'This title is not in Sonarr' });
+
+    const client = await getArrClientForMedia('sonarr', media.serviceId).catch(() => null) as
+      | { deleteSeason?: (id: number, season: number) => Promise<{ files: number }> }
+      | null;
+    if (!client?.deleteSeason) return reply.status(400).send({ error: 'Sonarr does not support season removal here' });
+
+    try {
+      const result = await client.deleteSeason(media.sonarrId, season);
+      logEvent('info', 'Media', `Removed season ${season} of "${media.title}" from Sonarr (${result.files} file(s) deleted)`);
+      return { ok: true, files: result.files };
+    } catch (err) {
+      logEvent('warn', 'Media', `Failed to remove season ${season} of "${media.title}" from Sonarr: ${String(err)}`);
+      return reply.status(502).send({ error: 'Sonarr refused to remove that season' });
+    }
+  });
+
   // "Found in Zurg, not in Radarr/Sonarr — add it?" — admin action from the title page. Uses the
   // normal dispatch path so the *arr row is stamped exactly like a request.
   app.post<{ Params: { tmdbId: string } }>('/:tmdbId/add-to-arr', async (request, reply) => {

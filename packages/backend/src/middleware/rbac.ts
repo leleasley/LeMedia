@@ -118,6 +118,7 @@ const ROUTE_PERMISSIONS: Record<string, RouteRule> = {
   'DELETE:/api/media/:tmdbId':          { permission: AUTH },
   // Zurg-only title → add it to Radarr/Sonarr. Admin action, not a request.
   'POST:/api/media/:tmdbId/add-to-arr': { permission: 'admin.*' },
+  'POST:/api/media/:tmdbId/remove-season': { permission: 'admin.*' },
   'POST:/api/media/batch-status':        { permission: AUTH },
   'GET:/api/media/episodes':             { permission: AUTH },
   'GET:/api/media/nsfw-ids':             { permission: AUTH },

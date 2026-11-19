@@ -425,6 +425,28 @@ export class SonarrClient extends ArrClientBase implements ArrClient {
     await this.api.delete(`/series/${seriesId}`, { params: { deleteFiles } });
   }
 
+  /** Drop one season from Sonarr: unmonitor it, then delete its episode files.
+   *  Used by the Zurg inventory when a season there is not wanted in Sonarr. */
+  async deleteSeason(seriesId: number, seasonNumber: number): Promise<{ files: number }> {
+    const series = await this.getSeriesById(seriesId);
+    const seasons = (series.seasons ?? []).map((s) => ({
+      ...s,
+      monitored: s.seasonNumber === seasonNumber ? false : s.monitored,
+    }));
+    await this.api.put(`/series/${seriesId}`, { ...series, seasons });
+
+    const { data } = await this.api.get('/episode', { params: { seriesId, seasonNumber } });
+    const fileIds = [...new Set(
+      (Array.isArray(data) ? data : [])
+        .map((episode: { episodeFileId?: number }) => episode.episodeFileId)
+        .filter((id): id is number => typeof id === 'number' && id > 0),
+    )];
+    for (const fileId of fileIds) {
+      await this.api.delete(`/episodefile/${fileId}`);
+    }
+    return { files: fileIds.length };
+  }
+
   async getEpisodesNormalized(serviceMediaId: number, seasonNumber?: number): Promise<ArrEpisode[]> {
     const episodes = await this.getEpisodes(serviceMediaId, seasonNumber);
     return episodes.map(ep => ({
