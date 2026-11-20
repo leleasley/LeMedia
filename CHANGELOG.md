@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.24.5 (2026-11-20)
+
+### Fixed
+- **Playback links survive a file zurg has not probed yet.** New Usenet releases expose a signed
+  stream path but no `media_info`; the file summary returned null, so the play endpoint produced
+  no stream URL even though the file was playable. The summary now falls back to the entry's
+  signed path (and size), with codec details omitted until zurg probes it.
+
 ## 0.24.4 (2026-11-19)
 
 ### Fixed

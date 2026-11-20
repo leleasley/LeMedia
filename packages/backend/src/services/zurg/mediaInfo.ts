@@ -184,7 +184,20 @@ export async function getFileInfo(mediaType: 'movie' | 'tv', tmdbId: number): Pr
         if (job?.placed) davPath = '/dav/__magic__/' + job.placed.split('/').map(encodeURIComponent).join('/');
       }
       const entry = davPath ? await entryFor(conn, davPath) : null;
-      info = entry ? summarise(entry, null) : null;
+      // New Usenet releases have no `media_info` until zurg probes them. The signed link is still
+      // there, and a playable file with no codec detail beats no link at all.
+      info = entry ? (summarise(entry, null) ?? {
+        release: entry.name ?? null,
+        streamPath: entry.signed_path || null,
+        sample: null,
+        sizeBytes: entry.size ?? null,
+        durationSec: null,
+        bitrateKbps: null,
+        container: null,
+        video: null,
+        audio: [],
+        subtitles: [],
+      }) : null;
     } else if (media.sonarrId) {
       const client = (await getArrClientForMedia(getServiceTypeForMedia('tv'), media.serviceId)) as unknown as SonarrClient;
       const files = (await client.getEpisodeFiles(media.sonarrId).catch(() => []))
