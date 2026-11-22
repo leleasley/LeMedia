@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.24.6 (2026-11-20)
+
+### Fixed
+- **Lists can be deleted while a sync is running.** Deleting a subscription was refused whenever a
+  list import or sync was in flight — which, with a 15-minute sync cycle, is most of the time and
+  exactly when someone clearing out paused lists tries. The job reads its own snapshot and the
+  failure path now uses `updateMany`, so a row that disappears mid-run is simply skipped.
+- The Remove action is on each subscription row (no need to expand it first), and there is a
+  **Remove paused lists (N)** button when more than one list is switched off.
+
 ## 0.24.5 (2026-11-20)
 
 ### Fixed

@@ -41,6 +41,7 @@ export function ListSubscriptions({ onAdd }: Readonly<{ onAdd: () => void }>) {
   const [open, setOpen] = useState<number | null>(null);
   const [editing, setEditing] = useState<number | null>(null);
   const [del, setDel] = useState<Subscription | null>(null);
+  const [delAll, setDelAll] = useState<Subscription[] | null>(null);
 
   const load = useCallback(async () => {
     try { const { data: d } = await api.get<SubsResp>('/admin/lists/subscriptions'); setData(d); if (d.busy && !jobId) setJobId(d.busy.id); }
@@ -117,6 +118,15 @@ export function ListSubscriptions({ onAdd }: Readonly<{ onAdd: () => void }>) {
                     </div>
                     {s.lastError && <p className={clsx('text-xs mt-1 flex items-center gap-1', s.enabled ? 'text-amber-300' : 'text-ndp-text-dim')}><AlertTriangle className="w-3 h-3 flex-shrink-0" />{s.lastError}</p>}
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setDel(s)}
+                    aria-label={`Remove ${s.name ?? s.url}`}
+                    title="Remove list"
+                    className="w-9 h-9 flex items-center justify-center rounded-lg text-ndp-text-dim hover:text-ndp-danger hover:bg-ndp-danger/10 transition-colors disabled:opacity-50 flex-shrink-0"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                   <Switch checked={s.enabled} onChange={(v) => void patch(s, { enabled: v })} label={s.enabled ? 'Pause syncing' : 'Resume syncing'} className="-mr-1.5" />
                 </div>
                 {expanded && (
@@ -125,7 +135,7 @@ export function ListSubscriptions({ onAdd }: Readonly<{ onAdd: () => void }>) {
                       <button type="button" className="btn-secondary !py-1.5 text-sm inline-flex items-center gap-1.5" disabled={busy} onClick={() => void action(s, 'sync')}><RefreshCw className="w-3.5 h-3.5" />Sync now</button>
                       {!!r?.failures?.length && <button type="button" className="btn-secondary !py-1.5 text-sm inline-flex items-center gap-1.5" disabled={busy} onClick={() => void action(s, 'retry')}><RotateCcw className="w-3.5 h-3.5" />Retry {r.failures.length} failed</button>}
                       <button type="button" className="btn-secondary !py-1.5 text-sm inline-flex items-center gap-1.5" onClick={() => setEditing(editing === s.id ? null : s.id)}><Pencil className="w-3.5 h-3.5" />Edit</button>
-                      <button type="button" className="btn-secondary !py-1.5 text-sm inline-flex items-center gap-1.5 text-red-300" disabled={busy} onClick={() => setDel(s)}><Trash2 className="w-3.5 h-3.5" />Remove</button>
+                      <button type="button" className="btn-secondary !py-1.5 text-sm inline-flex items-center gap-1.5 text-red-300" onClick={() => setDel(s)}><Trash2 className="w-3.5 h-3.5" />Remove</button>
                       {isUrl && <a href={s.url} target="_blank" rel="noreferrer" className="text-sm text-ndp-accent hover:underline self-center ml-1">Open list</a>}
                     </div>
                     {s.provider === 'wwe' && <WweReview />}
@@ -155,6 +165,25 @@ export function ListSubscriptions({ onAdd }: Readonly<{ onAdd: () => void }>) {
       <p className="admin-hint">Each list is re-read every {data.intervalHours} hours (change it under Settings). Only titles that aren't in your library and pass the filters are added; nothing is ever removed.</p>
 
       <ArrLists onChanged={load} />
+
+      <ConfirmModal
+        open={!!delAll}
+        title={`Remove ${delAll?.length ?? 0} paused lists?`}
+        tone="danger"
+        confirmLabel="Remove"
+        description="They stop syncing and are deleted from LeMedia. Titles they already added stay in Radarr and Sonarr."
+        onClose={() => setDelAll(null)}
+        onConfirm={async () => {
+          if (!delAll) return;
+          let removed = 0;
+          for (const sub of delAll) {
+            try { await api.delete(`/admin/lists/subscriptions/${sub.id}`); removed++; }
+            catch { /* keep going; the count says what happened */ }
+          }
+          showToast(removed === delAll.length ? `${removed} lists removed` : `${removed} of ${delAll.length} lists removed`, removed ? 'success' : 'error');
+          await load();
+        }}
+      />
 
       <ConfirmModal open={!!del} title={`Remove ${del?.name ?? 'this list'}?`} tone="danger" confirmLabel="Remove"
         description="LeMedia stops syncing this list. Titles it already added stay in Radarr and Sonarr."

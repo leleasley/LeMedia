@@ -545,7 +545,8 @@ async function syncOne(url: string, progress?: (d: number, t: number, phase: str
     if (result.added.length) logEvent('info', 'Lists', `${sub.name ?? url}: added ${result.added.length} (${result.added.slice(0, 5).map((a) => a.title).join(', ')}${result.added.length > 5 ? ', ...' : ''})`);
     return result;
   } catch (err) {
-    await prisma.listSubscription.update({ where: { url }, data: { lastError: (err as Error).message.slice(0, 500), lastCheckedAt: new Date() } });
+    // `updateMany`: the subscription may have been deleted while this sync was running.
+    await prisma.listSubscription.updateMany({ where: { url }, data: { lastError: (err as Error).message.slice(0, 500), lastCheckedAt: new Date() } });
     logEvent('warn', 'Lists', `${sub.name ?? url}: sync failed: ${(err as Error).message}`);
     throw err;
   }
@@ -624,7 +625,10 @@ export async function updateSubscription(id: number, patch: { enabled?: boolean;
 }
 
 export async function deleteSubscription(id: number) {
-  if (writeBusy) throw new ListError('A list import or sync is running. Try again when it finishes.');
+  // Deleting a subscription never conflicts with a running sync: the job reads its own snapshot
+  // and writes results with `updateMany`, so a row that disappears mid-run is simply skipped.
+  // Blocking this while any list job ran left paused lists impossible to remove for minutes at a
+  // time, which is exactly when someone wants to clear them out.
   await prisma.listSubscription.delete({ where: { id } });
 }
 
